@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:api.anthropic.com)",
+      "Bash(gunzip -c \"/Users/gokulmc/.claude/projects/-Users-gokulmc-fork-ai/e9fade5b-4d20-4d11-8372-a006a2598786/tool-results/webfetch-1779027860476-8zb2r5.bin\")",
+      "Bash(tar -t)",
+      "Bash(tar -xO fork-ai/project/fork.ai.html)",
+      "Bash(tar -xO fork-ai/project/styles.css)",
+      "Bash(tar -xO fork-ai/project/app.jsx)",
+      "Bash(tar -xO fork-ai/project/llm.js)",
+      "Bash(tar -xO fork-ai/project/icons.jsx)",
+      "Bash(tar -xO fork-ai/project/mindmap.jsx)",
+      "Bash(tar -xO fork-ai/project/workspace.jsx)",
+      "Bash(tar -xO fork-ai/project/notes.jsx)",
+      "Bash(tar -xO fork-ai/project/tweaks-panel.jsx)",
+      "Bash(mkdir -p \"/Users/gokulmc/fork ai/.claude/commands\")",
+      "Bash(gh auth *)",
+      "Bash(git init *)",
+      "Bash(git add *)"
+    ],
+    "additionalDirectories": [
+      "/Users/gokulmc/fork ai/.claude"
+    ]
+  }
+}

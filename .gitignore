@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+.next/
+
+# Environment — never commit secrets
+.env
+.env.local
+.env.*.local
+
+# AWS credentials
+.aws/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Claude tool artifacts (binary cache files, not source)
+.claude/projects/
