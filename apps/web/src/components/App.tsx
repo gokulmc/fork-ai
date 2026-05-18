@@ -51,7 +51,8 @@ const FONT_PAIR_OPTIONS = Object.entries(FONT_PAIRS).map(([v, p]) => ({ value: v
 
 export function App() {
   const { data: authSession, status } = useSession();
-  const idToken = authSession?.idToken ?? '';
+  // Auth disabled for local testing — guard bypassed on API side, so any non-empty token works
+  const idToken = authSession?.idToken ?? 'dev-bypass';
 
   const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
 
@@ -95,7 +96,6 @@ export function App() {
   // ── Load session list once idToken is available ───────────────────────────
 
   useEffect(() => {
-    if (!idToken) return;
     setLoadingSessions(true);
     listSessions(idToken)
       .then(setSessions)
@@ -112,13 +112,13 @@ export function App() {
   // ── Rehydrate a session from the API ─────────────────────────────────────
 
   const loadSession = useCallback(async (sid: string) => {
-    if (!idToken) return;
     setLoadingRoot(true);
     try {
       const session = await getSession(idToken, sid);
+      const forkNodes = session.nodes.map(toForkNode);
       const nodeMap: Record<string, ForkNode> = {};
-      for (const n of session.nodes) nodeMap[n.id] = toForkNode(n);
-      const root = session.nodes.find(n => n.parentId === null);
+      for (const n of forkNodes) nodeMap[n.id] = n;
+      const root = forkNodes.find(n => n.parentId === null);
       setSessionId(session.sessionId);
       setNodes(nodeMap);
       setRootId(root?.id ?? null);
@@ -152,13 +152,13 @@ export function App() {
   // ── Start a new root research session ────────────────────────────────────
 
   const submitRootQuery = useCallback(async (query: string) => {
-    if (!idToken) return;
     setLoadingRoot(true);
     try {
       const session = await createSession(idToken, query, 5);
+      const forkNodes = session.nodes.map(toForkNode);
       const nodeMap: Record<string, ForkNode> = {};
-      for (const n of session.nodes) nodeMap[n.id] = toForkNode(n);
-      const root = session.nodes.find(n => n.parentId === null);
+      for (const n of forkNodes) nodeMap[n.id] = n;
+      const root = forkNodes.find(n => n.parentId === null);
       setSessionId(session.sessionId);
       setNodes(nodeMap);
       setRootId(root?.id ?? null);
@@ -508,6 +508,14 @@ export function App() {
   // ── Landing / sessions dashboard ──────────────────────────────────────────
 
   if (!rootId) {
+    if (loadingRoot) {
+      return (
+        <div className="auth-screen">
+          <span className="spinner-lg" />
+          <p style={{ marginTop: 16, opacity: 0.5, fontSize: 14 }}>Thinking…</p>
+        </div>
+      );
+    }
     return (
       <Landing
         onSubmit={submitRootQuery}

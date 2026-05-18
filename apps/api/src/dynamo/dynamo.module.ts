@@ -3,8 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { DynamoRepository } from './dynamo.repository';
-
-export const DYNAMO_CLIENT = 'DYNAMO_CLIENT';
+import { DYNAMO_CLIENT } from './dynamo.constants';
 
 @Module({
   providers: [

@@ -54,16 +54,34 @@ export interface FullSession extends SessionSummary {
 // ── Conversion helpers ───────────────────────────────────────────────────────
 
 export function toForkNode(n: ApiNode): ForkNode {
+  const raw = n as unknown as Record<string, unknown>;
+  // API returns raw DynamoDB items: nodeId instead of id, plus PK/SK fields
+  const id = (raw['nodeId'] as string) ?? n.id;
   return {
-    ...n,
+    id,
+    parentId: n.parentId,
+    kind: n.kind,
+    title: n.title,
+    emoji: n.emoji,
+    query: n.query,
+    lede: n.lede,
+    sections: n.sections,
+    fromSection: n.fromSection,
+    fromText: n.fromText,
     createdAt: typeof n.createdAt === 'string' ? new Date(n.createdAt).getTime() : (n.createdAt as number),
     loading: false,
   };
 }
 
 export function toAnnotation(a: ApiAnnotation): Annotation {
+  const raw = a as unknown as Record<string, unknown>;
   return {
-    ...a,
+    id: (raw['annId'] as string) ?? a.id,
+    kind: a.kind,
+    text: a.text,
+    fromTitle: a.fromTitle,
+    nodeId: a.nodeId,
+    sectionId: a.sectionId,
     createdAt: typeof a.createdAt === 'string' ? new Date(a.createdAt).getTime() : (a.createdAt as number),
   };
 }

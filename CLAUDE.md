@@ -141,6 +141,22 @@ All three return: `{ title, emoji, lede, sections: [{ heading, body }] }`.
 
 ---
 
+## Working with Claude Code
+
+**Never make architecture-level changes without explicit confirmation.** This includes:
+- Swapping auth libraries (e.g. next-auth ↔ react-oidc-context)
+- Changing the database, ORM, or data access layer
+- Replacing state management solutions
+- Changing the build system or monorepo tooling
+- Adding/removing major runtime dependencies
+
+If a user message implies an architectural change, **stop and clarify** before touching any files:
+- Explain the trade-offs
+- Ask whether they want to proceed
+- Only start implementing after explicit confirmation
+
+---
+
 ## Custom slash commands
 
 | Command | Purpose |

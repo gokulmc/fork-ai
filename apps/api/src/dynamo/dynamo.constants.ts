@@ -1,0 +1,1 @@
+export const DYNAMO_CLIENT = 'DYNAMO_CLIENT';

@@ -1,7 +1,7 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand, DeleteCommand, BatchWriteCommand } from '@aws-sdk/lib-dynamodb';
-import { DYNAMO_CLIENT } from './dynamo.module';
+import { DYNAMO_CLIENT } from './dynamo.constants';
 
 @Injectable()
 export class DynamoRepository {
