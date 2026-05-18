@@ -827,9 +827,9 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 [data-theme="dark"] .hl-color-pop { background: #2d2d2d; }
 .hl-color-row { display: flex; align-items: center; gap: 5px; }
 
-/* Persistent highlight color — injected per-section via adoptedStyleSheets as ::highlight(hl-{sectionId}) */
 :root { --hl-persistent: #fef08a; }
 [data-theme="dark"] { --hl-persistent: #713f12; }
+::highlight(persistent-hl) { background-color: var(--hl-persistent); }
 
 /* ============================================================
    Follow-up popup

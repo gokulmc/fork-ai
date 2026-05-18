@@ -1,10 +1,30 @@
 'use client';
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
-import type { ForkNode, Annotation, HlMenuState, FollowUpState, ContextMenuState } from '@/lib/types';
+import type { ForkNode, Annotation, HlMenuState, FollowUpState, ContextMenuState, PersistentHighlight, HighlightRecord } from '@/lib/types';
 import { uid, short5, stripMarkdown, getRangeOffsets } from '@/lib/utils';
 
 const CSS_HL_SUPPORTED = typeof window !== 'undefined' && typeof CSS !== 'undefined' && 'highlights' in CSS;
+
+function rangeFromOffsets(root: Element, start: number, end: number): Range | null {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+  let pos = 0;
+  let startNode: Text | null = null, startOff = 0;
+  let endNode: Text | null = null, endOff = 0;
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    const t = node as Text;
+    const len = (t.nodeValue ?? '').length;
+    if (!startNode && pos + len > start) { startNode = t; startOff = start - pos; }
+    if (startNode && pos + len >= end) { endNode = t; endOff = end - pos; break; }
+    pos += len;
+  }
+  if (!startNode || !endNode) return null;
+  const r = new Range();
+  r.setStart(startNode, startOff);
+  r.setEnd(endNode, endOff);
+  return r;
+}
 import { useTweaks } from '@/hooks/useTweaks';
 import {
   listSessions,
@@ -19,6 +39,8 @@ import {
   toForkNode,
   toAnnotation,
   toHlMap,
+  toHighlightRecords,
+  deleteHighlight,
   type SessionSummary,
 } from '@/lib/api';
 import { MindMap } from './MindMap';
@@ -51,9 +73,6 @@ const FONT_PAIRS: Record<string, { serif: string; sans: string; label: string }>
 
 const ACCENTS = ['#525252', '#888888', '#2383e2', '#7a8c5a', '#b4683b'];
 const FONT_PAIR_OPTIONS = Object.entries(FONT_PAIRS).map(([v, p]) => ({ value: v, label: p.label }));
-// Stable empty array — prevents Section useMemo from recomputing (and innerHTML from resetting)
-// when App re-renders for unrelated reasons (e.g. hlMenu open/close), which would clear selection.
-const EMPTY_HLS: never[] = [];
 
 function ResearchingScreen({ sessions }: { sessions: SessionSummary[] }) {
   const [idx, setIdx] = useState(0);
@@ -125,7 +144,8 @@ export function App() {
   const [followUp, setFollowUp] = useState<FollowUpState | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 
-  const [persistentHl, setPersistentHl] = useState<Record<string, Array<{ text: string; bg: string | null; fg: string | null }>>>({});
+  const [persistentHl, setPersistentHl] = useState<Record<string, PersistentHighlight[]>>({});
+  const [highlightsList, setHighlightsList] = useState<HighlightRecord[]>([]);
   const [lastHlColors, setLastHlColors] = useState<{ bg: string; fg: string | null }>({ bg: '#fef08a', fg: null });
 
   const wsRef = useRef<HTMLElement>(null);
@@ -175,6 +195,7 @@ export function App() {
       setActiveId(activeTarget);
       setAnnotations(session.annotations.map(toAnnotation));
       setPersistentHl(toHlMap(session.highlights));
+      setHighlightsList(toHighlightRecords(session.highlights, nodeMap));
     } catch (err) {
       console.error('Failed to load session', err);
     } finally {
@@ -210,17 +231,44 @@ export function App() {
   const persistHighlight = useCallback(
     (nodeId: string, sectionId: string, text: string, bg: string | null, fg: string | null, start: number, end: number) => {
       const key = `${nodeId}::${sectionId}`;
+      const tempId = uid();
       setPersistentHl(prev => ({
         ...prev,
-        [key]: [...(prev[key] ?? []), { text, start, end, bg: bg ?? null, fg: fg ?? null }],
+        [key]: [...(prev[key] ?? []), { hlId: tempId, text, start, end, bg: bg ?? null, fg: fg ?? null }],
       }));
+      const fromTitle = nodes[nodeId]?.title ?? 'Untitled';
+      setHighlightsList(prev => [...prev, { hlId: tempId, text, nodeId, sectionId, fromTitle }]);
+
       if (sessionId && idToken) {
         createHighlight(idToken, sessionId, { nodeId, sectionId, text, start, end, bg: bg ?? null, fg: fg ?? null })
+          .then(apiHl => {
+            const realId = ((apiHl as unknown as Record<string, unknown>)['hlId'] as string) ?? apiHl.id;
+            setPersistentHl(prev => ({
+              ...prev,
+              [key]: (prev[key] ?? []).map(h => h.hlId === tempId ? { ...h, hlId: realId } : h),
+            }));
+            setHighlightsList(prev => prev.map(h => h.hlId === tempId ? { ...h, hlId: realId } : h));
+          })
           .catch(err => console.error('Failed to persist highlight', err));
       }
     },
-    [sessionId, idToken],
+    [nodes, sessionId, idToken],
   );
+
+  const removeHighlight = useCallback((hlId: string) => {
+    setPersistentHl(prev => {
+      const next: Record<string, PersistentHighlight[]> = {};
+      for (const [key, list] of Object.entries(prev)) {
+        const filtered = list.filter(h => h.hlId !== hlId);
+        if (filtered.length) next[key] = filtered;
+      }
+      return next;
+    });
+    setHighlightsList(prev => prev.filter(h => h.hlId !== hlId));
+    if (sessionId && idToken) {
+      deleteHighlight(idToken, sessionId, hlId).catch(err => console.error('Failed to delete highlight', err));
+    }
+  }, [sessionId, idToken]);
 
   // ── Start a new root research session (streaming) ────────────────────────
 
@@ -248,6 +296,7 @@ export function App() {
     setSessionId(null);
     setAnnotations([]);
     setPersistentHl({});
+    setHighlightsList([]);
     setLoadingRoot(true);
 
     try {
@@ -481,6 +530,30 @@ export function App() {
     if (CSS_HL_SUPPORTED) CSS.highlights.delete('temp-hl');
   }, [hlMenu]);
 
+  // App-level persistent highlight registration — rebuilds all ranges for the active node fresh
+  // on every persistentHl/activeId change, so cross-section highlights never go stale
+  useEffect(() => {
+    if (!CSS_HL_SUPPORTED || !activeId) {
+      if (CSS_HL_SUPPORTED) CSS.highlights.delete('persistent-hl');
+      return;
+    }
+    const hl = new Highlight();
+    const prefix = `${activeId}::`;
+    for (const [key, list] of Object.entries(persistentHl)) {
+      if (!key.startsWith(prefix)) continue;
+      const sectionId = key.slice(prefix.length);
+      const sectionEl = document.querySelector(`.section-body[data-section-id="${sectionId}"]`);
+      if (!sectionEl) continue;
+      for (const h of list) {
+        if (h.start == null || h.end == null) continue;
+        const range = rangeFromOffsets(sectionEl, h.start, h.end);
+        if (range) hl.add(range);
+      }
+    }
+    CSS.highlights.set('persistent-hl', hl);
+    return () => { CSS.highlights.delete('persistent-hl'); };
+  }, [persistentHl, activeId]);
+
   const handleHlAction = useCallback((action: string, payload?: { bg: string; fg: string | null }) => {
     if (!hlMenu) return;
     const src = hlMenu;
@@ -501,12 +574,12 @@ export function App() {
       return;
     }
 
-    if (action === 'note' || action === 'callout') {
+    if (action === 'callout') {
       const fromTitle = nodes[src.nodeId]?.title ?? 'Untitled';
       const tempId = uid();
       const newAnn: Annotation = {
         id: tempId,
-        kind: action as 'note' | 'callout',
+        kind: 'callout',
         text: src.text,
         fromTitle,
         nodeId: src.nodeId,
@@ -514,13 +587,12 @@ export function App() {
         createdAt: Date.now(),
       };
       setAnnotations(prev => [...prev, newAnn]);
-      if (action === 'note') persistHighlight(src.nodeId, src.sectionId, src.text, lastHlColors.bg, lastHlColors.fg, src.start, src.end);
       setHlMenu(null);
       window.getSelection()?.removeAllRanges();
 
       if (sessionId && idToken) {
         createAnnotation(idToken, sessionId, {
-          kind: action,
+          kind: 'callout',
           text: src.text,
           fromTitle,
           nodeId: src.nodeId,
@@ -602,6 +674,7 @@ export function App() {
     setSessionId(null);
     setAnnotations([]);
     setPersistentHl({});
+    setHighlightsList([]);
     if (idToken) {
       listSessions(idToken).then(setSessions).catch(err => console.error(err));
     }
@@ -718,9 +791,9 @@ export function App() {
           <button className="icon-btn" onClick={() => { setView('history'); setRootId(null); setNodes({}); setSessionId(null); }} title="Research history">
             <Clock size={14} /> History
           </button>
-          <button className="icon-btn has-badge" onClick={() => setDrawerOpen(true)} title="Notes & Callouts">
+          <button className="icon-btn has-badge" onClick={() => setDrawerOpen(true)} title="Highlights & Callouts">
             <Bookmark size={14} /> Notes
-            {annotations.length > 0 && <span className="badge">{annotations.length}</span>}
+            {(annotations.length + highlightsList.length) > 0 && <span className="badge">{annotations.length + highlightsList.length}</span>}
           </button>
         </div>
       </header>
@@ -792,7 +865,6 @@ export function App() {
                   idx={i}
                   section={s}
                   node={active}
-                  highlights={persistentHl[`${activeId}::${s.id}`] ?? EMPTY_HLS}
                   onDeeper={sec => expandSectionAsChild(active.id, sec)}
                   deeperLoading={sectionLoading === s.id}
                   sectionChildren={childrenBySection[s.id] ?? []}
@@ -845,9 +917,11 @@ export function App() {
       <NotesDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        items={annotations}
+        highlights={highlightsList}
+        callouts={annotations}
         onJump={id => { setActiveId(id); scrollWsTop(); setDrawerOpen(false); }}
-        onRemove={removeAnnotation}
+        onRemoveHighlight={removeHighlight}
+        onRemoveCallout={removeAnnotation}
       />
 
       <TweaksPanel

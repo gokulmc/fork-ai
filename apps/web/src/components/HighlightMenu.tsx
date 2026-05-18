@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Sparkles, FileText, Lightbulb, Copy, Highlighter } from './Icons';
+import { Sparkles, Lightbulb, Copy, Highlighter } from './Icons';
 
 const HL_BG_COLORS = ['#fef08a', '#bbf7d0', '#bae6fd', '#fbcfe8', '#e5e5e5'];
 const HL_FG_COLORS = [
@@ -18,7 +18,7 @@ interface Rect {
   bottom: number;
 }
 
-type HlAction = 'ask' | 'highlight' | 'note' | 'callout' | 'copy';
+type HlAction = 'ask' | 'highlight' | 'callout' | 'copy';
 
 interface HighlightMenuProps {
   visible: boolean;
@@ -118,10 +118,6 @@ export function HighlightMenu({ visible, rect, lastColors, onAction, onClose }: 
       </div>
 
       <span className="sep" />
-      <button onClick={() => onAction('note')} title="Save to Notes">
-        <FileText size={14} />
-        Note
-      </button>
       <button onClick={() => onAction('callout')} title="Pin as callout">
         <Lightbulb size={14} />
         Callout

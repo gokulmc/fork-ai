@@ -1,4 +1,4 @@
-import type { ForkNode, Annotation } from './types';
+import type { ForkNode, Annotation, HighlightRecord, PersistentHighlight } from './types';
 
 // ── Response shapes from NestJS ─────────────────────────────────────────────
 
@@ -18,7 +18,7 @@ export interface ApiNode {
 
 export interface ApiAnnotation {
   id: string;
-  kind: 'note' | 'callout';
+  kind: 'callout';
   text: string;
   fromTitle: string;
   nodeId: string;
@@ -88,14 +88,19 @@ export function toAnnotation(a: ApiAnnotation): Annotation {
   };
 }
 
+function extractHlId(h: ApiHighlight): string {
+  return ((h as unknown as Record<string, unknown>)['hlId'] as string) ?? h.id;
+}
+
 /** Build the persistentHl map from the flat highlights list returned by the API. */
 export function toHlMap(
   highlights: ApiHighlight[],
-): Record<string, Array<{ text: string; start?: number; end?: number; bg: string | null; fg: string | null }>> {
-  const m: Record<string, Array<{ text: string; start?: number; end?: number; bg: string | null; fg: string | null }>> = {};
+): Record<string, PersistentHighlight[]> {
+  const m: Record<string, PersistentHighlight[]> = {};
   for (const h of highlights) {
     const key = `${h.nodeId}::${h.sectionId}`;
     (m[key] = m[key] ?? []).push({
+      hlId: extractHlId(h),
       text: h.text,
       start: h.start ?? undefined,
       end: h.end ?? undefined,
@@ -104,6 +109,20 @@ export function toHlMap(
     });
   }
   return m;
+}
+
+/** Build the flat highlight list used by the drawer. */
+export function toHighlightRecords(
+  highlights: ApiHighlight[],
+  nodes: Record<string, { title: string }>,
+): HighlightRecord[] {
+  return highlights.map(h => ({
+    hlId: extractHlId(h),
+    text: h.text,
+    nodeId: h.nodeId,
+    sectionId: h.sectionId,
+    fromTitle: nodes[h.nodeId]?.title ?? 'Untitled',
+  }));
 }
 
 // ── API error ────────────────────────────────────────────────────────────────
@@ -272,7 +291,7 @@ export function deleteNode(
 // ── Annotations ───────────────────────────────────────────────────────────────
 
 export interface CreateAnnotationPayload {
-  kind: 'note' | 'callout';
+  kind: 'callout';
   text: string;
   fromTitle: string;
   nodeId: string;
@@ -321,4 +340,12 @@ export function createHighlight(
     method: 'POST',
     body: JSON.stringify(payload),
   });
+}
+
+export function deleteHighlight(
+  idToken: string,
+  sessionId: string,
+  hlId: string,
+): Promise<void> {
+  return apiFetch<void>(`/sessions/${sessionId}/highlights/${hlId}`, idToken, { method: 'DELETE' });
 }
