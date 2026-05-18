@@ -2,7 +2,9 @@
   "name": "fork-ai",
   "version": "0.1.0",
   "private": true,
-  "workspaces": ["apps/*"],
+  "workspaces": [
+    "apps/*"
+  ],
   "scripts": {
     "dev": "nx run-many --target=dev --parallel",
     "dev:web": "nx run @fork-ai/web:dev",
@@ -13,5 +15,9 @@
   },
   "devDependencies": {
     "nx": "latest"
+  },
+  "dependencies": {
+    "ink": "^7.0.3",
+    "react": "^19.2.6"
   }
 }
