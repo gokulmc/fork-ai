@@ -1,0 +1,35 @@
+{
+  "defaultBase": "main",
+  "namedInputs": {
+    "default": ["{projectRoot}/**/*", "sharedGlobals"],
+    "production": [
+      "default",
+      "!{projectRoot}/**/*.spec.ts",
+      "!{projectRoot}/**/*.e2e-spec.ts",
+      "!{projectRoot}/jest.config.*",
+      "!{projectRoot}/.env*"
+    ],
+    "sharedGlobals": ["{workspaceRoot}/tsconfig.base.json"]
+  },
+  "targetDefaults": {
+    "build": {
+      "cache": true,
+      "dependsOn": ["^build"],
+      "inputs": ["production", "^production"],
+      "outputs": ["{projectRoot}/dist", "{projectRoot}/.next"]
+    },
+    "test": {
+      "cache": true,
+      "inputs": ["default", "^production"],
+      "outputs": ["{projectRoot}/coverage"]
+    },
+    "test:e2e": {
+      "cache": false,
+      "inputs": ["default"]
+    },
+    "type-check": {
+      "cache": true,
+      "inputs": ["default"]
+    }
+  }
+}

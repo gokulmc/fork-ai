@@ -1,0 +1,17 @@
+{
+  "name": "fork-ai",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "dev": "nx run-many --target=dev --parallel",
+    "dev:web": "nx run @fork-ai/web:dev",
+    "dev:api": "nx run @fork-ai/api:dev",
+    "build": "nx run-many --target=build",
+    "test": "nx run-many --target=test",
+    "type-check": "nx run-many --target=type-check"
+  },
+  "devDependencies": {
+    "nx": "latest"
+  }
+}

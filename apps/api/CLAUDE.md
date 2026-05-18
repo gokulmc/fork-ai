@@ -1,0 +1,179 @@
+# fork.ai — Backend (NestJS)
+
+> See root `CLAUDE.md` for shared data model, architecture overview, and project context.
+
+## Stack
+
+| Layer | Choice |
+|---|---|
+| Framework | NestJS 11, TypeScript strict |
+| Database | AWS DynamoDB — single-table design |
+| Auth | AWS Cognito User Pool — JWT validated via `jwks-rsa` (no Cognito API call per request) |
+| LLM | Anthropic Claude API (`@anthropic-ai/sdk`) |
+| ID generation | `ulid` (lexicographically sortable — used as DynamoDB sort key) |
+| API style | REST + OpenAPI (Swagger at `/api`) |
+| Port | **3000** (default) |
+
+---
+
+## Module layout
+
+```
+backend/src/
+├── main.ts                         # Bootstrap, Swagger, ValidationPipe, CORS
+├── app.module.ts                   # Wires all modules; APP_GUARD = JwtAuthGuard
+├── config/configuration.ts         # Joi-validated env vars
+├── dynamo/
+│   ├── dynamo.module.ts            # DynamoDBDocumentClient provider
+│   └── dynamo.repository.ts        # put/get/query/update/batchDelete helpers
+├── auth/
+│   ├── jwt.strategy.ts             # passport-jwt + jwks-rsa (Cognito JWKS)
+│   ├── jwt-auth.guard.ts           # applied globally via APP_GUARD
+│   ├── current-user.decorator.ts   # @CurrentUser() → { sub, email }
+│   └── public.decorator.ts         # @Public() skips guard (health check)
+├── users/                          # GET /users/me; auto-upsert on first request
+├── sessions/                       # CRUD — create fires LLM answerQuery
+├── nodes/                          # Branch creation fires expandSection or followUpFromHighlight
+├── annotations/                    # Notes and callouts
+├── highlights/                     # Persistent text highlight marks
+└── llm/
+    └── llm.service.ts              # Anthropic SDK — 3 prompt functions
+```
+
+---
+
+## REST API surface
+
+```
+GET    /users/me
+
+GET    /sessions                              # list, newest first (GSI-1 query)
+POST   /sessions                             # create session + fire answerQuery → root node
+GET    /sessions/:sessionId                  # full load — all nodes + annotations + highlights
+PATCH  /sessions/:sessionId                  # rename session title
+DELETE /sessions/:sessionId                  # delete session + all children (BatchWriteItem)
+
+POST   /sessions/:sessionId/nodes            # branch: fires DEEPER or ASK LLM call
+PATCH  /sessions/:sessionId/nodes/:nodeId    # rename node title
+DELETE /sessions/:sessionId/nodes/:nodeId    # delete branch + all descendants (BFS)
+
+GET    /sessions/:sessionId/annotations
+POST   /sessions/:sessionId/annotations
+DELETE /sessions/:sessionId/annotations/:annId
+
+POST   /sessions/:sessionId/highlights
+PATCH  /sessions/:sessionId/highlights/:hlId
+DELETE /sessions/:sessionId/highlights/:hlId
+```
+
+### Key DTOs
+
+**`POST /sessions`** body:
+```json
+{ "query": "How do neural networks learn?", "sectionCount": 5 }
+```
+
+**`POST /sessions/:id/nodes`** body:
+```json
+{
+  "kind": "DEEPER" | "ASK",
+  "parentNodeId": "01HZ...",
+  "fromSection": "secA",
+  "query": "Backpropagation in detail",
+  "sectionBody": "...",       // for DEEPER
+  "highlightText": "..."      // for ASK
+}
+```
+
+**`GET /sessions/:id`** response shape:
+```json
+{
+  "sessionId": "...",
+  "title": "...",
+  "emoji": "🧠",
+  "lede": "...",
+  "nodes": [...],
+  "annotations": [...],
+  "highlights": [...]
+}
+```
+
+---
+
+## DynamoDB single-table: `forkai-main`
+
+| Entity | PK | SK |
+|---|---|---|
+| User | `USER#{sub}` | `METADATA` |
+| Session | `USER#{sub}` | `SESSION#{ulid}` |
+| Node | `SESSION#{id}` | `NODE#{ulid}` |
+| Annotation | `SESSION#{id}` | `ANN#{ulid}` |
+| Highlight | `SESSION#{id}` | `HL#{ulid}` |
+
+**GSI-1** (`gsi1pk` / `gsi1sk`): `USER#{sub}` / `UPDATED#{isoTimestamp}` — powers newest-first session listing.
+
+### Access patterns
+
+| Pattern | Operation |
+|---|---|
+| List sessions for user (newest first) | GSI-1 query, `ScanIndexForward=false` |
+| Load full session (nodes + annotations + highlights) | Query `PK=SESSION#{id}` — one roundtrip |
+| Point-read a node | GetItem |
+| Delete branch + descendants | App BFS-collects IDs, `BatchWriteItem` in chunks of 25 |
+
+---
+
+## Auth flow
+
+1. Cognito issues a JWT `id_token` after user logs in (via Hosted UI / OAuth2 PKCE).
+2. Frontend sends `Authorization: Bearer <id_token>` on every request.
+3. `JwtAuthGuard` → `JwtStrategy` validates the token using Cognito's public JWKS (fetched once, cached by `jwks-rsa`).
+4. The `sub` claim becomes the stable user ID for all DynamoDB keys.
+
+No Cognito Admin API call per request — purely offline JWT validation.
+
+---
+
+## Environment variables
+
+```bash
+AWS_REGION=ap-south-1
+COGNITO_USER_POOL_ID=ap-south-1_XXXXX
+COGNITO_CLIENT_ID=XXXXXXXXXXXXX
+DYNAMO_TABLE_NAME=forkai-main
+ANTHROPIC_API_KEY=sk-ant-...
+PORT=3000                       # optional, defaults to 3000
+CORS_ORIGIN=http://localhost:3001   # Next.js dev server
+```
+
+---
+
+## Coding conventions
+
+- **Repository pattern** — business logic never touches `DynamoDBDocumentClient` directly; always goes through `DynamoRepository`
+- **DTOs** with `class-validator` decorators on all request bodies
+- **Swagger** — every DTO field and controller route must have `@ApiProperty` / `@ApiOperation`
+- **Error handling** — throw NestJS `HttpException` subclasses; never leak stack traces to the client
+- **No over-engineering** — if a helper is only used once, inline it
+- `@Public()` decorator marks routes that bypass `JwtAuthGuard` (health check, etc.)
+
+---
+
+## Testing patterns
+
+- **Unit specs** (`*.spec.ts`) — mock `DynamoRepository` and `LlmService` with `jest.spyOn`; no real AWS calls
+- **E2E** (`test/app.e2e-spec.ts`) — bypass `JwtAuthGuard` via `jest.spyOn(JwtAuthGuard.prototype, 'canActivate')` (standard `overrideGuard` does not work for global `APP_GUARD` in NestJS v11)
+- **ESM `jose` package** — `jest.e2e.config.js` needs `transformIgnorePatterns: ['node_modules/(?!(jose)/)']`
+- **Env vars in e2e** — set `process.env` at the top of the e2e file, before any imports, or ConfigModule Joi validation fails
+
+---
+
+## Run
+
+```bash
+cd backend
+npm install
+npm run start:dev    # ts-node-dev, port 3000
+npm test             # unit specs
+npm run test:e2e     # e2e suite
+```

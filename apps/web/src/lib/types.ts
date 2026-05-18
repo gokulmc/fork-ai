@@ -1,0 +1,73 @@
+export interface Section {
+  id: string;
+  heading: string;
+  body: string;
+}
+
+export interface ForkNode {
+  id: string;
+  parentId: string | null;
+  kind: 'QUERY' | 'DEEPER' | 'ASK';
+  title: string;
+  emoji: string | null;
+  query: string;
+  lede: string;
+  sections: Section[];
+  fromSection: string | null;
+  fromText: string | null;
+  createdAt: number;
+  loading: boolean;
+  error?: string;
+}
+
+export interface Annotation {
+  id: string;
+  kind: 'note' | 'callout';
+  text: string;
+  fromTitle: string;
+  nodeId: string;
+  sectionId: string;
+  createdAt: number;
+}
+
+export interface PersistentHighlight {
+  text: string;
+  bg: string | null;
+  fg: string | null;
+}
+
+export interface Tweaks {
+  theme: 'light' | 'dark';
+  accent: string;
+  density: 'comfortable' | 'compact';
+  mapLayout: 'vertical' | 'horizontal';
+  fontPair: string;
+}
+
+export interface HlMenuState {
+  rect: { left: number; top: number; width: number; height: number; bottom: number };
+  text: string;
+  nodeId: string;
+  sectionId: string;
+}
+
+export interface FollowUpState {
+  rect: { left: number; top: number; width: number; height: number; bottom: number };
+  text: string;
+  nodeId: string;
+  sectionId: string;
+  loading: boolean;
+}
+
+export interface ContextMenuState {
+  x: number;
+  y: number;
+  nodeId: string;
+}
+
+export interface LlmResponse {
+  title: string;
+  emoji: string;
+  lede: string;
+  sections: Array<{ heading: string; body: string }>;
+}

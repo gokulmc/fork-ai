@@ -6,6 +6,13 @@ dist/
 build/
 .next/
 
+# Nx cache
+.nx/cache
+.nx/workspace-data
+
+# Test output
+coverage/
+
 # Environment — never commit secrets
 .env
 .env.local
