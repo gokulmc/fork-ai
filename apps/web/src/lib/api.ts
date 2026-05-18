@@ -59,15 +59,15 @@ export function toForkNode(n: ApiNode): ForkNode {
   const id = (raw['nodeId'] as string) ?? n.id;
   return {
     id,
-    parentId: n.parentId,
+    parentId: n.parentId ?? null,
     kind: n.kind,
     title: n.title,
-    emoji: n.emoji,
+    emoji: n.emoji ?? null,
     query: n.query,
     lede: n.lede,
     sections: n.sections,
-    fromSection: n.fromSection,
-    fromText: n.fromText,
+    fromSection: n.fromSection ?? null,
+    fromText: n.fromText ?? null,
     createdAt: typeof n.createdAt === 'string' ? new Date(n.createdAt).getTime() : (n.createdAt as number),
     loading: false,
   };
@@ -93,7 +93,7 @@ export function toHlMap(
   const m: Record<string, Array<{ text: string; bg: string | null; fg: string | null }>> = {};
   for (const h of highlights) {
     const key = `${h.nodeId}::${h.sectionId}`;
-    (m[key] = m[key] ?? []).push({ text: h.text, bg: h.bg, fg: h.fg });
+    (m[key] = m[key] ?? []).push({ text: h.text, bg: h.bg ?? null, fg: h.fg ?? null });
   }
   return m;
 }
