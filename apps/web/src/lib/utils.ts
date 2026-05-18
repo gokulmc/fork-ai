@@ -51,34 +51,27 @@ export function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n - 1) + '…' : s;
 }
 
-/** Walk text nodes and wrap matches in a <span class="persistent-hl"> */
-export function wrapTextInElement(
-  rootEl: Element,
-  item: { text: string; bg: string | null; fg: string | null },
-): void {
-  const { text: target, bg, fg } = item;
-  if (!target || target.length < 3) return;
-  const walker = document.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT, null);
-  const matches: Array<{ node: Text; idx: number }> = [];
+/**
+ * Compute start/end character offsets of a Range within the plain text
+ * of a root element (as walked by TreeWalker). Returns null if either
+ * boundary node is not found inside root.
+ */
+export function getRangeOffsets(
+  root: Element,
+  range: Range,
+): { start: number; end: number } | null {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+  let pos = 0;
+  let start = -1;
+  let end = -1;
   let node: Node | null;
   while ((node = walker.nextNode())) {
-    const textNode = node as Text;
-    if (textNode.parentElement?.closest('.persistent-hl')) continue;
-    const idx = textNode.nodeValue?.indexOf(target) ?? -1;
-    if (idx >= 0) matches.push({ node: textNode, idx });
+    const t = node as Text;
+    const len = (t.nodeValue ?? '').length;
+    if (start < 0 && t === range.startContainer) start = pos + range.startOffset;
+    if (t === range.endContainer) { end = pos + range.endOffset; break; }
+    pos += len;
   }
-  matches.forEach(({ node: textNode, idx }) => {
-    try {
-      const range = document.createRange();
-      range.setStart(textNode, idx);
-      range.setEnd(textNode, idx + target.length);
-      const span = document.createElement('span');
-      span.className = 'persistent-hl';
-      if (bg) span.style.background = bg;
-      if (fg) span.style.color = fg;
-      range.surroundContents(span);
-    } catch {
-      // Range can't surround cross-element selections — skip
-    }
-  });
+  if (start < 0 || end < 0) return null;
+  return { start, end };
 }

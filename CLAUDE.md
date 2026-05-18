@@ -99,10 +99,10 @@ No child-pointer arrays are stored. The tree is reconstructed at read time by gr
 
 ```ts
 // keyed by "nodeId::sectionId"
-persistentHl: Record<string, Array<{ text: string; bg: string | null; fg: string | null }>>
+persistentHl: Record<string, Array<{ text: string; start?: number; end?: number; bg: string | null; fg: string | null }>>
 ```
 
-Applied to the DOM by walking text nodes and wrapping matches in `<span class="persistent-hl">`.
+`start`/`end` are character offsets into the section's rendered plain text (after markdown parsing). Applied via the **CSS Custom Highlight API** (`CSS.highlights`) in a `useEffect` inside `Section.tsx` — no span injection. Per-section named highlights (`hl-{sectionId}`) are styled with rules injected via `adoptedStyleSheets`. Highlights without offsets (legacy) are skipped.
 
 ### Annotations
 

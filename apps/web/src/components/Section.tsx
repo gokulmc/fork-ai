@@ -2,9 +2,26 @@
 import { useMemo, useEffect, useRef } from 'react';
 import { marked } from 'marked';
 import hljs from 'highlight.js';
-import type { Section as SectionData, ForkNode, Annotation } from '@/lib/types';
-import { wrapTextInElement } from '@/lib/utils';
+import type { Section as SectionData, ForkNode, Annotation, PersistentHighlight } from '@/lib/types';
 import { CornerDownRight, Branch, ChevronRight, Lightbulb, X } from './Icons';
+
+const CSS_HL_SUPPORTED = typeof window !== 'undefined' && typeof CSS !== 'undefined' && 'highlights' in CSS;
+
+// Module-level adopted stylesheet — one rule per section ID, created lazily.
+let _hlSheet: CSSStyleSheet | null = null;
+const _hlRules = new Set<string>();
+
+function ensureHlRule(sectionId: string): void {
+  if (_hlRules.has(sectionId)) return;
+  if (!_hlSheet) {
+    _hlSheet = new CSSStyleSheet();
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, _hlSheet];
+  }
+  _hlSheet.insertRule(
+    `::highlight(hl-${sectionId}) { background-color: var(--hl-persistent, #fef08a); }`,
+  );
+  _hlRules.add(sectionId);
+}
 
 marked.use({ gfm: true, breaks: false });
 
@@ -21,19 +38,6 @@ function renderMd(src: string): string {
   }
 }
 
-function applyHighlightsToHtml(
-  html: string,
-  highlights: Array<{ text: string; bg: string | null; fg: string | null }>,
-): string {
-  if (!highlights.length) return html;
-  // Parse into a fresh DOM — no split text-node residue from prior renders
-  const doc = new DOMParser().parseFromString(`<div>${html}</div>`, 'text/html');
-  const container = doc.body.firstElementChild as Element;
-  // Apply longest highlights first so shorter substrings don't block larger matches
-  const sorted = [...highlights].sort((a, b) => b.text.length - a.text.length);
-  for (const hl of sorted) wrapTextInElement(container, hl);
-  return container.innerHTML;
-}
 
 function selectSentenceAtPoint(blockEl: Element, e: MouseEvent) {
   const text = blockEl.textContent ?? '';
@@ -125,7 +129,7 @@ interface SectionProps {
   idx: number;
   section: SectionData;
   node: ForkNode;
-  highlights: Array<{ text: string; bg: string | null; fg: string | null }>;
+  highlights: PersistentHighlight[];
   onDeeper: (section: SectionData) => void;
   deeperLoading: boolean;
   sectionChildren: ForkNode[];
@@ -149,13 +153,9 @@ export function Section({
   const num = String(idx + 1).padStart(2, '0');
   const bodyRef = useRef<HTMLDivElement>(null);
 
-  const html = useMemo(
-    () => applyHighlightsToHtml(renderMd(section.body), highlights),
-    // highlights is a stable reference from persistentHl state — only changes when user highlights
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [section.body, highlights],
-  );
+  const html = useMemo(() => renderMd(section.body), [section.body]);
 
+  // Syntax highlighting for code blocks
   useEffect(() => {
     if (!bodyRef.current) return;
     bodyRef.current.querySelectorAll('pre').forEach(pre => {
@@ -167,6 +167,43 @@ export function Section({
       try { hljs.highlightElement(el as HTMLElement); } catch { /* ignore */ }
     });
   }, [html]);
+
+  // Persistent highlights via CSS Custom Highlight API
+  useEffect(() => {
+    if (!CSS_HL_SUPPORTED || !bodyRef.current) return;
+    const name = `hl-${section.id}`;
+    CSS.highlights.delete(name);
+
+    const withOffsets = highlights.filter(h => h.start != null && h.end != null);
+    if (!withOffsets.length) return;
+
+    ensureHlRule(section.id);
+    const ranges: Range[] = [];
+
+    for (const hl of withOffsets) {
+      const walker = document.createTreeWalker(bodyRef.current, NodeFilter.SHOW_TEXT, null);
+      let pos = 0;
+      let startNode: Text | null = null, startOff = 0;
+      let endNode: Text | null = null, endOff = 0;
+      let node: Node | null;
+      while ((node = walker.nextNode())) {
+        const t = node as Text;
+        const len = (t.nodeValue ?? '').length;
+        if (!startNode && pos + len > hl.start!) { startNode = t; startOff = hl.start! - pos; }
+        if (startNode && pos + len >= hl.end!) { endNode = t; endOff = hl.end! - pos; break; }
+        pos += len;
+      }
+      if (startNode && endNode) {
+        const r = new Range();
+        r.setStart(startNode, startOff);
+        r.setEnd(endNode, endOff);
+        ranges.push(r);
+      }
+    }
+
+    if (ranges.length) CSS.highlights.set(name, new Highlight(...ranges));
+    return () => { CSS.highlights.delete(name); };
+  }, [highlights, html, section.id]);
 
   return (
     <section

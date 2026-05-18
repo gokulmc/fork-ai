@@ -26,6 +26,8 @@ export class HighlightsService {
       nodeId: dto.nodeId,
       sectionId: dto.sectionId,
       text: dto.text,
+      start: dto.start,
+      end: dto.end,
       bg: dto.bg ?? null,
       fg: dto.fg ?? null,
       createdAt: now,

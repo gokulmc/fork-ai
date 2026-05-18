@@ -63,6 +63,8 @@ export interface HighlightItem {
   nodeId: string;
   sectionId: string;
   text: string;
+  start?: number | null;
+  end?: number | null;
   bg?: string | null;
   fg?: string | null;
   createdAt: string;

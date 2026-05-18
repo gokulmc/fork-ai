@@ -786,7 +786,7 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 /* ============================================================
    Highlight menu
    ============================================================ */
-.temp-hl { background: rgba(120, 120, 120, 0.25); border-radius: 2px; }
+::highlight(temp-hl) { background-color: rgba(120, 120, 120, 0.35); }
 .hl-menu {
   position: fixed; z-index: 70;
   transform: translateX(-50%);
@@ -827,7 +827,9 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 [data-theme="dark"] .hl-color-pop { background: #2d2d2d; }
 .hl-color-row { display: flex; align-items: center; gap: 5px; }
 
-.persistent-hl { background: var(--highlight); padding: 1px 0; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+/* Persistent highlight color — injected per-section via adoptedStyleSheets as ::highlight(hl-{sectionId}) */
+:root { --hl-persistent: #fef08a; }
+[data-theme="dark"] { --hl-persistent: #713f12; }
 
 /* ============================================================
    Follow-up popup

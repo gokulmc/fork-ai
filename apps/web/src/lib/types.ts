@@ -32,6 +32,8 @@ export interface Annotation {
 
 export interface PersistentHighlight {
   text: string;
+  start?: number;
+  end?: number;
   bg: string | null;
   fg: string | null;
 }
@@ -49,6 +51,8 @@ export interface HlMenuState {
   text: string;
   nodeId: string;
   sectionId: string;
+  start: number;
+  end: number;
 }
 
 export interface FollowUpState {
@@ -56,6 +60,8 @@ export interface FollowUpState {
   text: string;
   nodeId: string;
   sectionId: string;
+  start: number;
+  end: number;
   loading: boolean;
 }
 

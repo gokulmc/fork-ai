@@ -1,4 +1,4 @@
-# fork.ai — Frontend (Next.js 15)
+# fork.ai — Frontend (Next.js 16)
 
 > See root `CLAUDE.md` for shared data model, architecture overview, and project context.
 
@@ -6,7 +6,7 @@
 
 | Layer | Choice |
 |---|---|
-| Framework | Next.js 15, App Router, TypeScript strict |
+| Framework | Next.js 16, App Router, TypeScript strict |
 | Auth | `next-auth` v5 (Auth.js) with Cognito as OAuth2 provider |
 | State | React 19 hooks — local state, synced to NestJS REST API |
 | Markdown | `marked` v15 (GFM, synchronous parse) |
@@ -179,7 +179,7 @@ The tree is reconstructed by grouping nodes by `parentId` — never stored as a 
 |---|---|
 | `App.tsx` | `'use client'` — all session state lives here |
 | `MindMap.tsx` | `'use client'` — SVG pan/zoom, `ResizeObserver`, `requestAnimationFrame` easing |
-| `Section.tsx` | `'use client'` — `dangerouslySetInnerHTML` with marked output; hljs in `useEffect` |
+| `Section.tsx` | `'use client'` — clean marked HTML via `dangerouslySetInnerHTML`; hljs + CSS Highlight API in `useEffect` |
 | `HighlightMenu.tsx` | `'use client'` — positions itself relative to `getBoundingClientRect()` |
 | `FollowUpPop.tsx` | `'use client'` — positions below/above selection rect |
 | `TweaksPanel.tsx` | `'use client'` — draggable via `mousemove` listeners |

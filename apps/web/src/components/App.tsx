@@ -2,7 +2,9 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import type { ForkNode, Annotation, HlMenuState, FollowUpState, ContextMenuState } from '@/lib/types';
-import { uid, short5, stripMarkdown } from '@/lib/utils';
+import { uid, short5, stripMarkdown, getRangeOffsets } from '@/lib/utils';
+
+const CSS_HL_SUPPORTED = typeof window !== 'undefined' && typeof CSS !== 'undefined' && 'highlights' in CSS;
 import { useTweaks } from '@/hooks/useTweaks';
 import {
   listSessions,
@@ -206,14 +208,14 @@ export function App() {
   // ── Persist highlights (optimistic + background API sync) ─────────────────
 
   const persistHighlight = useCallback(
-    (nodeId: string, sectionId: string, text: string, bg: string | null, fg: string | null) => {
+    (nodeId: string, sectionId: string, text: string, bg: string | null, fg: string | null, start: number, end: number) => {
       const key = `${nodeId}::${sectionId}`;
       setPersistentHl(prev => ({
         ...prev,
-        [key]: [...(prev[key] ?? []), { text, bg: bg ?? null, fg: fg ?? null }],
+        [key]: [...(prev[key] ?? []), { text, start, end, bg: bg ?? null, fg: fg ?? null }],
       }));
       if (sessionId && idToken) {
-        createHighlight(idToken, sessionId, { nodeId, sectionId, text, bg: bg ?? null, fg: fg ?? null })
+        createHighlight(idToken, sessionId, { nodeId, sectionId, text, start, end, bg: bg ?? null, fg: fg ?? null })
           .catch(err => console.error('Failed to persist highlight', err));
       }
     },
@@ -415,7 +417,7 @@ export function App() {
         return next;
       });
       // Stay on current node — user navigates via mind map chip
-      persistHighlight(source.nodeId, source.sectionId, source.text, lastHlColors.bg, lastHlColors.fg);
+      persistHighlight(source.nodeId, source.sectionId, source.text, lastHlColors.bg, lastHlColors.fg, source.start, source.end);
     } catch (err) {
       console.error('Failed to ask from highlight', err);
       setNodes(prev => ({ ...prev, [tempId]: { ...prev[tempId], loading: false, error: 'Failed to load. Try again.' } }));
@@ -444,18 +446,28 @@ export function App() {
         const rect = range.getBoundingClientRect();
         if (rect.width === 0 && rect.height === 0) { setHlMenu(null); return; }
         const sectionId = sectionEl.getAttribute('data-section-id')!;
-        // Wrap the selection in a .temp-hl span directly in the DOM so the visual
-        // persists even after Safari clears the native selection on any repaint.
-        try {
-          const span = document.createElement('span');
-          span.className = 'temp-hl';
-          range.surroundContents(span);
-        } catch { /* range spans element boundaries — skip visual, menu still works */ }
+
+        // Compute character offsets for robust re-application on reload
+        const bodyEl = sectionEl.classList.contains('section-body')
+          ? sectionEl
+          : sectionEl.querySelector('.section-body');
+        const offsets = bodyEl ? getRangeOffsets(bodyEl, range) : null;
+
+        // Register temp highlight via CSS Highlight API so it survives Safari repaints
+        if (CSS_HL_SUPPORTED) {
+          const r = new Range();
+          r.setStart(range.startContainer, range.startOffset);
+          r.setEnd(range.endContainer, range.endOffset);
+          CSS.highlights.set('temp-hl', new Highlight(r));
+        }
+
         setHlMenu({
           rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height, bottom: rect.bottom },
           text,
           nodeId: activeId!,
           sectionId,
+          start: offsets?.start ?? 0,
+          end: offsets?.end ?? 0,
         });
       }, 10);
     };
@@ -463,17 +475,10 @@ export function App() {
     return () => document.removeEventListener('mouseup', onMouseUp);
   }, [activeId]);
 
-  // Clean up .temp-hl spans when the menu closes (if a real highlight was applied,
-  // Section's innerHTML was already reset by dangerouslySetInnerHTML, so this is a no-op).
+  // Clear temp highlight when the menu closes
   useLayoutEffect(() => {
     if (hlMenu) return;
-    document.querySelectorAll('.temp-hl').forEach(span => {
-      const parent = span.parentNode;
-      if (!parent) return;
-      while (span.firstChild) parent.insertBefore(span.firstChild, span);
-      parent.removeChild(span);
-      parent.normalize();
-    });
+    if (CSS_HL_SUPPORTED) CSS.highlights.delete('temp-hl');
   }, [hlMenu]);
 
   const handleHlAction = useCallback((action: string, payload?: { bg: string; fg: string | null }) => {
@@ -490,7 +495,7 @@ export function App() {
       const bg = payload?.bg ?? lastHlColors.bg;
       const fg = payload?.fg ?? lastHlColors.fg;
       setLastHlColors({ bg, fg });
-      persistHighlight(src.nodeId, src.sectionId, src.text, bg, fg);
+      persistHighlight(src.nodeId, src.sectionId, src.text, bg, fg, src.start, src.end);
       setHlMenu(null);
       window.getSelection()?.removeAllRanges();
       return;
@@ -509,7 +514,7 @@ export function App() {
         createdAt: Date.now(),
       };
       setAnnotations(prev => [...prev, newAnn]);
-      if (action === 'note') persistHighlight(src.nodeId, src.sectionId, src.text, lastHlColors.bg, lastHlColors.fg);
+      if (action === 'note') persistHighlight(src.nodeId, src.sectionId, src.text, lastHlColors.bg, lastHlColors.fg, src.start, src.end);
       setHlMenu(null);
       window.getSelection()?.removeAllRanges();
 
@@ -530,7 +535,7 @@ export function App() {
     }
 
     if (action === 'ask') {
-      setFollowUp({ rect: src.rect, text: src.text, nodeId: src.nodeId, sectionId: src.sectionId, loading: false });
+      setFollowUp({ rect: src.rect, text: src.text, nodeId: src.nodeId, sectionId: src.sectionId, start: src.start, end: src.end, loading: false });
       setHlMenu(null);
     }
   }, [hlMenu, nodes, lastHlColors, sessionId, idToken, persistHighlight]);

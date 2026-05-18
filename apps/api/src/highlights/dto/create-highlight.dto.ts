@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsOptional, MinLength } from 'class-validator';
+import { IsString, IsOptional, IsInt, Min, MinLength } from 'class-validator';
 
 export class CreateHighlightDto {
   @ApiProperty({ description: 'ID of the node this highlight belongs to' })
@@ -14,6 +14,16 @@ export class CreateHighlightDto {
   @IsString()
   @MinLength(1)
   text!: string;
+
+  @ApiProperty({ description: 'Character offset of highlight start in the section rendered plain text' })
+  @IsInt()
+  @Min(0)
+  start!: number;
+
+  @ApiProperty({ description: 'Character offset of highlight end in the section rendered plain text' })
+  @IsInt()
+  @Min(0)
+  end!: number;
 
   @ApiPropertyOptional({ description: 'Background colour hex (e.g. #fef08a), null to clear' })
   @IsOptional()

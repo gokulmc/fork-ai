@@ -31,6 +31,8 @@ export interface ApiHighlight {
   nodeId: string;
   sectionId: string;
   text: string;
+  start?: number | null;
+  end?: number | null;
   bg: string | null;
   fg: string | null;
 }
@@ -89,11 +91,17 @@ export function toAnnotation(a: ApiAnnotation): Annotation {
 /** Build the persistentHl map from the flat highlights list returned by the API. */
 export function toHlMap(
   highlights: ApiHighlight[],
-): Record<string, Array<{ text: string; bg: string | null; fg: string | null }>> {
-  const m: Record<string, Array<{ text: string; bg: string | null; fg: string | null }>> = {};
+): Record<string, Array<{ text: string; start?: number; end?: number; bg: string | null; fg: string | null }>> {
+  const m: Record<string, Array<{ text: string; start?: number; end?: number; bg: string | null; fg: string | null }>> = {};
   for (const h of highlights) {
     const key = `${h.nodeId}::${h.sectionId}`;
-    (m[key] = m[key] ?? []).push({ text: h.text, bg: h.bg ?? null, fg: h.fg ?? null });
+    (m[key] = m[key] ?? []).push({
+      text: h.text,
+      start: h.start ?? undefined,
+      end: h.end ?? undefined,
+      bg: h.bg ?? null,
+      fg: h.fg ?? null,
+    });
   }
   return m;
 }
@@ -298,6 +306,8 @@ export interface CreateHighlightPayload {
   nodeId: string;
   sectionId: string;
   text: string;
+  start: number;
+  end: number;
   bg?: string | null;
   fg?: string | null;
 }
