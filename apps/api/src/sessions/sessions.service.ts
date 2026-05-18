@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ulid } from 'ulid';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
+import type { NodeItem, AnnotationItem, HighlightItem, SessionMetaItem } from '@/dynamo/dynamo.interfaces';
 import { LlmService } from '@/llm/llm.service';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { UpdateSessionDto } from './dto/update-session.dto';
@@ -16,9 +17,9 @@ export interface SessionSummary {
 }
 
 export interface FullSession extends SessionSummary {
-  nodes: Record<string, unknown>[];
-  annotations: Record<string, unknown>[];
-  highlights: Record<string, unknown>[];
+  nodes: NodeItem[];
+  annotations: AnnotationItem[];
+  highlights: HighlightItem[];
 }
 
 @Injectable()
@@ -28,7 +29,6 @@ export class SessionsService {
     private readonly llm: LlmService,
   ) {}
 
-  private sessionPk(sessionId: string) { return `SESSION#${sessionId}`; }
   private userPk(sub: string) { return `USER#${sub}`; }
   private sessionSk(sessionId: string) { return `SESSION#${sessionId}`; }
 
@@ -57,9 +57,8 @@ export class SessionsService {
         sections.push(section);
         send({ type: 'section', ...section });
       } else if (event.type === 'done') {
-        // Persist to DynamoDB now that all sections are collected
-        const rootNode: Record<string, unknown> = {
-          PK: this.sessionPk(sessionId),
+        const rootNode: NodeItem = {
+          PK: `SESSION#${sessionId}`,
           SK: `NODE#${nodeId}`,
           nodeId,
           parentId: null,
@@ -71,11 +70,10 @@ export class SessionsService {
           sections,
           fromSection: null,
           fromText: null,
-          highlights: {},
           createdAt: now,
         };
 
-        const sessionMeta: Record<string, unknown> = {
+        const sessionMeta: SessionMetaItem = {
           PK: this.userPk(sub),
           SK: this.sessionSk(sessionId),
           sessionId,
@@ -90,7 +88,7 @@ export class SessionsService {
           gsi1sk: `UPDATED#${now}`,
         };
 
-        await Promise.all([this.db.put(rootNode), this.db.put(sessionMeta)]);
+        await Promise.all([this.db.putNode(rootNode), this.db.putSessionMeta(sessionMeta)]);
         send({ type: 'done', sessionId, nodeId });
       }
     }
@@ -101,13 +99,11 @@ export class SessionsService {
     const nodeId = ulid();
     const now = new Date().toISOString();
 
-    // Fire LLM for root node
     const llmResult = await this.llm.answerQuery(dto.query, dto.sectionCount ?? 5);
-
     const sections = llmResult.sections.map((s) => ({ id: ulid(), ...s }));
 
-    const rootNode: Record<string, unknown> = {
-      PK: this.sessionPk(sessionId),
+    const rootNode: NodeItem = {
+      PK: `SESSION#${sessionId}`,
       SK: `NODE#${nodeId}`,
       nodeId,
       parentId: null,
@@ -119,11 +115,10 @@ export class SessionsService {
       sections,
       fromSection: null,
       fromText: null,
-      highlights: {},
       createdAt: now,
     };
 
-    const sessionMeta: Record<string, unknown> = {
+    const sessionMeta: SessionMetaItem = {
       PK: this.userPk(sub),
       SK: this.sessionSk(sessionId),
       sessionId,
@@ -134,12 +129,11 @@ export class SessionsService {
       nodeCount: 1,
       createdAt: now,
       updatedAt: now,
-      // GSI-1: list sessions sorted by last activity
       gsi1pk: this.userPk(sub),
       gsi1sk: `UPDATED#${now}`,
     };
 
-    await Promise.all([this.db.put(rootNode), this.db.put(sessionMeta)]);
+    await Promise.all([this.db.putNode(rootNode), this.db.putSessionMeta(sessionMeta)]);
 
     return {
       sessionId,
@@ -156,38 +150,28 @@ export class SessionsService {
   }
 
   async list(sub: string): Promise<SessionSummary[]> {
-    const items = await this.db.queryGsi('gsi1', this.userPk(sub), {
-      scanIndexForward: false,
-    });
-    return items
-      .filter((i) => (i['SK'] as string).startsWith('SESSION#'))
-      .map(this.toSummary);
+    const items = await this.db.listSessionMeta(sub);
+    return items.map(this.toSummary);
   }
 
   async getSession(sub: string, sessionId: string): Promise<FullSession> {
-    // Verify the session belongs to this user
-    const meta = await this.db.get(this.userPk(sub), this.sessionSk(sessionId));
+    const meta = await this.db.getSessionMeta(sub, sessionId);
     if (!meta) throw new NotFoundException(`Session ${sessionId} not found`);
 
-    // Single query loads all nodes + annotations + highlights for this session
-    const items = await this.db.query(this.sessionPk(sessionId));
-    const nodes = items.filter((i) => (i['SK'] as string).startsWith('NODE#'));
-    const annotations = items.filter((i) => (i['SK'] as string).startsWith('ANN#'));
-    const highlights = items.filter((i) => (i['SK'] as string).startsWith('HL#'));
+    const [nodes, annotations, highlights] = await Promise.all([
+      this.db.queryNodes(sessionId),
+      this.db.queryAnnotations(sessionId),
+      this.db.queryHighlights(sessionId),
+    ]);
 
-    return {
-      ...this.toSummary(meta),
-      nodes,
-      annotations,
-      highlights,
-    };
+    return { ...this.toSummary(meta), nodes, annotations, highlights };
   }
 
   async update(sub: string, sessionId: string, dto: UpdateSessionDto): Promise<void> {
-    const meta = await this.db.get(this.userPk(sub), this.sessionSk(sessionId));
+    const meta = await this.db.getSessionMeta(sub, sessionId);
     if (!meta) throw new NotFoundException(`Session ${sessionId} not found`);
     const now = new Date().toISOString();
-    await this.db.update(this.userPk(sub), this.sessionSk(sessionId), {
+    await this.db.updateSessionMeta(sub, sessionId, {
       title: dto.title,
       updatedAt: now,
       gsi1sk: `UPDATED#${now}`,
@@ -195,46 +179,45 @@ export class SessionsService {
   }
 
   async delete(sub: string, sessionId: string): Promise<void> {
-    const meta = await this.db.get(this.userPk(sub), this.sessionSk(sessionId));
+    const meta = await this.db.getSessionMeta(sub, sessionId);
     if (!meta) throw new NotFoundException(`Session ${sessionId} not found`);
 
-    // Load every item under this session and batch-delete them
-    const items = await this.db.query(this.sessionPk(sessionId));
-    const sessionKeys = items.map((i) => ({
-      pk: i['PK'] as string,
-      sk: i['SK'] as string,
-    }));
-    // Also delete the session metadata from the user partition
-    const allKeys = [...sessionKeys, { pk: this.userPk(sub), sk: this.sessionSk(sessionId) }];
-    await this.db.batchDelete(allKeys);
+    const [nodes, annotations, highlights] = await Promise.all([
+      this.db.queryNodes(sessionId),
+      this.db.queryAnnotations(sessionId),
+      this.db.queryHighlights(sessionId),
+    ]);
+
+    await Promise.all([
+      this.db.batchDeleteNodes(sessionId, nodes.map((n) => n.nodeId)),
+      this.db.batchDeleteAnnotations(sessionId, annotations.map((a) => a.annId)),
+      this.db.batchDeleteHighlights(sessionId, highlights.map((h) => h.hlId)),
+      this.db.deleteSessionMeta(sub, sessionId),
+    ]);
   }
 
   async touchUpdatedAt(sub: string, sessionId: string): Promise<void> {
     const now = new Date().toISOString();
-    await this.db.update(this.userPk(sub), this.sessionSk(sessionId), {
-      updatedAt: now,
-      gsi1sk: `UPDATED#${now}`,
-    });
+    await this.db.updateSessionMeta(sub, sessionId, { updatedAt: now, gsi1sk: `UPDATED#${now}` });
   }
 
   async incrementNodeCount(sub: string, sessionId: string, delta: number): Promise<void> {
-    const meta = await this.db.get(this.userPk(sub), this.sessionSk(sessionId));
+    const meta = await this.db.getSessionMeta(sub, sessionId);
     if (!meta) return;
-    const current = (meta['nodeCount'] as number) ?? 0;
-    await this.db.update(this.userPk(sub), this.sessionSk(sessionId), {
-      nodeCount: Math.max(0, current + delta),
+    await this.db.updateSessionMeta(sub, sessionId, {
+      nodeCount: Math.max(0, (meta.nodeCount ?? 0) + delta),
     });
   }
 
-  private toSummary(item: Record<string, unknown>): SessionSummary {
+  private toSummary(item: SessionMetaItem): SessionSummary {
     return {
-      sessionId: item['sessionId'] as string,
-      title: item['title'] as string,
-      emoji: item['emoji'] as string,
-      lede: item['lede'] as string,
-      createdAt: item['createdAt'] as string,
-      updatedAt: item['updatedAt'] as string,
-      nodeCount: (item['nodeCount'] as number) ?? 0,
+      sessionId: item.sessionId,
+      title: item.title,
+      emoji: item.emoji,
+      lede: item.lede,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+      nodeCount: item.nodeCount ?? 0,
     };
   }
 }

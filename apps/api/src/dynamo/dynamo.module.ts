@@ -1,21 +1,88 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { DynamoDB } from '@aws-sdk/client-dynamodb';
+import * as dynamoose from 'dynamoose';
+import {
+  USER_META_MODEL,
+  SESSION_META_MODEL,
+  NODE_MODEL,
+  ANNOTATION_MODEL,
+  HIGHLIGHT_MODEL,
+  DYNAMO_TABLE,
+} from './dynamo.constants';
+import {
+  UserMetaSchema,
+  SessionMetaSchema,
+  NodeSchema,
+  AnnotationSchema,
+  HighlightSchema,
+} from './dynamo.schemas';
 import { DynamoRepository } from './dynamo.repository';
-import { DYNAMO_CLIENT } from './dynamo.constants';
+
+const DYNAMO_CONFIGURED = 'DYNAMO_CONFIGURED';
 
 @Module({
   providers: [
     {
-      provide: DYNAMO_CLIENT,
+      provide: DYNAMO_CONFIGURED,
       inject: [ConfigService],
-      useFactory: (cfg: ConfigService) => {
-        const client = new DynamoDBClient({ region: cfg.get<string>('aws.region') });
-        return DynamoDBDocumentClient.from(client, {
-          marshallOptions: { removeUndefinedValues: true },
-        });
+      useFactory: (cfg: ConfigService): true => {
+        dynamoose.aws.ddb.set(new DynamoDB({ region: cfg.get<string>('aws.region') }));
+        return true;
       },
+    },
+    {
+      provide: USER_META_MODEL,
+      inject: [DYNAMO_CONFIGURED],
+      useFactory: () => dynamoose.model('UserMeta', UserMetaSchema),
+    },
+    {
+      provide: SESSION_META_MODEL,
+      inject: [DYNAMO_CONFIGURED],
+      useFactory: () => dynamoose.model('SessionMeta', SessionMetaSchema),
+    },
+    {
+      provide: NODE_MODEL,
+      inject: [DYNAMO_CONFIGURED],
+      useFactory: () => dynamoose.model('Node', NodeSchema),
+    },
+    {
+      provide: ANNOTATION_MODEL,
+      inject: [DYNAMO_CONFIGURED],
+      useFactory: () => dynamoose.model('Annotation', AnnotationSchema),
+    },
+    {
+      provide: HIGHLIGHT_MODEL,
+      inject: [DYNAMO_CONFIGURED],
+      useFactory: () => dynamoose.model('Highlight', HighlightSchema),
+    },
+    {
+      // Binds all models to the physical DynamoDB table.
+      // DynamoRepository injects this to guarantee the Table is set up first.
+      provide: DYNAMO_TABLE,
+      inject: [
+        DYNAMO_CONFIGURED,
+        USER_META_MODEL,
+        SESSION_META_MODEL,
+        NODE_MODEL,
+        ANNOTATION_MODEL,
+        HIGHLIGHT_MODEL,
+        ConfigService,
+      ],
+      useFactory: (
+        _: true,
+        userMeta: any,
+        sessionMeta: any,
+        node: any,
+        annotation: any,
+        highlight: any,
+        cfg: ConfigService,
+      ) =>
+        new dynamoose.Table(
+          cfg.get<string>('dynamo.tableName')!,
+          [userMeta, sessionMeta, node, annotation, highlight],
+          { create: false, waitForActive: false },
+        ),
     },
     DynamoRepository,
   ],

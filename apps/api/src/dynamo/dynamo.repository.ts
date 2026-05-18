@@ -1,124 +1,245 @@
 import { Injectable, Inject } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand, DeleteCommand, BatchWriteCommand } from '@aws-sdk/lib-dynamodb';
-import { DYNAMO_CLIENT } from './dynamo.constants';
+import {
+  USER_META_MODEL,
+  SESSION_META_MODEL,
+  NODE_MODEL,
+  ANNOTATION_MODEL,
+  HIGHLIGHT_MODEL,
+  DYNAMO_TABLE,
+} from './dynamo.constants';
+import type {
+  UserMetaItem,
+  SessionMetaItem,
+  NodeItem,
+  AnnotationItem,
+  HighlightItem,
+} from './dynamo.interfaces';
 
 @Injectable()
 export class DynamoRepository {
-  private readonly table: string;
-
   constructor(
-    @Inject(DYNAMO_CLIENT) private readonly client: DynamoDBDocumentClient,
-    private readonly cfg: ConfigService,
-  ) {
-    this.table = this.cfg.get<string>('dynamo.tableName')!;
+    @Inject(DYNAMO_TABLE) _table: unknown,
+    @Inject(USER_META_MODEL) private readonly userMetaModel: any,
+    @Inject(SESSION_META_MODEL) private readonly sessionMetaModel: any,
+    @Inject(NODE_MODEL) private readonly nodeModel: any,
+    @Inject(ANNOTATION_MODEL) private readonly annotationModel: any,
+    @Inject(HIGHLIGHT_MODEL) private readonly highlightModel: any,
+  ) {}
+
+  // ── Key helpers ─────────────────────────────────────────────────────────────
+
+  private userPk(sub: string) { return `USER#${sub}`; }
+  private sessionSk(sessionId: string) { return `SESSION#${sessionId}`; }
+  private sessionPk(sessionId: string) { return `SESSION#${sessionId}`; }
+  private nodeSk(nodeId: string) { return `NODE#${nodeId}`; }
+  private annSk(annId: string) { return `ANN#${annId}`; }
+  private hlSk(hlId: string) { return `HL#${hlId}`; }
+
+  private toPlain<T>(item: any): T {
+    return (item?.toJSON ? item.toJSON() : item) as T;
   }
 
-  async put(item: Record<string, unknown>): Promise<void> {
-    await this.client.send(new PutCommand({ TableName: this.table, Item: item }));
+  private toPlainArray<T>(items: any[]): T[] {
+    return items.map((i) => this.toPlain<T>(i));
   }
 
-  async get(pk: string, sk: string): Promise<Record<string, unknown> | null> {
-    const res = await this.client.send(
-      new GetCommand({ TableName: this.table, Key: { PK: pk, SK: sk } }),
-    );
-    return (res.Item as Record<string, unknown>) ?? null;
+  // ── User ────────────────────────────────────────────────────────────────────
+
+  async getUserMeta(sub: string): Promise<UserMetaItem | null> {
+    const item = await this.userMetaModel.get({ PK: this.userPk(sub), SK: 'METADATA' });
+    return item ? this.toPlain<UserMetaItem>(item) : null;
   }
 
-  async query(
-    pk: string,
-    skPrefix?: string,
-    opts: { indexName?: string; limit?: number; scanIndexForward?: boolean } = {},
-  ): Promise<Record<string, unknown>[]> {
-    const keyCondition = skPrefix
-      ? 'PK = :pk AND begins_with(SK, :sk)'
-      : 'PK = :pk';
-    const expressionValues: Record<string, unknown> = { ':pk': pk };
-    if (skPrefix) expressionValues[':sk'] = skPrefix;
-
-    const res = await this.client.send(
-      new QueryCommand({
-        TableName: this.table,
-        IndexName: opts.indexName,
-        KeyConditionExpression: keyCondition,
-        ExpressionAttributeValues: expressionValues,
-        ScanIndexForward: opts.scanIndexForward ?? true,
-        Limit: opts.limit,
-      }),
-    );
-    return (res.Items as Record<string, unknown>[]) ?? [];
+  async putUserMeta(data: UserMetaItem): Promise<void> {
+    await this.userMetaModel.create(data, { overwrite: true });
   }
 
-  async queryGsi(
-    indexName: string,
-    gsi1pk: string,
-    opts: { scanIndexForward?: boolean; limit?: number } = {},
-  ): Promise<Record<string, unknown>[]> {
-    const res = await this.client.send(
-      new QueryCommand({
-        TableName: this.table,
-        IndexName: indexName,
-        KeyConditionExpression: 'gsi1pk = :pk',
-        ExpressionAttributeValues: { ':pk': gsi1pk },
-        ScanIndexForward: opts.scanIndexForward ?? false,
-        Limit: opts.limit,
-      }),
-    );
-    return (res.Items as Record<string, unknown>[]) ?? [];
+  // ── Session metadata ─────────────────────────────────────────────────────────
+
+  async getSessionMeta(sub: string, sessionId: string): Promise<SessionMetaItem | null> {
+    const item = await this.sessionMetaModel.get({
+      PK: this.userPk(sub),
+      SK: this.sessionSk(sessionId),
+    });
+    return item ? this.toPlain<SessionMetaItem>(item) : null;
   }
 
-  async update(
-    pk: string,
-    sk: string,
-    updates: Record<string, unknown>,
+  async putSessionMeta(data: SessionMetaItem): Promise<void> {
+    await this.sessionMetaModel.create(data, { overwrite: true });
+  }
+
+  async listSessionMeta(sub: string): Promise<SessionMetaItem[]> {
+    const items = await this.sessionMetaModel
+      .query('gsi1pk')
+      .eq(this.userPk(sub))
+      .using('gsi1')
+      .sort('descending')
+      .exec();
+    return this.toPlainArray<SessionMetaItem>(items);
+  }
+
+  async updateSessionMeta(
+    sub: string,
+    sessionId: string,
+    updates: Partial<Pick<SessionMetaItem, 'title' | 'nodeCount' | 'updatedAt' | 'gsi1sk'>>,
   ): Promise<void> {
-    const setExpressions: string[] = [];
-    const attrNames: Record<string, string> = {};
-    const attrValues: Record<string, unknown> = {};
-
-    for (const [key, value] of Object.entries(updates)) {
-      const nameAlias = `#${key}`;
-      const valueAlias = `:${key}`;
-      setExpressions.push(`${nameAlias} = ${valueAlias}`);
-      attrNames[nameAlias] = key;
-      attrValues[valueAlias] = value;
-    }
-
-    await this.client.send(
-      new UpdateCommand({
-        TableName: this.table,
-        Key: { PK: pk, SK: sk },
-        UpdateExpression: `SET ${setExpressions.join(', ')}`,
-        ExpressionAttributeNames: attrNames,
-        ExpressionAttributeValues: attrValues,
-      }),
+    await this.sessionMetaModel.update(
+      { PK: this.userPk(sub), SK: this.sessionSk(sessionId) },
+      updates,
     );
   }
 
-  async delete(pk: string, sk: string): Promise<void> {
-    await this.client.send(
-      new DeleteCommand({ TableName: this.table, Key: { PK: pk, SK: sk } }),
+  async deleteSessionMeta(sub: string, sessionId: string): Promise<void> {
+    await this.sessionMetaModel.delete({
+      PK: this.userPk(sub),
+      SK: this.sessionSk(sessionId),
+    });
+  }
+
+  // ── Nodes ────────────────────────────────────────────────────────────────────
+
+  async getNode(sessionId: string, nodeId: string): Promise<NodeItem | null> {
+    const item = await this.nodeModel.get({
+      PK: this.sessionPk(sessionId),
+      SK: this.nodeSk(nodeId),
+    });
+    return item ? this.toPlain<NodeItem>(item) : null;
+  }
+
+  async putNode(data: NodeItem): Promise<void> {
+    await this.nodeModel.create(data, { overwrite: true });
+  }
+
+  async queryNodes(sessionId: string): Promise<NodeItem[]> {
+    const items = await this.nodeModel
+      .query('PK')
+      .eq(this.sessionPk(sessionId))
+      .where('SK')
+      .beginsWith('NODE#')
+      .exec();
+    return this.toPlainArray<NodeItem>(items);
+  }
+
+  async updateNode(
+    sessionId: string,
+    nodeId: string,
+    updates: Partial<Pick<NodeItem, 'title'>>,
+  ): Promise<void> {
+    await this.nodeModel.update(
+      { PK: this.sessionPk(sessionId), SK: this.nodeSk(nodeId) },
+      updates,
     );
   }
 
-  async batchDelete(keys: Array<{ pk: string; sk: string }>): Promise<void> {
-    // DynamoDB batch write limit is 25 per call
-    const chunks = [];
-    for (let i = 0; i < keys.length; i += 25) {
-      chunks.push(keys.slice(i, i + 25));
-    }
+  async batchDeleteNodes(sessionId: string, nodeIds: string[]): Promise<void> {
+    if (!nodeIds.length) return;
+    const pk = this.sessionPk(sessionId);
+    const chunks = chunk(nodeIds, 25);
     await Promise.all(
-      chunks.map((chunk) =>
-        this.client.send(
-          new BatchWriteCommand({
-            RequestItems: {
-              [this.table]: chunk.map(({ pk, sk }) => ({
-                DeleteRequest: { Key: { PK: pk, SK: sk } },
-              })),
-            },
-          }),
-        ),
+      chunks.map((ids) =>
+        this.nodeModel.batchDelete(ids.map((id) => ({ PK: pk, SK: this.nodeSk(id) }))),
       ),
     );
   }
+
+  // ── Annotations ──────────────────────────────────────────────────────────────
+
+  async getAnnotation(sessionId: string, annId: string): Promise<AnnotationItem | null> {
+    const item = await this.annotationModel.get({
+      PK: this.sessionPk(sessionId),
+      SK: this.annSk(annId),
+    });
+    return item ? this.toPlain<AnnotationItem>(item) : null;
+  }
+
+  async putAnnotation(data: AnnotationItem): Promise<void> {
+    await this.annotationModel.create(data, { overwrite: true });
+  }
+
+  async queryAnnotations(sessionId: string): Promise<AnnotationItem[]> {
+    const items = await this.annotationModel
+      .query('PK')
+      .eq(this.sessionPk(sessionId))
+      .where('SK')
+      .beginsWith('ANN#')
+      .exec();
+    return this.toPlainArray<AnnotationItem>(items);
+  }
+
+  async deleteAnnotation(sessionId: string, annId: string): Promise<void> {
+    await this.annotationModel.delete({
+      PK: this.sessionPk(sessionId),
+      SK: this.annSk(annId),
+    });
+  }
+
+  async batchDeleteAnnotations(sessionId: string, annIds: string[]): Promise<void> {
+    if (!annIds.length) return;
+    const pk = this.sessionPk(sessionId);
+    const chunks = chunk(annIds, 25);
+    await Promise.all(
+      chunks.map((ids) =>
+        this.annotationModel.batchDelete(ids.map((id) => ({ PK: pk, SK: this.annSk(id) }))),
+      ),
+    );
+  }
+
+  // ── Highlights ───────────────────────────────────────────────────────────────
+
+  async getHighlight(sessionId: string, hlId: string): Promise<HighlightItem | null> {
+    const item = await this.highlightModel.get({
+      PK: this.sessionPk(sessionId),
+      SK: this.hlSk(hlId),
+    });
+    return item ? this.toPlain<HighlightItem>(item) : null;
+  }
+
+  async putHighlight(data: HighlightItem): Promise<void> {
+    await this.highlightModel.create(data, { overwrite: true });
+  }
+
+  async queryHighlights(sessionId: string): Promise<HighlightItem[]> {
+    const items = await this.highlightModel
+      .query('PK')
+      .eq(this.sessionPk(sessionId))
+      .where('SK')
+      .beginsWith('HL#')
+      .exec();
+    return this.toPlainArray<HighlightItem>(items);
+  }
+
+  async updateHighlight(
+    sessionId: string,
+    hlId: string,
+    updates: Partial<Pick<HighlightItem, 'bg' | 'fg'>>,
+  ): Promise<void> {
+    await this.highlightModel.update(
+      { PK: this.sessionPk(sessionId), SK: this.hlSk(hlId) },
+      updates,
+    );
+  }
+
+  async deleteHighlight(sessionId: string, hlId: string): Promise<void> {
+    await this.highlightModel.delete({
+      PK: this.sessionPk(sessionId),
+      SK: this.hlSk(hlId),
+    });
+  }
+
+  async batchDeleteHighlights(sessionId: string, hlIds: string[]): Promise<void> {
+    if (!hlIds.length) return;
+    const pk = this.sessionPk(sessionId);
+    const chunks = chunk(hlIds, 25);
+    await Promise.all(
+      chunks.map((ids) =>
+        this.highlightModel.batchDelete(ids.map((id) => ({ PK: pk, SK: this.hlSk(id) }))),
+      ),
+    );
+  }
+}
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
 }
