@@ -6,6 +6,18 @@ import { uid, short5, stripMarkdown, getRangeOffsets } from '@/lib/utils';
 
 const CSS_HL_SUPPORTED = typeof window !== 'undefined' && typeof CSS !== 'undefined' && 'highlights' in CSS;
 
+// One CSS named highlight per bg+fg combination so each color is independently styled
+const HL_BG = ['#fef08a', '#bbf7d0', '#bae6fd', '#fbcfe8', '#e5e5e5'];
+const HL_FG = [null, '#b91c1c', '#1d4ed8', '#047857'];
+
+function hlName(bg: string | null, fg: string | null | undefined): string {
+  const b = (bg ?? '#fef08a').replace('#', '');
+  const f = (fg ?? null)?.replace('#', '') ?? null;
+  return f ? `fork-hl-${b}-${f}` : `fork-hl-${b}`;
+}
+
+const ALL_HL_NAMES = HL_BG.flatMap(bg => HL_FG.map(fg => hlName(bg, fg)));
+
 function rangeFromOffsets(root: Element, start: number, end: number): Range | null {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
   let pos = 0;
@@ -502,14 +514,6 @@ export function App() {
           : sectionEl.querySelector('.section-body');
         const offsets = bodyEl ? getRangeOffsets(bodyEl, range) : null;
 
-        // Register temp highlight via CSS Highlight API so it survives Safari repaints
-        if (CSS_HL_SUPPORTED) {
-          const r = new Range();
-          r.setStart(range.startContainer, range.startOffset);
-          r.setEnd(range.endContainer, range.endOffset);
-          CSS.highlights.set('temp-hl', new Highlight(r));
-        }
-
         setHlMenu({
           rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height, bottom: rect.bottom },
           text,
@@ -524,35 +528,51 @@ export function App() {
     return () => document.removeEventListener('mouseup', onMouseUp);
   }, [activeId]);
 
-  // Clear temp highlight when the menu closes
+  // Single effect owns all named highlights so they are always re-registered together.
   useLayoutEffect(() => {
-    if (hlMenu) return;
-    if (CSS_HL_SUPPORTED) CSS.highlights.delete('temp-hl');
-  }, [hlMenu]);
+    if (!CSS_HL_SUPPORTED) return;
 
-  // App-level persistent highlight registration — rebuilds all ranges for the active node fresh
-  // on every persistentHl/activeId change, so cross-section highlights never go stale
-  useEffect(() => {
-    if (!CSS_HL_SUPPORTED || !activeId) {
-      if (CSS_HL_SUPPORTED) CSS.highlights.delete('persistent-hl');
-      return;
-    }
-    const hl = new Highlight();
-    const prefix = `${activeId}::`;
-    for (const [key, list] of Object.entries(persistentHl)) {
-      if (!key.startsWith(prefix)) continue;
-      const sectionId = key.slice(prefix.length);
-      const sectionEl = document.querySelector(`.section-body[data-section-id="${sectionId}"]`);
-      if (!sectionEl) continue;
-      for (const h of list) {
-        if (h.start == null || h.end == null) continue;
-        const range = rangeFromOffsets(sectionEl, h.start, h.end);
-        if (range) hl.add(range);
+    // Persistent highlights — one Highlight object per bg+fg color combination
+    const colorGroups = new Map<string, Highlight>();
+    if (activeId) {
+      const prefix = `${activeId}::`;
+      for (const [key, list] of Object.entries(persistentHl)) {
+        if (!key.startsWith(prefix)) continue;
+        const sectionId = key.slice(prefix.length);
+        const sectionEl = document.querySelector(`.section-body[data-section-id="${sectionId}"]`);
+        if (!sectionEl) continue;
+        for (const h of list) {
+          if (h.start == null || h.end == null) continue;
+          const r = rangeFromOffsets(sectionEl, h.start, h.end);
+          if (!r) continue;
+          const name = hlName(h.bg, h.fg);
+          if (!colorGroups.has(name)) colorGroups.set(name, new Highlight());
+          colorGroups.get(name)!.add(r);
+        }
       }
     }
-    CSS.highlights.set('persistent-hl', hl);
-    return () => { CSS.highlights.delete('persistent-hl'); };
-  }, [persistentHl, activeId]);
+    ALL_HL_NAMES.forEach(n => CSS.highlights.delete(n));
+    colorGroups.forEach((hl, name) => CSS.highlights.set(name, hl));
+
+    // temp-hl — current uncommitted selection
+    if (hlMenu && hlMenu.start < hlMenu.end) {
+      const sectionEl = document.querySelector(`.section-body[data-section-id="${hlMenu.sectionId}"]`);
+      if (sectionEl) {
+        const r = rangeFromOffsets(sectionEl, hlMenu.start, hlMenu.end);
+        if (r) CSS.highlights.set('temp-hl', new Highlight(r));
+        else CSS.highlights.delete('temp-hl');
+      } else {
+        CSS.highlights.delete('temp-hl');
+      }
+    } else {
+      CSS.highlights.delete('temp-hl');
+    }
+
+    return () => {
+      ALL_HL_NAMES.forEach(n => CSS.highlights.delete(n));
+      CSS.highlights.delete('temp-hl');
+    };
+  }, [persistentHl, activeId, hlMenu]);
 
   const handleHlAction = useCallback((action: string, payload?: { bg: string; fg: string | null }) => {
     if (!hlMenu) return;

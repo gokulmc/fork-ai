@@ -827,9 +827,26 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 [data-theme="dark"] .hl-color-pop { background: #2d2d2d; }
 .hl-color-row { display: flex; align-items: center; gap: 5px; }
 
-:root { --hl-persistent: #fef08a; }
-[data-theme="dark"] { --hl-persistent: #713f12; }
-::highlight(persistent-hl) { background-color: var(--hl-persistent); }
+::highlight(fork-hl-fef08a) { background-color: #fef08a; }
+::highlight(fork-hl-bbf7d0) { background-color: #bbf7d0; }
+::highlight(fork-hl-bae6fd) { background-color: #bae6fd; }
+::highlight(fork-hl-fbcfe8) { background-color: #fbcfe8; }
+::highlight(fork-hl-e5e5e5) { background-color: #e5e5e5; }
+::highlight(fork-hl-fef08a-b91c1c) { background-color: #fef08a; color: #b91c1c; }
+::highlight(fork-hl-fef08a-1d4ed8) { background-color: #fef08a; color: #1d4ed8; }
+::highlight(fork-hl-fef08a-047857) { background-color: #fef08a; color: #047857; }
+::highlight(fork-hl-bbf7d0-b91c1c) { background-color: #bbf7d0; color: #b91c1c; }
+::highlight(fork-hl-bbf7d0-1d4ed8) { background-color: #bbf7d0; color: #1d4ed8; }
+::highlight(fork-hl-bbf7d0-047857) { background-color: #bbf7d0; color: #047857; }
+::highlight(fork-hl-bae6fd-b91c1c) { background-color: #bae6fd; color: #b91c1c; }
+::highlight(fork-hl-bae6fd-1d4ed8) { background-color: #bae6fd; color: #1d4ed8; }
+::highlight(fork-hl-bae6fd-047857) { background-color: #bae6fd; color: #047857; }
+::highlight(fork-hl-fbcfe8-b91c1c) { background-color: #fbcfe8; color: #b91c1c; }
+::highlight(fork-hl-fbcfe8-1d4ed8) { background-color: #fbcfe8; color: #1d4ed8; }
+::highlight(fork-hl-fbcfe8-047857) { background-color: #fbcfe8; color: #047857; }
+::highlight(fork-hl-e5e5e5-b91c1c) { background-color: #e5e5e5; color: #b91c1c; }
+::highlight(fork-hl-e5e5e5-1d4ed8) { background-color: #e5e5e5; color: #1d4ed8; }
+::highlight(fork-hl-e5e5e5-047857) { background-color: #e5e5e5; color: #047857; }
 
 /* ============================================================
    Follow-up popup

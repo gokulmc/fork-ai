@@ -74,6 +74,8 @@ export const HighlightSchema = new dynamoose.Schema({
   nodeId: String,
   sectionId: String,
   text: String,
+  start: { type: Number, required: false },
+  end: { type: Number, required: false },
   bg: { type: String, required: false },
   fg: { type: String, required: false },
   createdAt: String,
