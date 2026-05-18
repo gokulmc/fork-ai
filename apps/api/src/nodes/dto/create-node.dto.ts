@@ -17,7 +17,7 @@ export class CreateNodeDto {
 
   @ApiProperty({ description: 'For DEEPER: the section heading. For ASK: the user question.' })
   @IsString()
-  @MinLength(2)
+  @MinLength(1)
   @MaxLength(500)
   query!: string;
 
