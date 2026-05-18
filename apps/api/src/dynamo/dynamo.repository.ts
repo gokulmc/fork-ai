@@ -43,6 +43,14 @@ export class DynamoRepository {
     return items.map((i) => this.toPlain<T>(i));
   }
 
+  // Dynamoose v4 rejects null for typed String/Number fields even when
+  // required: false. Strip nulls so DynamoDB stores absence instead.
+  private clean<T extends object>(obj: T): Partial<T> {
+    return Object.fromEntries(
+      Object.entries(obj).filter(([, v]) => v !== null && v !== undefined),
+    ) as Partial<T>;
+  }
+
   // ── User ────────────────────────────────────────────────────────────────────
 
   async getUserMeta(sub: string): Promise<UserMetaItem | null> {
@@ -51,7 +59,7 @@ export class DynamoRepository {
   }
 
   async putUserMeta(data: UserMetaItem): Promise<void> {
-    await this.userMetaModel.create(data, { overwrite: true });
+    await this.userMetaModel.create(this.clean(data), { overwrite: true });
   }
 
   // ── Session metadata ─────────────────────────────────────────────────────────
@@ -65,7 +73,7 @@ export class DynamoRepository {
   }
 
   async putSessionMeta(data: SessionMetaItem): Promise<void> {
-    await this.sessionMetaModel.create(data, { overwrite: true });
+    await this.sessionMetaModel.create(this.clean(data), { overwrite: true });
   }
 
   async listSessionMeta(sub: string): Promise<SessionMetaItem[]> {
@@ -107,7 +115,7 @@ export class DynamoRepository {
   }
 
   async putNode(data: NodeItem): Promise<void> {
-    await this.nodeModel.create(data, { overwrite: true });
+    await this.nodeModel.create(this.clean(data), { overwrite: true });
   }
 
   async queryNodes(sessionId: string): Promise<NodeItem[]> {
@@ -153,7 +161,7 @@ export class DynamoRepository {
   }
 
   async putAnnotation(data: AnnotationItem): Promise<void> {
-    await this.annotationModel.create(data, { overwrite: true });
+    await this.annotationModel.create(this.clean(data), { overwrite: true });
   }
 
   async queryAnnotations(sessionId: string): Promise<AnnotationItem[]> {
@@ -195,7 +203,7 @@ export class DynamoRepository {
   }
 
   async putHighlight(data: HighlightItem): Promise<void> {
-    await this.highlightModel.create(data, { overwrite: true });
+    await this.highlightModel.create(this.clean(data), { overwrite: true });
   }
 
   async queryHighlights(sessionId: string): Promise<HighlightItem[]> {
