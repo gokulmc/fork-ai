@@ -1,6 +1,6 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
-import { Sparkles, FileText, Lightbulb, Copy } from './Icons';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { Sparkles, FileText, Lightbulb, Copy, Highlighter } from './Icons';
 
 const HL_BG_COLORS = ['#fef08a', '#bbf7d0', '#bae6fd', '#fbcfe8', '#e5e5e5'];
 const HL_FG_COLORS = [
@@ -18,34 +18,38 @@ interface Rect {
   bottom: number;
 }
 
-type HlAction =
-  | 'ask'
-  | 'highlight'
-  | 'note'
-  | 'callout'
-  | 'copy';
+type HlAction = 'ask' | 'highlight' | 'note' | 'callout' | 'copy';
 
 interface HighlightMenuProps {
+  visible: boolean;
   rect: Rect;
   lastColors: { bg: string; fg: string | null };
   onAction: (action: HlAction, payload?: { bg: string; fg: string | null }) => void;
   onClose: () => void;
 }
 
-export function HighlightMenu({ rect, lastColors, onAction, onClose }: HighlightMenuProps) {
+// Estimated half-width for viewport clamping (avoids DOM reads that cause Safari selection loss)
+const HALF_W = 180;
+const MENU_H = 46;
+
+export function HighlightMenu({ visible, rect, lastColors, onAction, onClose }: HighlightMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState({ left: 0, top: 0 });
+  const [showColors, setShowColors] = useState(false);
+
+  const fg = lastColors.fg ?? null;
+  const bg = lastColors.bg ?? '#fef08a';
+
+  // Pure-math positioning: left = center of selection (CSS transform handles -50% offset)
+  const pos = useMemo(() => {
+    const cx = rect.left + rect.width / 2;
+    const left = Math.max(12 + HALF_W, Math.min((typeof window !== 'undefined' ? window.innerWidth : 1200) - 12 - HALF_W, cx));
+    const top = rect.top - MENU_H - 10 >= 12 ? rect.top - MENU_H - 10 : rect.bottom + 10;
+    return { left, top };
+  }, [rect.left, rect.top, rect.width, rect.height, rect.bottom]);
 
   useEffect(() => {
-    if (!ref.current) return;
-    const w = ref.current.offsetWidth;
-    const h = ref.current.offsetHeight;
-    let left = rect.left + rect.width / 2 - w / 2;
-    let top = rect.top - h - 10;
-    if (top < 12) top = rect.bottom + 10;
-    left = Math.max(12, Math.min(window.innerWidth - w - 12, left));
-    setPos({ left, top });
-  }, [rect.left, rect.top, rect.width, rect.height, rect.bottom]);
+    if (!visible) setShowColors(false);
+  }, [visible]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -53,14 +57,11 @@ export function HighlightMenu({ rect, lastColors, onAction, onClose }: Highlight
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const fg = lastColors.fg ?? null;
-  const bg = lastColors.bg ?? '#fef08a';
-
   return (
     <div
       ref={ref}
-      className="hl-menu"
-      style={{ left: pos.left, top: pos.top }}
+      className={`hl-menu${visible ? ' hl-menu--visible' : ''}`}
+      style={{ left: pos.left, top: pos.top, opacity: visible ? undefined : 0, pointerEvents: visible ? undefined : 'none' }}
       onMouseDown={e => e.preventDefault()}
     >
       <button className="primary" onClick={() => onAction('ask')} title="Ask a follow-up — creates a child node">
@@ -68,31 +69,54 @@ export function HighlightMenu({ rect, lastColors, onAction, onClose }: Highlight
         Ask AI
       </button>
       <span className="sep" />
-      <div className="hl-colors" title="Highlight color">
-        {HL_BG_COLORS.map(c => (
-          <button
-            key={c}
-            className={`hl-swatch${bg === c ? ' active' : ''}`}
-            style={{ background: c }}
-            onClick={() => onAction('highlight', { bg: c, fg })}
-            title={`Highlight · ${c}`}
-            aria-label={`Highlight background ${c}`}
-          />
-        ))}
+
+      {/* Highlight button with embedded color picker */}
+      <div className="hl-btn-wrap">
+        <button
+          className="hl-main-btn"
+          style={{ '--hl-color': bg } as React.CSSProperties}
+          onClick={() => onAction('highlight', { bg, fg })}
+          title="Highlight with current color"
+        >
+          <Highlighter size={13} />
+          <span className="hl-dot" style={{ background: bg }} />
+        </button>
+        <button
+          className="hl-expand-btn"
+          onClick={() => setShowColors(v => !v)}
+          title="Choose color"
+          aria-label="Choose highlight color"
+        >
+          <span className="hl-chevron" style={{ transform: showColors ? 'rotate(180deg)' : undefined }}>▾</span>
+        </button>
+        {showColors && (
+          <div className="hl-color-pop" onMouseDown={e => e.preventDefault()}>
+            <div className="hl-color-row">
+              {HL_BG_COLORS.map(c => (
+                <button
+                  key={c}
+                  className={`hl-swatch${bg === c ? ' active' : ''}`}
+                  style={{ background: c }}
+                  onClick={() => { onAction('highlight', { bg: c, fg }); setShowColors(false); }}
+                  title={`Highlight · ${c}`}
+                />
+              ))}
+            </div>
+            <div className="hl-color-row">
+              {HL_FG_COLORS.map((c, i) => (
+                <button
+                  key={i}
+                  className={`hl-fg-swatch${(fg ?? null) === c.value ? ' active' : ''}`}
+                  style={{ color: c.value ?? 'var(--ink)' }}
+                  onClick={() => { onAction('highlight', { bg, fg: c.value }); setShowColors(false); }}
+                  title={`Text · ${c.label}`}
+                >A</button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
-      <span className="sep" />
-      <div className="hl-fg-colors" title="Text color">
-        {HL_FG_COLORS.map((c, i) => (
-          <button
-            key={i}
-            className={`hl-fg-swatch${(fg ?? null) === c.value ? ' active' : ''}`}
-            style={{ color: c.value ?? 'var(--ink)' }}
-            onClick={() => onAction('highlight', { bg, fg: c.value })}
-            title={`Text · ${c.label}`}
-            aria-label={`Text color ${c.label}`}
-          >A</button>
-        ))}
-      </div>
+
       <span className="sep" />
       <button onClick={() => onAction('note')} title="Save to Notes">
         <FileText size={14} />

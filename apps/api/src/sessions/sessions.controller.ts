@@ -1,5 +1,6 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, HttpCode, HttpStatus, Res, Header } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiParam } from '@nestjs/swagger';
+import { Response } from 'express';
 import { CurrentUser } from '@/auth/current-user.decorator';
 import { CognitoUser } from '@/auth/jwt.strategy';
 import { SessionsService } from './sessions.service';
@@ -15,6 +16,26 @@ export class SessionsController {
   @ApiOperation({ summary: 'Create a session — fires LLM answerQuery and persists root node' })
   create(@CurrentUser() user: CognitoUser, @Body() dto: CreateSessionDto) {
     return this.sessionsService.create(user.sub, dto);
+  }
+
+  @Post('stream')
+  @Header('Content-Type', 'text/event-stream')
+  @Header('Cache-Control', 'no-cache')
+  @Header('Connection', 'keep-alive')
+  @ApiOperation({ summary: 'Create a session with streaming SSE — sections appear as LLM generates them' })
+  async createStream(
+    @CurrentUser() user: CognitoUser,
+    @Body() dto: CreateSessionDto,
+    @Res() res: Response,
+  ) {
+    const send = (data: object) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+    try {
+      await this.sessionsService.createStreaming(user.sub, dto, send);
+    } catch (err) {
+      send({ type: 'error', message: (err as Error).message });
+    } finally {
+      res.end();
+    }
   }
 
   @Get()

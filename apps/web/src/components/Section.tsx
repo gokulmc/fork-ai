@@ -3,6 +3,7 @@ import { useMemo, useEffect, useRef } from 'react';
 import { marked } from 'marked';
 import hljs from 'highlight.js';
 import type { Section as SectionData, ForkNode, Annotation } from '@/lib/types';
+import { wrapTextInElement } from '@/lib/utils';
 import { CornerDownRight, Branch, ChevronRight, Lightbulb, X } from './Icons';
 
 marked.use({ gfm: true, breaks: false });
@@ -20,10 +21,111 @@ function renderMd(src: string): string {
   }
 }
 
+function applyHighlightsToHtml(
+  html: string,
+  highlights: Array<{ text: string; bg: string | null; fg: string | null }>,
+): string {
+  if (!highlights.length) return html;
+  // Parse into a fresh DOM — no split text-node residue from prior renders
+  const doc = new DOMParser().parseFromString(`<div>${html}</div>`, 'text/html');
+  const container = doc.body.firstElementChild as Element;
+  // Apply longest highlights first so shorter substrings don't block larger matches
+  const sorted = [...highlights].sort((a, b) => b.text.length - a.text.length);
+  for (const hl of sorted) wrapTextInElement(container, hl);
+  return container.innerHTML;
+}
+
+function selectSentenceAtPoint(blockEl: Element, e: MouseEvent) {
+  const text = blockEl.textContent ?? '';
+  if (!text.trim()) return;
+
+  // Find where the user clicked within the flattened text
+  const caretRange =
+    (document.caretRangeFromPoint?.(e.clientX, e.clientY)) ??
+    (() => {
+      const pos = (document as Document & { caretPositionFromPoint?(x: number, y: number): { offsetNode: Node; offset: number } | null }).caretPositionFromPoint?.(e.clientX, e.clientY);
+      if (!pos) return null;
+      const r = document.createRange();
+      r.setStart(pos.offsetNode, pos.offset);
+      return r;
+    })();
+  if (!caretRange) return;
+
+  // Map clicked text-node offset → absolute offset in blockEl's text
+  const walker = document.createTreeWalker(blockEl, NodeFilter.SHOW_TEXT, null);
+  let abs = 0;
+  let clickedAbs = 0;
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    if (node === caretRange.startContainer) { clickedAbs = abs + caretRange.startOffset; break; }
+    abs += (node.nodeValue ?? '').length;
+  }
+
+  // Find sentence boundaries (end = ". " / "! " / "? " patterns)
+  let start = 0;
+  let end = text.length;
+  const bound = /[.!?]['"'’”]?\s+/g;
+  let m: RegExpExecArray | null;
+  while ((m = bound.exec(text)) !== null) {
+    const b = m.index + m[0].length;
+    if (b <= clickedAbs) start = b;
+    else { end = b - 1; break; }
+  }
+  // trim leading whitespace
+  while (start < end && /\s/.test(text[start])) start++;
+
+  // Build a range over [start, end] in the block's text nodes
+  const range = document.createRange();
+  let pos = 0;
+  let startSet = false;
+  const w2 = document.createTreeWalker(blockEl, NodeFilter.SHOW_TEXT, null);
+  while ((node = w2.nextNode())) {
+    const len = (node.nodeValue ?? '').length;
+    if (!startSet && pos + len > start) {
+      range.setStart(node, start - pos);
+      startSet = true;
+    }
+    if (startSet && pos + len >= end) {
+      range.setEnd(node, Math.min(end - pos, len));
+      break;
+    }
+    pos += len;
+  }
+  if (startSet) {
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  }
+}
+
+function handleBodyClick(e: React.MouseEvent<HTMLDivElement>) {
+  if (e.detail < 3) return;
+  e.preventDefault();
+
+  const target = e.target as Element;
+  const block =
+    target.closest?.('p, li, blockquote, td, th, h1, h2, h3, h4, pre') ??
+    (target.nodeType === 3 ? target.parentElement : target);
+  if (!block) return;
+
+  if (e.detail >= 4) {
+    // Select entire block element
+    const range = document.createRange();
+    range.selectNodeContents(block);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  } else {
+    // Triple-click → select sentence
+    selectSentenceAtPoint(block, e.nativeEvent);
+  }
+}
+
 interface SectionProps {
   idx: number;
   section: SectionData;
   node: ForkNode;
+  highlights: Array<{ text: string; bg: string | null; fg: string | null }>;
   onDeeper: (section: SectionData) => void;
   deeperLoading: boolean;
   sectionChildren: ForkNode[];
@@ -36,6 +138,7 @@ export function Section({
   idx,
   section,
   node: _node,
+  highlights,
   onDeeper,
   deeperLoading,
   sectionChildren,
@@ -45,7 +148,13 @@ export function Section({
 }: SectionProps) {
   const num = String(idx + 1).padStart(2, '0');
   const bodyRef = useRef<HTMLDivElement>(null);
-  const html = useMemo(() => renderMd(section.body), [section.body]);
+
+  const html = useMemo(
+    () => applyHighlightsToHtml(renderMd(section.body), highlights),
+    // highlights is a stable reference from persistentHl state — only changes when user highlights
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [section.body, highlights],
+  );
 
   useEffect(() => {
     if (!bodyRef.current) return;
@@ -87,6 +196,7 @@ export function Section({
         data-section-id={section.id}
         data-section-heading={section.heading}
         ref={bodyRef}
+        onClick={handleBodyClick}
         dangerouslySetInnerHTML={{ __html: html }}
       />
       {calloutsForSection.length > 0 && (

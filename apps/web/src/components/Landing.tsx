@@ -1,7 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { Search, ArrowRight } from './Icons';
-import type { SessionSummary } from '@/lib/api';
+import { Search, ArrowRight, Clock } from './Icons';
 
 const EXAMPLES = [
   'How do neural networks actually learn?',
@@ -13,12 +12,10 @@ const EXAMPLES = [
 interface LandingProps {
   onSubmit: (query: string) => void;
   loading: boolean;
-  sessions?: SessionSummary[];
-  loadingSessions?: boolean;
-  onLoadSession?: (sessionId: string) => void;
+  onShowHistory: () => void;
 }
 
-export function Landing({ onSubmit, loading, sessions, loadingSessions, onLoadSession }: LandingProps) {
+export function Landing({ onSubmit, loading, onShowHistory }: LandingProps) {
   const [q, setQ] = useState('');
   const [leaving, setLeaving] = useState(false);
 
@@ -28,10 +25,14 @@ export function Landing({ onSubmit, loading, sessions, loadingSessions, onLoadSe
     setTimeout(() => onSubmit(q.trim()), 280);
   };
 
-  const hasSessions = sessions && sessions.length > 0;
-
   return (
     <div className={`landing${leaving ? ' leaving' : ''}`}>
+      <nav className="landing-nav">
+        <button className="icon-btn" onClick={onShowHistory}>
+          <Clock size={14} /> History
+        </button>
+      </nav>
+
       <div className="landing-inner">
         <div className="landing-mark">A branching research workspace</div>
         <h1>Ask once. <em>Branch</em> forever.</h1>
@@ -62,36 +63,6 @@ export function Landing({ onSubmit, loading, sessions, loadingSessions, onLoadSe
             <button key={ex} className="chip" onClick={() => setQ(ex)}>{ex}</button>
           ))}
         </div>
-
-        {(loadingSessions || hasSessions) && (
-          <div className="past-sessions">
-            <div className="sessions-label">Recent research</div>
-            {loadingSessions ? (
-              <div style={{ textAlign: 'center', padding: '24px 0' }}>
-                <span className="spinner" style={{ width: 18, height: 18 }} />
-              </div>
-            ) : (
-              <div className="sessions-grid">
-                {sessions?.map(s => (
-                  <button
-                    key={s.sessionId}
-                    className="session-card"
-                    onClick={() => onLoadSession?.(s.sessionId)}
-                  >
-                    <span className="session-card-emoji">{s.emoji}</span>
-                    <div>
-                      <div className="session-card-title">{s.title}</div>
-                      <div className="session-card-lede">{s.lede}</div>
-                      <div className="session-card-meta">
-                        {s.nodeCount} node{s.nodeCount !== 1 ? 's' : ''}
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
       </div>
       <div className="landing-foot">FORK.AI · V0.1 · BRANCHING RESEARCH, BY YOU</div>
     </div>

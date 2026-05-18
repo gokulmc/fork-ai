@@ -48,3 +48,6 @@ export const Quote = make(<><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4
 export const Hash = make(<><line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/></>);
 export const Maximize = make(<><path d="M3 9V5a2 2 0 0 1 2-2h4"/><path d="M21 9V5a2 2 0 0 0-2-2h-4"/><path d="M3 15v4a2 2 0 0 0 2 2h4"/><path d="M21 15v4a2 2 0 0 1-2 2h-4"/></>);
 export const PageIcon = make(<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></>);
+export const Clock = make(<><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>);
+export const ArrowLeft = make(<><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></>);
+export const Highlighter = make(<><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></>);

@@ -32,6 +32,70 @@ export class SessionsService {
   private userPk(sub: string) { return `USER#${sub}`; }
   private sessionSk(sessionId: string) { return `SESSION#${sessionId}`; }
 
+  async createStreaming(
+    sub: string,
+    dto: CreateSessionDto,
+    send: (data: object) => void,
+  ): Promise<void> {
+    const sessionId = ulid();
+    const nodeId = ulid();
+    const now = new Date().toISOString();
+
+    let title = '';
+    let emoji = '';
+    let lede = '';
+    const sections: Array<{ id: string; heading: string; body: string }> = [];
+
+    for await (const event of this.llm.streamAnswerQuery(dto.query, dto.sectionCount ?? 5)) {
+      if (event.type === 'meta') {
+        title = event.title;
+        emoji = event.emoji;
+        lede = event.lede;
+        send({ type: 'meta', title, emoji, lede });
+      } else if (event.type === 'section') {
+        const section = { id: ulid(), heading: event.heading, body: event.body };
+        sections.push(section);
+        send({ type: 'section', ...section });
+      } else if (event.type === 'done') {
+        // Persist to DynamoDB now that all sections are collected
+        const rootNode: Record<string, unknown> = {
+          PK: this.sessionPk(sessionId),
+          SK: `NODE#${nodeId}`,
+          nodeId,
+          parentId: null,
+          kind: 'QUERY',
+          title,
+          emoji,
+          query: dto.query,
+          lede,
+          sections,
+          fromSection: null,
+          fromText: null,
+          highlights: {},
+          createdAt: now,
+        };
+
+        const sessionMeta: Record<string, unknown> = {
+          PK: this.userPk(sub),
+          SK: this.sessionSk(sessionId),
+          sessionId,
+          title,
+          emoji,
+          lede,
+          rootNodeId: nodeId,
+          nodeCount: 1,
+          createdAt: now,
+          updatedAt: now,
+          gsi1pk: this.userPk(sub),
+          gsi1sk: `UPDATED#${now}`,
+        };
+
+        await Promise.all([this.db.put(rootNode), this.db.put(sessionMeta)]);
+        send({ type: 'done', sessionId, nodeId });
+      }
+    }
+  }
+
   async create(sub: string, dto: CreateSessionDto): Promise<FullSession> {
     const sessionId = ulid();
     const nodeId = ulid();

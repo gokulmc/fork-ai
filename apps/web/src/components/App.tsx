@@ -1,13 +1,13 @@
 'use client';
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import type { ForkNode, Annotation, HlMenuState, FollowUpState, ContextMenuState } from '@/lib/types';
-import { uid, short5, stripMarkdown, wrapTextInElement } from '@/lib/utils';
+import { uid, short5, stripMarkdown } from '@/lib/utils';
 import { useTweaks } from '@/hooks/useTweaks';
 import {
   listSessions,
-  createSession,
   getSession,
+  createSessionStream,
   createNode,
   renameNode as apiRenameNode,
   deleteNode as apiDeleteNode,
@@ -26,10 +26,11 @@ import { HighlightMenu } from './HighlightMenu';
 import { FollowUpPop } from './FollowUpPop';
 import { NotesDrawer } from './NotesDrawer';
 import { Landing } from './Landing';
+import { HistoryPage } from './HistoryPage';
 import { TweaksPanel } from './TweaksPanel';
 import {
   Search, Bookmark, ChevronRight, PageIcon, Sparkles, CornerDownRight, Hash,
-  Quote, AlertCircle, ArrowUpRight, Pencil, Trash,
+  Quote, AlertCircle, ArrowUpRight, Pencil, Trash, Clock,
 } from './Icons';
 
 const TWEAK_DEFAULTS = {
@@ -48,6 +49,48 @@ const FONT_PAIRS: Record<string, { serif: string; sans: string; label: string }>
 
 const ACCENTS = ['#525252', '#888888', '#2383e2', '#7a8c5a', '#b4683b'];
 const FONT_PAIR_OPTIONS = Object.entries(FONT_PAIRS).map(([v, p]) => ({ value: v, label: p.label }));
+// Stable empty array — prevents Section useMemo from recomputing (and innerHTML from resetting)
+// when App re-renders for unrelated reasons (e.g. hlMenu open/close), which would clear selection.
+const EMPTY_HLS: never[] = [];
+
+function ResearchingScreen({ sessions }: { sessions: SessionSummary[] }) {
+  const [idx, setIdx] = useState(0);
+  const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+    if (sessions.length < 2) return;
+    const timer = setInterval(() => {
+      setVisible(false);
+      setTimeout(() => {
+        setIdx(i => (i + 1) % sessions.length);
+        setVisible(true);
+      }, 350);
+    }, 2800);
+    return () => clearInterval(timer);
+  }, [sessions.length]);
+
+  const s = sessions[idx];
+
+  return (
+    <div className="auth-screen">
+      <div className="researching-wrap">
+        <div className="researching-spinner">
+          <span className="spinner-lg" />
+          <span className="researching-label">Thinking…</span>
+        </div>
+        {s && (
+          <div className={`researching-card${visible ? ' visible' : ''}`}>
+            <span className="session-card-emoji">{s.emoji}</span>
+            <div className="session-card-body">
+              <div className="session-card-title">{s.title}</div>
+              <div className="session-card-lede">{s.lede}</div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function App() {
   const { data: authSession, status } = useSession();
@@ -55,8 +98,9 @@ export function App() {
   const idToken = authSession?.idToken ?? 'dev-bypass';
 
   const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
+  const [view, setView] = useState<'landing' | 'history'>('landing');
 
-  // Session list (shown on landing)
+  // Session list (shown on history page)
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
 
@@ -65,7 +109,10 @@ export function App() {
   const [nodes, setNodes] = useState<Record<string, ForkNode>>({});
   const [rootId, setRootId] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [loadingRoot, setLoadingRoot] = useState(false);
+  // Start in loading state if URL hash has a session ID — prevents landing flash on refresh
+  const [loadingRoot, setLoadingRoot] = useState(() =>
+    typeof window !== 'undefined' ? !!window.location.hash.slice(1) : false
+  );
   const [loadingNodes, setLoadingNodes] = useState<Set<string>>(new Set());
   const [sectionLoading, setSectionLoading] = useState<string | null>(null);
 
@@ -111,7 +158,7 @@ export function App() {
 
   // ── Rehydrate a session from the API ─────────────────────────────────────
 
-  const loadSession = useCallback(async (sid: string) => {
+  const loadSession = useCallback(async (sid: string, targetNodeId?: string) => {
     setLoadingRoot(true);
     try {
       const session = await getSession(idToken, sid);
@@ -119,10 +166,11 @@ export function App() {
       const nodeMap: Record<string, ForkNode> = {};
       for (const n of forkNodes) nodeMap[n.id] = n;
       const root = forkNodes.find(n => n.parentId === null);
+      const activeTarget = (targetNodeId && nodeMap[targetNodeId]) ? targetNodeId : (root?.id ?? null);
       setSessionId(session.sessionId);
       setNodes(nodeMap);
       setRootId(root?.id ?? null);
-      setActiveId(root?.id ?? null);
+      setActiveId(activeTarget);
       setAnnotations(session.annotations.map(toAnnotation));
       setPersistentHl(toHlMap(session.highlights));
     } catch (err) {
@@ -131,6 +179,29 @@ export function App() {
       setLoadingRoot(false);
     }
   }, [idToken]);
+
+  // ── Persist active session to localStorage (survive refresh) ─────────────
+
+  useEffect(() => {
+    if (sessionId) {
+      localStorage.setItem('fork.ai.session', sessionId);
+      if (activeId) localStorage.setItem('fork.ai.node', activeId);
+    } else {
+      localStorage.removeItem('fork.ai.session');
+      localStorage.removeItem('fork.ai.node');
+    }
+  }, [sessionId, activeId]);
+
+  // Restore on first load — only if nothing is already loading
+  const hasRestoredRef = useRef(false);
+  useEffect(() => {
+    if (hasRestoredRef.current) return;
+    const savedSession = localStorage.getItem('fork.ai.session');
+    const savedNode = localStorage.getItem('fork.ai.node') ?? undefined;
+    if (!savedSession) return;
+    hasRestoredRef.current = true;
+    loadSession(savedSession, savedNode);
+  }, [loadSession]);
 
   // ── Persist highlights (optimistic + background API sync) ─────────────────
 
@@ -149,27 +220,99 @@ export function App() {
     [sessionId, idToken],
   );
 
-  // ── Start a new root research session ────────────────────────────────────
+  // ── Start a new root research session (streaming) ────────────────────────
 
   const submitRootQuery = useCallback(async (query: string) => {
+    const tempId = uid();
+    const optimisticNode: ForkNode = {
+      id: tempId,
+      parentId: null,
+      kind: 'QUERY',
+      title: '',
+      emoji: null,
+      query,
+      lede: '',
+      sections: [],
+      fromSection: null,
+      fromText: null,
+      createdAt: Date.now(),
+      loading: true,
+    };
+
+    // Show workspace immediately with optimistic node
+    setNodes({ [tempId]: optimisticNode });
+    setRootId(tempId);
+    setActiveId(tempId);
+    setSessionId(null);
+    setAnnotations([]);
+    setPersistentHl({});
     setLoadingRoot(true);
+
     try {
-      const session = await createSession(idToken, query, 5);
-      const forkNodes = session.nodes.map(toForkNode);
-      const nodeMap: Record<string, ForkNode> = {};
-      for (const n of forkNodes) nodeMap[n.id] = n;
-      const root = forkNodes.find(n => n.parentId === null);
-      setSessionId(session.sessionId);
-      setNodes(nodeMap);
-      setRootId(root?.id ?? null);
-      setActiveId(root?.id ?? null);
-      setAnnotations(session.annotations.map(toAnnotation));
-      setPersistentHl(toHlMap(session.highlights));
-      setSessions(prev => [session, ...prev.filter(s => s.sessionId !== session.sessionId)]);
+      let realNodeId = tempId;
+
+      await createSessionStream(idToken, query, 5, (event) => {
+        if (event.type === 'meta') {
+          setNodes(prev => {
+            const node = prev[tempId];
+            if (!node) return prev;
+            return { ...prev, [tempId]: { ...node, title: event.title, emoji: event.emoji, lede: event.lede } };
+          });
+        } else if (event.type === 'section') {
+          setNodes(prev => {
+            const node = prev[tempId];
+            if (!node) return prev;
+            return { ...prev, [tempId]: { ...node, sections: [...node.sections, { id: event.id, heading: event.heading, body: event.body }] } };
+          });
+        } else if (event.type === 'done') {
+          realNodeId = event.nodeId;
+          setSessionId(event.sessionId);
+          // Swap temp ID for the real node ID
+          setNodes(prev => {
+            const node = prev[tempId];
+            if (!node) return prev;
+            const realNode: ForkNode = { ...node, id: realNodeId, loading: false };
+            const next: Record<string, ForkNode> = {};
+            for (const [k, v] of Object.entries(prev)) {
+              next[k === tempId ? realNodeId : k] = k === tempId ? realNode : v;
+            }
+            return next;
+          });
+          setRootId(realNodeId);
+          setActiveId(realNodeId);
+          // Add to session list
+          setNodes(prev => {
+            const node = prev[realNodeId];
+            if (!node) return prev;
+            setSessions(s => [{
+              sessionId: event.sessionId,
+              title: node.title,
+              emoji: node.emoji ?? '',
+              lede: node.lede,
+              createdAt: new Date(node.createdAt).toISOString(),
+              updatedAt: new Date(node.createdAt).toISOString(),
+              nodeCount: 1,
+            }, ...s]);
+            return prev;
+          });
+        }
+      });
     } catch (err) {
       console.error('Failed to create session', err);
+      // Clear the failed optimistic node
+      setNodes({});
+      setRootId(null);
+      setActiveId(null);
     } finally {
       setLoadingRoot(false);
+      // Ensure loading flag is cleared on the node
+      setNodes(prev => {
+        const entries = Object.entries(prev);
+        if (!entries.some(([, v]) => v.loading)) return prev;
+        const next: Record<string, ForkNode> = {};
+        for (const [k, v] of entries) next[k] = v.loading ? { ...v, loading: false } : v;
+        return next;
+      });
     }
   }, [idToken]);
 
@@ -271,16 +414,14 @@ export function App() {
         next[realNode.id] = realNode;
         return next;
       });
-      setActiveId(realNode.id);
+      // Stay on current node — user navigates via mind map chip
       persistHighlight(source.nodeId, source.sectionId, source.text, lastHlColors.bg, lastHlColors.fg);
     } catch (err) {
       console.error('Failed to ask from highlight', err);
       setNodes(prev => ({ ...prev, [tempId]: { ...prev[tempId], loading: false, error: 'Failed to load. Try again.' } }));
-      setActiveId(tempId);
     } finally {
       setLoadingNodes(prev => { const n = new Set(prev); n.delete(tempId); return n; });
       setFollowUp(null);
-      scrollWsTop();
     }
   }, [nodes, sessionId, idToken, lastHlColors, scrollWsTop, persistHighlight]);
 
@@ -303,6 +444,13 @@ export function App() {
         const rect = range.getBoundingClientRect();
         if (rect.width === 0 && rect.height === 0) { setHlMenu(null); return; }
         const sectionId = sectionEl.getAttribute('data-section-id')!;
+        // Wrap the selection in a .temp-hl span directly in the DOM so the visual
+        // persists even after Safari clears the native selection on any repaint.
+        try {
+          const span = document.createElement('span');
+          span.className = 'temp-hl';
+          range.surroundContents(span);
+        } catch { /* range spans element boundaries — skip visual, menu still works */ }
         setHlMenu({
           rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height, bottom: rect.bottom },
           text,
@@ -314,6 +462,19 @@ export function App() {
     document.addEventListener('mouseup', onMouseUp);
     return () => document.removeEventListener('mouseup', onMouseUp);
   }, [activeId]);
+
+  // Clean up .temp-hl spans when the menu closes (if a real highlight was applied,
+  // Section's innerHTML was already reset by dangerouslySetInnerHTML, so this is a no-op).
+  useLayoutEffect(() => {
+    if (hlMenu) return;
+    document.querySelectorAll('.temp-hl').forEach(span => {
+      const parent = span.parentNode;
+      if (!parent) return;
+      while (span.firstChild) parent.insertBefore(span.firstChild, span);
+      parent.removeChild(span);
+      parent.normalize();
+    });
+  }, [hlMenu]);
 
   const handleHlAction = useCallback((action: string, payload?: { bg: string; fg: string | null }) => {
     if (!hlMenu) return;
@@ -475,25 +636,8 @@ export function App() {
     return m;
   }, [nodes, activeId]);
 
-  // ── Persistent highlights DOM application ─────────────────────────────────
-
-  useEffect(() => {
-    if (!active) return;
-    const root = wsRef.current;
-    if (!root) return;
-    root.querySelectorAll('.persistent-hl').forEach(el => {
-      const parent = el.parentNode!;
-      while (el.firstChild) parent.insertBefore(el.firstChild, el);
-      parent.removeChild(el);
-    });
-    root.querySelectorAll('.section-body[data-section-id]').forEach(body => {
-      const sid = (body as HTMLElement).getAttribute('data-section-id')!;
-      const key = `${activeId}::${sid}`;
-      const hls = persistentHl[key];
-      if (!hls?.length) return;
-      hls.forEach(item => wrapTextInElement(body as Element, item));
-    });
-  }, [active, persistentHl, activeId]);
+  // Highlights are now baked into Section's HTML by Section.tsx (DOMParser approach).
+  // No manual DOM manipulation needed here.
 
   // ── Auth loading ──────────────────────────────────────────────────────────
 
@@ -505,24 +649,28 @@ export function App() {
     );
   }
 
-  // ── Landing / sessions dashboard ──────────────────────────────────────────
+  // ── Landing / history / loading ───────────────────────────────────────────
 
   if (!rootId) {
     if (loadingRoot) {
+      return <ResearchingScreen sessions={sessions} />;
+    }
+    if (view === 'history') {
       return (
-        <div className="auth-screen">
-          <span className="spinner-lg" />
-          <p style={{ marginTop: 16, opacity: 0.5, fontSize: 14 }}>Thinking…</p>
-        </div>
+        <HistoryPage
+          sessions={sessions}
+          loading={loadingSessions}
+          onLoadSession={loadSession}
+          onBack={() => setView('landing')}
+          onNewSearch={() => setView('landing')}
+        />
       );
     }
     return (
       <Landing
         onSubmit={submitRootQuery}
         loading={loadingRoot}
-        sessions={sessions}
-        loadingSessions={loadingSessions}
-        onLoadSession={loadSession}
+        onShowHistory={() => setView('history')}
       />
     );
   }
@@ -532,7 +680,12 @@ export function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <div className="brand">
+        <div
+          className="brand"
+          style={{ cursor: 'pointer' }}
+          onClick={() => { setRootId(null); setNodes({}); setSessionId(null); setActiveId(null); setView('landing'); }}
+          title="Go to home"
+        >
           <span className="mark">F</span> fork.ai
         </div>
         <div className="divider" />
@@ -556,6 +709,9 @@ export function App() {
         <div className="tools">
           <button className="icon-btn" onClick={startNewSession} title="New search">
             <Search size={14} /> New
+          </button>
+          <button className="icon-btn" onClick={() => { setView('history'); setRootId(null); setNodes({}); setSessionId(null); }} title="Research history">
+            <Clock size={14} /> History
           </button>
           <button className="icon-btn has-badge" onClick={() => setDrawerOpen(true)} title="Notes & Callouts">
             <Bookmark size={14} /> Notes
@@ -599,7 +755,12 @@ export function App() {
                   </span>
                 )}
               </div>
-              <h1 className="ws-title">{active.query}</h1>
+              <div className="ws-title-row">
+                <h1 className="ws-title">{active.title || active.query}</h1>
+                {active.title && active.title !== active.query && (
+                  <span className="ws-query-label">{active.query}</span>
+                )}
+              </div>
               {active.lede && <p className="ws-lede">{active.lede}</p>}
               {active.fromText && (
                 <div className="inline-callout" style={{ marginBottom: 24 }}>
@@ -626,6 +787,7 @@ export function App() {
                   idx={i}
                   section={s}
                   node={active}
+                  highlights={persistentHl[`${activeId}::${s.id}`] ?? EMPTY_HLS}
                   onDeeper={sec => expandSectionAsChild(active.id, sec)}
                   deeperLoading={sectionLoading === s.id}
                   sectionChildren={childrenBySection[s.id] ?? []}
@@ -639,14 +801,13 @@ export function App() {
         </div>
       </section>
 
-      {hlMenu && (
-        <HighlightMenu
-          rect={hlMenu.rect}
-          lastColors={lastHlColors}
-          onAction={(action, payload) => handleHlAction(action, payload)}
-          onClose={() => setHlMenu(null)}
-        />
-      )}
+      <HighlightMenu
+        visible={!!hlMenu}
+        rect={hlMenu?.rect ?? { left: 0, top: 0, width: 0, height: 0, bottom: 0 }}
+        lastColors={lastHlColors}
+        onAction={(action, payload) => handleHlAction(action, payload)}
+        onClose={() => setHlMenu(null)}
+      />
       {followUp && (
         <FollowUpPop
           rect={followUp.rect}

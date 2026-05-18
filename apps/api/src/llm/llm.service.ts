@@ -1,7 +1,53 @@
 import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
-import { LlmResponse } from './llm.types';
+import { LlmResponse, LlmSection } from './llm.types';
+
+export type StreamEvent =
+  | { type: 'meta'; title: string; emoji: string; lede: string }
+  | { type: 'section'; heading: string; body: string }
+  | { type: 'done' };
+
+function extractMeta(text: string): { title: string; emoji: string; lede: string } | null {
+  const title = text.match(/"title"\s*:\s*"((?:[^"\\]|\\.)*)"/)?.[1];
+  const emoji = text.match(/"emoji"\s*:\s*"((?:[^"\\]|\\.)*)"/)?.[1];
+  const lede  = text.match(/"lede"\s*:\s*"((?:[^"\\]|\\.)*)"/)?.[1];
+  if (!title || !emoji || !lede) return null;
+  return {
+    title: title.replace(/\\"/g, '"'),
+    emoji,
+    lede: lede.replace(/\\"/g, '"'),
+  };
+}
+
+function extractCompletedSections(text: string): LlmSection[] {
+  const match = text.match(/"sections"\s*:\s*\[/);
+  if (!match) return [];
+  const rest = text.slice(match.index! + match[0].length);
+  const sections: LlmSection[] = [];
+  let pos = 0;
+  while (pos < rest.length) {
+    while (pos < rest.length && /[\s,]/.test(rest[pos])) pos++;
+    if (rest[pos] !== '{') break;
+    let depth = 0, inStr = false, esc = false, end = pos;
+    for (let i = pos; i < rest.length; i++) {
+      const c = rest[i];
+      if (esc)          { esc = false; continue; }
+      if (c === '\\' && inStr) { esc = true; continue; }
+      if (c === '"')    { inStr = !inStr; continue; }
+      if (inStr)        continue;
+      if (c === '{')    depth++;
+      if (c === '}')    { depth--; if (depth === 0) { end = i; break; } }
+    }
+    if (depth !== 0) break;
+    try {
+      const obj = JSON.parse(rest.slice(pos, end + 1)) as LlmSection;
+      sections.push(obj);
+      pos = end + 1;
+    } catch { break; }
+  }
+  return sections;
+}
 
 const SECTIONS_SCHEMA = `Return ONLY valid JSON, no prose, no markdown fences. Shape:
 {
@@ -22,6 +68,58 @@ export class LlmService {
     this.client = new Anthropic({ apiKey: cfg.get<string>('anthropic.apiKey') });
   }
 
+  async *streamAnswerQuery(query: string, sectionCount = 5): AsyncGenerator<StreamEvent> {
+    const prompt = `You are a research assistant. Answer this query as a structured study note with ${sectionCount} sections.
+
+Query: "${query}"
+
+${SECTIONS_SCHEMA}
+
+Each section "body" should be 80-180 words. You MAY use GitHub-flavored markdown when it strengthens the explanation: paragraphs, **bold**, *italic*, \`inline code\`, fenced code blocks, tables, ordered/unordered lists, and > blockquotes. Use prose by default. Escape any double-quotes inside JSON strings.`;
+
+    let accumulated = '';
+    let metaEmitted = false;
+    let emittedCount = 0;
+
+    const stream = this.client.messages.stream({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 2048,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    for await (const chunk of stream) {
+      if (chunk.type !== 'content_block_delta') continue;
+      const delta = chunk.delta as { type: string; text?: string };
+      if (delta.type !== 'text_delta' || !delta.text) continue;
+      accumulated += delta.text;
+
+      if (!metaEmitted) {
+        const meta = extractMeta(accumulated);
+        if (meta) { metaEmitted = true; yield { type: 'meta', ...meta }; }
+      }
+
+      const sections = extractCompletedSections(accumulated);
+      while (emittedCount < sections.length) {
+        yield { type: 'section', ...sections[emittedCount++] };
+      }
+    }
+
+    // Fallback: parse full response and emit any sections not yet streamed
+    try {
+      const full = this.parseJson(accumulated);
+      while (emittedCount < full.sections.length) {
+        yield { type: 'section', ...full.sections[emittedCount++] };
+      }
+      if (!metaEmitted) {
+        yield { type: 'meta', title: full.title, emoji: full.emoji, lede: full.lede };
+      }
+    } catch (err) {
+      this.logger.warn(`Stream fallback parse failed: ${(err as Error).message}`);
+    }
+
+    yield { type: 'done' };
+  }
+
   async answerQuery(query: string, sectionCount = 5): Promise<LlmResponse> {
     const prompt = `You are a research assistant. Answer this query as a structured study note with ${sectionCount} sections.
 
@@ -35,32 +133,43 @@ Each section "body" should be 80-180 words. You MAY use GitHub-flavored markdown
   }
 
   async expandSection(
-    rootQuery: string,
+    ancestors: Array<{ title: string; query: string }>,
     sectionHeading: string,
     sectionBody: string,
   ): Promise<LlmResponse> {
-    const prompt = `Continue research. The parent topic was: "${rootQuery}".
-We want to go DEEPER on the section titled "${sectionHeading}".
+    const trail = ancestors
+      .map((a, i) => `${ i === 0 ? 'Root query' : 'Sub-topic'}: "${a.query}" → "${a.title}"`)
+      .join('\n');
+    const prompt = `You are continuing a branching research session. Research trail (root → current):
+${trail}
 
-Produce a focused deep-dive with 3-4 sections, each 80-180 words.
+Go DEEPER on the section titled "${sectionHeading}" within this context.
+Section content for reference: "${sectionBody.slice(0, 400)}"
+
+Produce a focused deep-dive with 3-4 sections, each 80-180 words. Stay relevant to the full research trail.
 
 ${SECTIONS_SCHEMA}
 
-You MAY use GitHub-flavored markdown when it helps. The "title" should be a 5-word-max phrase capturing the deep dive. Escape double-quotes inside JSON strings.`;
+You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase capturing the deep dive. Escape double-quotes inside JSON strings.`;
 
     return this.callJson(prompt);
   }
 
   async followUpFromHighlight(
-    rootQuery: string,
+    ancestors: Array<{ title: string; query: string }>,
     highlight: string,
     question: string,
   ): Promise<LlmResponse> {
-    const prompt = `Continue research. The parent topic was: "${rootQuery}".
+    const trail = ancestors
+      .map((a, i) => `${i === 0 ? 'Root query' : 'Sub-topic'}: "${a.query}" → "${a.title}"`)
+      .join('\n');
+    const prompt = `You are continuing a branching research session. Research trail (root → current):
+${trail}
+
 The user highlighted this passage: "${highlight.slice(0, 800)}"
 They asked: "${question}"
 
-Answer with 3-4 sections, each 80-180 words.
+Answer with 3-4 sections, each 80-180 words. Keep the answer grounded in the research trail context.
 
 ${SECTIONS_SCHEMA}
 

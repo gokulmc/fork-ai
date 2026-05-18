@@ -22,32 +22,35 @@ export class NodesService {
     sessionId: string,
     dto: CreateNodeDto,
   ): Promise<Record<string, unknown>> {
-    // Verify session ownership
-    await this.sessions.getSession(sub, sessionId);
+    // Load all session nodes in one query — needed for ancestor chain
+    const session = await this.sessions.getSession(sub, sessionId);
+    const allNodes = session.nodes as Record<string, unknown>[];
+    const nodeById = new Map(allNodes.map(n => [n['nodeId'] as string, n]));
 
-    // Load parent node to get its root query (needed for LLM context)
-    const parent = await this.db.get(this.sessionPk(sessionId), this.nodeSk(dto.parentNodeId));
+    const parent = nodeById.get(dto.parentNodeId);
     if (!parent) throw new NotFoundException(`Parent node ${dto.parentNodeId} not found`);
+
+    // Walk up to root to build context trail (root first)
+    const ancestors: Array<{ title: string; query: string }> = [];
+    let cur: string | null = dto.parentNodeId;
+    while (cur) {
+      const n = nodeById.get(cur);
+      if (!n) break;
+      ancestors.unshift({ title: n['title'] as string, query: n['query'] as string });
+      cur = (n['parentId'] as string | null);
+    }
 
     let llmResult;
     let fromText: string;
 
     if (dto.kind === 'DEEPER') {
       if (!dto.sectionBody) throw new BadRequestException('sectionBody required for DEEPER nodes');
-      llmResult = await this.llm.expandSection(
-        parent['query'] as string,
-        dto.query,
-        dto.sectionBody,
-      );
+      llmResult = await this.llm.expandSection(ancestors, dto.query, dto.sectionBody);
       fromText = `${dto.query}: ${dto.sectionBody.slice(0, 200)}…`;
     } else {
       // ASK
       if (!dto.highlightText) throw new BadRequestException('highlightText required for ASK nodes');
-      llmResult = await this.llm.followUpFromHighlight(
-        parent['query'] as string,
-        dto.highlightText,
-        dto.query,
-      );
+      llmResult = await this.llm.followUpFromHighlight(ancestors, dto.highlightText, dto.query);
       fromText = dto.highlightText;
     }
 
