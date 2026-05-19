@@ -768,7 +768,6 @@ export function App() {
       const title = nodes[rootId]?.title ?? 'fork.ai research';
       const { url } = await pushToNotion(idToken, title, blocks, childrenMap, page.id);
       setNotionSavedUrl(url);
-      setTimeout(() => setNotionSavedUrl(null), 8000);
     } catch {
       setNotionError('Failed to save — try again');
     } finally {
