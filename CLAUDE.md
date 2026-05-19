@@ -51,8 +51,9 @@ Browser  (Next.js :3001)
 NestJS API  (:3000)
     │
     ├── Cognito JWKS  — offline JWT validation (no DB call per request)
-    ├── DynamoDB      — sessions, nodes, annotations, highlights
-    └── Anthropic API — LLM calls (answerQuery, expandSection, followUpFromHighlight)
+    ├── DynamoDB      — sessions, nodes, annotations, highlights, user Notion tokens
+    ├── Anthropic API — LLM calls (answerQuery, expandSection, followUpFromHighlight)
+    └── Notion API    — OAuth token exchange, page search, block push
 ```
 
 **The single most important rule:** The Next.js frontend **never calls Anthropic directly**. All LLM work goes through the NestJS backend. Any `src/app/api/llm/*` routes inside `apps/web` are a mistake and must be deleted.
@@ -117,6 +118,12 @@ interface Annotation {
   createdAt: number;
 }
 ```
+
+### Notion export
+
+Sessions can be pushed to Notion as a structured page with collapsible toggle headings for child branches. See **[`docs/notion-export.md`](docs/notion-export.md)** for the full technical reference (block mapping, the nested-blocks API problem and its solution, OAuth setup, error handling, and future work).
+
+Key constraint to keep in mind: the Notion API rejects blocks with inline `children` in `pages.create`. The client splits the nested block tree into `{ blocks: FlatBlock[], childrenMap: ChildEntry[] }` before sending; the server depth-first appends each level via `blocks.children.append`.
 
 ---
 
