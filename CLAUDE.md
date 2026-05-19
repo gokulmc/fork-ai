@@ -179,6 +179,46 @@ The workspace is a 3-column CSS grid: `var(--map-width, 36%) 6px 1fr`.
 
 ---
 
+## Cognito login — custom UI (branch: `cognito`)
+
+The app uses a **custom email/password login UI** instead of the Cognito Hosted UI redirect. Architecture:
+
+### Auth flow
+1. `LoginPage.tsx` collects email → password (multi-step, animated bar)
+2. Password is submitted to `/api/cognito/login` (Next.js route, server-side)
+3. That route calls Cognito `InitiateAuth` with `USER_PASSWORD_AUTH` flow
+4. On success, the `idToken` comes back — frontend calls `signIn('cognito-token', { idToken, redirect: false })` from `next-auth/react`
+5. A next-auth credentials provider (`cognito-token` in `src/auth.ts`) decodes the JWT and stores `idToken` in the session
+6. `App.tsx` reads `authSession?.idToken` from `useSession()` — unchanged from before
+
+### Login page steps
+| Step | Input | Action |
+|---|---|---|
+| `email` | email address | Enter/center dot → `password` step |
+| `password` | password | Submit → call `/api/cognito/login` |
+| → if `UserNotFoundException` | — | transition to `signup-password` |
+| → if `NotAuthorizedException` | — | show "Incorrect password" error |
+| → if success | — | `signIn('cognito-token')` → graph animation → `onEnter()` |
+| `signup-password` | password + confirm | Password regex validation → call `/api/cognito/signup` |
+| `verify` | code from email | Call `/api/cognito/confirm` → auto-login → animation |
+
+### Next.js API routes (all server-side, call Cognito AWS SDK)
+- `POST /api/cognito/login` — `InitiateAuth USER_PASSWORD_AUTH`
+- `POST /api/cognito/signup` — `SignUp`
+- `POST /api/cognito/confirm` — `ConfirmSignUp` then auto-`InitiateAuth`
+- `POST /api/cognito/resend` — `ResendConfirmationCode`
+
+### Key constraints
+- **`USER_PASSWORD_AUTH` flow must be enabled** on the Cognito App Client (AWS Console → User Pool → App clients → Auth flows). If missing, Cognito returns `NotAuthorizedException: ALLOW_USER_PASSWORD_AUTH flow not enabled for this client`.
+- Password regex: `^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&_\-#])[A-Za-z\d@$!%*?&_\-#]{8,}$` — must match the User Pool's password policy.
+- The Google OAuth button still calls `signIn('cognito')` → Cognito Hosted UI (existing flow unchanged).
+- `triggerRef` in `LoginPage.tsx` is updated on each step change via `useEffect([step, ...])` — center dot always calls the current step's action. The graph animation trigger is stored separately in `graphTriggerRef` and fires only after successful auth.
+
+### In-progress / known issue
+The `/api/cognito/login` route was returning 400. Most likely cause: `USER_PASSWORD_AUTH` not enabled on the App Client in AWS Console. Check the Next.js server logs for `[cognito/login] <ErrorName> <ErrorMessage>` to confirm.
+
+---
+
 ## Custom slash commands
 
 | Command | Purpose |
