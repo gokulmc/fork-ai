@@ -349,3 +349,33 @@ export function deleteHighlight(
 ): Promise<void> {
   return apiFetch<void>(`/sessions/${sessionId}/highlights/${hlId}`, idToken, { method: 'DELETE' });
 }
+
+// ── Notion ────────────────────────────────────────────────────────────────────
+
+export interface NotionPage {
+  id: string;
+  title: string;
+  url: string;
+}
+
+export function getNotionStatus(idToken: string): Promise<{ connected: boolean }> {
+  return apiFetch<{ connected: boolean }>('/notion/status', idToken);
+}
+
+export function searchNotionPages(idToken: string, q: string): Promise<NotionPage[]> {
+  const qs = q ? `?q=${encodeURIComponent(q)}` : '';
+  return apiFetch<NotionPage[]>(`/notion/pages${qs}`, idToken);
+}
+
+export function pushToNotion(
+  idToken: string,
+  title: string,
+  blocks: unknown[],
+  childrenMap: unknown[],
+  parentPageId: string,
+): Promise<{ url: string }> {
+  return apiFetch<{ url: string }>('/notion/push', idToken, {
+    method: 'POST',
+    body: JSON.stringify({ title, blocks, childrenMap, parentPageId }),
+  });
+}

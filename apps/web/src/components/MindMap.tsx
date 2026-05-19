@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import type { ForkNode } from '@/lib/types';
 import { clamp } from '@/lib/utils';
-import { Hash, Sparkles, CornerDownRight, GitBranch, Map, Minus, Plus, Maximize } from './Icons';
+import { Hash, Sparkles, CornerDownRight, GitBranch, Map, Minus, Plus, Maximize, Copy } from './Icons';
 
 const NODE_W = 192;
 const NODE_H = 58;
@@ -92,6 +92,11 @@ interface MindMapProps {
   onContextMenu?: (id: string, x: number, y: number) => void;
   layout?: 'vertical' | 'horizontal';
   loadingIds?: Set<string>;
+  onSaveToNotion?: () => void;
+  notionSaving?: boolean;
+  notionSavedUrl?: string | null;
+  notionError?: string | null;
+  onClearNotionError?: () => void;
 }
 
 export function MindMap({
@@ -102,6 +107,11 @@ export function MindMap({
   onContextMenu,
   layout = 'vertical',
   loadingIds = new Set(),
+  onSaveToNotion,
+  notionSaving = false,
+  notionSavedUrl = null,
+  notionError = null,
+  onClearNotionError,
 }: MindMapProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [view, setView] = useState({ tx: 0, ty: 0, scale: 1 });
@@ -267,6 +277,22 @@ export function MindMap({
           <Map size={13} />
           {nodeCount} {nodeCount === 1 ? 'node' : 'nodes'}
         </span>
+        {onSaveToNotion && (
+          <button
+            className={`mm-copy-btn${notionSavedUrl ? ' mm-copy-btn--copied' : notionError ? ' mm-copy-btn--error' : ''}`}
+            onClick={notionSavedUrl
+              ? () => window.open(notionSavedUrl, '_blank')
+              : notionError
+                ? () => { onClearNotionError?.(); onSaveToNotion(); }
+                : onSaveToNotion}
+            disabled={notionSaving}
+            title={notionError ?? 'Save to Notion'}
+            style={{ pointerEvents: 'auto' }}
+          >
+            <Copy size={13} />
+            {notionSaving ? 'Saving…' : notionSavedUrl ? 'Open in Notion ↗' : notionError ? notionError : 'Save to Notion'}
+          </button>
+        )}
         <div className="zoom">
           <button onClick={() => zoomBy(0.85)} title="Zoom out"><Minus size={13} /></button>
           <span className="val">{Math.round(view.scale * 100)}%</span>

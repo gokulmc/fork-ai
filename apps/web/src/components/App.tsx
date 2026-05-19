@@ -38,6 +38,7 @@ function rangeFromOffsets(root: Element, start: number, end: number): Range | nu
   return r;
 }
 import { useTweaks } from '@/hooks/useTweaks';
+import { buildNotionClipboard } from '@/lib/notion-clipboard';
 import {
   listSessions,
   getSession,
@@ -53,7 +54,11 @@ import {
   toHlMap,
   toHighlightRecords,
   deleteHighlight,
+  getNotionStatus,
+  searchNotionPages,
+  pushToNotion,
   type SessionSummary,
+  type NotionPage,
 } from '@/lib/api';
 import { MindMap } from './MindMap';
 import { Section } from './Section';
@@ -65,7 +70,7 @@ import { Landing } from './Landing';
 import { HistoryPage } from './HistoryPage';
 import { TweaksPanel } from './TweaksPanel';
 import {
-  Search, Bookmark, ChevronRight, PageIcon, Sparkles, CornerDownRight, Hash,
+  Search, Bookmark, ChevronRight, Sparkles, CornerDownRight, Hash,
   Quote, AlertCircle, ArrowUpRight, Pencil, Trash, Clock,
 } from './Icons';
 
@@ -142,10 +147,11 @@ export function App() {
   const [nodes, setNodes] = useState<Record<string, ForkNode>>({});
   const [rootId, setRootId] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
-  // Start in loading state if URL hash has a session ID — prevents landing flash on refresh
-  const [loadingRoot, setLoadingRoot] = useState(() =>
-    typeof window !== 'undefined' ? !!window.location.hash.slice(1) : false
-  );
+  // Start in loading state if hash or localStorage has a session — prevents landing flash on refresh
+  const [loadingRoot, setLoadingRoot] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return !!(window.location.hash.slice(1) || localStorage.getItem('fork.ai.session'));
+  });
   const [loadingNodes, setLoadingNodes] = useState<Set<string>>(new Set());
   const [sectionLoading, setSectionLoading] = useState<string | null>(null);
 
@@ -215,22 +221,34 @@ export function App() {
     }
   }, [idToken]);
 
-  // ── Persist active session to localStorage (survive refresh) ─────────────
+  // ── Persist active session to URL hash + localStorage (survive refresh) ────
 
+  // Track whether we've ever had a session this mount — only clear storage on
+  // explicit navigation away (not on cold mount where sessionId starts as null).
+  const hadSessionRef = useRef(false);
   useEffect(() => {
     if (sessionId) {
+      hadSessionRef.current = true;
+      const hash = `${sessionId}${activeId && activeId !== rootId ? `/${activeId}` : ''}`;
+      history.replaceState(null, '', `#${hash}`);
       localStorage.setItem('fork.ai.session', sessionId);
       if (activeId) localStorage.setItem('fork.ai.node', activeId);
-    } else {
+    } else if (hadSessionRef.current) {
+      history.replaceState(null, '', window.location.pathname + window.location.search);
       localStorage.removeItem('fork.ai.session');
       localStorage.removeItem('fork.ai.node');
     }
-  }, [sessionId, activeId]);
+  }, [sessionId, activeId, rootId]);
 
-  // Restore on first load — only if nothing is already loading
+  // Restore on first load — prefer URL hash, fall back to localStorage
   const hasRestoredRef = useRef(false);
   useEffect(() => {
     if (hasRestoredRef.current) return;
+    const hash = window.location.hash.slice(1);
+    if (hash) {
+      const [sid, nid] = hash.split('/');
+      if (sid) { hasRestoredRef.current = true; loadSession(sid, nid); return; }
+    }
     const savedSession = localStorage.getItem('fork.ai.session');
     const savedNode = localStorage.getItem('fork.ai.node') ?? undefined;
     if (!savedSession) return;
@@ -686,19 +704,6 @@ export function App() {
     }
   }, [sessionId, idToken]);
 
-  const startNewSession = useCallback(() => {
-    if (!confirm('Start a new research session? Your current one is saved.')) return;
-    setNodes({});
-    setRootId(null);
-    setActiveId(null);
-    setSessionId(null);
-    setAnnotations([]);
-    setPersistentHl({});
-    setHighlightsList([]);
-    if (idToken) {
-      listSessions(idToken).then(setSessions).catch(err => console.error(err));
-    }
-  }, [idToken]);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -706,6 +711,70 @@ export function App() {
     window.addEventListener('click', onClick);
     return () => window.removeEventListener('click', onClick);
   }, [contextMenu]);
+
+  // ── Save to Notion ────────────────────────────────────────────────────────
+
+  const [notionPickerOpen, setNotionPickerOpen] = useState(false);
+  const [notionPages, setNotionPages] = useState<NotionPage[]>([]);
+  const [notionPagesLoading, setNotionPagesLoading] = useState(false);
+  const [notionQuery, setNotionQuery] = useState('');
+  const [notionSaving, setNotionSaving] = useState(false);
+  const [notionSavedUrl, setNotionSavedUrl] = useState<string | null>(null);
+  const [notionError, setNotionError] = useState<string | null>(null);
+
+  // After OAuth redirect back, open the picker automatically
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('notion') === 'connected') {
+      window.history.replaceState({}, '', window.location.pathname);
+      setNotionPickerOpen(true);
+    }
+  }, []);
+
+  // Load page list whenever picker opens or search query changes
+  useEffect(() => {
+    if (!notionPickerOpen || !idToken) return;
+    setNotionPagesLoading(true);
+    searchNotionPages(idToken, notionQuery)
+      .then(pages => { setNotionPages(pages); setNotionPagesLoading(false); })
+      .catch(() => { setNotionPages([]); setNotionPagesLoading(false); });
+  }, [notionPickerOpen, notionQuery, idToken]);
+
+  const openNotionPicker = useCallback(async () => {
+    if (!idToken) return;
+    setNotionError(null);
+    try {
+      const { connected } = await getNotionStatus(idToken);
+      if (!connected) {
+        // Redirect to backend OAuth — returns to this page with ?notion=connected
+        window.location.href = `${process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3000'}/notion/auth`;
+        return;
+      }
+    } catch {
+      setNotionError('Could not reach server');
+      return;
+    }
+    setNotionSavedUrl(null);
+    setNotionPickerOpen(true);
+  }, [idToken]);
+
+  const saveToNotionPage = useCallback(async (page: NotionPage) => {
+    if (!rootId || !idToken) return;
+    setNotionPickerOpen(false);
+    setNotionSaving(true);
+    setNotionError(null);
+    try {
+      const { blocks, childrenMap } = buildNotionClipboard(nodes, rootId, persistentHl, annotations);
+      const title = nodes[rootId]?.title ?? 'fork.ai research';
+      const { url } = await pushToNotion(idToken, title, blocks, childrenMap, page.id);
+      setNotionSavedUrl(url);
+      setTimeout(() => setNotionSavedUrl(null), 8000);
+    } catch {
+      setNotionError('Failed to save — try again');
+    } finally {
+      setNotionSaving(false);
+    }
+  }, [nodes, rootId, persistentHl, annotations, idToken]);
 
   // ── Derived state ─────────────────────────────────────────────────────────
 
@@ -760,7 +829,6 @@ export function App() {
           loading={loadingSessions}
           onLoadSession={loadSession}
           onBack={() => setView('landing')}
-          onNewSearch={() => setView('landing')}
         />
       );
     }
@@ -788,6 +856,9 @@ export function App() {
         </div>
         <div className="divider" />
         <div className="crumbs">
+          {rootId && nodes[rootId]?.emoji && (
+            <span style={{ fontSize: 16, lineHeight: 1 }}>{nodes[rootId].emoji}</span>
+          )}
           {breadcrumbs.map((n, i) => {
             const isLast = i === breadcrumbs.length - 1;
             return (
@@ -798,16 +869,13 @@ export function App() {
                   onClick={() => !isLast && setActiveId(n.id)}
                   title={n.title}
                 >
-                  <PageIcon className="page-ic" /> {n.title}
+                  {n.title}
                 </span>
               </span>
             );
           })}
         </div>
         <div className="tools">
-          <button className="icon-btn" onClick={startNewSession} title="New search">
-            <Search size={14} /> New
-          </button>
           <button className="icon-btn" onClick={() => { setView('history'); setRootId(null); setNodes({}); setSessionId(null); }} title="Research history">
             <Clock size={14} /> History
           </button>
@@ -828,6 +896,11 @@ export function App() {
             onContextMenu={onMapContext}
             layout={tweaks.mapLayout}
             loadingIds={loadingNodes}
+            onSaveToNotion={openNotionPicker}
+            notionSaving={notionSaving}
+            notionSavedUrl={notionSavedUrl}
+            notionError={notionError}
+            onClearNotionError={() => setNotionError(null)}
           />
         ) : (
           <div className="mm-empty">Mind map will populate as you branch</div>
@@ -950,6 +1023,39 @@ export function App() {
         fontPairOptions={FONT_PAIR_OPTIONS}
         accentOptions={ACCENTS}
       />
+
+      {notionPickerOpen && (
+        <div className="notion-picker-overlay" onClick={() => setNotionPickerOpen(false)}>
+          <div className="notion-picker" onClick={e => e.stopPropagation()}>
+            <div className="notion-picker-header">
+              <span>Save to Notion — pick a page</span>
+              <button className="notion-picker-close" onClick={() => setNotionPickerOpen(false)}>✕</button>
+            </div>
+            <input
+              className="notion-picker-search"
+              placeholder="Search pages…"
+              autoFocus
+              value={notionQuery}
+              onChange={e => setNotionQuery(e.target.value)}
+            />
+            <ul className="notion-picker-list">
+              {notionPagesLoading && (
+                <li className="notion-picker-empty">Loading…</li>
+              )}
+              {!notionPagesLoading && notionPages.length === 0 && (
+                <li className="notion-picker-empty">No pages found</li>
+              )}
+              {!notionPagesLoading && notionPages.map(page => (
+                <li key={page.id}>
+                  <button onClick={() => saveToNotionPage(page)}>
+                    <span className="notion-picker-title">{page.title}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -7,6 +7,7 @@ export const UserMetaSchema = new dynamoose.Schema({
   email: String,
   createdAt: String,
   updatedAt: String,
+  notionAccessToken: { type: String, required: false },
 });
 
 export const SessionMetaSchema = new dynamoose.Schema({

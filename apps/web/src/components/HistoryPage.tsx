@@ -1,5 +1,5 @@
 'use client';
-import { ArrowLeft, Search } from './Icons';
+import { ArrowLeft } from './Icons';
 import type { SessionSummary } from '@/lib/api';
 
 interface HistoryPageProps {
@@ -7,22 +7,18 @@ interface HistoryPageProps {
   loading: boolean;
   onLoadSession: (sessionId: string) => void;
   onBack: () => void;
-  onNewSearch: () => void;
 }
 
-export function HistoryPage({ sessions, loading, onLoadSession, onBack, onNewSearch }: HistoryPageProps) {
+export function HistoryPage({ sessions, loading, onLoadSession, onBack }: HistoryPageProps) {
   return (
     <div className="history-page">
       <header className="history-topbar">
-        <div className="brand">
+        <div className="brand" style={{ cursor: 'pointer' }} onClick={onBack}>
           <span className="mark">F</span> fork.ai
         </div>
         <div style={{ flex: 1 }} />
         <button className="icon-btn" onClick={onBack}>
           <ArrowLeft size={14} /> Back
-        </button>
-        <button className="icon-btn" onClick={onNewSearch}>
-          <Search size={14} /> New research
         </button>
       </header>
 
@@ -39,7 +35,7 @@ export function HistoryPage({ sessions, loading, onLoadSession, onBack, onNewSea
         ) : sessions.length === 0 ? (
           <div className="history-empty">
             <p>No research sessions yet.</p>
-            <button className="submit" style={{ marginTop: 16 }} onClick={onNewSearch}>
+            <button className="submit" style={{ marginTop: 16 }} onClick={onBack}>
               Start your first research
             </button>
           </div>

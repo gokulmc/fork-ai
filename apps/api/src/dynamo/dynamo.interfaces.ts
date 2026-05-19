@@ -11,6 +11,7 @@ export interface UserMetaItem {
   email: string;
   createdAt: string;
   updatedAt: string;
+  notionAccessToken?: string | null;
 }
 
 export interface SessionMetaItem {
