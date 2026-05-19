@@ -36,6 +36,10 @@ backend/src/
 ├── nodes/                          # Branch creation fires expandSection or followUpFromHighlight
 ├── annotations/                    # Notes and callouts
 ├── highlights/                     # Persistent text highlight marks
+├── notion/
+│   ├── notion.module.ts            # Imports DynamoModule
+│   ├── notion.controller.ts        # GET /notion/auth|callback|status|pages, POST /notion/push
+│   └── notion.service.ts           # OAuth flow, token storage, page push (recursive append)
 └── llm/
     └── llm.service.ts              # Anthropic SDK — 3 prompt functions
 ```
@@ -64,6 +68,12 @@ DELETE /sessions/:sessionId/annotations/:annId
 POST   /sessions/:sessionId/highlights
 PATCH  /sessions/:sessionId/highlights/:hlId
 DELETE /sessions/:sessionId/highlights/:hlId
+
+GET    /notion/auth                           # redirect to Notion OAuth (authenticated)
+GET    /notion/callback                       # @Public — exchanges code, saves token, redirects to frontend
+GET    /notion/status                         # { connected: boolean }
+GET    /notion/pages?q=...                    # search user's Notion pages (for parent picker)
+POST   /notion/push                           # create Notion page from session blocks
 ```
 
 ### Key DTOs
@@ -142,8 +152,15 @@ COGNITO_USER_POOL_ID=ap-south-1_XXXXX
 COGNITO_CLIENT_ID=XXXXXXXXXXXXX
 DYNAMO_TABLE_NAME=forkai-main
 ANTHROPIC_API_KEY=sk-ant-...
-PORT=3000                       # optional, defaults to 3000
+PORT=3000                           # optional, defaults to 3000
 CORS_ORIGIN=http://localhost:3001   # Next.js dev server
+FRONTEND_URL=http://localhost:3001  # used for Notion OAuth redirect
+
+# Notion OAuth — create a Public integration at https://www.notion.com/my-integrations
+# Set redirect URI to: http://localhost:3000/notion/callback
+NOTION_CLIENT_ID=
+NOTION_CLIENT_SECRET=
+NOTION_REDIRECT_URI=http://localhost:3000/notion/callback
 ```
 
 ---
@@ -171,9 +188,7 @@ CORS_ORIGIN=http://localhost:3001   # Next.js dev server
 ## Run
 
 ```bash
-cd backend
-npm install
-npm run start:dev    # ts-node-dev, port 3000
-npm test             # unit specs
-npm run test:e2e     # e2e suite
+# From repo root:
+npm run dev:api      # ts-node, port 3000
+npm run test         # unit specs (Nx-cached)
 ```

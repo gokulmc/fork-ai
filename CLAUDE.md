@@ -51,8 +51,9 @@ Browser  (Next.js :3001)
 NestJS API  (:3000)
     │
     ├── Cognito JWKS  — offline JWT validation (no DB call per request)
-    ├── DynamoDB      — sessions, nodes, annotations, highlights
-    └── Anthropic API — LLM calls (answerQuery, expandSection, followUpFromHighlight)
+    ├── DynamoDB      — sessions, nodes, annotations, highlights, user Notion tokens
+    ├── Anthropic API — LLM calls (answerQuery, expandSection, followUpFromHighlight)
+    └── Notion API    — OAuth token exchange, page search, block push
 ```
 
 **The single most important rule:** The Next.js frontend **never calls Anthropic directly**. All LLM work goes through the NestJS backend. Any `src/app/api/llm/*` routes inside `apps/web` are a mistake and must be deleted.
@@ -99,10 +100,10 @@ No child-pointer arrays are stored. The tree is reconstructed at read time by gr
 
 ```ts
 // keyed by "nodeId::sectionId"
-persistentHl: Record<string, Array<{ text: string; bg: string | null; fg: string | null }>>
+persistentHl: Record<string, Array<{ text: string; start?: number; end?: number; bg: string | null; fg: string | null }>>
 ```
 
-Applied to the DOM by walking text nodes and wrapping matches in `<span class="persistent-hl">`.
+`start`/`end` are character offsets into the section's rendered plain text (after markdown parsing). Applied via the **CSS Custom Highlight API** (`CSS.highlights`) in a `useEffect` inside `Section.tsx` — no span injection. Per-section named highlights (`hl-{sectionId}`) are styled with rules injected via `adoptedStyleSheets`. Highlights without offsets (legacy) are skipped.
 
 ### Annotations
 
@@ -117,6 +118,17 @@ interface Annotation {
   createdAt: number;
 }
 ```
+
+### Notion export
+
+Sessions can be pushed to Notion as a structured page. The page opens with a Mermaid `graph TD` mind map diagram, followed by collapsible toggle headings for each child branch. The Notion page URL is persisted to DynamoDB (`notionPageUrl` on `SessionMetaItem`) so the "Open in Notion ↗" button survives page reload and history navigation. Adding a new branch clears the URL immediately (both UI and DB) since the export is now stale.
+
+See **[`docs/notion-export.md`](docs/notion-export.md)** for the full technical reference (block mapping, colour scheme, the nested-blocks API problem and its solution, URL persistence, stale-export invalidation, OAuth setup, and error handling).
+
+Key constraints to keep in mind:
+- The Notion API rejects blocks with inline `children` in `pages.create`. The client splits the nested block tree into `{ blocks: FlatBlock[], childrenMap: ChildEntry[] }` before sending; the server depth-first appends each level via `blocks.children.append`.
+- Toggle heading text colour is set on `rich_text[].annotations.color`, NOT on the block-level `color` field (block-level `color` sets the background).
+- Empty string `''` stored in `notionPageUrl` DynamoDB field means "cleared" — `toSummary` maps it to `null` via `|| null`.
 
 ---
 
@@ -162,3 +174,4 @@ If a user message implies an architectural change, **stop and clarify** before t
 | Command | Purpose |
 |---|---|
 | `/grill-me` | Ask targeted clarifying questions before starting any implementation task |
+| `/caveman` | Ultra-compressed terse mode — drops filler, keeps full technical accuracy |

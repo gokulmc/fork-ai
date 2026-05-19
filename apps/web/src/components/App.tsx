@@ -1,9 +1,44 @@
 'use client';
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
-import type { ForkNode, Annotation, HlMenuState, FollowUpState, ContextMenuState } from '@/lib/types';
-import { uid, short5, stripMarkdown } from '@/lib/utils';
+import type { ForkNode, Annotation, HlMenuState, FollowUpState, ContextMenuState, PersistentHighlight, HighlightRecord } from '@/lib/types';
+import { uid, short5, stripMarkdown, getRangeOffsets } from '@/lib/utils';
+
+const CSS_HL_SUPPORTED = typeof window !== 'undefined' && typeof CSS !== 'undefined' && 'highlights' in CSS;
+
+// One CSS named highlight per bg+fg combination so each color is independently styled
+const HL_BG = ['#fef08a', '#bbf7d0', '#bae6fd', '#fbcfe8', '#e5e5e5'];
+const HL_FG = [null, '#b91c1c', '#1d4ed8', '#047857'];
+
+function hlName(bg: string | null, fg: string | null | undefined): string {
+  const b = (bg ?? '#fef08a').replace('#', '');
+  const f = (fg ?? null)?.replace('#', '') ?? null;
+  return f ? `fork-hl-${b}-${f}` : `fork-hl-${b}`;
+}
+
+const ALL_HL_NAMES = HL_BG.flatMap(bg => HL_FG.map(fg => hlName(bg, fg)));
+
+function rangeFromOffsets(root: Element, start: number, end: number): Range | null {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+  let pos = 0;
+  let startNode: Text | null = null, startOff = 0;
+  let endNode: Text | null = null, endOff = 0;
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    const t = node as Text;
+    const len = (t.nodeValue ?? '').length;
+    if (!startNode && pos + len > start) { startNode = t; startOff = start - pos; }
+    if (startNode && pos + len >= end) { endNode = t; endOff = end - pos; break; }
+    pos += len;
+  }
+  if (!startNode || !endNode) return null;
+  const r = new Range();
+  r.setStart(startNode, startOff);
+  r.setEnd(endNode, endOff);
+  return r;
+}
 import { useTweaks } from '@/hooks/useTweaks';
+import { buildNotionClipboard } from '@/lib/notion-clipboard';
 import {
   listSessions,
   getSession,
@@ -17,7 +52,14 @@ import {
   toForkNode,
   toAnnotation,
   toHlMap,
+  toHighlightRecords,
+  deleteHighlight,
+  getNotionStatus,
+  searchNotionPages,
+  pushToNotion,
+  updateSessionNotionUrl,
   type SessionSummary,
+  type NotionPage,
 } from '@/lib/api';
 import { MindMap } from './MindMap';
 import { Section } from './Section';
@@ -29,7 +71,7 @@ import { Landing } from './Landing';
 import { HistoryPage } from './HistoryPage';
 import { TweaksPanel } from './TweaksPanel';
 import {
-  Search, Bookmark, ChevronRight, PageIcon, Sparkles, CornerDownRight, Hash,
+  Search, Bookmark, ChevronRight, Sparkles, CornerDownRight, Hash,
   Quote, AlertCircle, ArrowUpRight, Pencil, Trash, Clock,
 } from './Icons';
 
@@ -49,9 +91,6 @@ const FONT_PAIRS: Record<string, { serif: string; sans: string; label: string }>
 
 const ACCENTS = ['#525252', '#888888', '#2383e2', '#7a8c5a', '#b4683b'];
 const FONT_PAIR_OPTIONS = Object.entries(FONT_PAIRS).map(([v, p]) => ({ value: v, label: p.label }));
-// Stable empty array — prevents Section useMemo from recomputing (and innerHTML from resetting)
-// when App re-renders for unrelated reasons (e.g. hlMenu open/close), which would clear selection.
-const EMPTY_HLS: never[] = [];
 
 function ResearchingScreen({ sessions }: { sessions: SessionSummary[] }) {
   const [idx, setIdx] = useState(0);
@@ -109,10 +148,11 @@ export function App() {
   const [nodes, setNodes] = useState<Record<string, ForkNode>>({});
   const [rootId, setRootId] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
-  // Start in loading state if URL hash has a session ID — prevents landing flash on refresh
-  const [loadingRoot, setLoadingRoot] = useState(() =>
-    typeof window !== 'undefined' ? !!window.location.hash.slice(1) : false
-  );
+  // Start in loading state if hash or localStorage has a session — prevents landing flash on refresh
+  const [loadingRoot, setLoadingRoot] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return !!(window.location.hash.slice(1) || localStorage.getItem('fork.ai.session'));
+  });
   const [loadingNodes, setLoadingNodes] = useState<Set<string>>(new Set());
   const [sectionLoading, setSectionLoading] = useState<string | null>(null);
 
@@ -123,8 +163,17 @@ export function App() {
   const [followUp, setFollowUp] = useState<FollowUpState | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 
-  const [persistentHl, setPersistentHl] = useState<Record<string, Array<{ text: string; bg: string | null; fg: string | null }>>>({});
+  const [persistentHl, setPersistentHl] = useState<Record<string, PersistentHighlight[]>>({});
+  const [highlightsList, setHighlightsList] = useState<HighlightRecord[]>([]);
   const [lastHlColors, setLastHlColors] = useState<{ bg: string; fg: string | null }>({ bg: '#fef08a', fg: null });
+
+  const [notionPickerOpen, setNotionPickerOpen] = useState(false);
+  const [notionPages, setNotionPages] = useState<NotionPage[]>([]);
+  const [notionPagesLoading, setNotionPagesLoading] = useState(false);
+  const [notionQuery, setNotionQuery] = useState('');
+  const [notionSaving, setNotionSaving] = useState(false);
+  const [notionSavedUrl, setNotionSavedUrl] = useState<string | null>(null);
+  const [notionError, setNotionError] = useState<string | null>(null);
 
   const wsRef = useRef<HTMLElement>(null);
 
@@ -173,6 +222,8 @@ export function App() {
       setActiveId(activeTarget);
       setAnnotations(session.annotations.map(toAnnotation));
       setPersistentHl(toHlMap(session.highlights));
+      setHighlightsList(toHighlightRecords(session.highlights, nodeMap));
+      setNotionSavedUrl(session.notionPageUrl ?? null);
     } catch (err) {
       console.error('Failed to load session', err);
     } finally {
@@ -180,22 +231,34 @@ export function App() {
     }
   }, [idToken]);
 
-  // ── Persist active session to localStorage (survive refresh) ─────────────
+  // ── Persist active session to URL hash + localStorage (survive refresh) ────
 
+  // Track whether we've ever had a session this mount — only clear storage on
+  // explicit navigation away (not on cold mount where sessionId starts as null).
+  const hadSessionRef = useRef(false);
   useEffect(() => {
     if (sessionId) {
+      hadSessionRef.current = true;
+      const hash = `${sessionId}${activeId && activeId !== rootId ? `/${activeId}` : ''}`;
+      history.replaceState(null, '', `#${hash}`);
       localStorage.setItem('fork.ai.session', sessionId);
       if (activeId) localStorage.setItem('fork.ai.node', activeId);
-    } else {
+    } else if (hadSessionRef.current) {
+      history.replaceState(null, '', window.location.pathname + window.location.search);
       localStorage.removeItem('fork.ai.session');
       localStorage.removeItem('fork.ai.node');
     }
-  }, [sessionId, activeId]);
+  }, [sessionId, activeId, rootId]);
 
-  // Restore on first load — only if nothing is already loading
+  // Restore on first load — prefer URL hash, fall back to localStorage
   const hasRestoredRef = useRef(false);
   useEffect(() => {
     if (hasRestoredRef.current) return;
+    const hash = window.location.hash.slice(1);
+    if (hash) {
+      const [sid, nid] = hash.split('/');
+      if (sid) { hasRestoredRef.current = true; loadSession(sid, nid); return; }
+    }
     const savedSession = localStorage.getItem('fork.ai.session');
     const savedNode = localStorage.getItem('fork.ai.node') ?? undefined;
     if (!savedSession) return;
@@ -206,19 +269,46 @@ export function App() {
   // ── Persist highlights (optimistic + background API sync) ─────────────────
 
   const persistHighlight = useCallback(
-    (nodeId: string, sectionId: string, text: string, bg: string | null, fg: string | null) => {
+    (nodeId: string, sectionId: string, text: string, bg: string | null, fg: string | null, start: number, end: number) => {
       const key = `${nodeId}::${sectionId}`;
+      const tempId = uid();
       setPersistentHl(prev => ({
         ...prev,
-        [key]: [...(prev[key] ?? []), { text, bg: bg ?? null, fg: fg ?? null }],
+        [key]: [...(prev[key] ?? []), { hlId: tempId, text, start, end, bg: bg ?? null, fg: fg ?? null }],
       }));
+      const fromTitle = nodes[nodeId]?.title ?? 'Untitled';
+      setHighlightsList(prev => [...prev, { hlId: tempId, text, nodeId, sectionId, fromTitle }]);
+
       if (sessionId && idToken) {
-        createHighlight(idToken, sessionId, { nodeId, sectionId, text, bg: bg ?? null, fg: fg ?? null })
+        createHighlight(idToken, sessionId, { nodeId, sectionId, text, start, end, bg: bg ?? null, fg: fg ?? null })
+          .then(apiHl => {
+            const realId = ((apiHl as unknown as Record<string, unknown>)['hlId'] as string) ?? apiHl.id;
+            setPersistentHl(prev => ({
+              ...prev,
+              [key]: (prev[key] ?? []).map(h => h.hlId === tempId ? { ...h, hlId: realId } : h),
+            }));
+            setHighlightsList(prev => prev.map(h => h.hlId === tempId ? { ...h, hlId: realId } : h));
+          })
           .catch(err => console.error('Failed to persist highlight', err));
       }
     },
-    [sessionId, idToken],
+    [nodes, sessionId, idToken],
   );
+
+  const removeHighlight = useCallback((hlId: string) => {
+    setPersistentHl(prev => {
+      const next: Record<string, PersistentHighlight[]> = {};
+      for (const [key, list] of Object.entries(prev)) {
+        const filtered = list.filter(h => h.hlId !== hlId);
+        if (filtered.length) next[key] = filtered;
+      }
+      return next;
+    });
+    setHighlightsList(prev => prev.filter(h => h.hlId !== hlId));
+    if (sessionId && idToken) {
+      deleteHighlight(idToken, sessionId, hlId).catch(err => console.error('Failed to delete highlight', err));
+    }
+  }, [sessionId, idToken]);
 
   // ── Start a new root research session (streaming) ────────────────────────
 
@@ -246,6 +336,7 @@ export function App() {
     setSessionId(null);
     setAnnotations([]);
     setPersistentHl({});
+    setHighlightsList([]);
     setLoadingRoot(true);
 
     try {
@@ -343,6 +434,10 @@ export function App() {
         loading: true,
       },
     }));
+    if (notionSavedUrl) {
+      setNotionSavedUrl(null);
+      updateSessionNotionUrl(idToken, sessionId, null).catch(() => {});
+    }
     setActiveId(tempId);
     scrollWsTop();
 
@@ -369,7 +464,7 @@ export function App() {
       setSectionLoading(null);
       setLoadingNodes(prev => { const n = new Set(prev); n.delete(tempId); return n; });
     }
-  }, [nodes, sessionId, idToken, scrollWsTop]);
+  }, [nodes, sessionId, idToken, scrollWsTop, notionSavedUrl]);
 
   // ── Branch: Ask AI from highlight ────────────────────────────────────────
 
@@ -398,6 +493,10 @@ export function App() {
         loading: true,
       },
     }));
+    if (notionSavedUrl) {
+      setNotionSavedUrl(null);
+      updateSessionNotionUrl(idToken, sessionId, null).catch(() => {});
+    }
 
     try {
       const apiNode = await createNode(idToken, sessionId, {
@@ -415,15 +514,20 @@ export function App() {
         return next;
       });
       // Stay on current node — user navigates via mind map chip
-      persistHighlight(source.nodeId, source.sectionId, source.text, lastHlColors.bg, lastHlColors.fg);
+      persistHighlight(source.nodeId, source.sectionId, source.text, lastHlColors.bg, lastHlColors.fg, source.start, source.end);
     } catch (err) {
       console.error('Failed to ask from highlight', err);
       setNodes(prev => ({ ...prev, [tempId]: { ...prev[tempId], loading: false, error: 'Failed to load. Try again.' } }));
     } finally {
       setLoadingNodes(prev => { const n = new Set(prev); n.delete(tempId); return n; });
-      setFollowUp(null);
+      // Only close the popup that triggered THIS request — a newer Q2 popup must survive.
+      setFollowUp(prev => {
+        if (!prev) return null;
+        if (prev.nodeId === source.nodeId && prev.sectionId === source.sectionId && prev.text === source.text) return null;
+        return prev;
+      });
     }
-  }, [nodes, sessionId, idToken, lastHlColors, scrollWsTop, persistHighlight]);
+  }, [nodes, sessionId, idToken, lastHlColors, scrollWsTop, persistHighlight, notionSavedUrl]);
 
   // ── Text selection → highlight menu ──────────────────────────────────────
 
@@ -444,18 +548,20 @@ export function App() {
         const rect = range.getBoundingClientRect();
         if (rect.width === 0 && rect.height === 0) { setHlMenu(null); return; }
         const sectionId = sectionEl.getAttribute('data-section-id')!;
-        // Wrap the selection in a .temp-hl span directly in the DOM so the visual
-        // persists even after Safari clears the native selection on any repaint.
-        try {
-          const span = document.createElement('span');
-          span.className = 'temp-hl';
-          range.surroundContents(span);
-        } catch { /* range spans element boundaries — skip visual, menu still works */ }
+
+        // Compute character offsets for robust re-application on reload
+        const bodyEl = sectionEl.classList.contains('section-body')
+          ? sectionEl
+          : sectionEl.querySelector('.section-body');
+        const offsets = bodyEl ? getRangeOffsets(bodyEl, range) : null;
+
         setHlMenu({
           rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height, bottom: rect.bottom },
           text,
           nodeId: activeId!,
           sectionId,
+          start: offsets?.start ?? 0,
+          end: offsets?.end ?? 0,
         });
       }, 10);
     };
@@ -463,18 +569,51 @@ export function App() {
     return () => document.removeEventListener('mouseup', onMouseUp);
   }, [activeId]);
 
-  // Clean up .temp-hl spans when the menu closes (if a real highlight was applied,
-  // Section's innerHTML was already reset by dangerouslySetInnerHTML, so this is a no-op).
+  // Single effect owns all named highlights so they are always re-registered together.
   useLayoutEffect(() => {
-    if (hlMenu) return;
-    document.querySelectorAll('.temp-hl').forEach(span => {
-      const parent = span.parentNode;
-      if (!parent) return;
-      while (span.firstChild) parent.insertBefore(span.firstChild, span);
-      parent.removeChild(span);
-      parent.normalize();
-    });
-  }, [hlMenu]);
+    if (!CSS_HL_SUPPORTED) return;
+
+    // Persistent highlights — one Highlight object per bg+fg color combination
+    const colorGroups = new Map<string, Highlight>();
+    if (activeId) {
+      const prefix = `${activeId}::`;
+      for (const [key, list] of Object.entries(persistentHl)) {
+        if (!key.startsWith(prefix)) continue;
+        const sectionId = key.slice(prefix.length);
+        const sectionEl = document.querySelector(`.section-body[data-section-id="${sectionId}"]`);
+        if (!sectionEl) continue;
+        for (const h of list) {
+          if (h.start == null || h.end == null) continue;
+          const r = rangeFromOffsets(sectionEl, h.start, h.end);
+          if (!r) continue;
+          const name = hlName(h.bg, h.fg);
+          if (!colorGroups.has(name)) colorGroups.set(name, new Highlight());
+          colorGroups.get(name)!.add(r);
+        }
+      }
+    }
+    ALL_HL_NAMES.forEach(n => CSS.highlights.delete(n));
+    colorGroups.forEach((hl, name) => CSS.highlights.set(name, hl));
+
+    // temp-hl — current uncommitted selection
+    if (hlMenu && hlMenu.start < hlMenu.end) {
+      const sectionEl = document.querySelector(`.section-body[data-section-id="${hlMenu.sectionId}"]`);
+      if (sectionEl) {
+        const r = rangeFromOffsets(sectionEl, hlMenu.start, hlMenu.end);
+        if (r) CSS.highlights.set('temp-hl', new Highlight(r));
+        else CSS.highlights.delete('temp-hl');
+      } else {
+        CSS.highlights.delete('temp-hl');
+      }
+    } else {
+      CSS.highlights.delete('temp-hl');
+    }
+
+    return () => {
+      ALL_HL_NAMES.forEach(n => CSS.highlights.delete(n));
+      CSS.highlights.delete('temp-hl');
+    };
+  }, [persistentHl, activeId, hlMenu]);
 
   const handleHlAction = useCallback((action: string, payload?: { bg: string; fg: string | null }) => {
     if (!hlMenu) return;
@@ -490,18 +629,18 @@ export function App() {
       const bg = payload?.bg ?? lastHlColors.bg;
       const fg = payload?.fg ?? lastHlColors.fg;
       setLastHlColors({ bg, fg });
-      persistHighlight(src.nodeId, src.sectionId, src.text, bg, fg);
+      persistHighlight(src.nodeId, src.sectionId, src.text, bg, fg, src.start, src.end);
       setHlMenu(null);
       window.getSelection()?.removeAllRanges();
       return;
     }
 
-    if (action === 'note' || action === 'callout') {
+    if (action === 'callout') {
       const fromTitle = nodes[src.nodeId]?.title ?? 'Untitled';
       const tempId = uid();
       const newAnn: Annotation = {
         id: tempId,
-        kind: action as 'note' | 'callout',
+        kind: 'callout',
         text: src.text,
         fromTitle,
         nodeId: src.nodeId,
@@ -509,13 +648,12 @@ export function App() {
         createdAt: Date.now(),
       };
       setAnnotations(prev => [...prev, newAnn]);
-      if (action === 'note') persistHighlight(src.nodeId, src.sectionId, src.text, lastHlColors.bg, lastHlColors.fg);
       setHlMenu(null);
       window.getSelection()?.removeAllRanges();
 
       if (sessionId && idToken) {
         createAnnotation(idToken, sessionId, {
-          kind: action,
+          kind: 'callout',
           text: src.text,
           fromTitle,
           nodeId: src.nodeId,
@@ -530,7 +668,7 @@ export function App() {
     }
 
     if (action === 'ask') {
-      setFollowUp({ rect: src.rect, text: src.text, nodeId: src.nodeId, sectionId: src.sectionId, loading: false });
+      setFollowUp({ rect: src.rect, text: src.text, nodeId: src.nodeId, sectionId: src.sectionId, start: src.start, end: src.end, loading: false });
       setHlMenu(null);
     }
   }, [hlMenu, nodes, lastHlColors, sessionId, idToken, persistHighlight]);
@@ -589,18 +727,6 @@ export function App() {
     }
   }, [sessionId, idToken]);
 
-  const startNewSession = useCallback(() => {
-    if (!confirm('Start a new research session? Your current one is saved.')) return;
-    setNodes({});
-    setRootId(null);
-    setActiveId(null);
-    setSessionId(null);
-    setAnnotations([]);
-    setPersistentHl({});
-    if (idToken) {
-      listSessions(idToken).then(setSessions).catch(err => console.error(err));
-    }
-  }, [idToken]);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -608,6 +734,64 @@ export function App() {
     window.addEventListener('click', onClick);
     return () => window.removeEventListener('click', onClick);
   }, [contextMenu]);
+
+  // ── Save to Notion ────────────────────────────────────────────────────────
+
+  // After OAuth redirect back, open the picker automatically
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('notion') === 'connected') {
+      window.history.replaceState({}, '', window.location.pathname);
+      setNotionPickerOpen(true);
+    }
+  }, []);
+
+  // Load page list whenever picker opens or search query changes
+  useEffect(() => {
+    if (!notionPickerOpen || !idToken) return;
+    setNotionPagesLoading(true);
+    searchNotionPages(idToken, notionQuery)
+      .then(pages => { setNotionPages(pages); setNotionPagesLoading(false); })
+      .catch(() => { setNotionPages([]); setNotionPagesLoading(false); });
+  }, [notionPickerOpen, notionQuery, idToken]);
+
+  const openNotionPicker = useCallback(async () => {
+    if (!idToken) return;
+    setNotionError(null);
+    try {
+      const { connected } = await getNotionStatus(idToken);
+      if (!connected) {
+        // Redirect to backend OAuth — returns to this page with ?notion=connected
+        window.location.href = `${process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3000'}/notion/auth`;
+        return;
+      }
+    } catch {
+      setNotionError('Could not reach server');
+      return;
+    }
+    setNotionSavedUrl(null);
+    setNotionPickerOpen(true);
+  }, [idToken]);
+
+  const saveToNotionPage = useCallback(async (page: NotionPage) => {
+    if (!rootId || !idToken) return;
+    setNotionPickerOpen(false);
+    setNotionSaving(true);
+    setNotionError(null);
+    try {
+      const { blocks, childrenMap } = buildNotionClipboard(nodes, rootId, persistentHl, annotations);
+      const title = nodes[rootId]?.title ?? 'fork.ai research';
+      const { url } = await pushToNotion(idToken, title, blocks, childrenMap, page.id);
+      setNotionSavedUrl(url);
+      if (sessionId) {
+        updateSessionNotionUrl(idToken, sessionId, url).catch(err => console.error('Failed to persist Notion URL', err));
+      }
+    } catch {
+      setNotionError('Failed to save — try again');
+    } finally {
+      setNotionSaving(false);
+    }
+  }, [nodes, rootId, persistentHl, annotations, idToken]);
 
   // ── Derived state ─────────────────────────────────────────────────────────
 
@@ -651,45 +835,45 @@ export function App() {
 
   // ── Landing / history / loading ───────────────────────────────────────────
 
+  const goHome = () => { setRootId(null); setNodes({}); setSessionId(null); setActiveId(null); setView('landing'); };
+  const persistentBrand = (
+    <div className="app-brand" onClick={goHome} title="Go to home">
+      <img src="/logo.svg" alt="" /> fork.ai
+    </div>
+  );
+
   if (!rootId) {
-    if (loadingRoot) {
-      return <ResearchingScreen sessions={sessions} />;
-    }
-    if (view === 'history') {
-      return (
-        <HistoryPage
-          sessions={sessions}
-          loading={loadingSessions}
-          onLoadSession={loadSession}
-          onBack={() => setView('landing')}
-          onNewSearch={() => setView('landing')}
-        />
-      );
-    }
-    return (
+    let inner;
+    if (loadingRoot) inner = <ResearchingScreen sessions={sessions} />;
+    else if (view === 'history') inner = (
+      <HistoryPage
+        sessions={sessions}
+        loading={loadingSessions}
+        onLoadSession={loadSession}
+        onBack={() => setView('landing')}
+      />
+    );
+    else inner = (
       <Landing
         onSubmit={submitRootQuery}
         loading={loadingRoot}
         onShowHistory={() => setView('history')}
       />
     );
+    return <>{persistentBrand}{inner}</>;
   }
 
   // ── Workspace ─────────────────────────────────────────────────────────────
 
   return (
+    <>
+      {persistentBrand}
     <div className="app">
       <header className="topbar">
-        <div
-          className="brand"
-          style={{ cursor: 'pointer' }}
-          onClick={() => { setRootId(null); setNodes({}); setSessionId(null); setActiveId(null); setView('landing'); }}
-          title="Go to home"
-        >
-          <span className="mark">F</span> fork.ai
-        </div>
-        <div className="divider" />
         <div className="crumbs">
+          {rootId && nodes[rootId]?.emoji && (
+            <span style={{ fontSize: 16, lineHeight: 1 }}>{nodes[rootId].emoji}</span>
+          )}
           {breadcrumbs.map((n, i) => {
             const isLast = i === breadcrumbs.length - 1;
             return (
@@ -700,22 +884,19 @@ export function App() {
                   onClick={() => !isLast && setActiveId(n.id)}
                   title={n.title}
                 >
-                  <PageIcon className="page-ic" /> {n.title}
+                  {n.title}
                 </span>
               </span>
             );
           })}
         </div>
         <div className="tools">
-          <button className="icon-btn" onClick={startNewSession} title="New search">
-            <Search size={14} /> New
-          </button>
           <button className="icon-btn" onClick={() => { setView('history'); setRootId(null); setNodes({}); setSessionId(null); }} title="Research history">
             <Clock size={14} /> History
           </button>
-          <button className="icon-btn has-badge" onClick={() => setDrawerOpen(true)} title="Notes & Callouts">
+          <button className="icon-btn has-badge" onClick={() => setDrawerOpen(true)} title="Highlights & Callouts">
             <Bookmark size={14} /> Notes
-            {annotations.length > 0 && <span className="badge">{annotations.length}</span>}
+            {(annotations.length + highlightsList.length) > 0 && <span className="badge">{annotations.length + highlightsList.length}</span>}
           </button>
         </div>
       </header>
@@ -730,6 +911,11 @@ export function App() {
             onContextMenu={onMapContext}
             layout={tweaks.mapLayout}
             loadingIds={loadingNodes}
+            onSaveToNotion={openNotionPicker}
+            notionSaving={notionSaving}
+            notionSavedUrl={notionSavedUrl}
+            notionError={notionError}
+            onClearNotionError={() => setNotionError(null)}
           />
         ) : (
           <div className="mm-empty">Mind map will populate as you branch</div>
@@ -787,7 +973,6 @@ export function App() {
                   idx={i}
                   section={s}
                   node={active}
-                  highlights={persistentHl[`${activeId}::${s.id}`] ?? EMPTY_HLS}
                   onDeeper={sec => expandSectionAsChild(active.id, sec)}
                   deeperLoading={sectionLoading === s.id}
                   sectionChildren={childrenBySection[s.id] ?? []}
@@ -840,9 +1025,11 @@ export function App() {
       <NotesDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        items={annotations}
+        highlights={highlightsList}
+        callouts={annotations}
         onJump={id => { setActiveId(id); scrollWsTop(); setDrawerOpen(false); }}
-        onRemove={removeAnnotation}
+        onRemoveHighlight={removeHighlight}
+        onRemoveCallout={removeAnnotation}
       />
 
       <TweaksPanel
@@ -851,6 +1038,40 @@ export function App() {
         fontPairOptions={FONT_PAIR_OPTIONS}
         accentOptions={ACCENTS}
       />
+
+      {notionPickerOpen && (
+        <div className="notion-picker-overlay" onClick={() => setNotionPickerOpen(false)}>
+          <div className="notion-picker" onClick={e => e.stopPropagation()}>
+            <div className="notion-picker-header">
+              <span>Save to Notion — pick a page</span>
+              <button className="notion-picker-close" onClick={() => setNotionPickerOpen(false)}>✕</button>
+            </div>
+            <input
+              className="notion-picker-search"
+              placeholder="Search pages…"
+              autoFocus
+              value={notionQuery}
+              onChange={e => setNotionQuery(e.target.value)}
+            />
+            <ul className="notion-picker-list">
+              {notionPagesLoading && (
+                <li className="notion-picker-empty">Loading…</li>
+              )}
+              {!notionPagesLoading && notionPages.length === 0 && (
+                <li className="notion-picker-empty">No pages found</li>
+              )}
+              {!notionPagesLoading && notionPages.map(page => (
+                <li key={page.id}>
+                  <button onClick={() => saveToNotionPage(page)}>
+                    <span className="notion-picker-title">{page.title}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
     </div>
+    </>
   );
 }

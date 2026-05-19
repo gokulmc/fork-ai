@@ -4,7 +4,7 @@ import { IsString, MinLength, MaxLength, IsOptional } from 'class-validator';
 export class CreateSessionDto {
   @ApiProperty({ description: 'The root research query', example: 'How do neural networks learn?' })
   @IsString()
-  @MinLength(3)
+  @MinLength(1)
   @MaxLength(500)
   query!: string;
 

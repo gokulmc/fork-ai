@@ -1,10 +1,16 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsString, MinLength, MaxLength } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsString, MinLength, MaxLength, IsOptional } from 'class-validator';
 
 export class UpdateSessionDto {
-  @ApiProperty({ description: 'New title for the session', example: 'Neural Networks' })
+  @ApiPropertyOptional({ description: 'New title for the session', example: 'Neural Networks' })
+  @IsOptional()
   @IsString()
   @MinLength(1)
   @MaxLength(100)
-  title!: string;
+  title?: string;
+
+  @ApiPropertyOptional({ description: 'Notion page URL after export' })
+  @IsOptional()
+  @IsString()
+  notionPageUrl?: string;
 }

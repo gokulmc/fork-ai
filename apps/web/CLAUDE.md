@@ -1,4 +1,4 @@
-# fork.ai — Frontend (Next.js 15)
+# fork.ai — Frontend (Next.js 16)
 
 > See root `CLAUDE.md` for shared data model, architecture overview, and project context.
 
@@ -6,7 +6,7 @@
 
 | Layer | Choice |
 |---|---|
-| Framework | Next.js 15, App Router, TypeScript strict |
+| Framework | Next.js 16, App Router, TypeScript strict |
 | Auth | `next-auth` v5 (Auth.js) with Cognito as OAuth2 provider |
 | State | React 19 hooks — local state, synced to NestJS REST API |
 | Markdown | `marked` v15 (GFM, synchronous parse) |
@@ -64,7 +64,8 @@ frontend/
 │   └── lib/
 │       ├── types.ts            # Shared TypeScript interfaces (ForkNode, Section, Annotation, …)
 │       ├── utils.ts            # uid, short5, stripMarkdown, pickEmoji, wrapTextInElement, …
-│       └── api.ts              # TO BUILD — typed NestJS REST client (reads id_token, sends Bearer header)
+│       ├── api.ts              # Typed NestJS REST client (reads id_token, sends Bearer header)
+│       └── notion-clipboard.ts # Builds Notion block tree from session; splitBlocks strips inline children
 ```
 
 ---
@@ -148,6 +149,9 @@ Typed wrappers to expose:
 - `createHighlight(sessionId, dto, idToken)` → `Highlight`
 - `updateHighlight(sessionId, hlId, dto, idToken)` → `Highlight`
 - `deleteHighlight(sessionId, hlId, idToken)` → `void`
+- `getNotionStatus(idToken)` → `{ connected: boolean }`
+- `searchNotionPages(idToken, q)` → `NotionPage[]`
+- `pushToNotion(idToken, title, blocks, childrenMap, parentPageId)` → `{ url: string }`
 
 ---
 
@@ -179,7 +183,7 @@ The tree is reconstructed by grouping nodes by `parentId` — never stored as a 
 |---|---|
 | `App.tsx` | `'use client'` — all session state lives here |
 | `MindMap.tsx` | `'use client'` — SVG pan/zoom, `ResizeObserver`, `requestAnimationFrame` easing |
-| `Section.tsx` | `'use client'` — `dangerouslySetInnerHTML` with marked output; hljs in `useEffect` |
+| `Section.tsx` | `'use client'` — clean marked HTML via `dangerouslySetInnerHTML`; hljs + CSS Highlight API in `useEffect` |
 | `HighlightMenu.tsx` | `'use client'` — positions itself relative to `getBoundingClientRect()` |
 | `FollowUpPop.tsx` | `'use client'` — positions below/above selection rect |
 | `TweaksPanel.tsx` | `'use client'` — draggable via `mousemove` listeners |
@@ -232,12 +236,10 @@ npm run dev -- -p 3001      # starts on port 3001
 npm run build               # type-check + production build
 ```
 
-## Build order (what still needs to be built)
+## Run
 
-1. Delete `src/app/api/llm/` directory and `src/lib/llm.ts`
-2. Add `src/app/api/auth/[...nextauth]/route.ts` (next-auth Cognito provider)
-3. Build `src/lib/api.ts` — typed NestJS client
-4. Add `src/app/globals.css` — port from root `styles.css`
-5. Rewrite `App.tsx` to use `api.ts` instead of in-memory LLM calls
-6. Add sessions dashboard (list existing sessions on login)
-7. Wire `src/middleware.ts` to protect routes (redirect to sign-in if no session)
+```bash
+# From repo root:
+npm run dev:web      # Next.js on port 3001
+npm run build        # type-check + production build (Nx-cached)
+```

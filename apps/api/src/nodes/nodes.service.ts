@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { ulid } from 'ulid';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
+import type { NodeItem } from '@/dynamo/dynamo.interfaces';
 import { LlmService } from '@/llm/llm.service';
 import { SessionsService } from '@/sessions/sessions.service';
 import { CreateNodeDto } from './dto/create-node.dto';
@@ -14,21 +15,13 @@ export class NodesService {
     private readonly sessions: SessionsService,
   ) {}
 
-  private sessionPk(sessionId: string) { return `SESSION#${sessionId}`; }
-  private nodeSk(nodeId: string) { return `NODE#${nodeId}`; }
-
-  async createNode(
-    sub: string,
-    sessionId: string,
-    dto: CreateNodeDto,
-  ): Promise<Record<string, unknown>> {
-    // Load all session nodes in one query — needed for ancestor chain
+  async createNode(sub: string, sessionId: string, dto: CreateNodeDto): Promise<NodeItem> {
     const session = await this.sessions.getSession(sub, sessionId);
-    const allNodes = session.nodes as Record<string, unknown>[];
-    const nodeById = new Map(allNodes.map(n => [n['nodeId'] as string, n]));
+    const nodeById = new Map(session.nodes.map((n) => [n.nodeId, n]));
 
-    const parent = nodeById.get(dto.parentNodeId);
-    if (!parent) throw new NotFoundException(`Parent node ${dto.parentNodeId} not found`);
+    if (!nodeById.has(dto.parentNodeId)) {
+      throw new NotFoundException(`Parent node ${dto.parentNodeId} not found`);
+    }
 
     // Walk up to root to build context trail (root first)
     const ancestors: Array<{ title: string; query: string }> = [];
@@ -36,8 +29,8 @@ export class NodesService {
     while (cur) {
       const n = nodeById.get(cur);
       if (!n) break;
-      ancestors.unshift({ title: n['title'] as string, query: n['query'] as string });
-      cur = (n['parentId'] as string | null);
+      ancestors.unshift({ title: n.title, query: n.query });
+      cur = n.parentId ?? null;
     }
 
     let llmResult;
@@ -48,7 +41,6 @@ export class NodesService {
       llmResult = await this.llm.expandSection(ancestors, dto.query, dto.sectionBody);
       fromText = `${dto.query}: ${dto.sectionBody.slice(0, 200)}…`;
     } else {
-      // ASK
       if (!dto.highlightText) throw new BadRequestException('highlightText required for ASK nodes');
       llmResult = await this.llm.followUpFromHighlight(ancestors, dto.highlightText, dto.query);
       fromText = dto.highlightText;
@@ -58,9 +50,9 @@ export class NodesService {
     const now = new Date().toISOString();
     const sections = llmResult.sections.map((s) => ({ id: ulid(), ...s }));
 
-    const node: Record<string, unknown> = {
-      PK: this.sessionPk(sessionId),
-      SK: this.nodeSk(nodeId),
+    const node: NodeItem = {
+      PK: `SESSION#${sessionId}`,
+      SK: `NODE#${nodeId}`,
       nodeId,
       parentId: dto.parentNodeId,
       kind: dto.kind,
@@ -71,11 +63,10 @@ export class NodesService {
       sections,
       fromSection: dto.fromSection,
       fromText,
-      highlights: {},
       createdAt: now,
     };
 
-    await this.db.put(node);
+    await this.db.putNode(node);
     await Promise.all([
       this.sessions.touchUpdatedAt(sub, sessionId),
       this.sessions.incrementNodeCount(sub, sessionId, 1),
@@ -84,60 +75,48 @@ export class NodesService {
     return node;
   }
 
-  async renameNode(
-    sub: string,
-    sessionId: string,
-    nodeId: string,
-    dto: UpdateNodeDto,
-  ): Promise<void> {
+  async renameNode(sub: string, sessionId: string, nodeId: string, dto: UpdateNodeDto): Promise<void> {
     await this.sessions.getSession(sub, sessionId);
-    const node = await this.db.get(this.sessionPk(sessionId), this.nodeSk(nodeId));
+    const node = await this.db.getNode(sessionId, nodeId);
     if (!node) throw new NotFoundException(`Node ${nodeId} not found`);
-    await this.db.update(this.sessionPk(sessionId), this.nodeSk(nodeId), { title: dto.title });
+    await this.db.updateNode(sessionId, nodeId, { title: dto.title });
   }
 
   async deleteBranch(sub: string, sessionId: string, nodeId: string): Promise<void> {
     await this.sessions.getSession(sub, sessionId);
 
-    // Load all nodes in the session to find descendants
-    const allNodes = await this.db.query(this.sessionPk(sessionId), 'NODE#');
-    const nodeMap = new Map(allNodes.map((n) => [n['nodeId'] as string, n]));
+    const allNodes = await this.db.queryNodes(sessionId);
+    const nodeMap = new Map(allNodes.map((n) => [n.nodeId, n]));
 
     if (!nodeMap.has(nodeId)) throw new NotFoundException(`Node ${nodeId} not found`);
 
-    // BFS to collect the subtree
+    // BFS to collect the full subtree
     const toDelete = new Set<string>([nodeId]);
     const queue = [nodeId];
     while (queue.length) {
       const current = queue.shift()!;
       for (const n of nodeMap.values()) {
-        if (n['parentId'] === current && !toDelete.has(n['nodeId'] as string)) {
-          const id = n['nodeId'] as string;
-          toDelete.add(id);
-          queue.push(id);
+        if (n.parentId === current && !toDelete.has(n.nodeId)) {
+          toDelete.add(n.nodeId);
+          queue.push(n.nodeId);
         }
       }
     }
 
-    const keys = [...toDelete].map((id) => ({
-      pk: this.sessionPk(sessionId),
-      sk: this.nodeSk(id),
-    }));
+    const [allAnnotations, allHighlights] = await Promise.all([
+      this.db.queryAnnotations(sessionId),
+      this.db.queryHighlights(sessionId),
+    ]);
 
-    // Also delete all annotations and highlights attached to these nodes
-    const annAndHl = (await this.db.query(this.sessionPk(sessionId))).filter((i) => {
-      const sk = i['SK'] as string;
-      return (
-        (sk.startsWith('ANN#') || sk.startsWith('HL#')) &&
-        toDelete.has(i['nodeId'] as string)
-      );
-    });
-    const extraKeys = annAndHl.map((i) => ({
-      pk: i['PK'] as string,
-      sk: i['SK'] as string,
-    }));
+    const annIds = allAnnotations.filter((a) => toDelete.has(a.nodeId)).map((a) => a.annId);
+    const hlIds = allHighlights.filter((h) => toDelete.has(h.nodeId)).map((h) => h.hlId);
 
-    await this.db.batchDelete([...keys, ...extraKeys]);
+    await Promise.all([
+      this.db.batchDeleteNodes(sessionId, [...toDelete]),
+      this.db.batchDeleteAnnotations(sessionId, annIds),
+      this.db.batchDeleteHighlights(sessionId, hlIds),
+    ]);
+
     await Promise.all([
       this.sessions.touchUpdatedAt(sub, sessionId),
       this.sessions.incrementNodeCount(sub, sessionId, -toDelete.size),

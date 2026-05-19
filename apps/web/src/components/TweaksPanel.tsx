@@ -302,6 +302,16 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, accentOptions }
               options={[{ value: 'horizontal', label: 'Horizontal' }, { value: 'vertical', label: 'Vertical' }]}
               onChange={v => setTweak('mapLayout', v as Tweaks['mapLayout'])}
             />
+            <TweakSection label="Ask AI shortcuts" />
+            <div className="twk-shortcuts">
+              {([['?', 'what'], ['!?', 'how'], ['/?', 'why'], ['>?', 'explain']] as const).map(([sym, word]) => (
+                <div key={sym} className="twk-shortcut-row">
+                  <code className="twk-shortcut-sym">{sym}</code>
+                  <span className="twk-shortcut-arr">→</span>
+                  <span className="twk-shortcut-word">{word}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}

@@ -1,9 +1,8 @@
 'use client';
-import { useMemo, useEffect, useRef } from 'react';
+import { useMemo, useEffect, useRef, memo } from 'react';
 import { marked } from 'marked';
 import hljs from 'highlight.js';
 import type { Section as SectionData, ForkNode, Annotation } from '@/lib/types';
-import { wrapTextInElement } from '@/lib/utils';
 import { CornerDownRight, Branch, ChevronRight, Lightbulb, X } from './Icons';
 
 marked.use({ gfm: true, breaks: false });
@@ -21,19 +20,6 @@ function renderMd(src: string): string {
   }
 }
 
-function applyHighlightsToHtml(
-  html: string,
-  highlights: Array<{ text: string; bg: string | null; fg: string | null }>,
-): string {
-  if (!highlights.length) return html;
-  // Parse into a fresh DOM — no split text-node residue from prior renders
-  const doc = new DOMParser().parseFromString(`<div>${html}</div>`, 'text/html');
-  const container = doc.body.firstElementChild as Element;
-  // Apply longest highlights first so shorter substrings don't block larger matches
-  const sorted = [...highlights].sort((a, b) => b.text.length - a.text.length);
-  for (const hl of sorted) wrapTextInElement(container, hl);
-  return container.innerHTML;
-}
 
 function selectSentenceAtPoint(blockEl: Element, e: MouseEvent) {
   const text = blockEl.textContent ?? '';
@@ -121,40 +107,19 @@ function handleBodyClick(e: React.MouseEvent<HTMLDivElement>) {
   }
 }
 
-interface SectionProps {
-  idx: number;
-  section: SectionData;
-  node: ForkNode;
-  highlights: Array<{ text: string; bg: string | null; fg: string | null }>;
-  onDeeper: (section: SectionData) => void;
-  deeperLoading: boolean;
-  sectionChildren: ForkNode[];
-  onChildClick: (id: string) => void;
-  calloutsForSection: Annotation[];
-  onRemoveCallout: (id: string) => void;
-}
-
-export function Section({
-  idx,
-  section,
-  node: _node,
-  highlights,
-  onDeeper,
-  deeperLoading,
-  sectionChildren,
-  onChildClick,
-  calloutsForSection,
-  onRemoveCallout,
-}: SectionProps) {
-  const num = String(idx + 1).padStart(2, '0');
+// Isolated so its DOM is never touched when sectionChildren or callouts change.
+// Browser text selection inside the body survives concurrent node arrivals.
+const SectionBody = memo(function SectionBody({
+  body,
+  sectionId,
+  sectionHeading,
+}: {
+  body: string;
+  sectionId: string;
+  sectionHeading: string;
+}) {
   const bodyRef = useRef<HTMLDivElement>(null);
-
-  const html = useMemo(
-    () => applyHighlightsToHtml(renderMd(section.body), highlights),
-    // highlights is a stable reference from persistentHl state — only changes when user highlights
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [section.body, highlights],
-  );
+  const html = useMemo(() => renderMd(body), [body]);
 
   useEffect(() => {
     if (!bodyRef.current) return;
@@ -167,6 +132,43 @@ export function Section({
       try { hljs.highlightElement(el as HTMLElement); } catch { /* ignore */ }
     });
   }, [html]);
+
+  return (
+    <div
+      className="section-body md"
+      data-section-id={sectionId}
+      data-section-heading={sectionHeading}
+      ref={bodyRef}
+      onClick={handleBodyClick}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+});
+
+interface SectionProps {
+  idx: number;
+  section: SectionData;
+  node: ForkNode;
+  onDeeper: (section: SectionData) => void;
+  deeperLoading: boolean;
+  sectionChildren: ForkNode[];
+  onChildClick: (id: string) => void;
+  calloutsForSection: Annotation[];
+  onRemoveCallout: (id: string) => void;
+}
+
+export function Section({
+  idx,
+  section,
+  node: _node,
+  onDeeper,
+  deeperLoading,
+  sectionChildren,
+  onChildClick,
+  calloutsForSection,
+  onRemoveCallout,
+}: SectionProps) {
+  const num = String(idx + 1).padStart(2, '0');
 
   return (
     <section
@@ -191,13 +193,10 @@ export function Section({
           )}
         </button>
       </div>
-      <div
-        className="section-body md"
-        data-section-id={section.id}
-        data-section-heading={section.heading}
-        ref={bodyRef}
-        onClick={handleBodyClick}
-        dangerouslySetInnerHTML={{ __html: html }}
+      <SectionBody
+        body={section.body}
+        sectionId={section.id}
+        sectionHeading={section.heading}
       />
       {calloutsForSection.length > 0 && (
         <div className="section-callouts">

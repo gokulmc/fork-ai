@@ -1,4 +1,4 @@
-import type { ForkNode, Annotation } from './types';
+import type { ForkNode, Annotation, HighlightRecord, PersistentHighlight } from './types';
 
 // ── Response shapes from NestJS ─────────────────────────────────────────────
 
@@ -18,7 +18,7 @@ export interface ApiNode {
 
 export interface ApiAnnotation {
   id: string;
-  kind: 'note' | 'callout';
+  kind: 'callout';
   text: string;
   fromTitle: string;
   nodeId: string;
@@ -31,6 +31,8 @@ export interface ApiHighlight {
   nodeId: string;
   sectionId: string;
   text: string;
+  start?: number | null;
+  end?: number | null;
   bg: string | null;
   fg: string | null;
 }
@@ -43,6 +45,7 @@ export interface SessionSummary {
   createdAt: string;
   updatedAt: string;
   nodeCount: number;
+  notionPageUrl?: string | null;
 }
 
 export interface FullSession extends SessionSummary {
@@ -59,15 +62,15 @@ export function toForkNode(n: ApiNode): ForkNode {
   const id = (raw['nodeId'] as string) ?? n.id;
   return {
     id,
-    parentId: n.parentId,
+    parentId: n.parentId ?? null,
     kind: n.kind,
     title: n.title,
-    emoji: n.emoji,
+    emoji: n.emoji ?? null,
     query: n.query,
     lede: n.lede,
     sections: n.sections,
-    fromSection: n.fromSection,
-    fromText: n.fromText,
+    fromSection: n.fromSection ?? null,
+    fromText: n.fromText ?? null,
     createdAt: typeof n.createdAt === 'string' ? new Date(n.createdAt).getTime() : (n.createdAt as number),
     loading: false,
   };
@@ -86,16 +89,41 @@ export function toAnnotation(a: ApiAnnotation): Annotation {
   };
 }
 
+function extractHlId(h: ApiHighlight): string {
+  return ((h as unknown as Record<string, unknown>)['hlId'] as string) ?? h.id;
+}
+
 /** Build the persistentHl map from the flat highlights list returned by the API. */
 export function toHlMap(
   highlights: ApiHighlight[],
-): Record<string, Array<{ text: string; bg: string | null; fg: string | null }>> {
-  const m: Record<string, Array<{ text: string; bg: string | null; fg: string | null }>> = {};
+): Record<string, PersistentHighlight[]> {
+  const m: Record<string, PersistentHighlight[]> = {};
   for (const h of highlights) {
     const key = `${h.nodeId}::${h.sectionId}`;
-    (m[key] = m[key] ?? []).push({ text: h.text, bg: h.bg, fg: h.fg });
+    (m[key] = m[key] ?? []).push({
+      hlId: extractHlId(h),
+      text: h.text,
+      start: h.start ?? undefined,
+      end: h.end ?? undefined,
+      bg: h.bg ?? null,
+      fg: h.fg ?? null,
+    });
   }
   return m;
+}
+
+/** Build the flat highlight list used by the drawer. */
+export function toHighlightRecords(
+  highlights: ApiHighlight[],
+  nodes: Record<string, { title: string }>,
+): HighlightRecord[] {
+  return highlights.map(h => ({
+    hlId: extractHlId(h),
+    text: h.text,
+    nodeId: h.nodeId,
+    sectionId: h.sectionId,
+    fromTitle: nodes[h.nodeId]?.title ?? 'Untitled',
+  }));
 }
 
 // ── API error ────────────────────────────────────────────────────────────────
@@ -132,7 +160,9 @@ async function apiFetch<T>(
     throw new ApiError(res.status, msg);
   }
   if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+  const text = await res.text();
+  if (!text.trim()) return undefined as T;
+  return JSON.parse(text) as T;
 }
 
 // ── Sessions ─────────────────────────────────────────────────────────────────
@@ -169,6 +199,17 @@ export function renameSession(
 
 export function deleteSession(idToken: string, sessionId: string): Promise<void> {
   return apiFetch<void>(`/sessions/${sessionId}`, idToken, { method: 'DELETE' });
+}
+
+export function updateSessionNotionUrl(
+  idToken: string,
+  sessionId: string,
+  notionPageUrl: string | null,
+): Promise<void> {
+  return apiFetch<void>(`/sessions/${sessionId}`, idToken, {
+    method: 'PATCH',
+    body: JSON.stringify({ notionPageUrl: notionPageUrl ?? '' }),
+  });
 }
 
 export type StreamEvent =
@@ -264,7 +305,7 @@ export function deleteNode(
 // ── Annotations ───────────────────────────────────────────────────────────────
 
 export interface CreateAnnotationPayload {
-  kind: 'note' | 'callout';
+  kind: 'callout';
   text: string;
   fromTitle: string;
   nodeId: string;
@@ -298,6 +339,8 @@ export interface CreateHighlightPayload {
   nodeId: string;
   sectionId: string;
   text: string;
+  start: number;
+  end: number;
   bg?: string | null;
   fg?: string | null;
 }
@@ -310,5 +353,43 @@ export function createHighlight(
   return apiFetch<ApiHighlight>(`/sessions/${sessionId}/highlights`, idToken, {
     method: 'POST',
     body: JSON.stringify(payload),
+  });
+}
+
+export function deleteHighlight(
+  idToken: string,
+  sessionId: string,
+  hlId: string,
+): Promise<void> {
+  return apiFetch<void>(`/sessions/${sessionId}/highlights/${hlId}`, idToken, { method: 'DELETE' });
+}
+
+// ── Notion ────────────────────────────────────────────────────────────────────
+
+export interface NotionPage {
+  id: string;
+  title: string;
+  url: string;
+}
+
+export function getNotionStatus(idToken: string): Promise<{ connected: boolean }> {
+  return apiFetch<{ connected: boolean }>('/notion/status', idToken);
+}
+
+export function searchNotionPages(idToken: string, q: string): Promise<NotionPage[]> {
+  const qs = q ? `?q=${encodeURIComponent(q)}` : '';
+  return apiFetch<NotionPage[]>(`/notion/pages${qs}`, idToken);
+}
+
+export function pushToNotion(
+  idToken: string,
+  title: string,
+  blocks: unknown[],
+  childrenMap: unknown[],
+  parentPageId: string,
+): Promise<{ url: string }> {
+  return apiFetch<{ url: string }>('/notion/push', idToken, {
+    method: 'POST',
+    body: JSON.stringify({ title, blocks, childrenMap, parentPageId }),
   });
 }

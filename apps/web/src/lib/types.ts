@@ -22,7 +22,7 @@ export interface ForkNode {
 
 export interface Annotation {
   id: string;
-  kind: 'note' | 'callout';
+  kind: 'callout';
   text: string;
   fromTitle: string;
   nodeId: string;
@@ -31,9 +31,20 @@ export interface Annotation {
 }
 
 export interface PersistentHighlight {
+  hlId?: string;
   text: string;
+  start?: number;
+  end?: number;
   bg: string | null;
   fg: string | null;
+}
+
+export interface HighlightRecord {
+  hlId: string;
+  text: string;
+  nodeId: string;
+  sectionId: string;
+  fromTitle: string;
 }
 
 export interface Tweaks {
@@ -49,6 +60,8 @@ export interface HlMenuState {
   text: string;
   nodeId: string;
   sectionId: string;
+  start: number;
+  end: number;
 }
 
 export interface FollowUpState {
@@ -56,6 +69,8 @@ export interface FollowUpState {
   text: string;
   nodeId: string;
   sectionId: string;
+  start: number;
+  end: number;
   loading: boolean;
 }
 
