@@ -14,7 +14,9 @@ A session can be pushed to Notion as a structured page via the "Save to Notion" 
 4. Frontend receives `?notion=connected` → page picker modal opens automatically.
 5. User searches their Notion workspace and picks a parent page.
 6. Session is pushed as a child page of the chosen parent.
-7. Button changes to **Open in Notion ↗** for 8 seconds, linking directly to the created page.
+7. Button changes to **Open in Notion ↗** permanently, linking directly to the created page.
+8. The Notion page URL is persisted to DynamoDB (`notionPageUrl` on the session item) so the button survives page reload and history navigation.
+9. If the user adds a new branch (Go Deeper / Ask AI), `notionPageUrl` is cleared immediately (both UI and DB) and the button reverts to **Save to Notion** — the export is now stale.
 
 ---
 
@@ -38,10 +40,10 @@ NotionController → NotionService
 
 | File | Role |
 |---|---|
-| `apps/web/src/lib/notion-clipboard.ts` | Builds the Notion block tree from session state; splits nested tree for API |
-| `apps/web/src/components/App.tsx` | OAuth redirect, picker state, `saveToNotionPage` callback |
+| `apps/web/src/lib/notion-clipboard.ts` | Builds Notion block tree (Mermaid diagram first, then nodes); `splitBlocks` strips inline children for API |
+| `apps/web/src/components/App.tsx` | OAuth redirect, picker state, `saveToNotionPage`, URL persistence, stale-on-branch invalidation |
 | `apps/web/src/components/MindMap.tsx` | "Save to Notion" button + error/success states |
-| `apps/web/src/lib/api.ts` | `getNotionStatus`, `searchNotionPages`, `pushToNotion` |
+| `apps/web/src/lib/api.ts` | `getNotionStatus`, `searchNotionPages`, `pushToNotion`, `updateSessionNotionUrl` |
 | `apps/api/src/notion/notion.service.ts` | OAuth exchange, page search, recursive block push |
 | `apps/api/src/notion/notion.controller.ts` | Route handlers + DTOs |
 | `apps/api/src/notion/notion.module.ts` | Module wiring |
@@ -52,13 +54,15 @@ NotionController → NotionService
 
 | fork.ai concept | Notion block |
 |---|---|
-| Root node title | `heading_1` (non-toggle) |
-| Root node lede | `paragraph` |
-| Section heading | `heading_2` (depth 1), `heading_3` (depth 2+) |
+| Mind map diagram | `code` block with `language: "mermaid"` — always the **first** block. Notion renders the diagram but lands in code view; users must manually click **Preview** to hide the code — the Notion API has no preview-mode property on code blocks. |
+| Root node lede | `paragraph` (title is omitted — it's already the Notion page title) |
+| Section heading (root) | `heading_1` in blue |
+| Section heading (depth 1) | `heading_3` default |
+| Section heading (depth 2+) | `paragraph` bold |
 | Section body (markdown) | `paragraph`, `bulleted_list_item`, `code`, `quote` |
-| Child node (depth 1) | `heading_1` with `is_toggleable: true` |
-| Child node (depth 2) | `heading_2` with `is_toggleable: true` |
-| Child node (depth 3+) | `heading_3` with `is_toggleable: true` |
+| Child node (depth 1) | `heading_2` toggle, purple text, `emoji title` |
+| Child node (depth 2) | `heading_3` toggle, green text, `emoji title` |
+| Child node (depth 3+) | `heading_3` toggle, yellow text, `emoji title` |
 | Callout annotation | `callout` with 💡 emoji icon |
 | Highlight (bg colour) | Notion background colour on matching text spans |
 | Highlight (fg colour) | Notion foreground colour on matching text spans |
@@ -139,6 +143,21 @@ The Notion access token is stored on the `USER#sub / METADATA` DynamoDB item as 
 
 ---
 
+## Notion page URL persistence
+
+After a successful push, `notionPageUrl` is written to the `SESSION#id` DynamoDB item via `PATCH /sessions/:id` with `{ notionPageUrl: url }`. On session load (`getSession`), the URL is included in the response and `App.tsx` restores the "Open in Notion ↗" button state.
+
+### Stale-export invalidation
+
+When a new branch is created (Go Deeper / Ask AI), the Notion export is immediately considered stale:
+
+1. `notionSavedUrl` is set to `null` in React state (button reverts to "Save to Notion" instantly).
+2. `updateSessionNotionUrl(idToken, sessionId, null)` fires in the background, writing `''` (empty string) to DynamoDB. `toSummary` maps `''` to `null` via `|| null`, so the next load also sees no URL.
+
+Only new nodes trigger invalidation — highlights, callouts, and renames do not.
+
+---
+
 ## Error handling (frontend)
 
 | Scenario | UI behaviour |
@@ -146,7 +165,9 @@ The Notion access token is stored on the `USER#sub / METADATA` DynamoDB item as 
 | `/notion/status` throws | Button shows "Could not reach server" in red |
 | `pushToNotion` throws | Button shows "Failed to save — try again" in red |
 | Clicking error button | Clears error and retries `openNotionPicker` |
-| Notion returns success | Button changes to "Open in Notion ↗" for 8 s, then resets |
+| Notion returns success | Button permanently shows "Open in Notion ↗" (URL persisted to DB) |
+| Session loaded with saved URL | Button shows "Open in Notion ↗" immediately |
+| New branch added | Button reverts to "Save to Notion" (URL cleared from DB) |
 | Page picker loading | Shows "Loading…" while `searchNotionPages` is in-flight |
 
 ---
@@ -156,3 +177,4 @@ The Notion access token is stored on the `USER#sub / METADATA` DynamoDB item as 
 - **Disconnect Notion** — UI to revoke the token (call `updateNotionToken(sub, null)` on the backend, which already handles null).
 - **Database parents** — currently only page parents are supported; extend `searchPages` to include Notion databases.
 - **Incremental sync** — detect an existing fork.ai page for the session and update blocks rather than creating a new page.
+- **Mermaid preview mode** — Notion's code block API has no `preview_mode` property; the diagram always lands in code view. No workaround exists via the API — users must click **Preview** manually in Notion.

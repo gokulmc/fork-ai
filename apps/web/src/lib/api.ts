@@ -45,6 +45,7 @@ export interface SessionSummary {
   createdAt: string;
   updatedAt: string;
   nodeCount: number;
+  notionPageUrl?: string | null;
 }
 
 export interface FullSession extends SessionSummary {
@@ -196,6 +197,17 @@ export function renameSession(
 
 export function deleteSession(idToken: string, sessionId: string): Promise<void> {
   return apiFetch<void>(`/sessions/${sessionId}`, idToken, { method: 'DELETE' });
+}
+
+export function updateSessionNotionUrl(
+  idToken: string,
+  sessionId: string,
+  notionPageUrl: string | null,
+): Promise<void> {
+  return apiFetch<void>(`/sessions/${sessionId}`, idToken, {
+    method: 'PATCH',
+    body: JSON.stringify({ notionPageUrl: notionPageUrl ?? '' }),
+  });
 }
 
 export type StreamEvent =

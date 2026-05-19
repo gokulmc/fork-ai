@@ -57,6 +57,7 @@ import {
   getNotionStatus,
   searchNotionPages,
   pushToNotion,
+  updateSessionNotionUrl,
   type SessionSummary,
   type NotionPage,
 } from '@/lib/api';
@@ -166,6 +167,14 @@ export function App() {
   const [highlightsList, setHighlightsList] = useState<HighlightRecord[]>([]);
   const [lastHlColors, setLastHlColors] = useState<{ bg: string; fg: string | null }>({ bg: '#fef08a', fg: null });
 
+  const [notionPickerOpen, setNotionPickerOpen] = useState(false);
+  const [notionPages, setNotionPages] = useState<NotionPage[]>([]);
+  const [notionPagesLoading, setNotionPagesLoading] = useState(false);
+  const [notionQuery, setNotionQuery] = useState('');
+  const [notionSaving, setNotionSaving] = useState(false);
+  const [notionSavedUrl, setNotionSavedUrl] = useState<string | null>(null);
+  const [notionError, setNotionError] = useState<string | null>(null);
+
   const wsRef = useRef<HTMLElement>(null);
 
   // ── Apply tweaks to document root ────────────────────────────────────────
@@ -214,6 +223,7 @@ export function App() {
       setAnnotations(session.annotations.map(toAnnotation));
       setPersistentHl(toHlMap(session.highlights));
       setHighlightsList(toHighlightRecords(session.highlights, nodeMap));
+      setNotionSavedUrl(session.notionPageUrl ?? null);
     } catch (err) {
       console.error('Failed to load session', err);
     } finally {
@@ -424,6 +434,10 @@ export function App() {
         loading: true,
       },
     }));
+    if (notionSavedUrl) {
+      setNotionSavedUrl(null);
+      updateSessionNotionUrl(idToken, sessionId, null).catch(() => {});
+    }
     setActiveId(tempId);
     scrollWsTop();
 
@@ -450,7 +464,7 @@ export function App() {
       setSectionLoading(null);
       setLoadingNodes(prev => { const n = new Set(prev); n.delete(tempId); return n; });
     }
-  }, [nodes, sessionId, idToken, scrollWsTop]);
+  }, [nodes, sessionId, idToken, scrollWsTop, notionSavedUrl]);
 
   // ── Branch: Ask AI from highlight ────────────────────────────────────────
 
@@ -479,6 +493,10 @@ export function App() {
         loading: true,
       },
     }));
+    if (notionSavedUrl) {
+      setNotionSavedUrl(null);
+      updateSessionNotionUrl(idToken, sessionId, null).catch(() => {});
+    }
 
     try {
       const apiNode = await createNode(idToken, sessionId, {
@@ -504,7 +522,7 @@ export function App() {
       setLoadingNodes(prev => { const n = new Set(prev); n.delete(tempId); return n; });
       setFollowUp(null);
     }
-  }, [nodes, sessionId, idToken, lastHlColors, scrollWsTop, persistHighlight]);
+  }, [nodes, sessionId, idToken, lastHlColors, scrollWsTop, persistHighlight, notionSavedUrl]);
 
   // ── Text selection → highlight menu ──────────────────────────────────────
 
@@ -714,14 +732,6 @@ export function App() {
 
   // ── Save to Notion ────────────────────────────────────────────────────────
 
-  const [notionPickerOpen, setNotionPickerOpen] = useState(false);
-  const [notionPages, setNotionPages] = useState<NotionPage[]>([]);
-  const [notionPagesLoading, setNotionPagesLoading] = useState(false);
-  const [notionQuery, setNotionQuery] = useState('');
-  const [notionSaving, setNotionSaving] = useState(false);
-  const [notionSavedUrl, setNotionSavedUrl] = useState<string | null>(null);
-  const [notionError, setNotionError] = useState<string | null>(null);
-
   // After OAuth redirect back, open the picker automatically
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -768,6 +778,9 @@ export function App() {
       const title = nodes[rootId]?.title ?? 'fork.ai research';
       const { url } = await pushToNotion(idToken, title, blocks, childrenMap, page.id);
       setNotionSavedUrl(url);
+      if (sessionId) {
+        updateSessionNotionUrl(idToken, sessionId, url).catch(err => console.error('Failed to persist Notion URL', err));
+      }
     } catch {
       setNotionError('Failed to save — try again');
     } finally {

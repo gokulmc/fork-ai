@@ -19,6 +19,7 @@ export const SessionMetaSchema = new dynamoose.Schema({
   lede: String,
   rootNodeId: String,
   nodeCount: Number,
+  notionPageUrl: { type: String, required: false },
   createdAt: String,
   updatedAt: String,
   gsi1pk: {

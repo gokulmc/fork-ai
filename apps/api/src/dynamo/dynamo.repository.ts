@@ -98,7 +98,7 @@ export class DynamoRepository {
   async updateSessionMeta(
     sub: string,
     sessionId: string,
-    updates: Partial<Pick<SessionMetaItem, 'title' | 'nodeCount' | 'updatedAt' | 'gsi1sk'>>,
+    updates: Partial<Pick<SessionMetaItem, 'title' | 'nodeCount' | 'notionPageUrl' | 'updatedAt' | 'gsi1sk'>>,
   ): Promise<void> {
     await this.sessionMetaModel.update(
       { PK: this.userPk(sub), SK: this.sessionSk(sessionId) },

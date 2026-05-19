@@ -23,6 +23,7 @@ export interface SessionMetaItem {
   lede: string;
   rootNodeId: string;
   nodeCount: number;
+  notionPageUrl?: string | null;
   createdAt: string;
   updatedAt: string;
   gsi1pk: string;

@@ -121,9 +121,14 @@ interface Annotation {
 
 ### Notion export
 
-Sessions can be pushed to Notion as a structured page with collapsible toggle headings for child branches. See **[`docs/notion-export.md`](docs/notion-export.md)** for the full technical reference (block mapping, the nested-blocks API problem and its solution, OAuth setup, error handling, and future work).
+Sessions can be pushed to Notion as a structured page. The page opens with a Mermaid `graph TD` mind map diagram, followed by collapsible toggle headings for each child branch. The Notion page URL is persisted to DynamoDB (`notionPageUrl` on `SessionMetaItem`) so the "Open in Notion ↗" button survives page reload and history navigation. Adding a new branch clears the URL immediately (both UI and DB) since the export is now stale.
 
-Key constraint to keep in mind: the Notion API rejects blocks with inline `children` in `pages.create`. The client splits the nested block tree into `{ blocks: FlatBlock[], childrenMap: ChildEntry[] }` before sending; the server depth-first appends each level via `blocks.children.append`.
+See **[`docs/notion-export.md`](docs/notion-export.md)** for the full technical reference (block mapping, colour scheme, the nested-blocks API problem and its solution, URL persistence, stale-export invalidation, OAuth setup, and error handling).
+
+Key constraints to keep in mind:
+- The Notion API rejects blocks with inline `children` in `pages.create`. The client splits the nested block tree into `{ blocks: FlatBlock[], childrenMap: ChildEntry[] }` before sending; the server depth-first appends each level via `blocks.children.append`.
+- Toggle heading text colour is set on `rich_text[].annotations.color`, NOT on the block-level `color` field (block-level `color` sets the background).
+- Empty string `''` stored in `notionPageUrl` DynamoDB field means "cleared" — `toSummary` maps it to `null` via `|| null`.
 
 ---
 

@@ -14,6 +14,7 @@ export interface SessionSummary {
   createdAt: string;
   updatedAt: string;
   nodeCount: number;
+  notionPageUrl?: string | null;
 }
 
 export interface FullSession extends SessionSummary {
@@ -171,11 +172,13 @@ export class SessionsService {
     const meta = await this.db.getSessionMeta(sub, sessionId);
     if (!meta) throw new NotFoundException(`Session ${sessionId} not found`);
     const now = new Date().toISOString();
-    await this.db.updateSessionMeta(sub, sessionId, {
-      title: dto.title,
+    const updates: Partial<Parameters<typeof this.db.updateSessionMeta>[2]> = {
       updatedAt: now,
       gsi1sk: `UPDATED#${now}`,
-    });
+    };
+    if (dto.title !== undefined) updates.title = dto.title;
+    if (dto.notionPageUrl !== undefined) updates.notionPageUrl = dto.notionPageUrl;
+    await this.db.updateSessionMeta(sub, sessionId, updates);
   }
 
   async delete(sub: string, sessionId: string): Promise<void> {
@@ -218,6 +221,7 @@ export class SessionsService {
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
       nodeCount: item.nodeCount ?? 0,
+      notionPageUrl: item.notionPageUrl || null,
     };
   }
 }

@@ -249,27 +249,63 @@ function nodeToNBlocks(
   }
 
   if (depth === 0) {
-    // Root: flat layout
-    const root: NBlock[] = [
-      { type: 'heading_1', heading_1: { rich_text: [makeRT(node.title)], is_toggleable: false, color: 'default' } },
+    return [
       { type: 'paragraph', paragraph: { rich_text: [makeRT(node.lede)], color: 'default' } },
       ...sectionBlocks,
     ];
-    return root;
   }
 
-  // Child: toggle heading — depth 1 = H2 purple, depth 2 = H3 green, depth 3+ = H3 gray
+  // Child: toggle heading — depth 1 = H2 purple, depth 2 = H3 green, depth 3+ = H3 yellow
+  const emojiPrefix = node.emoji ? `${node.emoji} ` : '';
   const innerBlocks: NBlock[] = [
     { type: 'paragraph', paragraph: { rich_text: [makeRT(node.lede, { italic: true })], color: 'default' } },
     ...sectionBlocks,
   ];
   if (depth === 1) {
-    return [{ type: 'heading_2', heading_2: { rich_text: [makeRT(node.title, { color: 'purple' })], is_toggleable: true, color: 'default' }, children: innerBlocks }];
+    return [{ type: 'heading_2', heading_2: { rich_text: [makeRT(`${emojiPrefix}${node.title}`, { color: 'purple' })], is_toggleable: true, color: 'default' }, children: innerBlocks }];
   } else if (depth === 2) {
-    return [{ type: 'heading_3', heading_3: { rich_text: [makeRT(node.title, { color: 'green' })], is_toggleable: true, color: 'default' }, children: innerBlocks }];
+    return [{ type: 'heading_3', heading_3: { rich_text: [makeRT(`${emojiPrefix}${node.title}`, { color: 'green' })], is_toggleable: true, color: 'default' }, children: innerBlocks }];
   } else {
-    return [{ type: 'heading_3', heading_3: { rich_text: [makeRT(node.title, { color: 'gray' })], is_toggleable: true, color: 'default' }, children: innerBlocks }];
+    return [{ type: 'heading_3', heading_3: { rich_text: [makeRT(`${emojiPrefix}${node.title}`, { color: 'yellow' })], is_toggleable: true, color: 'default' }, children: innerBlocks }];
   }
+}
+
+// ── Mermaid mind map ──────────────────────────────────────────────────────────
+
+function buildMermaid(
+  nodes: Record<string, ForkNode>,
+  rootId: string,
+  childMap: Record<string, string[]>,
+  depthCap = 5,
+): NBlock {
+  const lines: string[] = ['graph TD'];
+  const idMap = new Map<string, string>();
+  let counter = 0;
+
+  function safeId(nodeId: string): string {
+    if (!idMap.has(nodeId)) idMap.set(nodeId, `n${counter++}`);
+    return idMap.get(nodeId)!;
+  }
+
+  function visit(nodeId: string, depth: number): void {
+    if (depth > depthCap) return;
+    const node = nodes[nodeId];
+    if (!node || node.loading) return;
+    const label = `${node.emoji ? node.emoji + ' ' : ''}${node.title}`.replace(/"/g, "'");
+    lines.push(`  ${safeId(nodeId)}["${label}"]`);
+    for (const kidId of childMap[nodeId] ?? []) {
+      if (!nodes[kidId] || nodes[kidId].loading) continue;
+      lines.push(`  ${safeId(nodeId)} --> ${safeId(kidId)}`);
+      visit(kidId, depth + 1);
+    }
+  }
+
+  visit(rootId, 0);
+
+  return {
+    type: 'code',
+    code: { rich_text: [makeRT(lines.join('\n'))], caption: [], language: 'mermaid' },
+  };
 }
 
 // ── HTML format ───────────────────────────────────────────────────────────────
@@ -441,8 +477,9 @@ export function buildNotionClipboard(
   const body = renderNodeHtml(root, 0, nodes, childMap, persistentHl, annotations);
   const html = `<!DOCTYPE html><html><body>\n${body}</body></html>`;
   const plain = renderNodePlain(root, 0, nodes, childMap, annotations);
+  const mermaid = buildMermaid(nodes, rootId, childMap);
   const nested = nodeToNBlocks(root, 0, nodes, childMap, persistentHl, annotations);
-  const { flat: blocks, childrenMap } = splitBlocks(nested);
+  const { flat: blocks, childrenMap } = splitBlocks([mermaid, ...nested]);
 
   return { html, plain, blocks, childrenMap };
 }
