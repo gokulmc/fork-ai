@@ -1013,6 +1013,14 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 [data-theme="dark"] .twk-lbl { color: rgba(230,230,227,.72); }
 [data-theme="dark"] .twk-sect { color: rgba(230,230,227,.45); }
 
+.twk-shortcuts { display: flex; flex-direction: column; gap: 4px; }
+.twk-shortcut-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.twk-shortcut-sym { font-family: var(--mono, monospace); font-size: 11px; background: rgba(0,0,0,.06); border-radius: 4px; padding: 1px 5px; min-width: 28px; text-align: center; }
+.twk-shortcut-arr { color: rgba(41,38,27,.35); font-size: 11px; }
+.twk-shortcut-word { color: var(--ink-2); }
+[data-theme="dark"] .twk-shortcut-sym { background: rgba(255,255,255,.1); }
+[data-theme="dark"] .twk-shortcut-arr { color: rgba(230,230,227,.3); }
+
 .twk-field { appearance: none; box-sizing: border-box; width: 100%; min-width: 0; height: 26px; padding: 0 8px; border: .5px solid rgba(0,0,0,.1); border-radius: 7px; background: rgba(255,255,255,.6); color: inherit; font: inherit; outline: none; }
 .twk-field:focus { border-color: rgba(0,0,0,.25); background: rgba(255,255,255,.85); }
 select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='rgba(0,0,0,.5)' d='M0 0h10L5 6z'/></svg>"); background-repeat: no-repeat; background-position: right 8px center; }

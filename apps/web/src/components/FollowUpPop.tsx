@@ -19,6 +19,13 @@ interface FollowUpPopProps {
   onClose: () => void;
 }
 
+const SHORTHANDS: Record<string, string> = {
+  '?': 'what',
+  '!?': 'how',
+  '/?': 'why',
+  '>?': 'explain',
+};
+
 export function FollowUpPop({ rect, sourceText, loading, onSubmit, onClose }: FollowUpPopProps) {
   const ref = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -38,10 +45,18 @@ export function FollowUpPop({ rect, sourceText, loading, onSubmit, onClose }: Fo
     setTimeout(() => taRef.current?.focus(), 30);
   }, [rect.left, rect.top, rect.width, rect.height, rect.bottom]);
 
+  const handleSubmit = () => {
+    const trimmed = q.trim();
+    if (!trimmed) return;
+    const expanded = SHORTHANDS[trimmed] ?? trimmed;
+    setQ(expanded);
+    onSubmit(expanded);
+  };
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
-      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && q.trim()) onSubmit(q.trim());
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && q.trim()) handleSubmit();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -62,7 +77,7 @@ export function FollowUpPop({ rect, sourceText, loading, onSubmit, onClose }: Fo
         <button
           className="btn-primary"
           disabled={!q.trim() || loading}
-          onClick={() => onSubmit(q.trim())}
+          onClick={handleSubmit}
         >
           {loading ? (
             <><span className="spinner" style={{ width: 10, height: 10 }} /> Asking…</>
