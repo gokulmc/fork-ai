@@ -52,7 +52,8 @@ export class SessionsController {
   }
 
   @Patch(':sessionId')
-  @ApiOperation({ summary: 'Rename session' })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Update session (rename, notionPageUrl)' })
   update(
     @CurrentUser() user: CognitoUser,
     @Param('sessionId') sessionId: string,
