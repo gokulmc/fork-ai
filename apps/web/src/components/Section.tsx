@@ -1,5 +1,5 @@
 'use client';
-import { useMemo, useEffect, useRef } from 'react';
+import { useMemo, useEffect, useRef, memo } from 'react';
 import { marked } from 'marked';
 import hljs from 'highlight.js';
 import type { Section as SectionData, ForkNode, Annotation } from '@/lib/types';
@@ -107,6 +107,44 @@ function handleBodyClick(e: React.MouseEvent<HTMLDivElement>) {
   }
 }
 
+// Isolated so its DOM is never touched when sectionChildren or callouts change.
+// Browser text selection inside the body survives concurrent node arrivals.
+const SectionBody = memo(function SectionBody({
+  body,
+  sectionId,
+  sectionHeading,
+}: {
+  body: string;
+  sectionId: string;
+  sectionHeading: string;
+}) {
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const html = useMemo(() => renderMd(body), [body]);
+
+  useEffect(() => {
+    if (!bodyRef.current) return;
+    bodyRef.current.querySelectorAll('pre').forEach(pre => {
+      const codeEl = pre.querySelector('code');
+      const m = codeEl?.className.match(/language-([a-zA-Z0-9+\-_#]+)/);
+      if (m) pre.setAttribute('data-lang', m[1]);
+    });
+    bodyRef.current.querySelectorAll('pre code:not(.hljs)').forEach(el => {
+      try { hljs.highlightElement(el as HTMLElement); } catch { /* ignore */ }
+    });
+  }, [html]);
+
+  return (
+    <div
+      className="section-body md"
+      data-section-id={sectionId}
+      data-section-heading={sectionHeading}
+      ref={bodyRef}
+      onClick={handleBodyClick}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+});
+
 interface SectionProps {
   idx: number;
   section: SectionData;
@@ -131,23 +169,6 @@ export function Section({
   onRemoveCallout,
 }: SectionProps) {
   const num = String(idx + 1).padStart(2, '0');
-  const bodyRef = useRef<HTMLDivElement>(null);
-
-  const html = useMemo(() => renderMd(section.body), [section.body]);
-
-  // Syntax highlighting for code blocks
-  useEffect(() => {
-    if (!bodyRef.current) return;
-    bodyRef.current.querySelectorAll('pre').forEach(pre => {
-      const codeEl = pre.querySelector('code');
-      const m = codeEl?.className.match(/language-([a-zA-Z0-9+\-_#]+)/);
-      if (m) pre.setAttribute('data-lang', m[1]);
-    });
-    bodyRef.current.querySelectorAll('pre code:not(.hljs)').forEach(el => {
-      try { hljs.highlightElement(el as HTMLElement); } catch { /* ignore */ }
-    });
-  }, [html]);
-
 
   return (
     <section
@@ -172,13 +193,10 @@ export function Section({
           )}
         </button>
       </div>
-      <div
-        className="section-body md"
-        data-section-id={section.id}
-        data-section-heading={section.heading}
-        ref={bodyRef}
-        onClick={handleBodyClick}
-        dangerouslySetInnerHTML={{ __html: html }}
+      <SectionBody
+        body={section.body}
+        sectionId={section.id}
+        sectionHeading={section.heading}
       />
       {calloutsForSection.length > 0 && (
         <div className="section-callouts">

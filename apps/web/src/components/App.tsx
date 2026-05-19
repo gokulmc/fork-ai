@@ -520,7 +520,12 @@ export function App() {
       setNodes(prev => ({ ...prev, [tempId]: { ...prev[tempId], loading: false, error: 'Failed to load. Try again.' } }));
     } finally {
       setLoadingNodes(prev => { const n = new Set(prev); n.delete(tempId); return n; });
-      setFollowUp(null);
+      // Only close the popup that triggered THIS request — a newer Q2 popup must survive.
+      setFollowUp(prev => {
+        if (!prev) return null;
+        if (prev.nodeId === source.nodeId && prev.sectionId === source.sectionId && prev.text === source.text) return null;
+        return prev;
+      });
     }
   }, [nodes, sessionId, idToken, lastHlColors, scrollWsTop, persistHighlight, notionSavedUrl]);
 
@@ -830,43 +835,41 @@ export function App() {
 
   // ── Landing / history / loading ───────────────────────────────────────────
 
+  const goHome = () => { setRootId(null); setNodes({}); setSessionId(null); setActiveId(null); setView('landing'); };
+  const persistentBrand = (
+    <div className="app-brand" onClick={goHome} title="Go to home">
+      <img src="/logo.svg" alt="" /> fork.ai
+    </div>
+  );
+
   if (!rootId) {
-    if (loadingRoot) {
-      return <ResearchingScreen sessions={sessions} />;
-    }
-    if (view === 'history') {
-      return (
-        <HistoryPage
-          sessions={sessions}
-          loading={loadingSessions}
-          onLoadSession={loadSession}
-          onBack={() => setView('landing')}
-        />
-      );
-    }
-    return (
+    let inner;
+    if (loadingRoot) inner = <ResearchingScreen sessions={sessions} />;
+    else if (view === 'history') inner = (
+      <HistoryPage
+        sessions={sessions}
+        loading={loadingSessions}
+        onLoadSession={loadSession}
+        onBack={() => setView('landing')}
+      />
+    );
+    else inner = (
       <Landing
         onSubmit={submitRootQuery}
         loading={loadingRoot}
         onShowHistory={() => setView('history')}
       />
     );
+    return <>{persistentBrand}{inner}</>;
   }
 
   // ── Workspace ─────────────────────────────────────────────────────────────
 
   return (
+    <>
+      {persistentBrand}
     <div className="app">
       <header className="topbar">
-        <div
-          className="brand"
-          style={{ cursor: 'pointer' }}
-          onClick={() => { setRootId(null); setNodes({}); setSessionId(null); setActiveId(null); setView('landing'); }}
-          title="Go to home"
-        >
-          <span className="mark">F</span> fork.ai
-        </div>
-        <div className="divider" />
         <div className="crumbs">
           {rootId && nodes[rootId]?.emoji && (
             <span style={{ fontSize: 16, lineHeight: 1 }}>{nodes[rootId].emoji}</span>
@@ -1069,5 +1072,6 @@ export function App() {
         </div>
       )}
     </div>
+    </>
   );
 }

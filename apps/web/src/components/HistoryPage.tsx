@@ -13,9 +13,6 @@ export function HistoryPage({ sessions, loading, onLoadSession, onBack }: Histor
   return (
     <div className="history-page">
       <header className="history-topbar">
-        <div className="brand" style={{ cursor: 'pointer' }} onClick={onBack}>
-          <span className="mark">F</span> fork.ai
-        </div>
         <div style={{ flex: 1 }} />
         <button className="icon-btn" onClick={onBack}>
           <ArrowLeft size={14} /> Back

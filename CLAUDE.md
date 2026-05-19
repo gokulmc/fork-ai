@@ -174,3 +174,4 @@ If a user message implies an architectural change, **stop and clarify** before t
 | Command | Purpose |
 |---|---|
 | `/grill-me` | Ask targeted clarifying questions before starting any implementation task |
+| `/caveman` | Ultra-compressed terse mode — drops filler, keeps full technical accuracy |
