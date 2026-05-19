@@ -71,6 +71,7 @@ import { Landing } from './Landing';
 import { LoginPage } from './LoginPage';
 import { HistoryPage } from './HistoryPage';
 import { TweaksPanel } from './TweaksPanel';
+import { AccountButton } from './AccountButton';
 import {
   Search, Bookmark, ChevronRight, Sparkles, CornerDownRight, Hash,
   Quote, AlertCircle, ArrowUpRight, Pencil, Trash, Clock,
@@ -881,7 +882,7 @@ export function App() {
   );
 
   if (!rootId) {
-    if (!loadingRoot && showLogin) {
+    if (!loadingRoot && (showLogin || status === 'unauthenticated')) {
       return (
         <LoginPage
           onEnter={() => {
@@ -908,7 +909,7 @@ export function App() {
         onShowHistory={() => setView('history')}
       />
     );
-    return <>{persistentBrand}{inner}</>;
+    return <>{persistentBrand}{inner}<AccountButton /></>;
   }
 
   // ── Workspace ─────────────────────────────────────────────────────────────
@@ -916,6 +917,7 @@ export function App() {
   return (
     <>
       {persistentBrand}
+      <AccountButton />
     <div className="app" ref={appRef}>
       <header className="topbar">
         <div className="crumbs">

@@ -210,6 +210,7 @@ The app uses a **custom email/password login UI** instead of the Cognito Hosted 
 
 ### Key constraints
 - **`USER_PASSWORD_AUTH` flow must be enabled** on the Cognito App Client (AWS Console → User Pool → App clients → Auth flows). If missing, Cognito returns `NotAuthorizedException: ALLOW_USER_PASSWORD_AUTH flow not enabled for this client`.
+- **`SECRET_HASH` required when App Client has a client secret.** Every Cognito SDK call (`InitiateAuth`, `SignUp`, `ConfirmSignUp`, `ResendConfirmationCode`) must include a `SECRET_HASH` computed as `Base64(HMAC-SHA256(username + clientId, clientSecret))`. Omitting it returns 400. The helper lives in each route file — `crypto.createHmac('sha256', COGNITO_CLIENT_SECRET).update(email + COGNITO_CLIENT_ID).digest('base64')`.
 - Password regex: `^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&_\-#])[A-Za-z\d@$!%*?&_\-#]{8,}$` — must match the User Pool's password policy.
 - The Google OAuth button still calls `signIn('cognito')` → Cognito Hosted UI (existing flow unchanged).
 - `triggerRef` in `LoginPage.tsx` is updated on each step change via `useEffect([step, ...])` — center dot always calls the current step's action. The graph animation trigger is stored separately in `graphTriggerRef` and fires only after successful auth.

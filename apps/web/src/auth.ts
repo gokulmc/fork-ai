@@ -1,16 +1,8 @@
 import NextAuth from 'next-auth';
-import Cognito from 'next-auth/providers/cognito';
 import Credentials from 'next-auth/providers/credentials';
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
-  debug: true,
   providers: [
-    Cognito({
-      clientId: process.env.COGNITO_CLIENT_ID!,
-      clientSecret: process.env.COGNITO_CLIENT_SECRET!,
-      issuer: `https://cognito-idp.${process.env.AWS_REGION ?? 'ap-south-1'}.amazonaws.com/${process.env.COGNITO_USER_POOL_ID}`,
-      authorization: { params: { scope: 'openid' } },
-    }),
     // Accepts a pre-validated Cognito id_token (from our /api/cognito/* routes)
     Credentials({
       id: 'cognito-token',
