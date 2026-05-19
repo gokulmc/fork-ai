@@ -182,14 +182,17 @@ export function App() {
   const wsRef = useRef<HTMLElement>(null);
   const appRef = useRef<HTMLDivElement>(null);
 
-  // Initialise CSS variable directly — no React state involved in drag updates.
-  const initSplit = typeof window !== 'undefined'
-    ? (() => { const s = Number(localStorage.getItem('fork.ai.split')); return s >= 30 && s <= 60 ? s : 36; })()
-    : 36;
+  // Read once — stable across renders.
+  const initSplitRef = useRef(
+    typeof window !== 'undefined'
+      ? (() => { const s = Number(localStorage.getItem('fork.ai.split')); return s >= 30 && s <= 60 ? s : 36; })()
+      : 36,
+  );
+
+  // Re-run when rootId changes so we catch the moment the .app div actually mounts.
   useLayoutEffect(() => {
-    appRef.current?.style.setProperty('--map-width', `${initSplit}%`);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    appRef.current?.style.setProperty('--map-width', `${initSplitRef.current}%`);
+  }, [rootId]);
 
   const onDividerPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     e.currentTarget.setPointerCapture(e.pointerId);
