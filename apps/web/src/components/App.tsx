@@ -68,6 +68,7 @@ import { HighlightMenu } from './HighlightMenu';
 import { FollowUpPop } from './FollowUpPop';
 import { NotesDrawer } from './NotesDrawer';
 import { Landing } from './Landing';
+import { LoginPage } from './LoginPage';
 import { HistoryPage } from './HistoryPage';
 import { TweaksPanel } from './TweaksPanel';
 import {
@@ -138,6 +139,9 @@ export function App() {
 
   const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const [view, setView] = useState<'landing' | 'history'>('landing');
+  const [showLogin, setShowLogin] = useState(
+    () => typeof window === 'undefined' || !sessionStorage.getItem('fork.ai.visited'),
+  );
 
   // Session list (shown on history page)
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -176,6 +180,40 @@ export function App() {
   const [notionError, setNotionError] = useState<string | null>(null);
 
   const wsRef = useRef<HTMLElement>(null);
+  const appRef = useRef<HTMLDivElement>(null);
+
+  // Read once — stable across renders.
+  const initSplitRef = useRef(
+    typeof window !== 'undefined'
+      ? (() => { const s = Number(localStorage.getItem('fork.ai.split')); return s >= 30 && s <= 60 ? s : 36; })()
+      : 36,
+  );
+
+  // Re-run when rootId changes so we catch the moment the .app div actually mounts.
+  useLayoutEffect(() => {
+    appRef.current?.style.setProperty('--map-width', `${initSplitRef.current}%`);
+  }, [rootId]);
+
+  const onDividerPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    document.body.setAttribute('data-resizing', '1');
+  }, []);
+
+  const onDividerPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!e.currentTarget.hasPointerCapture(e.pointerId) || !appRef.current) return;
+    const rect = appRef.current.getBoundingClientRect();
+    const clamped = Math.min(60, Math.max(30, (e.clientX - rect.left) / rect.width * 100));
+    // Direct DOM mutation — zero React re-renders, eliminates node-position jitter.
+    appRef.current.style.setProperty('--map-width', `${clamped.toFixed(2)}%`);
+  }, []);
+
+  const onDividerPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.currentTarget.releasePointerCapture(e.pointerId);
+    document.body.removeAttribute('data-resizing');
+    if (!appRef.current) return;
+    const current = parseFloat(appRef.current.style.getPropertyValue('--map-width') || '36');
+    localStorage.setItem('fork.ai.split', String(Math.round(current)));
+  }, []);
 
   // ── Apply tweaks to document root ────────────────────────────────────────
 
@@ -843,6 +881,16 @@ export function App() {
   );
 
   if (!rootId) {
+    if (!loadingRoot && showLogin) {
+      return (
+        <LoginPage
+          onEnter={() => {
+            sessionStorage.setItem('fork.ai.visited', '1');
+            setShowLogin(false);
+          }}
+        />
+      );
+    }
     let inner;
     if (loadingRoot) inner = <ResearchingScreen sessions={sessions} />;
     else if (view === 'history') inner = (
@@ -868,7 +916,7 @@ export function App() {
   return (
     <>
       {persistentBrand}
-    <div className="app">
+    <div className="app" ref={appRef}>
       <header className="topbar">
         <div className="crumbs">
           {rootId && nodes[rootId]?.emoji && (
@@ -921,6 +969,13 @@ export function App() {
           <div className="mm-empty">Mind map will populate as you branch</div>
         )}
       </section>
+
+      <div
+        className="pane-divider"
+        onPointerDown={onDividerPointerDown}
+        onPointerMove={onDividerPointerMove}
+        onPointerUp={onDividerPointerUp}
+      />
 
       <section className="workspace" ref={wsRef}>
         <div className="workspace-inner">

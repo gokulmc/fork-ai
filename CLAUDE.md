@@ -169,6 +169,16 @@ If a user message implies an architectural change, **stop and clarify** before t
 
 ---
 
+## Workspace layout — pane divider
+
+The workspace is a 3-column CSS grid: `var(--map-width, 36%) 6px 1fr`.
+
+- **`--map-width`** is a CSS custom property set directly on the `.app` DOM node via `appRef.current.style.setProperty(...)` — **not** through React state — to avoid triggering re-renders (and therefore MindMap jitter) on every pointer-move event during drag. React state (`splitPct`) is only touched once on pointer-up to persist to `localStorage`.
+- **`ResizeObserver` in `MindMap`** is debounced 120ms so the fit/recenter effect doesn't fire mid-drag.
+- After drag ends, the fit effect calls `animateToRef.current(...)` (smooth 300ms) instead of `setView` (snap) so the map re-fits without flickering. `animateToRef` is a plain ref kept in sync with `animateTo`; it is intentionally NOT in the `useEffect` deps array because adding it would change the array size and trigger React's hooks invariant error.
+
+---
+
 ## Custom slash commands
 
 | Command | Purpose |
