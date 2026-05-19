@@ -66,14 +66,14 @@ interface NRichText {
 }
 
 type NBlock =
-  | { type: 'heading_1'; heading_1: { rich_text: NRichText[]; is_toggleable: true; color: 'default' }; children?: NBlock[] }
-  | { type: 'heading_2'; heading_2: { rich_text: NRichText[]; is_toggleable: boolean; color: 'default' }; children?: NBlock[] }
-  | { type: 'heading_3'; heading_3: { rich_text: NRichText[]; is_toggleable: boolean; color: 'default' }; children?: NBlock[] }
-  | { type: 'paragraph'; paragraph: { rich_text: NRichText[]; color: 'default' } }
-  | { type: 'callout'; callout: { rich_text: NRichText[]; icon: { type: 'emoji'; emoji: string }; color: 'default' } }
+  | { type: 'heading_1'; heading_1: { rich_text: NRichText[]; is_toggleable: boolean; color: string }; children?: NBlock[] }
+  | { type: 'heading_2'; heading_2: { rich_text: NRichText[]; is_toggleable: boolean; color: string }; children?: NBlock[] }
+  | { type: 'heading_3'; heading_3: { rich_text: NRichText[]; is_toggleable: boolean; color: string }; children?: NBlock[] }
+  | { type: 'paragraph'; paragraph: { rich_text: NRichText[]; color: string } }
+  | { type: 'callout'; callout: { rich_text: NRichText[]; icon: { type: 'emoji'; emoji: string }; color: string } }
   | { type: 'code'; code: { rich_text: NRichText[]; caption: []; language: string } }
-  | { type: 'quote'; quote: { rich_text: NRichText[]; color: 'default' } }
-  | { type: 'bulleted_list_item'; bulleted_list_item: { rich_text: NRichText[]; color: 'default' } };
+  | { type: 'quote'; quote: { rich_text: NRichText[]; color: string } }
+  | { type: 'bulleted_list_item'; bulleted_list_item: { rich_text: NRichText[]; color: string } };
 
 function makeRT(content: string, ann: Partial<NAnnotations> = {}): NRichText {
   return {
@@ -214,16 +214,15 @@ function nodeToNBlocks(
   }
 
   const sectionBlocks: NBlock[] = [];
-  const sectionHeadingLevel = Math.min(depth < 2 ? 2 : depth + 1, 4) as 2 | 3 | 4;
 
   for (const section of node.sections) {
     const hls = persistentHl[`${node.id}::${section.id}`] ?? [];
     const callouts = annotations.filter(a => a.nodeId === node.id && a.sectionId === section.id);
 
-    // Section heading (h2/h3 in Notion; use bold paragraph for h4)
-    if (sectionHeadingLevel === 2) {
-      sectionBlocks.push({ type: 'heading_2', heading_2: { rich_text: [makeRT(section.heading)], is_toggleable: false, color: 'default' } });
-    } else if (sectionHeadingLevel === 3) {
+    // depth 0 → H1 blue; depth 1 → H3 default; depth 2+ → bold paragraph
+    if (depth === 0) {
+      sectionBlocks.push({ type: 'heading_1', heading_1: { rich_text: [makeRT(section.heading)], is_toggleable: false, color: 'blue' } });
+    } else if (depth === 1) {
       sectionBlocks.push({ type: 'heading_3', heading_3: { rich_text: [makeRT(section.heading)], is_toggleable: false, color: 'default' } });
     } else {
       sectionBlocks.push({ type: 'paragraph', paragraph: { rich_text: [makeRT(section.heading, { bold: true })], color: 'default' } });
@@ -252,25 +251,24 @@ function nodeToNBlocks(
   if (depth === 0) {
     // Root: flat layout
     const root: NBlock[] = [
-      { type: 'heading_1', heading_1: { rich_text: [makeRT(node.title)], is_toggleable: false as unknown as true, color: 'default' } },
+      { type: 'heading_1', heading_1: { rich_text: [makeRT(node.title)], is_toggleable: false, color: 'default' } },
       { type: 'paragraph', paragraph: { rich_text: [makeRT(node.lede)], color: 'default' } },
       ...sectionBlocks,
     ];
     return root;
   }
 
-  // Child: toggle heading
-  const toggleLevel = Math.min(depth, 3);
+  // Child: toggle heading — depth 1 = H2 purple, depth 2 = H3 green, depth 3+ = H3 gray
   const innerBlocks: NBlock[] = [
     { type: 'paragraph', paragraph: { rich_text: [makeRT(node.lede, { italic: true })], color: 'default' } },
     ...sectionBlocks,
   ];
-  if (toggleLevel === 1) {
-    return [{ type: 'heading_1', heading_1: { rich_text: [makeRT(node.title)], is_toggleable: true, color: 'default' }, children: innerBlocks }];
-  } else if (toggleLevel === 2) {
-    return [{ type: 'heading_2', heading_2: { rich_text: [makeRT(node.title)], is_toggleable: true, color: 'default' }, children: innerBlocks }];
+  if (depth === 1) {
+    return [{ type: 'heading_2', heading_2: { rich_text: [makeRT(node.title)], is_toggleable: true, color: 'purple' }, children: innerBlocks }];
+  } else if (depth === 2) {
+    return [{ type: 'heading_3', heading_3: { rich_text: [makeRT(node.title)], is_toggleable: true, color: 'green' }, children: innerBlocks }];
   } else {
-    return [{ type: 'heading_3', heading_3: { rich_text: [makeRT(node.title)], is_toggleable: true, color: 'default' }, children: innerBlocks }];
+    return [{ type: 'heading_3', heading_3: { rich_text: [makeRT(node.title)], is_toggleable: true, color: 'gray' }, children: innerBlocks }];
   }
 }
 
