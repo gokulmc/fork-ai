@@ -121,12 +121,14 @@ export function MindMap({
   useEffect(() => {
     const el = svgRef.current?.parentElement;
     if (!el) return;
+    let timer: ReturnType<typeof setTimeout>;
     const ro = new ResizeObserver(() => {
-      setSize({ w: el.clientWidth, h: el.clientHeight });
+      clearTimeout(timer);
+      timer = setTimeout(() => setSize({ w: el.clientWidth, h: el.clientHeight }), 120);
     });
     ro.observe(el);
     setSize({ w: el.clientWidth, h: el.clientHeight });
-    return () => ro.disconnect();
+    return () => { ro.disconnect(); clearTimeout(timer); };
   }, []);
 
   const { pos, bounds, childMap, depthMap } = useMemo(
@@ -137,6 +139,7 @@ export function MindMap({
   const viewRef = useRef(view);
   viewRef.current = view;
   const animFrame = useRef<number>(0);
+  const animateToRef = useRef<(tx: number, ty: number, scale: number, dur?: number) => void>(() => {});
 
   const animateTo = useCallback(
     (targetTx: number, targetTy: number, targetScale: number, dur = 380) => {
@@ -159,6 +162,7 @@ export function MindMap({
     },
     [],
   );
+  animateToRef.current = animateTo;
   useEffect(() => () => cancelAnimationFrame(animFrame.current), []);
 
   const lastFitKey = useRef('');
@@ -174,7 +178,15 @@ export function MindMap({
     const scale = Math.min(1, Math.min((size.w - PAD * 2) / bw, (size.h - PAD * 2) / bh));
     const cx = (bounds.minX + bounds.maxX) / 2;
     const cy = (bounds.minY + bounds.maxY) / 2;
-    setView({ tx: size.w / 2 - cx * scale, ty: size.h / 2 - cy * scale, scale });
+    const tx = size.w / 2 - cx * scale;
+    const ty = size.h / 2 - cy * scale;
+    // First fit: snap immediately (no animation on initial load).
+    // Subsequent fits (resize, layout change): animate so there's no jarring snap.
+    if (fitDone.current) {
+      animateToRef.current(tx, ty, scale, 300);
+    } else {
+      setView({ tx, ty, scale });
+    }
     fitDone.current = true;
   }, [bounds.minX, bounds.maxX, bounds.minY, bounds.maxY, size.w, size.h, layout, nodes]);
 
