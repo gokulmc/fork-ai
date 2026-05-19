@@ -221,7 +221,7 @@ function nodeToNBlocks(
 
     // depth 0 → H1 blue; depth 1 → H3 default; depth 2+ → bold paragraph
     if (depth === 0) {
-      sectionBlocks.push({ type: 'heading_1', heading_1: { rich_text: [makeRT(section.heading)], is_toggleable: false, color: 'blue' } });
+      sectionBlocks.push({ type: 'heading_1', heading_1: { rich_text: [makeRT(section.heading, { color: 'blue' })], is_toggleable: false, color: 'default' } });
     } else if (depth === 1) {
       sectionBlocks.push({ type: 'heading_3', heading_3: { rich_text: [makeRT(section.heading)], is_toggleable: false, color: 'default' } });
     } else {
@@ -264,11 +264,11 @@ function nodeToNBlocks(
     ...sectionBlocks,
   ];
   if (depth === 1) {
-    return [{ type: 'heading_2', heading_2: { rich_text: [makeRT(node.title)], is_toggleable: true, color: 'purple' }, children: innerBlocks }];
+    return [{ type: 'heading_2', heading_2: { rich_text: [makeRT(node.title, { color: 'purple' })], is_toggleable: true, color: 'default' }, children: innerBlocks }];
   } else if (depth === 2) {
-    return [{ type: 'heading_3', heading_3: { rich_text: [makeRT(node.title)], is_toggleable: true, color: 'green' }, children: innerBlocks }];
+    return [{ type: 'heading_3', heading_3: { rich_text: [makeRT(node.title, { color: 'green' })], is_toggleable: true, color: 'default' }, children: innerBlocks }];
   } else {
-    return [{ type: 'heading_3', heading_3: { rich_text: [makeRT(node.title)], is_toggleable: true, color: 'gray' }, children: innerBlocks }];
+    return [{ type: 'heading_3', heading_3: { rich_text: [makeRT(node.title, { color: 'gray' })], is_toggleable: true, color: 'default' }, children: innerBlocks }];
   }
 }
 
