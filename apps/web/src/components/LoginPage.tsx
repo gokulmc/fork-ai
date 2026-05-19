@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type React from 'react';
+import { signIn } from 'next-auth/react';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -116,6 +117,11 @@ function buildGraph(): Graph | null {
   return { W, H, COLS, ROWS, nodes, adj, centerId, edgeList, edgeMap, pathActive: false, centerAnimId: null };
 }
 
+type Step = 'email' | 'password' | 'signup-password' | 'verify';
+
+// Must match User Pool password policy
+const PW_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&_\-#])[A-Za-z\d@$!%*?&_\-#]{8,}$/;
+
 interface LoginPageProps {
   onEnter?: () => void;
 }
@@ -128,19 +134,150 @@ export function LoginPage({ onEnter }: LoginPageProps) {
   const gCenterRef = useRef<SVGGElement>(null);
   const gFXRef = useRef<SVGGElement>(null);
   const triggerRef = useRef<(() => void) | null>(null);
+  const graphTriggerRef = useRef<(() => void) | null>(null);
   const onEnterRef = useRef(onEnter);
   onEnterRef.current = onEnter;
 
+  const [step, setStep] = useState<Step>('email');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPw, setConfirmPw] = useState('');
+  const [verifyCode, setVerifyCode] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
   const [barHidden, setBarHidden] = useState(false);
   const [uiHidden, setUiHidden] = useState(false);
   const [arrived, setArrived] = useState(false);
   const [gen, setGen] = useState(0);
 
+  const inputRef = useRef<HTMLInputElement>(null);
+  const confirmRef = useRef<HTMLInputElement>(null);
+
+  // Focus the primary input when step changes
+  useEffect(() => {
+    setTimeout(() => inputRef.current?.focus(), 60);
+  }, [step]);
+
+  // Update center-dot action for the current step
+  useEffect(() => {
+    switch (step) {
+      case 'email':
+        triggerRef.current = () => { if (email.trim()) setStep('password'); };
+        break;
+      case 'password':
+        triggerRef.current = () => void handlePasswordSubmit();
+        break;
+      case 'signup-password':
+        triggerRef.current = () => void handleSignupSubmit();
+        break;
+      case 'verify':
+        triggerRef.current = () => void handleVerifySubmit();
+        break;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, email, password, confirmPw, verifyCode]);
+
   const handleRegen = () => {
     setArrived(false); setBarHidden(false); setUiHidden(false);
+    setStep('email'); setPassword(''); setConfirmPw(''); setVerifyCode(''); setError(null);
     setGen(g => g + 1);
   };
+
+  async function handlePasswordSubmit() {
+    if (!password.trim() || loading) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/cognito/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = (await res.json()) as { idToken?: string; error?: string };
+      if (data.error === 'UserNotFoundException') {
+        setPassword('');
+        setConfirmPw('');
+        setStep('signup-password');
+      } else if (data.error === 'NotAuthorizedException') {
+        setError('Incorrect password');
+      } else if (data.error) {
+        setError(data.error);
+      } else {
+        await signIn('cognito-token', { idToken: data.idToken, redirect: false });
+        graphTriggerRef.current?.();
+      }
+    } catch {
+      setError('Connection error');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSignupSubmit() {
+    if (!password.trim() || !confirmPw.trim() || loading) return;
+    if (!PW_REGEX.test(password)) {
+      setError('Min 8 chars · uppercase · lowercase · number · symbol (@$!%*?&_-#)');
+      return;
+    }
+    if (password !== confirmPw) {
+      setError('Passwords do not match');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/cognito/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = (await res.json()) as { ok?: boolean; error?: string };
+      if (data.error) {
+        setError(data.error);
+      } else {
+        setStep('verify');
+        setVerifyCode('');
+      }
+    } catch {
+      setError('Connection error');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleVerifySubmit() {
+    if (!verifyCode.trim() || loading) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/cognito/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, code: verifyCode, password }),
+      });
+      const data = (await res.json()) as { idToken?: string; error?: string };
+      if (data.error) {
+        setError(data.error);
+      } else {
+        await signIn('cognito-token', { idToken: data.idToken, redirect: false });
+        graphTriggerRef.current?.();
+      }
+    } catch {
+      setError('Connection error');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleResendCode() {
+    try {
+      await fetch('/api/cognito/resend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+    } catch { /* silent */ }
+  }
 
   useEffect(() => {
     const svgEl = svgRef.current;
@@ -235,7 +372,6 @@ export function LoginPage({ onEnter }: LoginPageProps) {
     function trigger() {
       if (!graph || graph.pathActive) return;
 
-      // Random walk from center to any top-row node
       const pathIds = (() => {
         const visited = new Set([graph.centerId]);
         const path = [graph.centerId];
@@ -253,7 +389,6 @@ export function LoginPage({ onEnter }: LoginPageProps) {
 
       graph.pathActive = true;
 
-      // Build path d-string using shared edge control points
       let d = `M ${graph.nodes[pathIds[0]].x} ${graph.nodes[pathIds[0]].y}`;
       for (let i = 0; i < pathIds.length - 1; i++) {
         const e = graph.edgeMap.get(eKey(pathIds[i], pathIds[i + 1]))!;
@@ -295,7 +430,6 @@ export function LoginPage({ onEnter }: LoginPageProps) {
         glow.setAttribute('stroke-dashoffset', '0');
       });
 
-      // Compute cumulative arc lengths to time node lighting
       const cumLens: number[] = [0];
       const probe = document.createElementNS(SVG_NS, 'path');
       let dp = `M ${graph.nodes[pathIds[0]].x} ${graph.nodes[pathIds[0]].y}`;
@@ -325,7 +459,6 @@ export function LoginPage({ onEnter }: LoginPageProps) {
         }, (cumLens[i] / total) * dur);
       }
 
-      // Animate head along trace
       const t0 = performance.now();
       function animHead(t: number) {
         const f = Math.min((t - t0) / dur, 1);
@@ -436,7 +569,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
 
     applyGraph(graph);
     startAnim(graph);
-    triggerRef.current = trigger;
+    graphTriggerRef.current = trigger;
 
     let resizeTimer: ReturnType<typeof setTimeout>;
     const onResize = () => {
@@ -456,7 +589,8 @@ export function LoginPage({ onEnter }: LoginPageProps) {
     };
   }, [gen]);
 
-  const handleLogin = () => triggerRef.current?.();
+  const isSignupStep = step === 'signup-password';
+  const barH = isSignupStep ? 90 : 44;
 
   return (
     <div style={{
@@ -522,50 +656,162 @@ export function LoginPage({ onEnter }: LoginPageProps) {
       <div style={{
         position: 'fixed', top: '50%', left: '50%',
         transform: barHidden ? 'translate(-50%, calc(-50% - 115px))' : 'translate(-50%, calc(-50% - 100px))',
-        display: 'flex', alignItems: 'stretch',
-        width: 'min(440px, 86vw)', height: 44,
+        display: 'flex', flexDirection: 'column',
+        width: 'min(440px, 86vw)', height: barH,
         background: '#ffffff', border: '1px solid rgba(10,10,10,0.20)',
         borderRadius: 4, overflow: 'hidden', zIndex: 4,
         boxShadow: '0 6px 24px rgba(10,10,10,0.06)',
-        transition: 'opacity .55s ease, transform .55s ease',
+        transition: 'opacity .55s ease, transform .55s ease, height .2s ease',
         opacity: barHidden ? 0 : 1,
         pointerEvents: barHidden ? 'none' : 'auto',
       }}>
-        <input
-          type="email"
-          value={email}
-          onChange={e => setEmail(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleLogin(); } }}
-          placeholder="enter email-id to login & signup   | or"
-          autoComplete="email"
-          style={{
-            flex: 3, minWidth: 0, border: 0, outline: 0, background: 'transparent',
-            padding: '0 14px', fontFamily: 'inherit', fontSize: 11,
-            letterSpacing: '0.04em', color: '#0a0a0a',
-          }}
-        />
-        <button
-          onClick={handleLogin}
-          type="button"
-          aria-label="Login with Google"
-          style={{
-            flex: 1, border: 0, borderLeft: '1px solid rgba(10,10,10,0.12)',
-            background: 'transparent', fontFamily: 'inherit', fontSize: 9,
-            letterSpacing: '0.16em', textTransform: 'uppercase',
-            color: 'rgba(10,10,10,0.78)', cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            gap: 7, padding: '0 8px', whiteSpace: 'nowrap',
-          }}
-        >
-          <svg viewBox="0 0 18 18" style={{ width: 12, height: 12, flexShrink: 0 }} aria-hidden="true">
-            <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/>
-            <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
-            <path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.997 8.997 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/>
-            <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/>
-          </svg>
-          <span>Login with Google</span>
-        </button>
+        {/* Row 1 */}
+        <div style={{ display: 'flex', alignItems: 'stretch', flex: '0 0 44px' }}>
+          <input
+            ref={inputRef}
+            type={step === 'email' ? 'email' : step === 'verify' ? 'text' : 'password'}
+            value={step === 'email' ? email : step === 'verify' ? verifyCode : password}
+            onChange={e => {
+              setError(null);
+              if (step === 'email') setEmail(e.target.value);
+              else if (step === 'verify') setVerifyCode(e.target.value);
+              else setPassword(e.target.value);
+            }}
+            onKeyDown={e => {
+              if (e.key !== 'Enter') return;
+              e.preventDefault();
+              if (step === 'email' && email.trim()) setStep('password');
+              else if (step === 'password') void handlePasswordSubmit();
+              else if (step === 'signup-password') confirmRef.current?.focus();
+              else if (step === 'verify') void handleVerifySubmit();
+            }}
+            placeholder={
+              step === 'email' ? 'enter email-id to login & signup   | or' :
+              step === 'password' ? 'password' :
+              step === 'signup-password' ? 'create password' :
+              'verification code from email'
+            }
+            autoComplete={step === 'email' ? 'email' : step === 'verify' ? 'one-time-code' : 'current-password'}
+            disabled={loading}
+            style={{
+              flex: 1, minWidth: 0, border: 0, outline: 0, background: 'transparent',
+              padding: '0 14px', fontFamily: 'inherit', fontSize: 11,
+              letterSpacing: '0.04em', color: '#0a0a0a',
+            }}
+          />
+          {/* Right button — Google OAuth on email step, submit arrow on others */}
+          {step === 'email' ? (
+            <button
+              onClick={() => void signIn('cognito')}
+              type="button"
+              aria-label="Login with Google"
+              style={rightBtnStyle}
+            >
+              <svg viewBox="0 0 18 18" style={{ width: 12, height: 12, flexShrink: 0 }} aria-hidden="true">
+                <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/>
+                <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
+                <path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.997 8.997 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/>
+                <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/>
+              </svg>
+              <span>Login with Google</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                if (step === 'password') void handlePasswordSubmit();
+                else if (step === 'signup-password') confirmRef.current?.focus();
+                else if (step === 'verify') void handleVerifySubmit();
+              }}
+              type="button"
+              disabled={loading}
+              style={{
+                flex: '0 0 44px', border: 0, borderLeft: '1px solid rgba(10,10,10,0.12)',
+                background: 'transparent', fontFamily: 'inherit', fontSize: 16,
+                color: loading ? 'rgba(10,10,10,0.28)' : 'rgba(10,10,10,0.78)',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+              aria-label="Continue"
+            >
+              {loading ? '…' : '→'}
+            </button>
+          )}
+        </div>
+
+        {/* Row 2 — confirm password (signup-password step only) */}
+        {isSignupStep && (
+          <div style={{ display: 'flex', alignItems: 'stretch', flex: '0 0 46px', borderTop: '1px solid rgba(10,10,10,0.10)' }}>
+            <input
+              ref={confirmRef}
+              type="password"
+              value={confirmPw}
+              onChange={e => { setError(null); setConfirmPw(e.target.value); }}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void handleSignupSubmit(); } }}
+              placeholder="confirm password"
+              autoComplete="new-password"
+              disabled={loading}
+              style={{
+                flex: 1, minWidth: 0, border: 0, outline: 0, background: 'transparent',
+                padding: '0 14px', fontFamily: 'inherit', fontSize: 11,
+                letterSpacing: '0.04em', color: '#0a0a0a',
+              }}
+            />
+            <button
+              onClick={() => void handleSignupSubmit()}
+              type="button"
+              disabled={loading}
+              style={{
+                flex: '0 0 44px', border: 0, borderLeft: '1px solid rgba(10,10,10,0.12)',
+                background: 'transparent', fontSize: 16,
+                color: loading ? 'rgba(10,10,10,0.28)' : 'rgba(10,10,10,0.78)',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+              aria-label="Create account"
+            >
+              {loading ? '…' : '→'}
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* Step label + error + back + resend */}
+      {!barHidden && step !== 'email' && (
+        <div style={{
+          position: 'fixed', top: '50%', left: '50%',
+          transform: 'translate(-50%, calc(-50% + 56px))',
+          width: 'min(440px, 86vw)',
+          display: 'flex', flexDirection: 'column', gap: 6,
+          zIndex: 4,
+        }}>
+          {/* Step hint */}
+          <div style={{ fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase' as const, color: 'rgba(10,10,10,0.32)' }}>
+            {step === 'password' && `signing in as ${email}`}
+            {step === 'signup-password' && `creating account for ${email}`}
+            {step === 'verify' && `verify ${email}`}
+          </div>
+
+          {/* Error */}
+          {error && (
+            <div style={{ fontSize: 10, letterSpacing: '0.08em', color: '#c0392b' }}>{error}</div>
+          )}
+
+          {/* Actions row */}
+          <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+            <button
+              onClick={() => { setStep('email'); setPassword(''); setConfirmPw(''); setVerifyCode(''); setError(null); }}
+              style={subLinkStyle}
+            >
+              ← back
+            </button>
+            {step === 'verify' && (
+              <button onClick={() => void handleResendCode()} style={subLinkStyle}>
+                resend code
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Arrived screen */}
       {arrived && (
@@ -597,6 +843,22 @@ export function LoginPage({ onEnter }: LoginPageProps) {
 }
 
 const uiRow: React.CSSProperties = { lineHeight: 1.8 };
+
+const rightBtnStyle: React.CSSProperties = {
+  flex: 1, border: 0, borderLeft: '1px solid rgba(10,10,10,0.12)',
+  background: 'transparent', fontFamily: "ui-monospace,'JetBrains Mono','SF Mono',Menlo,monospace",
+  fontSize: 9, letterSpacing: '0.16em', textTransform: 'uppercase',
+  color: 'rgba(10,10,10,0.78)', cursor: 'pointer',
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  gap: 7, padding: '0 8px', whiteSpace: 'nowrap',
+};
+
+const subLinkStyle: React.CSSProperties = {
+  background: 'none', border: 0, padding: 0, cursor: 'pointer',
+  fontFamily: "ui-monospace,'JetBrains Mono','SF Mono',Menlo,monospace",
+  fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase',
+  color: 'rgba(10,10,10,0.38)',
+};
 
 function corner(pos: 'tl' | 'tr' | 'bl' | 'br'): React.CSSProperties {
   return {
