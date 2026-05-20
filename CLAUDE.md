@@ -226,6 +226,8 @@ The app uses a **custom email/password login UI** instead of the Cognito Hosted 
 | CodeBuild project | `forkai-api-deploy` (ap-south-1) |
 | ECR repo | `forkai-api` |
 | EB app / env | `forkai-api` / `forkai-api-prod` |
+| EB LB | Classic LB `awseb-e-t-AWSEBLoa-CXJ72Y7Y13FA`, SG `sg-0453dabdaefe71c37` |
+| API URL | `https://api.forkai.in` (CNAME → EB hostname, HTTPS via ACM `forkai.in`/`*.forkai.in` cert) |
 | S3 artifacts bucket | `forkai-eb-artifacts` |
 | Buildspec | `apps/api/buildspec.yml` |
 
@@ -243,6 +245,8 @@ The app uses a **custom email/password login UI** instead of the Cognito Hosted 
 - **`forkai-build-role` IAM**: needs `AdministratorAccess-AWSElasticBeanstalk` managed policy (EB's `UpdateEnvironment` internally checks CloudFormation, S3, EC2 permissions on the caller). Also needs S3 read/write on `elasticbeanstalk-ap-south-1-643830915895`.
 - **EB default S3 bucket policy** (`elasticbeanstalk-ap-south-1-643830915895`): `forkai-build-role` must be an explicit principal — the bucket policy is not open to all IAM roles in the account.
 - **`forkai-api-role` (EC2 instance profile)**: must have ECR pull permissions (`ecr:GetAuthorizationToken`, `ecr:BatchGetImage`, `ecr:GetDownloadUrlForLayer` on `arn:aws:ecr:ap-south-1:643830915895:repository/forkai-api`). Without this the instance cannot pull the Docker image and EB rolls back silently.
+- **HTTPS on the EB Classic LB**: HTTPS (443) listener uses the `forkai.in` ACM cert (which has `*.forkai.in` SAN — covers `api.forkai.in`). Port 443 must be open on the LB security group (`sg-0453dabdaefe71c37`) — it is NOT open by default when EB creates the LB. LB forwards to EC2 port 80 (nginx proxy) → Docker port 8080.
+- **`CORS_ORIGIN`** on EB is set to `https://forkai.in`. NestJS CORS allows only that origin — any change to the frontend domain requires updating this env var and redeploying.
 
 **Triggering a manual redeploy (if webhook didn't fire):**
 ```bash
@@ -259,7 +263,7 @@ aws codebuild start-build --project-name forkai-api-deploy \
 | Amplify app | `forkai-web` (AppId: `d2ej36ff5hc50c`, ap-south-1) |
 | Branch | `prod` → PRODUCTION stage |
 | Build spec | `amplify.yml` at repo root |
-| Live URL | `https://prod.d2ej36ff5hc50c.amplifyapp.com` |
+| Live URL | `https://forkai.in` (custom domain) |
 
 **Critical constraints (hard-won):**
 - **`AMPLIFY_MONOREPO_APP_ROOT=apps/web`** must be set on the Amplify branch as an environment variable. Without it, Amplify's framework detector reads the root `package.json` (which has no `next` dep) and errors with `Cannot read 'next' version in package.json`.
