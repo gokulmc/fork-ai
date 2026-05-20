@@ -30,10 +30,8 @@ phases:
       - aws s3 cp Dockerrun.aws.json s3://$S3_BUCKET/$IMAGE_TAG/Dockerrun.aws.json
       # Create EB application version
       - aws elasticbeanstalk create-application-version --application-name $EB_APP_NAME --version-label $IMAGE_TAG --source-bundle S3Bucket=$S3_BUCKET,S3Key=$IMAGE_TAG/Dockerrun.aws.json --region $AWS_DEFAULT_REGION
-      # Deploy to EB environment
-      - aws elasticbeanstalk update-environment --application-name $EB_APP_NAME --environment-name $EB_ENV_NAME --version-label $IMAGE_TAG --region $AWS_DEFAULT_REGION
-      # Inject latest secrets as EB env vars
-      - aws elasticbeanstalk update-environment --application-name $EB_APP_NAME --environment-name $EB_ENV_NAME --region $AWS_DEFAULT_REGION --option-settings "Namespace=aws:elasticbeanstalk:application:environment,OptionName=ANTHROPIC_API_KEY,Value=$ANTHROPIC_API_KEY" "Namespace=aws:elasticbeanstalk:application:environment,OptionName=NOTION_CLIENT_SECRET,Value=$NOTION_CLIENT_SECRET"
+      # Deploy new version and inject secrets in one call to avoid OperationInProgress conflict
+      - aws elasticbeanstalk update-environment --application-name $EB_APP_NAME --environment-name $EB_ENV_NAME --version-label $IMAGE_TAG --region $AWS_DEFAULT_REGION --option-settings "Namespace=aws:elasticbeanstalk:application:environment,OptionName=ANTHROPIC_API_KEY,Value=$ANTHROPIC_API_KEY" "Namespace=aws:elasticbeanstalk:application:environment,OptionName=NOTION_CLIENT_SECRET,Value=$NOTION_CLIENT_SECRET"
 
 artifacts:
   files:
