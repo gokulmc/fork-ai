@@ -210,13 +210,10 @@ The app uses a **custom email/password login UI** instead of the Cognito Hosted 
 
 ### Key constraints
 - **`USER_PASSWORD_AUTH` flow must be enabled** on the Cognito App Client (AWS Console → User Pool → App clients → Auth flows). If missing, Cognito returns `NotAuthorizedException: ALLOW_USER_PASSWORD_AUTH flow not enabled for this client`.
-- **`SECRET_HASH` required when App Client has a client secret.** Every Cognito SDK call (`InitiateAuth`, `SignUp`, `ConfirmSignUp`, `ResendConfirmationCode`) must include a `SECRET_HASH` computed as `Base64(HMAC-SHA256(username + clientId, clientSecret))`. Omitting it returns 400. The helper lives in each route file — `crypto.createHmac('sha256', COGNITO_CLIENT_SECRET).update(email + COGNITO_CLIENT_ID).digest('base64')`.
+- **`SECRET_HASH` required when App Client has a client secret.** Every Cognito SDK call (`InitiateAuth`, `SignUp`, `ConfirmSignUp`, `ResendConfirmationCode`) must include a `SECRET_HASH`. The helper is `computeSecretHash(email)` in `src/lib/cognito-secrets.ts` — `Base64(HMAC-SHA256(username + clientId, clientSecret))`.
 - Password regex: `^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&_\-#])[A-Za-z\d@$!%*?&_\-#]{8,}$` — must match the User Pool's password policy.
 - The Google OAuth button still calls `signIn('cognito')` → Cognito Hosted UI (existing flow unchanged).
 - `triggerRef` in `LoginPage.tsx` is updated on each step change via `useEffect([step, ...])` — center dot always calls the current step's action. The graph animation trigger is stored separately in `graphTriggerRef` and fires only after successful auth.
-
-### In-progress / known issue
-The `/api/cognito/login` route was returning 400. Most likely cause: `USER_PASSWORD_AUTH` not enabled on the App Client in AWS Console. Check the Next.js server logs for `[cognito/login] <ErrorName> <ErrorMessage>` to confirm.
 
 ---
 
@@ -269,6 +266,8 @@ aws codebuild start-build --project-name forkai-api-deploy \
 - **Next.js must be pinned to 15.x** — Amplify's detector does not recognise Next.js 16. Pin is enforced in two places: `apps/web/package.json` (`"next": "^15.5.18"`) and root `package.json` `overrides` + direct dep. The override is required because `next-auth`'s peer dep range includes 16, which npm would otherwise hoist to root `node_modules`, causing TypeScript to see two conflicting Next.js type definitions simultaneously.
 - **`$CODEBUILD_SRC_DIR` is NOT the repo root**: in Amplify's build environment it is the *parent* of the repo clone (e.g. `/codebuild/output/.../src`), and `PWD` starts at the appRoot (`apps/web`). The repo root is therefore always `$(pwd)/../..` from inside the build phases. The `amplify.yml` preBuild uses `cd $(pwd)/../../ && npm ci` to reach it.
 - **npm workspaces + Amplify**: there is no per-workspace `package-lock.json`. The lock file lives at the repo root, so `npm ci` must run from the repo root, not from `apps/web`.
+- **Amplify WEB_COMPUTE Lambda does NOT inject branch env vars at runtime.** Non-`NEXT_PUBLIC_` env vars set on the Amplify branch are available during the **build phase** but are NOT forwarded to the SSR Lambda function at request time. Symptoms: `process.env.COGNITO_CLIENT_SECRET` is `undefined` inside a route handler even though it's set in the Amplify console. Fix: add the server-side secrets to the `env` block in `next.config.ts` — webpack's DefinePlugin inlines them into the Lambda bundle at build time. See `apps/web/next.config.ts`. **Do not attempt to read them from AWS Secrets Manager / SSM at runtime** — the Amplify-managed Lambda execution role has no IAM credentials available (`CredentialsProviderError`).
+- **Amplify WEB_COMPUTE Lambda execution role is Amplify-managed** and does NOT appear in your account's Lambda or IAM console. You cannot attach custom policies to it. If a route handler needs AWS SDK calls (e.g. Cognito), those work because Cognito is a public API using the client secret — not IAM credentials.
 
 ---
 
