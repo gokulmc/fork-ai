@@ -3,6 +3,8 @@ import Credentials from 'next-auth/providers/credentials';
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   secret: process.env.NEXTAUTH_SECRET,
+  // Required for serverless/CDN deployments where AUTH_URL isn't set at runtime
+  trustHost: true,
   providers: [
     // Accepts a pre-validated Cognito id_token (from our /api/cognito/* routes)
     Credentials({
