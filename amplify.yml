@@ -5,11 +5,12 @@ applications:
       phases:
         preBuild:
           commands:
-            - cd $CODEBUILD_SRC_DIR
-            - npm ci
+            - echo "CODEBUILD_SRC_DIR=$CODEBUILD_SRC_DIR PWD=$(pwd)"
+            - REPO_ROOT=$(cd $CODEBUILD_SRC_DIR && ls package-lock.json > /dev/null 2>&1 && echo $CODEBUILD_SRC_DIR || echo $CODEBUILD_SRC_DIR/../..)
+            - echo "REPO_ROOT=$REPO_ROOT"
+            - cd $REPO_ROOT && npm ci
         build:
           commands:
-            - cd $CODEBUILD_SRC_DIR/apps/web
             - npm run build
       artifacts:
         baseDirectory: .next
