@@ -1,5 +1,5 @@
 # Build stage — full workspace so tsc can resolve all types
-FROM node:22-alpine AS builder
+FROM public.ecr.aws/docker/library/node:22-alpine AS builder
 WORKDIR /repo
 
 COPY package.json package-lock.json ./
@@ -12,7 +12,7 @@ WORKDIR /repo/apps/api
 RUN npx tsc -p tsconfig.build.json && npx tsc-alias -p tsconfig.build.json
 
 # Production stage — standalone install, no dev deps, no source
-FROM node:22-alpine
+FROM public.ecr.aws/docker/library/node:22-alpine
 WORKDIR /app
 
 COPY apps/api/package.json ./package.json
