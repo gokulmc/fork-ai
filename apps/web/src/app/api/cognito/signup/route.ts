@@ -13,7 +13,7 @@ async function doSignUp(email: string, password: string) {
   await client.send(
     new SignUpCommand({
       ClientId: process.env.COGNITO_CLIENT_ID!,
-      SecretHash: await computeSecretHash(email),
+      SecretHash: computeSecretHash(email),
       Username: email,
       Password: password,
       UserAttributes: [{ Name: 'email', Value: email }],

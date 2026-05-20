@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@aws-sdk/client-cognito-identity-provider": "^3.1049.0",
-    "@aws-sdk/client-secrets-manager": "^3.1049.0",
     "highlight.js": "^11.11.1",
     "marked": "^15.0.12",
     "next": "^15.5.18",

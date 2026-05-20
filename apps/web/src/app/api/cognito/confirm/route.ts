@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
     password: string;
   };
   try {
-    const secretHash = await computeSecretHash(email);
+    const secretHash = computeSecretHash(email);
     await client.send(
       new ConfirmSignUpCommand({
         ClientId: process.env.COGNITO_CLIENT_ID!,

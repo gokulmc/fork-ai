@@ -7,12 +7,11 @@ const client = new CognitoIdentityProviderClient({ region: process.env.AWS_REGIO
 export async function POST(req: NextRequest) {
   const { email, password } = (await req.json()) as { email: string; password: string };
   try {
-    const secretHash = await computeSecretHash(email);
     const result = await client.send(
       new InitiateAuthCommand({
         AuthFlow: 'USER_PASSWORD_AUTH',
         ClientId: process.env.COGNITO_CLIENT_ID!,
-        AuthParameters: { USERNAME: email, PASSWORD: password, SECRET_HASH: secretHash },
+        AuthParameters: { USERNAME: email, PASSWORD: password, SECRET_HASH: computeSecretHash(email) },
       }),
     );
     if (result.ChallengeName) {

@@ -1,25 +1,9 @@
 import crypto from 'crypto';
-import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 
-const sm = new SecretsManagerClient({ region: process.env.AWS_REGION ?? 'ap-south-1' });
-let cachedSecret: string | undefined;
-
-async function getClientSecret(): Promise<string> {
-  if (cachedSecret) return cachedSecret;
-  if (process.env.COGNITO_CLIENT_SECRET) {
-    cachedSecret = process.env.COGNITO_CLIENT_SECRET;
-    return cachedSecret;
-  }
-  // Amplify WEB_COMPUTE Lambda doesn't inject branch env vars — read from Secrets Manager
-  const res = await sm.send(new GetSecretValueCommand({ SecretId: 'forkai/cognito-client-secret' }));
-  cachedSecret = res.SecretString!;
-  return cachedSecret;
-}
-
-export async function computeSecretHash(username: string): Promise<string> {
-  const secret = await getClientSecret();
+// Values are inlined at build time via next.config.ts env block (Amplify build env has them).
+export function computeSecretHash(username: string): string {
   return crypto
-    .createHmac('sha256', secret)
+    .createHmac('sha256', process.env.COGNITO_CLIENT_SECRET!)
     .update(username + process.env.COGNITO_CLIENT_ID!)
     .digest('base64');
 }

@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
     await client.send(
       new ResendConfirmationCodeCommand({
         ClientId: process.env.COGNITO_CLIENT_ID!,
-        SecretHash: await computeSecretHash(email),
+        SecretHash: computeSecretHash(email),
         Username: email,
       }),
     );

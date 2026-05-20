@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
       new InitiateAuthCommand({
         AuthFlow: 'USER_PASSWORD_AUTH',
         ClientId: process.env.COGNITO_CLIENT_ID!,
-        AuthParameters: { USERNAME: email, PASSWORD: currentPassword, SECRET_HASH: await computeSecretHash(email) },
+        AuthParameters: { USERNAME: email, PASSWORD: currentPassword, SECRET_HASH: computeSecretHash(email) },
       }),
     );
   } catch {
