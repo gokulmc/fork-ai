@@ -3,6 +3,13 @@ import type { ForkNode, Annotation, PersistentHighlight } from './types';
 
 marked.use({ gfm: true, breaks: false });
 
+const NOTION_LANGUAGES = new Set(['abap','abc','agda','arduino','ascii art','assembly','bash','basic','bnf','c','c#','c++','clojure','coffeescript','coq','css','dart','dhall','diff','docker','ebnf','elixir','elm','erlang','f#','flow','fortran','gherkin','glsl','go','graphql','groovy','haskell','hcl','html','idris','java','javascript','json','julia','kotlin','latex','less','lisp','livescript','llvm ir','lua','makefile','markdown','markup','matlab','mathematica','mermaid','nix','notion formula','objective-c','ocaml','pascal','perl','php','plain text','powershell','prolog','protobuf','purescript','python','r','racket','reason','ruby','rust','sass','scala','scheme','scss','shell','smalltalk','solidity','sql','swift','toml','typescript','vb.net','verilog','vhdl','visual basic','webassembly','xml','yaml','java/c/c++/c#']);
+
+function toNotionLang(lang: string): string {
+  const l = lang.toLowerCase();
+  return NOTION_LANGUAGES.has(l) ? l : 'plain text';
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function escHtml(s: string): string {
@@ -140,7 +147,7 @@ function mdToBlocks(body: string, highlights: PersistentHighlight[]): NBlock[] {
         code: {
           rich_text: [makeRT(codeMatch[2].trimEnd())],
           caption: [],
-          language: codeMatch[1] || 'plain text',
+          language: toNotionLang(codeMatch[1] || 'plain text'),
         },
       });
       continue;
