@@ -267,7 +267,7 @@ aws codebuild start-build --project-name forkai-api-deploy \
 **Critical constraints (hard-won):**
 - **`AMPLIFY_MONOREPO_APP_ROOT=apps/web`** must be set on the Amplify branch as an environment variable. Without it, Amplify's framework detector reads the root `package.json` (which has no `next` dep) and errors with `Cannot read 'next' version in package.json`.
 - **Next.js must be pinned to 15.x** — Amplify's detector does not recognise Next.js 16. Pin is enforced in two places: `apps/web/package.json` (`"next": "^15.5.18"`) and root `package.json` `overrides` + direct dep. The override is required because `next-auth`'s peer dep range includes 16, which npm would otherwise hoist to root `node_modules`, causing TypeScript to see two conflicting Next.js type definitions simultaneously.
-- **`$CODEBUILD_SRC_DIR` behaviour**: in Amplify's build environment with `appRoot` set, this variable may point to the appRoot (`apps/web`) rather than the repo root — despite the official docs saying otherwise. The `amplify.yml` preBuild auto-detects the repo root by checking whether `package-lock.json` exists at `$CODEBUILD_SRC_DIR` before deciding to go up (`../..`).
+- **`$CODEBUILD_SRC_DIR` is NOT the repo root**: in Amplify's build environment it is the *parent* of the repo clone (e.g. `/codebuild/output/.../src`), and `PWD` starts at the appRoot (`apps/web`). The repo root is therefore always `$(pwd)/../..` from inside the build phases. The `amplify.yml` preBuild uses `cd $(pwd)/../../ && npm ci` to reach it.
 - **npm workspaces + Amplify**: there is no per-workspace `package-lock.json`. The lock file lives at the repo root, so `npm ci` must run from the repo root, not from `apps/web`.
 
 ---
