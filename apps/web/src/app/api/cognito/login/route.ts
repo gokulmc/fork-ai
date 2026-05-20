@@ -1,24 +1,18 @@
 import { AdminGetUserCommand, CognitoIdentityProviderClient, InitiateAuthCommand } from '@aws-sdk/client-cognito-identity-provider';
-import crypto from 'crypto';
 import type { NextRequest } from 'next/server';
+import { computeSecretHash } from '@/lib/cognito-secrets';
 
 const client = new CognitoIdentityProviderClient({ region: process.env.AWS_REGION ?? 'ap-south-1' });
-
-function secretHash(username: string) {
-  return crypto
-    .createHmac('sha256', process.env.COGNITO_CLIENT_SECRET!)
-    .update(username + process.env.COGNITO_CLIENT_ID!)
-    .digest('base64');
-}
 
 export async function POST(req: NextRequest) {
   const { email, password } = (await req.json()) as { email: string; password: string };
   try {
+    const secretHash = await computeSecretHash(email);
     const result = await client.send(
       new InitiateAuthCommand({
         AuthFlow: 'USER_PASSWORD_AUTH',
         ClientId: process.env.COGNITO_CLIENT_ID!,
-        AuthParameters: { USERNAME: email, PASSWORD: password, SECRET_HASH: secretHash(email) },
+        AuthParameters: { USERNAME: email, PASSWORD: password, SECRET_HASH: secretHash },
       }),
     );
     if (result.ChallengeName) {

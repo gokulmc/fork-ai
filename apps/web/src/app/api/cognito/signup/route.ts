@@ -4,23 +4,16 @@ import {
   CognitoIdentityProviderClient,
   SignUpCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
-import crypto from 'crypto';
 import type { NextRequest } from 'next/server';
+import { computeSecretHash } from '@/lib/cognito-secrets';
 
 const client = new CognitoIdentityProviderClient({ region: process.env.AWS_REGION ?? 'ap-south-1' });
-
-function secretHash(username: string) {
-  return crypto
-    .createHmac('sha256', process.env.COGNITO_CLIENT_SECRET!)
-    .update(username + process.env.COGNITO_CLIENT_ID!)
-    .digest('base64');
-}
 
 async function doSignUp(email: string, password: string) {
   await client.send(
     new SignUpCommand({
       ClientId: process.env.COGNITO_CLIENT_ID!,
-      SecretHash: secretHash(email),
+      SecretHash: await computeSecretHash(email),
       Username: email,
       Password: password,
       UserAttributes: [{ Name: 'email', Value: email }],
