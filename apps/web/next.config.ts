@@ -8,6 +8,8 @@ const nextConfig: NextConfig = {
     COGNITO_CLIENT_ID: process.env.COGNITO_CLIENT_ID,
     COGNITO_USER_POOL_ID: process.env.COGNITO_USER_POOL_ID,
     NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET,
+    // next-auth v5 reads AUTH_SECRET internally; bake it so node_modules gets it at runtime
+    AUTH_SECRET: process.env.NEXTAUTH_SECRET,
     AWS_REGION: process.env.AWS_REGION ?? 'ap-south-1',
   },
 };
