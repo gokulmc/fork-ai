@@ -1,0 +1,8 @@
+node_modules
+apps/*/node_modules
+apps/*/dist
+apps/*/.next
+**/.env*
+**/*.tsbuildinfo
+_prototype
+.git
