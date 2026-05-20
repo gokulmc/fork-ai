@@ -220,6 +220,58 @@ The `/api/cognito/login` route was returning 400. Most likely cause: `USER_PASSW
 
 ---
 
+## Deployment
+
+### API — CodeBuild → Docker → Elastic Beanstalk
+
+| Resource | Value |
+|---|---|
+| CodeBuild project | `forkai-api-deploy` (ap-south-1) |
+| ECR repo | `forkai-api` |
+| EB app / env | `forkai-api` / `forkai-api-prod` |
+| S3 artifacts bucket | `forkai-eb-artifacts` |
+| Buildspec | `apps/api/buildspec.yml` |
+
+**How a deploy works:**
+1. Push to `prod` branch → CodeBuild webhook fires
+2. `docker build` using `apps/api/Dockerfile` with repo root as context
+3. Image pushed to ECR with tag `$CODEBUILD_RESOLVED_SOURCE_VERSION` (commit SHA) + `latest`
+4. `Dockerrun.aws.json` uploaded to `s3://forkai-eb-artifacts/<sha>/`
+5. Single `elasticbeanstalk update-environment` call deploys version AND injects secrets
+
+**Critical constraints (hard-won):**
+- **Docker base image**: use `public.ecr.aws/docker/library/node:22-alpine` — NOT `node:22-alpine`. Docker Hub has unauthenticated pull rate limits (429) in CodeBuild. ECR Public mirror has none.
+- **Single `update-environment` call**: never split deploying a version and updating env vars into two separate calls. EB allows only one update at a time; the second call will hit `OperationInProgress`.
+- **`create-application-version` is idempotent**: buildspec uses `|| true` because re-running on the same commit SHA returns `InvalidParameterValue: version already exists`.
+- **`forkai-build-role` IAM**: needs `AdministratorAccess-AWSElasticBeanstalk` managed policy (EB's `UpdateEnvironment` internally checks CloudFormation, S3, EC2 permissions on the caller). Also needs S3 read/write on `elasticbeanstalk-ap-south-1-643830915895`.
+- **EB default S3 bucket policy** (`elasticbeanstalk-ap-south-1-643830915895`): `forkai-build-role` must be an explicit principal — the bucket policy is not open to all IAM roles in the account.
+- **`forkai-api-role` (EC2 instance profile)**: must have ECR pull permissions (`ecr:GetAuthorizationToken`, `ecr:BatchGetImage`, `ecr:GetDownloadUrlForLayer` on `arn:aws:ecr:ap-south-1:643830915895:repository/forkai-api`). Without this the instance cannot pull the Docker image and EB rolls back silently.
+
+**Triggering a manual redeploy (if webhook didn't fire):**
+```bash
+aws codebuild start-build --project-name forkai-api-deploy \
+  --region ap-south-1 --source-version prod
+```
+
+---
+
+### Frontend — Amplify (Next.js SSR)
+
+| Resource | Value |
+|---|---|
+| Amplify app | `forkai-web` (AppId: `d2ej36ff5hc50c`, ap-south-1) |
+| Branch | `prod` → PRODUCTION stage |
+| Build spec | `amplify.yml` at repo root |
+| Live URL | `https://prod.d2ej36ff5hc50c.amplifyapp.com` |
+
+**Critical constraints (hard-won):**
+- **`AMPLIFY_MONOREPO_APP_ROOT=apps/web`** must be set on the Amplify branch as an environment variable. Without it, Amplify's framework detector reads the root `package.json` (which has no `next` dep) and errors with `Cannot read 'next' version in package.json`.
+- **Next.js must be pinned to 15.x** — Amplify's detector does not recognise Next.js 16. Pin is enforced in two places: `apps/web/package.json` (`"next": "^15.5.18"`) and root `package.json` `overrides` + direct dep. The override is required because `next-auth`'s peer dep range includes 16, which npm would otherwise hoist to root `node_modules`, causing TypeScript to see two conflicting Next.js type definitions simultaneously.
+- **`$CODEBUILD_SRC_DIR` behaviour**: in Amplify's build environment with `appRoot` set, this variable may point to the appRoot (`apps/web`) rather than the repo root — despite the official docs saying otherwise. The `amplify.yml` preBuild auto-detects the repo root by checking whether `package-lock.json` exists at `$CODEBUILD_SRC_DIR` before deciding to go up (`../..`).
+- **npm workspaces + Amplify**: there is no per-workspace `package-lock.json`. The lock file lives at the repo root, so `npm ci` must run from the repo root, not from `apps/web`.
+
+---
+
 ## Custom slash commands
 
 | Command | Purpose |
