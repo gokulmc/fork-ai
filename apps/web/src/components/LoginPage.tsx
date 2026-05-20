@@ -213,7 +213,8 @@ export function LoginPage({ onEnter }: LoginPageProps) {
       } else if (data.error) {
         setError(data.error);
       } else {
-        await signIn('cognito-token', { idToken: data.idToken, redirect: false });
+        const result = await signIn('cognito-token', { idToken: data.idToken, redirect: false });
+        if (result?.error) { setError(result.error); return; }
         graphTriggerRef.current?.();
       }
     } catch {
@@ -269,7 +270,8 @@ export function LoginPage({ onEnter }: LoginPageProps) {
       if (data.error) {
         setError(data.error);
       } else {
-        await signIn('cognito-token', { idToken: data.idToken, redirect: false });
+        const result = await signIn('cognito-token', { idToken: data.idToken, redirect: false });
+        if (result?.error) { setError(result.error); return; }
         graphTriggerRef.current?.();
       }
     } catch {

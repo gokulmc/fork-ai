@@ -10,6 +10,8 @@ const nextConfig: NextConfig = {
     NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET,
     // next-auth v5 reads AUTH_SECRET internally; bake it so node_modules gets it at runtime
     AUTH_SECRET: process.env.NEXTAUTH_SECRET,
+    NEXTAUTH_URL: process.env.NEXTAUTH_URL,
+    AUTH_URL: process.env.NEXTAUTH_URL,
     AWS_REGION: process.env.AWS_REGION ?? 'ap-south-1',
   },
 };
