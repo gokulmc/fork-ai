@@ -29,3 +29,6 @@ A user-created note or callout anchored to a Section passage. Kind is `note` or 
 
 ## History
 The list of Sessions accessible to a logged-in User — both Sessions they own and Sessions they have Claimed via a Share Token.
+
+## Onboarding Tour
+A progressive, floating-tooltip walkthrough shown once to each authenticated User on their first login. Covers 7 steps: query input, section viewer, mind map, highlight menu, Ask AI branch, share button, and history. Step 1 appears on the Landing page; steps 2–7 appear after the user's first query loads. Skipping or completing the tour marks the User as onboarded in DynamoDB. Guests do not see the tour — they have no UserMeta row. The tour can be restarted via a "Restart tour" button in the Tweaks panel, which resets the onboarded flag in the DB and reloads the page.

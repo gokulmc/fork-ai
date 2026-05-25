@@ -491,9 +491,18 @@ export function App() {
 
     try {
       let realNodeId = tempId;
+      // Captured from the meta event so the done handler can use them
+      // without reading from nodes state (reading inside a setNodes updater
+      // causes the updater to run multiple times, duplicating setSessions calls).
+      let metaTitle = '';
+      let metaEmoji: string | null = null;
+      let metaLede = '';
 
       await createSessionStream(idToken, query, tweaks.maxSections, tweaks.webSearch, (event) => {
         if (event.type === 'meta') {
+          metaTitle = event.title;
+          metaEmoji = event.emoji;
+          metaLede = event.lede;
           setNodes(prev => {
             const node = prev[tempId];
             if (!node) return prev;
@@ -524,21 +533,20 @@ export function App() {
           // Patch any open UI state that was anchored to the optimistic temp ID
           setHlMenu(prev => prev?.nodeId === tempId ? { ...prev, nodeId: realNodeId } : prev);
           setFollowUp(prev => prev?.nodeId === tempId ? { ...prev, nodeId: realNodeId } : prev);
-          // Add to session list
-          setNodes(prev => {
-            const node = prev[realNodeId];
-            if (!node) return prev;
-            setSessions(s => [{
+          // Prepend to session list — called directly (not inside a setNodes updater)
+          // to avoid React running the updater multiple times and duplicating entries.
+          setSessions(s => {
+            if (s.some(x => x.sessionId === event.sessionId)) return s;
+            return [{
               sessionId: event.sessionId,
-              title: node.title,
-              emoji: node.emoji ?? '',
-              lede: node.lede,
-              createdAt: new Date(node.createdAt).toISOString(),
-              updatedAt: new Date(node.createdAt).toISOString(),
+              title: metaTitle,
+              emoji: metaEmoji ?? '',
+              lede: metaLede,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
               nodeCount: 1,
               highlightCount: 0,
-            }, ...s]);
-            return prev;
+            }, ...s];
           });
         }
       });
