@@ -13,6 +13,21 @@ export interface UserMetaItem {
   updatedAt: string;
   notionAccessToken?: string | null;
   hasOnboarded?: boolean;
+  creditUsd?: number;
+}
+
+export interface UsageEventItem {
+  PK: string;
+  SK: string;
+  usageId: string;
+  sub: string;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  kind: 'QUERY' | 'DEEPER' | 'ASK';
+  sessionId: string;
+  nodeId: string;
+  createdAt: string;
 }
 
 export interface SessionMetaItem {
@@ -73,6 +88,17 @@ export interface AnnotationItem {
   fromTitle: string;
   nodeId: string;
   sectionId: string;
+  createdAt: string;
+}
+
+export interface PaymentItem {
+  PK: string;
+  SK: string;
+  paymentId: string;
+  orderId: string;
+  sub: string;
+  amountUsd: number;
+  amountInr: number;
   createdAt: string;
 }
 

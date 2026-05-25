@@ -28,4 +28,10 @@ export class UsersController {
   async patchMe(@CurrentUser() user: CognitoUser, @Body() body: PatchMeDto) {
     await this.usersService.patchMe(user.sub, body);
   }
+
+  @Get('me/usage')
+  @ApiOperation({ summary: 'Get last 50 usage events for billing history' })
+  async getUsage(@CurrentUser() user: CognitoUser) {
+    return this.usersService.getUsageEvents(user.sub);
+  }
 }

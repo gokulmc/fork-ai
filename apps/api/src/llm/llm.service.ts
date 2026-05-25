@@ -1,12 +1,12 @@
 import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
-import { LlmResponse, LlmSection, CitationSource } from './llm.types';
+import { LlmResponse, LlmSection, LlmUsage, CitationSource } from './llm.types';
 
 export type StreamEvent =
   | { type: 'meta'; title: string; emoji: string; lede: string }
   | { type: 'section'; heading: string; body: string }
-  | { type: 'done' };
+  | { type: 'done'; usage: LlmUsage };
 
 function extractMeta(text: string): { title: string; emoji: string; lede: string } | null {
   const title = text.match(/"title"\s*:\s*"((?:[^"\\]|\\.)*)"/)?.[1];
@@ -96,6 +96,7 @@ Each section "body" should be 80-180 words. You MAY use GitHub-flavored markdown
     }
 
     const stream = this.client.messages.stream(streamParams);
+    const finalMsgPromise = stream.finalMessage();
 
     for await (const chunk of stream) {
       if (chunk.type !== 'content_block_delta') continue;
@@ -127,7 +128,8 @@ Each section "body" should be 80-180 words. You MAY use GitHub-flavored markdown
       this.logger.warn(`Stream fallback parse failed: ${(err as Error).message}`);
     }
 
-    yield { type: 'done' };
+    const finalMsg = await finalMsgPromise;
+    yield { type: 'done', usage: { inputTokens: finalMsg.usage.input_tokens, outputTokens: finalMsg.usage.output_tokens } };
   }
 
   async answerQuery(query: string, sectionCount = 4, webSearch = false): Promise<LlmResponse> {
@@ -217,6 +219,7 @@ You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase 
           .join('');
 
         const result = this.parseJson(raw);
+        result.usage = { inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens };
         if (webSearch) {
           const allSources = this.extractAllSources(blocks);
           if (allSources.length) {

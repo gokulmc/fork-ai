@@ -145,6 +145,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
   const [verifyCode, setVerifyCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [userExists, setUserExists] = useState<boolean | null>(null);
   const [barHidden, setBarHidden] = useState(false);
   const [uiHidden, setUiHidden] = useState(false);
   const [arrived, setArrived] = useState(false);
@@ -162,7 +163,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
   useEffect(() => {
     switch (step) {
       case 'email':
-        triggerRef.current = () => { if (email.trim()) setStep('password'); };
+        triggerRef.current = () => { if (email.trim()) void goToPassword(); };
         break;
       case 'password':
         triggerRef.current = () => void handlePasswordSubmit();
@@ -180,8 +181,28 @@ export function LoginPage({ onEnter }: LoginPageProps) {
   const handleRegen = () => {
     setArrived(false); setBarHidden(false); setUiHidden(false);
     setStep('email'); setPassword(''); setConfirmPw(''); setVerifyCode(''); setError(null);
+    setUserExists(null);
     setGen(g => g + 1);
   };
+
+  async function goToPassword() {
+    if (!email.trim()) return;
+    setLoading(true);
+    try {
+      const res = await fetch('/api/cognito/check-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      const data = (await res.json()) as { exists?: boolean };
+      setUserExists(data.exists ?? null);
+    } catch {
+      setUserExists(null);
+    } finally {
+      setLoading(false);
+      setStep('password');
+    }
+  }
 
   async function handlePasswordSubmit() {
     if (!password.trim() || loading) return;
@@ -702,7 +723,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
             onKeyDown={e => {
               if (e.key !== 'Enter') return;
               e.preventDefault();
-              if (step === 'email' && email.trim()) setStep('password');
+              if (step === 'email' && email.trim()) void goToPassword();
               else if (step === 'password') void handlePasswordSubmit();
               else if (step === 'signup-password') confirmRef.current?.focus();
               else if (step === 'verify') void handleVerifySubmit();
@@ -723,7 +744,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
           />
           <button
             onClick={() => {
-              if (step === 'email' && email.trim()) setStep('password');
+              if (step === 'email' && email.trim()) void goToPassword();
               else if (step === 'password') void handlePasswordSubmit();
               else if (step === 'signup-password') confirmRef.current?.focus();
               else if (step === 'verify') void handleVerifySubmit();
@@ -791,7 +812,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
         }}>
           {/* Step hint */}
           <div style={{ fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase' as const, color: 'rgba(10,10,10,0.32)' }}>
-            {step === 'password' && `signing up as ${email}`}
+            {step === 'password' && (userExists === false ? `signing up as ${email}` : `signing in as ${email}`)}
             {step === 'signup-password' && `creating account for ${email}`}
             {step === 'verify' && `verify ${email}`}
           </div>

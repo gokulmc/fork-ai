@@ -13,9 +13,10 @@ interface LandingProps {
   onSubmit: (query: string) => void;
   loading: boolean;
   onShowHistory: () => void;
+  outOfCredit?: boolean;
 }
 
-export function Landing({ onSubmit, loading, onShowHistory }: LandingProps) {
+export function Landing({ onSubmit, loading, onShowHistory, outOfCredit }: LandingProps) {
   const [q, setQ] = useState('');
   const [leaving, setLeaving] = useState(false);
 
@@ -58,6 +59,11 @@ export function Landing({ onSubmit, loading, onShowHistory }: LandingProps) {
             )}
           </button>
         </div>
+        {outOfCredit && (
+          <div style={{ marginTop: 10, fontSize: 11, color: '#c0392b', letterSpacing: '0.04em', fontFamily: "ui-monospace,'JetBrains Mono','SF Mono',Menlo,monospace" }}>
+            Out of credit — open Billing in account settings to recharge.
+          </div>
+        )}
         <div className="examples">
           {EXAMPLES.map(ex => (
             <button key={ex} className="chip" onClick={() => setQ(ex)}>{ex}</button>
