@@ -698,10 +698,10 @@ export function LoginPage({ onEnter }: LoginPageProps) {
             placeholder={
               step === 'email' ? 'enter email to login or signup' :
               step === 'password' ? 'password' :
-              step === 'signup-password' ? 'password' :
+              step === 'signup-password' ? 'new password' :
               'verification code from email'
             }
-            autoComplete={step === 'email' ? 'email' : step === 'verify' ? 'one-time-code' : 'current-password'}
+            autoComplete={step === 'email' ? 'email' : step === 'verify' ? 'one-time-code' : step === 'signup-password' ? 'new-password' : 'current-password'}
             disabled={loading}
             style={{
               flex: 1, minWidth: 0, border: 0, outline: 0, background: 'transparent',
@@ -779,7 +779,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
         }}>
           {/* Step hint */}
           <div style={{ fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase' as const, color: 'rgba(10,10,10,0.32)' }}>
-            {step === 'password' && `signing in as ${email}`}
+            {step === 'password' && `continue as ${email}`}
             {step === 'signup-password' && `creating account for ${email}`}
             {step === 'verify' && `verify ${email}`}
           </div>
