@@ -216,7 +216,10 @@ The app uses a **custom email/password login UI** instead of the Cognito Hosted 
 - `triggerRef` in `LoginPage.tsx` is updated on each step change via `useEffect([step, ...])` — center dot always calls the current step's action. The graph animation trigger is stored separately in `graphTriggerRef` and fires only after successful auth.
 
 ### Session persistence
-Login survives tab close. `App.tsx` gates the login page solely on `status === 'unauthenticated'` from next-auth — there is no separate `showLogin` state. next-auth's JWT cookie has a 30-day maxAge by default, so it persists across browser restarts. Do **not** re-introduce any `sessionStorage`-backed gate for login visibility — `sessionStorage` is tab-scoped and would break persistence.
+Login survives tab close. `App.tsx` gates the login page on two conditions: `status === 'unauthenticated'` (covers logout from any page) and `showLogin && !loadingRoot` (keeps `LoginPage` mounted during the post-login animation). `showLogin` is initialised from `localStorage` (persists across tab closes) and is set back to `true` by a `useEffect` whenever `status` becomes `'unauthenticated'`. Do **not** use `sessionStorage` for this — it is tab-scoped and would break persistence.
+
+### JWT auth guard (backend)
+`JwtAuthGuard` (`apps/api/src/auth/jwt-auth.guard.ts`) validates the Cognito `id_token` via `passport-jwt` + `jwks-rsa`. It must **not** be bypassed in production. The `sub` claim is the stable user ID for all DynamoDB keys — bypassing it (e.g. hardcoding `sub: 'dev-user'`) causes all users to share the same session list. Routes that must skip auth use the `@Public()` decorator (currently: `GET /notion/callback` only).
 
 ---
 
