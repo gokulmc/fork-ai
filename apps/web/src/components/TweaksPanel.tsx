@@ -309,6 +309,12 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, accentOptions }
               options={[4, 5, 6, 7, 8].map(n => ({ value: String(n), label: String(n) }))}
               onChange={v => setTweak('maxSections', Number(v))}
             />
+            <TweakRadio
+              label="Web search"
+              value={tweaks.webSearch ? 'on' : 'off'}
+              options={[{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }]}
+              onChange={v => setTweak('webSearch', v === 'on')}
+            />
             <TweakSection label="Ask AI shortcuts" />
             <div className="twk-shortcuts">
               {([['?', 'what'], ['!?', 'how'], ['/?', 'why'], ['>?', 'explain']] as const).map(([sym, word]) => (

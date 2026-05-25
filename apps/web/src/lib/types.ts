@@ -54,6 +54,7 @@ export interface Tweaks {
   mapLayout: 'vertical' | 'horizontal';
   fontPair: string;
   maxSections: number;
+  webSearch: boolean;
 }
 
 export interface HlMenuState {

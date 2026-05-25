@@ -68,7 +68,7 @@ export class LlmService {
     this.client = new Anthropic({ apiKey: cfg.get<string>('anthropic.apiKey') });
   }
 
-  async *streamAnswerQuery(query: string, sectionCount = 5): AsyncGenerator<StreamEvent> {
+  async *streamAnswerQuery(query: string, sectionCount = 5, webSearch = false): AsyncGenerator<StreamEvent> {
     const prompt = `You are a research assistant. Answer this query as a structured study note with ${sectionCount} sections.
 
 Query: "${query}"
@@ -81,11 +81,17 @@ Each section "body" should be 80-180 words. You MAY use GitHub-flavored markdown
     let metaEmitted = false;
     let emittedCount = 0;
 
-    const stream = this.client.messages.stream({
+    const streamParams: Parameters<typeof this.client.messages.stream>[0] = {
       model: 'claude-sonnet-4-6',
       max_tokens: 2048,
       messages: [{ role: 'user', content: prompt }],
-    });
+    };
+    if (webSearch) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (streamParams as any).tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }];
+    }
+
+    const stream = this.client.messages.stream(streamParams);
 
     for await (const chunk of stream) {
       if (chunk.type !== 'content_block_delta') continue;
@@ -120,7 +126,7 @@ Each section "body" should be 80-180 words. You MAY use GitHub-flavored markdown
     yield { type: 'done' };
   }
 
-  async answerQuery(query: string, sectionCount = 4): Promise<LlmResponse> {
+  async answerQuery(query: string, sectionCount = 4, webSearch = false): Promise<LlmResponse> {
     const prompt = `You are a research assistant. Answer this query as a structured study note. Use as many sections as the topic genuinely warrants — no more than ${sectionCount}. Do not pad with redundant or filler sections; fewer is better when the topic is focused.
 
 Query: "${query}"
@@ -129,7 +135,7 @@ ${SECTIONS_SCHEMA}
 
 Each section "body" should be 80-180 words. You MAY use GitHub-flavored markdown when it strengthens the explanation: paragraphs, **bold**, *italic*, \`inline code\`, fenced code blocks, tables, ordered/unordered lists, and > blockquotes. Use prose by default. Escape any double-quotes inside JSON strings.`;
 
-    return this.callJson(prompt);
+    return this.callJson(prompt, webSearch);
   }
 
   async expandSection(
@@ -137,6 +143,7 @@ Each section "body" should be 80-180 words. You MAY use GitHub-flavored markdown
     sectionHeading: string,
     sectionBody: string,
     sectionCount = 4,
+    webSearch = false,
   ): Promise<LlmResponse> {
     const trail = ancestors
       .map((a, i) => `${ i === 0 ? 'Root query' : 'Sub-topic'}: "${a.query}" → "${a.title}"`)
@@ -153,7 +160,7 @@ ${SECTIONS_SCHEMA}
 
 You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase capturing the deep dive. Escape double-quotes inside JSON strings.`;
 
-    return this.callJson(prompt);
+    return this.callJson(prompt, webSearch);
   }
 
   async followUpFromHighlight(
@@ -161,6 +168,7 @@ You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase 
     highlight: string,
     question: string,
     sectionCount = 4,
+    webSearch = false,
   ): Promise<LlmResponse> {
     const trail = ancestors
       .map((a, i) => `${i === 0 ? 'Root query' : 'Sub-topic'}: "${a.query}" → "${a.title}"`)
@@ -177,23 +185,28 @@ ${SECTIONS_SCHEMA}
 
 You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase capturing the answer topic. Escape double-quotes inside JSON strings.`;
 
-    return this.callJson(prompt);
+    return this.callJson(prompt, webSearch);
   }
 
-  private async callJson(prompt: string, retries = 1): Promise<LlmResponse> {
+  private async callJson(prompt: string, webSearch = false, retries = 1): Promise<LlmResponse> {
     let lastError: Error | undefined;
 
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        const message = await this.client.messages.create({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const params: any = {
           model: 'claude-sonnet-4-6',
           max_tokens: 2048,
           messages: [{ role: 'user', content: prompt }],
-        });
+        };
+        if (webSearch) {
+          params.tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }];
+        }
+        const message = await this.client.messages.create(params) as Awaited<ReturnType<typeof this.client.messages.create>>;
 
-        const raw = message.content
+        const raw = (message as { content: Array<{ type: string; text?: string }> }).content
           .filter((b) => b.type === 'text')
-          .map((b) => (b as { type: 'text'; text: string }).text)
+          .map((b) => b.text ?? '')
           .join('');
 
         return this.parseJson(raw);

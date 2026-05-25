@@ -51,7 +51,7 @@ export class SessionsService {
     let lede = '';
     const sections: Array<{ id: string; heading: string; body: string }> = [];
 
-    for await (const event of this.llm.streamAnswerQuery(dto.query, dto.sectionCount ?? 5)) {
+    for await (const event of this.llm.streamAnswerQuery(dto.query, dto.sectionCount ?? 5, dto.webSearch ?? false)) {
       if (event.type === 'meta') {
         title = event.title;
         emoji = event.emoji;
@@ -104,7 +104,7 @@ export class SessionsService {
     const nodeId = ulid();
     const now = new Date().toISOString();
 
-    const llmResult = await this.llm.answerQuery(dto.query, dto.sectionCount ?? 4);
+    const llmResult = await this.llm.answerQuery(dto.query, dto.sectionCount ?? 4, dto.webSearch ?? false);
     const sections = llmResult.sections.map((s) => ({ id: ulid(), ...s }));
 
     const rootNode: NodeItem = {

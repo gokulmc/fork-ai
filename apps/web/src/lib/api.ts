@@ -186,10 +186,11 @@ export function createSession(
   idToken: string,
   query: string,
   sectionCount = 5,
+  webSearch = false,
 ): Promise<FullSession> {
   return apiFetch<FullSession>('/sessions', idToken, {
     method: 'POST',
-    body: JSON.stringify({ query, sectionCount }),
+    body: JSON.stringify({ query, sectionCount, webSearch }),
   });
 }
 
@@ -233,6 +234,7 @@ export async function createSessionStream(
   idToken: string,
   query: string,
   sectionCount = 5,
+  webSearch = false,
   onEvent: (event: StreamEvent) => void,
 ): Promise<void> {
   const res = await fetch(`${base()}/sessions/stream`, {
@@ -241,7 +243,7 @@ export async function createSessionStream(
       'Content-Type': 'application/json',
       Authorization: `Bearer ${idToken}`,
     },
-    body: JSON.stringify({ query, sectionCount }),
+    body: JSON.stringify({ query, sectionCount, webSearch }),
   });
 
   if (!res.ok || !res.body) {
@@ -279,6 +281,7 @@ export interface CreateNodePayload {
   sectionBody?: string;    // for DEEPER
   highlightText?: string;  // for ASK
   sectionCount?: number;
+  webSearch?: boolean;
 }
 
 export function createNode(

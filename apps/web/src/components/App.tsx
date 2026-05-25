@@ -88,6 +88,7 @@ const TWEAK_DEFAULTS = {
   mapLayout: 'vertical' as const,
   fontPair: 'newsreader-geist',
   maxSections: 4,
+  webSearch: false,
 };
 
 const FONT_PAIRS: Record<string, { serif: string; sans: string; label: string }> = {
@@ -491,7 +492,7 @@ export function App() {
     try {
       let realNodeId = tempId;
 
-      await createSessionStream(idToken, query, tweaks.maxSections, (event) => {
+      await createSessionStream(idToken, query, tweaks.maxSections, tweaks.webSearch, (event) => {
         if (event.type === 'meta') {
           setNodes(prev => {
             const node = prev[tempId];
@@ -520,6 +521,9 @@ export function App() {
           });
           setRootId(realNodeId);
           setActiveId(realNodeId);
+          // Patch any open UI state that was anchored to the optimistic temp ID
+          setHlMenu(prev => prev?.nodeId === tempId ? { ...prev, nodeId: realNodeId } : prev);
+          setFollowUp(prev => prev?.nodeId === tempId ? { ...prev, nodeId: realNodeId } : prev);
           // Add to session list
           setNodes(prev => {
             const node = prev[realNodeId];
@@ -598,6 +602,7 @@ export function App() {
         query: section.heading,
         sectionBody: section.body,
         sectionCount: tweaks.maxSections,
+        webSearch: tweaks.webSearch,
       };
       const apiNode = guestToken && !idToken
         ? await shareApi.createNode(guestToken, nodePayload)
@@ -657,6 +662,7 @@ export function App() {
         query: question,
         highlightText: source.text,
         sectionCount: tweaks.maxSections,
+        webSearch: tweaks.webSearch,
       };
       const apiNode = guestToken && !idToken
         ? await shareApi.createNode(guestToken, nodePayload)
@@ -1012,8 +1018,9 @@ export function App() {
   // ── Landing / history / loading ───────────────────────────────────────────
 
   const goHome = () => { setRootId(null); setNodes({}); setSessionId(null); setActiveId(null); setView('landing'); };
+  const isGuest = !!(guestToken && !idToken);
   const persistentBrand = (
-    <div className="app-brand" onClick={goHome} title="Go to home">
+    <div className="app-brand" onClick={isGuest ? undefined : goHome} title={isGuest ? 'fork.ai' : 'Go to home'} style={isGuest ? { cursor: 'default' } : undefined}>
       <img src="/logo.svg" alt="" /> fork.ai
     </div>
   );

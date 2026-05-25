@@ -320,6 +320,67 @@ Without the `&& idToken` guard, a guest who accidentally hits an authed endpoint
 
 ---
 
+## Web search
+
+All three LLM call types support an optional `webSearch` flag. When `true`, the Anthropic API is called with `tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }]`. The toggle lives in TweaksPanel and is persisted via `useTweaks` under the `webSearch` key (default `false`). It is forwarded through the full stack:
+
+```
+TweaksPanel → tweaks.webSearch → submitRootQuery / expandSectionAsChild / askFromHighlight
+  → createSessionStream / createNode (api.ts)
+  → POST /sessions/stream, POST /sessions/:id/nodes (webSearch field in body)
+  → SessionsService / NodesService → LlmService.streamAnswerQuery / answerQuery / expandSection / followUpFromHighlight
+```
+
+The `webSearch` param is optional everywhere and defaults to `false`, so all existing behaviour is unchanged when the toggle is off.
+
+---
+
+## Email — OTP verification
+
+Cognito sends OTP verification emails via **Amazon SES** (`ap-south-1`) from `fork.ai <verify@forkai.in>`.
+
+- SES domain: `forkai.in` — DKIM verified, DNS records in Route 53
+- A `CustomMessage` Lambda trigger (`forkai-cognito-custom-email`) intercepts `CustomMessage_SignUp`, `CustomMessage_ResendCode`, and `CustomMessage_ForgotPassword` events and returns a branded HTML email body
+- Lambda + email config are always updated in **one `update-user-pool` call** — updating them separately resets whichever field is omitted
+- Source: `infra/lambda/cognito-custom-email/` — `index.js` (template) + `setup.sh` (full one-shot deploy)
+- SES sandbox: still active — recipients must be verified until AWS approves production access
+
+---
+
+## AWS CLI v1 — known quirks
+
+The project uses AWS CLI v1 (not v2). Two patterns that differ from v2:
+
+### Structured parameters require `--cli-input-json file://`
+
+AWS CLI v1 does **not** accept inline JSON or `file://` for parameters like `--lambda-config` and `--email-configuration`. It tries to parse them as shorthand (`Key=Value`) and fails with `Expected: '=', received: 'EOF'`.
+
+The working pattern: write JSON to a temp file and pass via `--cli-input-json`:
+
+```bash
+printf '{"UserPoolId":"%s","LambdaConfig":{"CustomMessage":"%s"}}\n' \
+  "${POOL_ID}" "${LAMBDA_ARN}" > /tmp/update.json
+
+aws cognito-idp update-user-pool \
+  --region "${REGION}" \
+  --cli-input-json "file:///tmp/update.json"
+```
+
+Use `printf` (not heredoc + jq) to build the JSON — jq failures inside `$()` are silently swallowed by bash even with `set -euo pipefail`, leaving variables empty and producing invalid JSON.
+
+### `sesv2 create-email-identity` — DKIM attribute key name
+
+AWS CLI v1 does not support `SigningAttributesOrigin=AWS_SES`. Use `NextSigningKeyLength=RSA_2048_BIT` instead to get the same AWS-managed Easy DKIM:
+
+```bash
+aws sesv2 create-email-identity \
+  --email-identity "forkai.in" \
+  --dkim-signing-attributes NextSigningKeyLength=RSA_2048_BIT \
+  --region "ap-south-1"
+```
+
+---
+
 ## Custom slash commands
 
 | Command | Purpose |
