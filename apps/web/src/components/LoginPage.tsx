@@ -193,7 +193,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
-      const data = (await res.json()) as { idToken?: string; error?: string };
+      const data = (await res.json()) as { idToken?: string; refreshToken?: string; expiresIn?: number; error?: string };
       if (data.error === 'UserNotFoundException') {
         setConfirmPw('');
         setStep('signup-password');
@@ -213,7 +213,12 @@ export function LoginPage({ onEnter }: LoginPageProps) {
       } else if (data.error) {
         setError(data.error);
       } else {
-        await signIn('cognito-token', { idToken: data.idToken, redirect: false });
+        await signIn('cognito-token', {
+          idToken: data.idToken,
+          refreshToken: data.refreshToken,
+          expiresAt: String(Date.now() + (data.expiresIn ?? 3600) * 1000),
+          redirect: false,
+        });
         graphTriggerRef.current?.();
       }
     } catch {
@@ -265,11 +270,16 @@ export function LoginPage({ onEnter }: LoginPageProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, code: verifyCode, password }),
       });
-      const data = (await res.json()) as { idToken?: string; error?: string };
+      const data = (await res.json()) as { idToken?: string; refreshToken?: string; expiresIn?: number; error?: string };
       if (data.error) {
         setError(data.error);
       } else {
-        await signIn('cognito-token', { idToken: data.idToken, redirect: false });
+        await signIn('cognito-token', {
+          idToken: data.idToken,
+          refreshToken: data.refreshToken,
+          expiresAt: String(Date.now() + (data.expiresIn ?? 3600) * 1000),
+          redirect: false,
+        });
         graphTriggerRef.current?.();
       }
     } catch {

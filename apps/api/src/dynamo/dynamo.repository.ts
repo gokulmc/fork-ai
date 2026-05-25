@@ -5,6 +5,7 @@ import {
   NODE_MODEL,
   ANNOTATION_MODEL,
   HIGHLIGHT_MODEL,
+  SHARE_TOKEN_MODEL,
   DYNAMO_TABLE,
 } from './dynamo.constants';
 import type {
@@ -13,6 +14,7 @@ import type {
   NodeItem,
   AnnotationItem,
   HighlightItem,
+  ShareTokenItem,
 } from './dynamo.interfaces';
 
 @Injectable()
@@ -24,6 +26,7 @@ export class DynamoRepository {
     @Inject(NODE_MODEL) private readonly nodeModel: any,
     @Inject(ANNOTATION_MODEL) private readonly annotationModel: any,
     @Inject(HIGHLIGHT_MODEL) private readonly highlightModel: any,
+    @Inject(SHARE_TOKEN_MODEL) private readonly shareTokenModel: any,
   ) {}
 
   // ── Key helpers ─────────────────────────────────────────────────────────────
@@ -98,7 +101,7 @@ export class DynamoRepository {
   async updateSessionMeta(
     sub: string,
     sessionId: string,
-    updates: Partial<Pick<SessionMetaItem, 'title' | 'nodeCount' | 'notionPageUrl' | 'updatedAt' | 'gsi1sk'>>,
+    updates: Partial<Pick<SessionMetaItem, 'title' | 'nodeCount' | 'notionPageUrl' | 'shareToken' | 'updatedAt' | 'gsi1sk'>>,
   ): Promise<void> {
     await this.sessionMetaModel.update(
       { PK: this.userPk(sub), SK: this.sessionSk(sessionId) },
@@ -111,6 +114,46 @@ export class DynamoRepository {
       PK: this.userPk(sub),
       SK: this.sessionSk(sessionId),
     });
+  }
+
+  async putClaimedSessionMeta(guestSub: string, source: SessionMetaItem): Promise<void> {
+    const now = new Date().toISOString();
+    const claimed: SessionMetaItem = {
+      ...source,
+      PK: this.userPk(guestSub),
+      SK: this.sessionSk(source.sessionId),
+      gsi1pk: this.userPk(guestSub),
+      gsi1sk: `UPDATED#${now}`,
+      updatedAt: now,
+      ownerSub: source.PK.replace('USER#', ''),
+      shareToken: null,
+    };
+    await this.sessionMetaModel.create(this.clean(claimed), { overwrite: true });
+  }
+
+  // ── Share tokens ──────────────────────────────────────────────────────────
+
+  private shareTokenPk(token: string) { return `SHARE#${token}`; }
+
+  async putShareToken(token: string, sessionId: string, ownerSub: string): Promise<void> {
+    const item: ShareTokenItem = {
+      PK: this.shareTokenPk(token),
+      SK: 'METADATA',
+      token,
+      sessionId,
+      ownerSub,
+      createdAt: new Date().toISOString(),
+    };
+    await this.shareTokenModel.create(this.clean(item), { overwrite: true });
+  }
+
+  async getShareToken(token: string): Promise<ShareTokenItem | null> {
+    const item = await this.shareTokenModel.get({ PK: this.shareTokenPk(token), SK: 'METADATA' });
+    return item ? this.toPlain<ShareTokenItem>(item) : null;
+  }
+
+  async deleteShareToken(token: string): Promise<void> {
+    await this.shareTokenModel.delete({ PK: this.shareTokenPk(token), SK: 'METADATA' });
   }
 
   // ── Nodes ────────────────────────────────────────────────────────────────────

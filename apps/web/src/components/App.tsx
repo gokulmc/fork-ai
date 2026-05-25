@@ -154,6 +154,9 @@ export function App() {
   // Auto sign-out on any 401 (expired Cognito id_token)
   useEffect(() => { setUnauthorizedHandler(() => void signOut()); }, []);
 
+  // Sign out when the refresh token itself has expired (30-day limit reached)
+  useEffect(() => { if (authSession?.error === 'RefreshTokenExpired') void signOut(); }, [authSession?.error]);
+
   // Keep ?view=history in the URL so refresh lands on the right page
   useEffect(() => {
     if (view === 'history') {

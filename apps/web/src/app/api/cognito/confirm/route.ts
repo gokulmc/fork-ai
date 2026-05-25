@@ -37,7 +37,11 @@ export async function POST(req: NextRequest) {
         AuthParameters: { USERNAME: email, PASSWORD: password, SECRET_HASH: secretHash(email) },
       }),
     );
-    return Response.json({ idToken: result.AuthenticationResult!.IdToken });
+    return Response.json({
+      idToken: result.AuthenticationResult!.IdToken,
+      refreshToken: result.AuthenticationResult!.RefreshToken,
+      expiresIn: result.AuthenticationResult!.ExpiresIn ?? 3600,
+    });
   } catch (e) {
     return Response.json({ error: (e as Error).message }, { status: 400 });
   }
