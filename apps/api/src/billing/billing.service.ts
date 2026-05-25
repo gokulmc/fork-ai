@@ -8,16 +8,21 @@ import type { PaymentItem } from '@/dynamo/dynamo.interfaces';
 @Injectable()
 export class BillingService {
   private readonly logger = new Logger(BillingService.name);
-  private readonly razorpay: Razorpay;
+  private _razorpay: Razorpay | null = null;
 
   constructor(
     private readonly db: DynamoRepository,
     private readonly cfg: ConfigService,
-  ) {
-    this.razorpay = new Razorpay({
-      key_id: this.cfg.get<string>('razorpay.keyId') ?? '',
-      key_secret: this.cfg.get<string>('razorpay.keySecret') ?? '',
-    });
+  ) {}
+
+  private get razorpay(): Razorpay {
+    if (!this._razorpay) {
+      const keyId = this.cfg.get<string>('razorpay.keyId') ?? '';
+      const keySecret = this.cfg.get<string>('razorpay.keySecret') ?? '';
+      if (!keyId) throw new HttpException('Payment gateway not configured', HttpStatus.SERVICE_UNAVAILABLE);
+      this._razorpay = new Razorpay({ key_id: keyId, key_secret: keySecret });
+    }
+    return this._razorpay;
   }
 
   async createOrder(sub: string, amountUsd: number): Promise<{
