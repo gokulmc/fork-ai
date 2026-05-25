@@ -64,6 +64,7 @@ export class NodesService {
       fromSection: dto.fromSection,
       fromText,
       createdAt: now,
+      ...(llmResult.sources?.length ? { sources: llmResult.sources } : {}),
     };
 
     await this.db.putNode(node);

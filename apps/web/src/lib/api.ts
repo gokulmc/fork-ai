@@ -1,4 +1,4 @@
-import type { ForkNode, Annotation, HighlightRecord, PersistentHighlight } from './types';
+import type { ForkNode, Annotation, HighlightRecord, PersistentHighlight, CitationSource } from './types';
 
 // Called on any 401 — set once at app startup to trigger sign-out
 let unauthorizedHandler: (() => void) | null = null;
@@ -18,6 +18,7 @@ export interface ApiNode {
   fromSection: string | null;
   fromText: string | null;
   createdAt: string;
+  sources?: CitationSource[];
 }
 
 export interface ApiAnnotation {
@@ -80,6 +81,7 @@ export function toForkNode(n: ApiNode): ForkNode {
     fromText: n.fromText ?? null,
     createdAt: typeof n.createdAt === 'string' ? new Date(n.createdAt).getTime() : (n.createdAt as number),
     loading: false,
+    sources: n.sources,
   };
 }
 
@@ -174,6 +176,25 @@ async function apiFetch<T>(
   const text = await res.text();
   if (!text.trim()) return undefined as T;
   return JSON.parse(text) as T;
+}
+
+// ── Users ─────────────────────────────────────────────────────────────────────
+
+export interface UserProfile {
+  sub: string;
+  email: string;
+  hasOnboarded?: boolean;
+}
+
+export function getMe(idToken: string): Promise<UserProfile> {
+  return apiFetch<UserProfile>('/users/me', idToken);
+}
+
+export function patchMe(idToken: string, updates: { hasOnboarded: boolean }): Promise<void> {
+  return apiFetch<void>('/users/me', idToken, {
+    method: 'PATCH',
+    body: JSON.stringify(updates),
+  });
 }
 
 // ── Sessions ─────────────────────────────────────────────────────────────────

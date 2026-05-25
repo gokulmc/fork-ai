@@ -12,6 +12,7 @@ export interface UserMetaItem {
   createdAt: string;
   updatedAt: string;
   notionAccessToken?: string | null;
+  hasOnboarded?: boolean;
 }
 
 export interface SessionMetaItem {
@@ -41,6 +42,11 @@ export interface ShareTokenItem {
   createdAt: string;
 }
 
+export interface CitationSource {
+  title: string;
+  url: string;
+}
+
 export interface NodeItem {
   PK: string;
   SK: string;
@@ -55,6 +61,7 @@ export interface NodeItem {
   fromSection?: string | null;
   fromText?: string | null;
   createdAt: string;
+  sources?: CitationSource[];
 }
 
 export interface AnnotationItem {

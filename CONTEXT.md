@@ -30,5 +30,11 @@ A user-created note or callout anchored to a Section passage. Kind is `note` or 
 ## History
 The list of Sessions accessible to a logged-in User — both Sessions they own and Sessions they have Claimed via a Share Token.
 
+## Web Search
+An optional mode on any LLM call that attaches the `web_search_20250305` Anthropic tool (max 3 uses per call). When active, the LLM may issue up to 3 search queries and weave live results into sections. Gated behind a toggle in the Tweaks panel. Persisted per-device in `localStorage` under `fork.ai.tweaks`. Disabled by default.
+
+## CitationSource
+A `{ title, url }` pair that records one web source actually cited in a Web Search response. Only sources that appear inside a `<cite>` tag in the raw LLM output are included — unused search results are discarded. Stored as `sources[]` on the Node in DynamoDB. Rendered as a numbered footnote list below the last section; each footnote number is a clickable link to the source URL. The inline citation markers are `<sup class="cite-ref"><a …>[N]</a></sup>` injected server-side by `processCitations` in `LlmService`.
+
 ## Onboarding Tour
-A progressive, floating-tooltip walkthrough shown once to each authenticated User on their first login. Covers 7 steps: query input, section viewer, mind map, highlight menu, Ask AI branch, share button, and history. Step 1 appears on the Landing page; steps 2–7 appear after the user's first query loads. Skipping or completing the tour marks the User as onboarded in DynamoDB. Guests do not see the tour — they have no UserMeta row. The tour can be restarted via a "Restart tour" button in the Tweaks panel, which resets the onboarded flag in the DB and reloads the page.
+A progressive, floating-tooltip walkthrough shown once to each authenticated User on their first login. Covers 8 steps: query input, section viewer, mind map, highlight menu, Ask AI branch, Save to Notion, share button, and history. Step 1 appears on the Landing page; steps 2–7 appear after the user's first query loads. Skipping or completing the tour marks the User as onboarded in DynamoDB. Guests do not see the tour — they have no UserMeta row. The tour can be restarted via a "Restart tour" button in the Tweaks panel, which resets the onboarded flag in the DB and reloads the page.

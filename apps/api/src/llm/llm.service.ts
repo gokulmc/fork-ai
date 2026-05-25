@@ -1,7 +1,7 @@
 import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
-import { LlmResponse, LlmSection } from './llm.types';
+import { LlmResponse, LlmSection, CitationSource } from './llm.types';
 
 export type StreamEvent =
   | { type: 'meta'; title: string; emoji: string; lede: string }
@@ -205,14 +205,25 @@ You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase 
         if (webSearch) {
           params.tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }];
         }
-        const message = await this.client.messages.create(params) as Awaited<ReturnType<typeof this.client.messages.create>>;
+        const message = await this.client.messages.create(params);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const blocks: any[] = (message as any).content ?? [];
 
-        const raw = (message as { content: Array<{ type: string; text?: string }> }).content
-          .filter((b) => b.type === 'text')
-          .map((b) => b.text ?? '')
+        const raw: string = blocks
+          .filter((b: { type: string }) => b.type === 'text')
+          .map((b: { text?: string }) => b.text ?? '')
           .join('');
 
-        return this.parseJson(raw);
+        const result = this.parseJson(raw);
+        if (webSearch) {
+          const allSources = this.extractAllSources(blocks);
+          if (allSources.length) {
+            const cited = this.processCitations(result.sections, allSources);
+            result.sections = cited.sections;
+            if (cited.sources.length) result.sources = cited.sources;
+          }
+        }
+        return result;
       } catch (err) {
         lastError = err as Error;
         this.logger.warn(`LLM attempt ${attempt + 1} failed: ${lastError.message}`);
@@ -220,6 +231,57 @@ You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase 
     }
 
     throw new InternalServerErrorException(`LLM call failed: ${lastError?.message}`);
+  }
+
+  // Collect all web search results (title + url) in order from all tool result blocks.
+  // The <cite index="N-..."> first number is the 1-based index into this list.
+  private extractAllSources(blocks: Array<{ type: string; content?: unknown[] }>): CitationSource[] {
+    const sources: CitationSource[] = [];
+    for (const block of blocks) {
+      if (block.type !== 'web_search_tool_result') continue;
+      for (const item of (block.content ?? []) as Array<{ type: string; title?: string; url?: string }>) {
+        if (item.type === 'web_search_result' && item.title && item.url) {
+          sources.push({ title: item.title, url: item.url });
+        }
+      }
+    }
+    return sources;
+  }
+
+  // Process all sections in one pass with a shared footnote map so that:
+  // - numbering is sequential across all sections in order of first appearance
+  // - only sources that are actually cited in the text are included in the output
+  private processCitations(
+    sections: LlmSection[],
+    allSources: CitationSource[],
+  ): { sections: LlmSection[]; sources: CitationSource[] } {
+    const docToFootnote = new Map<number, number>();
+    let nextFootnote = 1;
+
+    const processed = sections.map(s => ({
+      ...s,
+      body: s.body.replace(
+        /<cite\s+index="([^"]+)">([^<]*)<\/cite>/g,
+        (_match, indexAttr: string, text: string) => {
+          const docIdx = parseInt(indexAttr.split('-')[0], 10);
+          if (docIdx < 1 || docIdx > allSources.length) return text;
+          if (!docToFootnote.has(docIdx)) {
+            docToFootnote.set(docIdx, nextFootnote++);
+          }
+          const fn = docToFootnote.get(docIdx)!;
+          const url = allSources[docIdx - 1].url;
+          return `${text}<sup class="cite-ref"><a href="${url}" target="_blank" rel="noopener noreferrer">[${fn}]</a></sup>`;
+        },
+      ),
+    }));
+
+    // Build cited-only sources array ordered by footnote number (1-based)
+    const citedSources: CitationSource[] = new Array(docToFootnote.size);
+    docToFootnote.forEach((footnoteNum, docIdx) => {
+      citedSources[footnoteNum - 1] = allSources[docIdx - 1];
+    });
+
+    return { sections: processed, sources: citedSources };
   }
 
   private parseJson(raw: string): LlmResponse {

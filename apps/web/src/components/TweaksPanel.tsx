@@ -188,9 +188,10 @@ interface TweaksPanelProps {
   setTweak: SetTweak;
   fontPairOptions: { value: string; label: string }[];
   accentOptions: string[];
+  onRestartTour?: () => void;
 }
 
-export function TweaksPanel({ tweaks, setTweak, fontPairOptions, accentOptions }: TweaksPanelProps) {
+export function TweaksPanel({ tweaks, setTweak, fontPairOptions, accentOptions, onRestartTour }: TweaksPanelProps) {
   const [open, setOpen] = useState(false);
   const dragRef = useRef<HTMLDivElement>(null);
   const offsetRef = useRef({ x: PAD, y: PAD });
@@ -325,6 +326,16 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, accentOptions }
                 </div>
               ))}
             </div>
+            {onRestartTour && (
+              <>
+                <TweakSection label="Onboarding" />
+                <div className="twk-row">
+                  <button className="twk-restart-btn" onClick={onRestartTour}>
+                    Restart tour
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

@@ -27,4 +27,8 @@ export class UsersService {
   async getMe(sub: string): Promise<UserMetaItem | null> {
     return this.db.getUserMeta(sub);
   }
+
+  async patchMe(sub: string, updates: { hasOnboarded?: boolean }): Promise<void> {
+    await this.db.updateUserMeta(sub, updates);
+  }
 }

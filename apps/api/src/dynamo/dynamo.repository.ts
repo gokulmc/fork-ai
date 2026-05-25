@@ -65,6 +65,13 @@ export class DynamoRepository {
     await this.userMetaModel.create(this.clean(data), { overwrite: true });
   }
 
+  async updateUserMeta(sub: string, updates: Partial<Pick<UserMetaItem, 'hasOnboarded' | 'updatedAt'>>): Promise<void> {
+    await this.userMetaModel.update(
+      { PK: this.userPk(sub), SK: 'METADATA' },
+      { updatedAt: new Date().toISOString(), ...updates },
+    );
+  }
+
   async updateNotionToken(sub: string, token: string | null): Promise<void> {
     const updates: Partial<UserMetaItem> = { updatedAt: new Date().toISOString() };
     if (token !== null) updates.notionAccessToken = token;

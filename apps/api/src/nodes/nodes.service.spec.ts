@@ -6,11 +6,16 @@ import { LlmService } from '@/llm/llm.service';
 import { SessionsService } from '@/sessions/sessions.service';
 
 const mockDb = {
-  put: jest.fn(),
-  get: jest.fn(),
-  query: jest.fn(),
-  update: jest.fn(),
-  batchDelete: jest.fn(),
+  putNode: jest.fn(),
+  getNode: jest.fn(),
+  queryNodes: jest.fn(),
+  updateNode: jest.fn(),
+  batchDeleteNodes: jest.fn(),
+  queryAnnotations: jest.fn(),
+  batchDeleteAnnotations: jest.fn(),
+  queryHighlights: jest.fn(),
+  batchDeleteHighlights: jest.fn(),
+  updateSessionMeta: jest.fn(),
 };
 
 const mockLlm = {
@@ -39,11 +44,19 @@ const llmResult = {
 };
 
 const parentNode = {
-  PK: `SESSION#${SESSION_ID}`,
-  SK: `NODE#${PARENT_NODE_ID}`,
   nodeId: PARENT_NODE_ID,
+  parentId: null,
   query: 'Root query',
+  title: 'Root Title',
   kind: 'QUERY',
+};
+
+// getSession now returns a FullSession shape — nodes array is what createNode uses
+const fullSession = {
+  sessionId: SESSION_ID,
+  nodes: [parentNode],
+  annotations: [],
+  highlights: [],
 };
 
 describe('NodesService', () => {
@@ -72,33 +85,39 @@ describe('NodesService', () => {
     };
 
     beforeEach(() => {
-      mockSessions.getSession.mockResolvedValue({ sessionId: SESSION_ID });
-      mockDb.get.mockResolvedValue(parentNode);
+      mockSessions.getSession.mockResolvedValue(fullSession);
       mockLlm.expandSection.mockResolvedValue(llmResult);
-      mockDb.put.mockResolvedValue(undefined);
+      mockDb.putNode.mockResolvedValue(undefined);
+      mockDb.updateSessionMeta.mockResolvedValue(undefined);
       mockSessions.touchUpdatedAt.mockResolvedValue(undefined);
       mockSessions.incrementNodeCount.mockResolvedValue(undefined);
     });
 
-    it('calls expandSection with parent query + section context', async () => {
+    it('calls expandSection with ancestor trail + section context', async () => {
       await service.createNode(SUB, SESSION_ID, dto);
-      expect(mockLlm.expandSection).toHaveBeenCalledWith('Root query', 'Chain Rule', 'The chain rule is...');
+      expect(mockLlm.expandSection).toHaveBeenCalledWith(
+        [{ title: 'Root Title', query: 'Root query' }],
+        'Chain Rule',
+        'The chain rule is...',
+        4,
+        false,
+      );
     });
 
     it('persists node and updates session metadata', async () => {
       await service.createNode(SUB, SESSION_ID, dto);
-      expect(mockDb.put).toHaveBeenCalledTimes(1);
+      expect(mockDb.putNode).toHaveBeenCalledTimes(1);
       expect(mockSessions.touchUpdatedAt).toHaveBeenCalledWith(SUB, SESSION_ID);
       expect(mockSessions.incrementNodeCount).toHaveBeenCalledWith(SUB, SESSION_ID, 1);
     });
 
     it('returns node with correct fields', async () => {
-      const node = await service.createNode(SUB, SESSION_ID, dto);
-      expect(node['kind']).toBe('DEEPER');
-      expect(node['parentId']).toBe(PARENT_NODE_ID);
-      expect(node['title']).toBe('Deep Dive');
-      expect(Array.isArray(node['sections'])).toBe(true);
-      expect((node['sections'] as Array<{ id: string }>)[0].id).toBeDefined();
+      const result = await service.createNode(SUB, SESSION_ID, dto);
+      expect(result.kind).toBe('DEEPER');
+      expect(result.parentId).toBe(PARENT_NODE_ID);
+      expect(result.title).toBe('Deep Dive');
+      expect(Array.isArray(result.sections)).toBe(true);
+      expect((result.sections as Array<{ id: string }>)[0].id).toBeDefined();
     });
 
     it('throws BadRequestException when sectionBody is missing', async () => {
@@ -108,8 +127,18 @@ describe('NodesService', () => {
     });
 
     it('throws NotFoundException when parent node does not exist', async () => {
-      mockDb.get.mockResolvedValue(null);
+      mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [] });
       await expect(service.createNode(SUB, SESSION_ID, dto)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('stores sources on node when LLM returns them', async () => {
+      mockLlm.expandSection.mockResolvedValue({
+        ...llmResult,
+        sources: [{ title: 'Ref', url: 'https://ref.com' }],
+      });
+      const result = await service.createNode(SUB, SESSION_ID, dto);
+      expect(result.sources).toHaveLength(1);
+      expect(result.sources![0].url).toBe('https://ref.com');
     });
   });
 
@@ -123,26 +152,28 @@ describe('NodesService', () => {
     };
 
     beforeEach(() => {
-      mockSessions.getSession.mockResolvedValue({ sessionId: SESSION_ID });
-      mockDb.get.mockResolvedValue(parentNode);
+      mockSessions.getSession.mockResolvedValue(fullSession);
       mockLlm.followUpFromHighlight.mockResolvedValue(llmResult);
-      mockDb.put.mockResolvedValue(undefined);
+      mockDb.putNode.mockResolvedValue(undefined);
+      mockDb.updateSessionMeta.mockResolvedValue(undefined);
       mockSessions.touchUpdatedAt.mockResolvedValue(undefined);
       mockSessions.incrementNodeCount.mockResolvedValue(undefined);
     });
 
-    it('calls followUpFromHighlight with parent query + highlight + question', async () => {
+    it('calls followUpFromHighlight with ancestor trail + highlight + question', async () => {
       await service.createNode(SUB, SESSION_ID, dto);
       expect(mockLlm.followUpFromHighlight).toHaveBeenCalledWith(
-        'Root query',
+        [{ title: 'Root Title', query: 'Root query' }],
         'gradient descent',
         'Why does this work?',
+        4,
+        false,
       );
     });
 
     it('sets fromText to the highlight text', async () => {
-      const node = await service.createNode(SUB, SESSION_ID, dto);
-      expect(node['fromText']).toBe('gradient descent');
+      const result = await service.createNode(SUB, SESSION_ID, dto);
+      expect(result.fromText).toBe('gradient descent');
     });
 
     it('throws BadRequestException when highlightText is missing', async () => {
@@ -154,87 +185,69 @@ describe('NodesService', () => {
 
   describe('renameNode', () => {
     it('updates the title field', async () => {
-      mockSessions.getSession.mockResolvedValue({});
-      mockDb.get.mockResolvedValue({ nodeId: 'n1', title: 'Old title' });
-      mockDb.update.mockResolvedValue(undefined);
+      mockSessions.getSession.mockResolvedValue(fullSession);
+      mockDb.getNode.mockResolvedValue({ nodeId: 'n1', title: 'Old' });
+      mockDb.updateNode.mockResolvedValue(undefined);
       await service.renameNode(SUB, SESSION_ID, 'n1', { title: 'New title' });
-      expect(mockDb.update).toHaveBeenCalledWith(
-        `SESSION#${SESSION_ID}`,
-        'NODE#n1',
-        { title: 'New title' },
-      );
+      expect(mockDb.updateNode).toHaveBeenCalledWith(SESSION_ID, 'n1', { title: 'New title' });
     });
 
     it('throws NotFoundException when node does not exist', async () => {
-      mockSessions.getSession.mockResolvedValue({});
-      mockDb.get.mockResolvedValue(null);
+      mockSessions.getSession.mockResolvedValue(fullSession);
+      mockDb.getNode.mockResolvedValue(null);
       await expect(service.renameNode(SUB, SESSION_ID, 'n1', { title: 'x' })).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 
   describe('deleteBranch', () => {
+    beforeEach(() => {
+      mockSessions.getSession.mockResolvedValue(fullSession);
+      mockDb.queryAnnotations.mockResolvedValue([]);
+      mockDb.queryHighlights.mockResolvedValue([]);
+      mockDb.batchDeleteNodes.mockResolvedValue(undefined);
+      mockDb.batchDeleteAnnotations.mockResolvedValue(undefined);
+      mockDb.batchDeleteHighlights.mockResolvedValue(undefined);
+      mockSessions.touchUpdatedAt.mockResolvedValue(undefined);
+      mockSessions.incrementNodeCount.mockResolvedValue(undefined);
+    });
+
     it('throws NotFoundException when node not in session', async () => {
-      mockSessions.getSession.mockResolvedValue({});
-      mockDb.query.mockResolvedValue([]);
+      mockDb.queryNodes.mockResolvedValue([]);
       await expect(service.deleteBranch(SUB, SESSION_ID, 'missing')).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('deletes a single node with no children', async () => {
-      mockSessions.getSession.mockResolvedValue({});
-      mockDb.query
-        .mockResolvedValueOnce([{ nodeId: 'n1', parentId: null, SK: 'NODE#n1' }]) // first query for all nodes
-        .mockResolvedValueOnce([]); // second query for ANN# / HL# items
-      mockDb.batchDelete.mockResolvedValue(undefined);
-      mockSessions.touchUpdatedAt.mockResolvedValue(undefined);
-      mockSessions.incrementNodeCount.mockResolvedValue(undefined);
-
+      mockDb.queryNodes.mockResolvedValue([{ nodeId: 'n1', parentId: null }]);
       await service.deleteBranch(SUB, SESSION_ID, 'n1');
-      const keys = mockDb.batchDelete.mock.calls[0][0];
-      expect(keys).toHaveLength(1);
-      expect(keys[0].sk).toBe('NODE#n1');
+      expect(mockDb.batchDeleteNodes).toHaveBeenCalledWith(SESSION_ID, ['n1']);
       expect(mockSessions.incrementNodeCount).toHaveBeenCalledWith(SUB, SESSION_ID, -1);
     });
 
     it('collects entire subtree via BFS and deletes all', async () => {
-      mockSessions.getSession.mockResolvedValue({});
-
-      // Tree: n1 → n2, n3; n2 → n4
-      const nodes = [
-        { nodeId: 'n1', parentId: null, SK: 'NODE#n1' },
-        { nodeId: 'n2', parentId: 'n1', SK: 'NODE#n2' },
-        { nodeId: 'n3', parentId: 'n1', SK: 'NODE#n3' },
-        { nodeId: 'n4', parentId: 'n2', SK: 'NODE#n4' },
-      ];
-      mockDb.query
-        .mockResolvedValueOnce(nodes)
-        .mockResolvedValueOnce([]); // no ANN/HL items
-      mockDb.batchDelete.mockResolvedValue(undefined);
-      mockSessions.touchUpdatedAt.mockResolvedValue(undefined);
-      mockSessions.incrementNodeCount.mockResolvedValue(undefined);
-
+      mockDb.queryNodes.mockResolvedValue([
+        { nodeId: 'n1', parentId: null },
+        { nodeId: 'n2', parentId: 'n1' },
+        { nodeId: 'n3', parentId: 'n1' },
+        { nodeId: 'n4', parentId: 'n2' },
+      ]);
       await service.deleteBranch(SUB, SESSION_ID, 'n1');
-      const keys = mockDb.batchDelete.mock.calls[0][0];
-      expect(keys).toHaveLength(4);
+      const [, deletedIds] = mockDb.batchDeleteNodes.mock.calls[0];
+      expect(deletedIds).toHaveLength(4);
       expect(mockSessions.incrementNodeCount).toHaveBeenCalledWith(SUB, SESSION_ID, -4);
     });
 
-    it('also collects ANN# and HL# items for deleted nodes', async () => {
-      mockSessions.getSession.mockResolvedValue({});
-      mockDb.query
-        .mockResolvedValueOnce([{ nodeId: 'n1', parentId: null, SK: 'NODE#n1' }])
-        .mockResolvedValueOnce([
-          { PK: `SESSION#${SESSION_ID}`, SK: 'ANN#a1', nodeId: 'n1' },
-          { PK: `SESSION#${SESSION_ID}`, SK: 'HL#h1', nodeId: 'n1' },
-          { PK: `SESSION#${SESSION_ID}`, SK: 'ANN#a2', nodeId: 'other-node' }, // should NOT be deleted
-        ]);
-      mockDb.batchDelete.mockResolvedValue(undefined);
-      mockSessions.touchUpdatedAt.mockResolvedValue(undefined);
-      mockSessions.incrementNodeCount.mockResolvedValue(undefined);
-
+    it('also deletes associated annotations and highlights', async () => {
+      mockDb.queryNodes.mockResolvedValue([{ nodeId: 'n1', parentId: null }]);
+      mockDb.queryAnnotations.mockResolvedValue([
+        { annId: 'a1', nodeId: 'n1' },
+        { annId: 'a2', nodeId: 'other' },
+      ]);
+      mockDb.queryHighlights.mockResolvedValue([
+        { hlId: 'h1', nodeId: 'n1' },
+      ]);
       await service.deleteBranch(SUB, SESSION_ID, 'n1');
-      const keys = mockDb.batchDelete.mock.calls[0][0];
-      // 1 node + 2 associated items (ANN#a1 and HL#h1); 'other-node' annotation excluded
-      expect(keys).toHaveLength(3);
+      expect(mockDb.batchDeleteAnnotations).toHaveBeenCalledWith(SESSION_ID, ['a1']);
+      expect(mockDb.batchDeleteHighlights).toHaveBeenCalledWith(SESSION_ID, ['h1']);
     });
   });
 });

@@ -121,6 +121,7 @@ export class SessionsService {
       fromSection: null,
       fromText: null,
       createdAt: now,
+      ...(llmResult.sources?.length ? { sources: llmResult.sources } : {}),
     };
 
     const sessionMeta: SessionMetaItem = {
