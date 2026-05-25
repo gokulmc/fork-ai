@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsIn, IsOptional, MinLength, MaxLength } from 'class-validator';
+import { IsString, IsIn, IsOptional, IsInt, Min, Max, MinLength, MaxLength } from 'class-validator';
 import { NodeKind } from '@/llm/llm.types';
 
 export class CreateNodeDto {
@@ -30,4 +30,11 @@ export class CreateNodeDto {
   @IsOptional()
   @IsString()
   highlightText?: string;
+
+  @ApiPropertyOptional({ description: 'Max sections the LLM may return (4–8)', minimum: 4, maximum: 8 })
+  @IsOptional()
+  @IsInt()
+  @Min(4)
+  @Max(8)
+  sectionCount?: number;
 }

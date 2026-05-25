@@ -20,6 +20,8 @@ export const SessionMetaSchema = new dynamoose.Schema({
   rootNodeId: String,
   nodeCount: Number,
   notionPageUrl: { type: String, required: false },
+  shareToken: { type: String, required: false },
+  ownerSub: { type: String, required: false },
   createdAt: String,
   updatedAt: String,
   gsi1pk: {
@@ -27,6 +29,15 @@ export const SessionMetaSchema = new dynamoose.Schema({
     index: [{ name: 'gsi1', type: 'global', rangeKey: 'gsi1sk' }],
   },
   gsi1sk: String,
+});
+
+export const ShareTokenSchema = new dynamoose.Schema({
+  PK: { type: String, hashKey: true },
+  SK: { type: String, rangeKey: true },
+  token: String,
+  sessionId: String,
+  ownerSub: String,
+  createdAt: String,
 });
 
 export const NodeSchema = new dynamoose.Schema({

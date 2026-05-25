@@ -18,7 +18,11 @@ export async function POST(req: NextRequest) {
       console.error('[cognito/login] challenge required:', result.ChallengeName);
       return Response.json({ error: 'ChallengeRequired', message: result.ChallengeName }, { status: 400 });
     }
-    return Response.json({ idToken: result.AuthenticationResult!.IdToken });
+    return Response.json({
+      idToken: result.AuthenticationResult!.IdToken,
+      refreshToken: result.AuthenticationResult!.RefreshToken,
+      expiresIn: result.AuthenticationResult!.ExpiresIn ?? 3600,
+    });
   } catch (e) {
     const err = e as Error;
     console.error('[cognito/login]', err.name, err.message);

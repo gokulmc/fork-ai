@@ -24,10 +24,21 @@ export interface SessionMetaItem {
   rootNodeId: string;
   nodeCount: number;
   notionPageUrl?: string | null;
+  shareToken?: string | null;
+  ownerSub?: string | null;
   createdAt: string;
   updatedAt: string;
   gsi1pk: string;
   gsi1sk: string;
+}
+
+export interface ShareTokenItem {
+  PK: string;
+  SK: string;
+  token: string;
+  sessionId: string;
+  ownerSub: string;
+  createdAt: string;
 }
 
 export interface NodeItem {

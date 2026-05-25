@@ -53,6 +53,7 @@ export interface Tweaks {
   density: 'comfortable' | 'compact';
   mapLayout: 'vertical' | 'horizontal';
   fontPair: string;
+  maxSections: number;
 }
 
 export interface HlMenuState {

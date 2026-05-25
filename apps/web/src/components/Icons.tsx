@@ -51,3 +51,5 @@ export const PageIcon = make(<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h1
 export const Clock = make(<><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>);
 export const ArrowLeft = make(<><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></>);
 export const Highlighter = make(<><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></>);
+export const Link = make(<><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></>);
+export const LinkOff = make(<><path d="m18.84 12.25 1.72-1.71h-.02a5.004 5.004 0 0 0-.12-7.07 5.006 5.006 0 0 0-6.95 0l-1.72 1.71"/><path d="m5.17 11.75-1.71 1.71a5.004 5.004 0 0 0 .12 7.07 5.006 5.006 0 0 0 6.95 0l1.71-1.71"/><line x1="8" y1="2" x2="2" y2="8"/><line x1="22" y1="16" x2="16" y2="22"/></>);

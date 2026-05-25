@@ -193,7 +193,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
-      const data = (await res.json()) as { idToken?: string; error?: string };
+      const data = (await res.json()) as { idToken?: string; refreshToken?: string; expiresIn?: number; error?: string };
       if (data.error === 'UserNotFoundException') {
         setConfirmPw('');
         setStep('signup-password');
@@ -213,7 +213,12 @@ export function LoginPage({ onEnter }: LoginPageProps) {
       } else if (data.error) {
         setError(data.error);
       } else {
-        const result = await signIn('cognito-token', { idToken: data.idToken, redirect: false });
+        const result = await signIn('cognito-token', {
+          idToken: data.idToken,
+          refreshToken: data.refreshToken,
+          expiresAt: String(Date.now() + (data.expiresIn ?? 3600) * 1000),
+          redirect: false,
+        });
         if (result?.error) { setError(result.error); return; }
         graphTriggerRef.current?.();
       }
@@ -266,11 +271,16 @@ export function LoginPage({ onEnter }: LoginPageProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, code: verifyCode, password }),
       });
-      const data = (await res.json()) as { idToken?: string; error?: string };
+      const data = (await res.json()) as { idToken?: string; refreshToken?: string; expiresIn?: number; error?: string };
       if (data.error) {
         setError(data.error);
       } else {
-        const result = await signIn('cognito-token', { idToken: data.idToken, redirect: false });
+        const result = await signIn('cognito-token', {
+          idToken: data.idToken,
+          refreshToken: data.refreshToken,
+          expiresAt: String(Date.now() + (data.expiresIn ?? 3600) * 1000),
+          redirect: false,
+        });
         if (result?.error) { setError(result.error); return; }
         graphTriggerRef.current?.();
       }
@@ -700,10 +710,10 @@ export function LoginPage({ onEnter }: LoginPageProps) {
             placeholder={
               step === 'email' ? 'enter email to login or signup' :
               step === 'password' ? 'password' :
-              step === 'signup-password' ? 'password' :
+              step === 'signup-password' ? 'new password' :
               'verification code from email'
             }
-            autoComplete={step === 'email' ? 'email' : step === 'verify' ? 'one-time-code' : 'current-password'}
+            autoComplete={step === 'email' ? 'email' : step === 'verify' ? 'one-time-code' : step === 'signup-password' ? 'new-password' : 'current-password'}
             disabled={loading}
             style={{
               flex: 1, minWidth: 0, border: 0, outline: 0, background: 'transparent',
@@ -781,7 +791,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
         }}>
           {/* Step hint */}
           <div style={{ fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase' as const, color: 'rgba(10,10,10,0.32)' }}>
-            {step === 'password' && `signing in as ${email}`}
+            {step === 'password' && `signing up as ${email}`}
             {step === 'signup-password' && `creating account for ${email}`}
             {step === 'verify' && `verify ${email}`}
           </div>

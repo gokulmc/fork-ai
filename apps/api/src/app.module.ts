@@ -12,6 +12,7 @@ import { NodesModule } from '@/nodes/nodes.module';
 import { AnnotationsModule } from '@/annotations/annotations.module';
 import { HighlightsModule } from '@/highlights/highlights.module';
 import { NotionModule } from '@/notion/notion.module';
+import { ShareModule } from '@/share/share.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { NotionModule } from '@/notion/notion.module';
     AnnotationsModule,
     HighlightsModule,
     NotionModule,
+    ShareModule,
   ],
   providers: [
     // Apply JWT guard globally; controllers opt out via @Public()

@@ -8,6 +8,7 @@ import {
   NODE_MODEL,
   ANNOTATION_MODEL,
   HIGHLIGHT_MODEL,
+  SHARE_TOKEN_MODEL,
   DYNAMO_TABLE,
 } from './dynamo.constants';
 import {
@@ -16,6 +17,7 @@ import {
   NodeSchema,
   AnnotationSchema,
   HighlightSchema,
+  ShareTokenSchema,
 } from './dynamo.schemas';
 import { DynamoRepository } from './dynamo.repository';
 
@@ -57,6 +59,11 @@ const DYNAMO_CONFIGURED = 'DYNAMO_CONFIGURED';
       useFactory: () => dynamoose.model('Highlight', HighlightSchema),
     },
     {
+      provide: SHARE_TOKEN_MODEL,
+      inject: [DYNAMO_CONFIGURED],
+      useFactory: () => dynamoose.model('ShareToken', ShareTokenSchema),
+    },
+    {
       // Binds all models to the physical DynamoDB table.
       // DynamoRepository injects this to guarantee the Table is set up first.
       provide: DYNAMO_TABLE,
@@ -67,6 +74,7 @@ const DYNAMO_CONFIGURED = 'DYNAMO_CONFIGURED';
         NODE_MODEL,
         ANNOTATION_MODEL,
         HIGHLIGHT_MODEL,
+        SHARE_TOKEN_MODEL,
         ConfigService,
       ],
       useFactory: (
@@ -76,11 +84,12 @@ const DYNAMO_CONFIGURED = 'DYNAMO_CONFIGURED';
         node: any,
         annotation: any,
         highlight: any,
+        shareToken: any,
         cfg: ConfigService,
       ) =>
         new dynamoose.Table(
           cfg.get<string>('dynamo.tableName')!,
-          [userMeta, sessionMeta, node, annotation, highlight],
+          [userMeta, sessionMeta, node, annotation, highlight, shareToken],
           { create: false, waitForActive: false },
         ),
     },
