@@ -60,6 +60,7 @@ import {
   pushToNotion,
   updateSessionNotionUrl,
   setUnauthorizedHandler,
+  shareApi,
   type SessionSummary,
   type NotionPage,
 } from '@/lib/api';
@@ -74,6 +75,7 @@ import { LoginPage } from './LoginPage';
 import { HistoryPage } from './HistoryPage';
 import { TweaksPanel } from './TweaksPanel';
 import { AccountButton } from './AccountButton';
+import { ShareButton } from './ShareButton';
 import {
   Search, Bookmark, ChevronRight, Sparkles, CornerDownRight, Hash,
   Quote, AlertCircle, ArrowUpRight, Pencil, Trash, Clock,
@@ -140,6 +142,12 @@ export function App() {
   const { data: authSession, status } = useSession();
   const idToken = authSession?.idToken ?? '';
 
+  // Guest mode — set from ?sk= query param on mount; cleared after claim
+  const [guestToken, setGuestToken] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return new URLSearchParams(window.location.search).get('sk');
+  });
+
   const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const [view, setView] = useState<'landing' | 'history'>(() => {
     if (typeof window === 'undefined') return 'landing';
@@ -178,10 +186,11 @@ export function App() {
   const [nodes, setNodes] = useState<Record<string, ForkNode>>({});
   const [rootId, setRootId] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
-  // Start in loading state if hash or localStorage has a session — prevents landing flash on refresh
+  // Start in loading state if hash, localStorage, or ?sk= share token present — prevents landing flash on refresh
   const [loadingRoot, setLoadingRoot] = useState(() => {
     if (typeof window === 'undefined') return false;
-    return !!(window.location.hash.slice(1) || localStorage.getItem('fork.ai.session'));
+    const hasSk = !!new URLSearchParams(window.location.search).get('sk');
+    return !!(window.location.hash.slice(1) || localStorage.getItem('fork.ai.session') || hasSk);
   });
   const [loadingNodes, setLoadingNodes] = useState<Set<string>>(new Set());
   const [sectionLoading, setSectionLoading] = useState<string | null>(null);
@@ -296,6 +305,19 @@ export function App() {
     }
   }, [idToken]);
 
+  // When a guest logs in while a guestToken is active, claim the session then reload it under their auth
+  const hasClaimedRef = useRef(false);
+  useEffect(() => {
+    if (status !== 'authenticated' || !idToken || !guestToken || hasClaimedRef.current) return;
+    hasClaimedRef.current = true;
+    shareApi.claimSession(guestToken, idToken)
+      .then(summary => {
+        setGuestToken(null);
+        return loadSession(summary.sessionId);
+      })
+      .catch(err => console.error('Failed to claim session after login', err));
+  }, [status, idToken, guestToken, loadSession]);
+
   // ── Persist active session to URL hash + localStorage (survive refresh) ────
 
   // Track whether we've ever had a session this mount — only clear storage on
@@ -332,6 +354,60 @@ export function App() {
     loadSession(savedSession, savedNode);
   }, [status, idToken, loadSession]);
 
+  // ── Guest mode: load shared session via ?sk= token ───────────────────────
+  // Strip ?sk= from URL immediately so it doesn't persist in history/clipboard.
+  useEffect(() => {
+    if (!guestToken) return;
+    const params = new URLSearchParams(window.location.search);
+    params.delete('sk');
+    const qs = params.toString();
+    history.replaceState(null, '', qs ? `?${qs}` : window.location.pathname + window.location.hash);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // run once on mount
+
+  const hasLoadedShareRef = useRef(false);
+  useEffect(() => {
+    if (!guestToken || hasLoadedShareRef.current || status === 'loading') return;
+    hasLoadedShareRef.current = true;
+
+    if (status === 'authenticated' && idToken) {
+      // Already logged in — claim immediately then load via normal auth path
+      shareApi.claimSession(guestToken, idToken)
+        .then(summary => {
+          setGuestToken(null);
+          return loadSession(summary.sessionId);
+        })
+        .catch(err => {
+          console.error('Failed to claim shared session', err);
+          setLoadingRoot(false);
+        });
+    } else {
+      // Guest (unauthenticated) — load directly via share token
+      setLoadingRoot(true);
+      shareApi.getSession(guestToken)
+        .then(session => {
+          const forkNodes = session.nodes.map(toForkNode);
+          const nodeMap: Record<string, ForkNode> = {};
+          for (const n of forkNodes) nodeMap[n.id] = n;
+          const root = forkNodes.find(n => n.parentId === null);
+          setSessionId(session.sessionId);
+          setNodes(nodeMap);
+          setRootId(root?.id ?? null);
+          setActiveId(root?.id ?? null);
+          setAnnotations(session.annotations.map(toAnnotation));
+          setPersistentHl(toHlMap(session.highlights));
+          setHighlightsList(toHighlightRecords(session.highlights, nodeMap));
+          setNotionSavedUrl(session.notionPageUrl ?? null);
+          setShowLogin(false);
+        })
+        .catch(err => {
+          console.error('Failed to load shared session', err);
+          setGuestToken(null);
+        })
+        .finally(() => setLoadingRoot(false));
+    }
+  }, [guestToken, status, idToken, loadSession]);
+
   // ── Persist highlights (optimistic + background API sync) ─────────────────
 
   const persistHighlight = useCallback(
@@ -345,9 +421,14 @@ export function App() {
       const fromTitle = nodes[nodeId]?.title ?? 'Untitled';
       setHighlightsList(prev => [...prev, { hlId: tempId, text, nodeId, sectionId, fromTitle }]);
 
-      if (sessionId && idToken) {
-        createHighlight(idToken, sessionId, { nodeId, sectionId, text, start, end, bg: bg ?? null, fg: fg ?? null })
-          .then(apiHl => {
+      if (sessionId) {
+        const hlPromise = guestToken && !idToken
+          ? shareApi.createHighlight(guestToken, { nodeId, sectionId, text, start, end, bg: bg ?? null, fg: fg ?? null })
+          : idToken
+            ? createHighlight(idToken, sessionId, { nodeId, sectionId, text, start, end, bg: bg ?? null, fg: fg ?? null })
+            : null;
+        hlPromise
+          ?.then(apiHl => {
             const realId = ((apiHl as unknown as Record<string, unknown>)['hlId'] as string) ?? apiHl.id;
             setPersistentHl(prev => ({
               ...prev,
@@ -358,7 +439,7 @@ export function App() {
           .catch(err => console.error('Failed to persist highlight', err));
       }
     },
-    [nodes, sessionId, idToken],
+    [nodes, sessionId, idToken, guestToken],
   );
 
   const removeHighlight = useCallback((hlId: string) => {
@@ -371,10 +452,14 @@ export function App() {
       return next;
     });
     setHighlightsList(prev => prev.filter(h => h.hlId !== hlId));
-    if (sessionId && idToken) {
-      deleteHighlight(idToken, sessionId, hlId).catch(err => console.error('Failed to delete highlight', err));
+    if (sessionId) {
+      if (guestToken && !idToken) {
+        shareApi.deleteHighlight(guestToken, hlId).catch(err => console.error('Failed to delete highlight', err));
+      } else if (idToken) {
+        deleteHighlight(idToken, sessionId, hlId).catch(err => console.error('Failed to delete highlight', err));
+      }
     }
-  }, [sessionId, idToken]);
+  }, [sessionId, idToken, guestToken]);
 
   // ── Start a new root research session (streaming) ────────────────────────
 
@@ -508,14 +593,17 @@ export function App() {
     scrollWsTop();
 
     try {
-      const apiNode = await createNode(idToken, sessionId, {
-        kind: 'DEEPER',
+      const nodePayload = {
+        kind: 'DEEPER' as const,
         parentNodeId,
         fromSection: section.id,
         query: section.heading,
         sectionBody: section.body,
         sectionCount: tweaks.maxSections,
-      });
+      };
+      const apiNode = guestToken && !idToken
+        ? await shareApi.createNode(guestToken, nodePayload)
+        : await createNode(idToken, sessionId, nodePayload);
       const realNode = toForkNode(apiNode);
       setNodes(prev => {
         const next = { ...prev };
@@ -531,12 +619,12 @@ export function App() {
       setSectionLoading(null);
       setLoadingNodes(prev => { const n = new Set(prev); n.delete(tempId); return n; });
     }
-  }, [nodes, sessionId, idToken, scrollWsTop, notionSavedUrl]);
+  }, [nodes, sessionId, idToken, guestToken, scrollWsTop, notionSavedUrl]);
 
   // ── Branch: Ask AI from highlight ────────────────────────────────────────
 
   const askFromHighlight = useCallback(async (question: string, source: FollowUpState) => {
-    if (!sessionId || !idToken) return;
+    if (!sessionId || (!idToken && !guestToken)) return;
     const parent = nodes[source.nodeId];
     if (!parent) return;
 
@@ -566,14 +654,17 @@ export function App() {
     }
 
     try {
-      const apiNode = await createNode(idToken, sessionId, {
-        kind: 'ASK',
+      const nodePayload = {
+        kind: 'ASK' as const,
         parentNodeId: source.nodeId,
         fromSection: source.sectionId,
         query: question,
         highlightText: source.text,
         sectionCount: tweaks.maxSections,
-      });
+      };
+      const apiNode = guestToken && !idToken
+        ? await shareApi.createNode(guestToken, nodePayload)
+        : await createNode(idToken, sessionId, nodePayload);
       const realNode = toForkNode(apiNode);
       setNodes(prev => {
         const next = { ...prev };
@@ -595,7 +686,7 @@ export function App() {
         return prev;
       });
     }
-  }, [nodes, sessionId, idToken, lastHlColors, scrollWsTop, persistHighlight, notionSavedUrl]);
+  }, [nodes, sessionId, idToken, guestToken, lastHlColors, scrollWsTop, persistHighlight, notionSavedUrl]);
 
   // ── Text selection → highlight menu ──────────────────────────────────────
 
@@ -839,7 +930,11 @@ export function App() {
   }, [notionPickerOpen, notionQuery, idToken]);
 
   const openNotionPicker = useCallback(async () => {
-    if (!idToken) return;
+    if (!idToken) {
+      // Guest trying to save — prompt login
+      setShowLogin(true);
+      return;
+    }
     setNotionError(null);
     try {
       const { connected } = await getNotionStatus(idToken);
@@ -926,7 +1021,9 @@ export function App() {
     </div>
   );
 
-  if (status === 'unauthenticated' || (showLogin && !loadingRoot)) {
+  // Guests with a share token skip the login gate entirely.
+  // Unauthenticated users without a share token always see login.
+  if (!guestToken && (status === 'unauthenticated' || showLogin)) {
     return (
       <LoginPage
         onEnter={() => {
