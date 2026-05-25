@@ -113,10 +113,12 @@ const SectionBody = memo(function SectionBody({
   body,
   sectionId,
   sectionHeading,
+  isFirst,
 }: {
   body: string;
   sectionId: string;
   sectionHeading: string;
+  isFirst?: boolean;
 }) {
   const bodyRef = useRef<HTMLDivElement>(null);
   const html = useMemo(() => renderMd(body), [body]);
@@ -138,6 +140,7 @@ const SectionBody = memo(function SectionBody({
       className="section-body md"
       data-section-id={sectionId}
       data-section-heading={sectionHeading}
+      {...(isFirst ? { 'data-tour': 'tour-highlight' } : {})}
       ref={bodyRef}
       onClick={handleBodyClick}
       dangerouslySetInnerHTML={{ __html: html }}
@@ -175,6 +178,7 @@ export function Section({
       className="section appear"
       data-section-id={section.id}
       style={{ animationDelay: `${idx * 70}ms` }}
+      {...(idx === 0 ? { 'data-tour': 'tour-sections' } : {})}
     >
       <div className="section-head">
         <span className="section-num">{num}</span>
@@ -197,6 +201,7 @@ export function Section({
         body={section.body}
         sectionId={section.id}
         sectionHeading={section.heading}
+        isFirst={idx === 0}
       />
       {calloutsForSection.length > 0 && (
         <div className="section-callouts">

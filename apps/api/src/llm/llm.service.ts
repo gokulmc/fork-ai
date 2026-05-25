@@ -1,7 +1,7 @@
 import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
-import { LlmResponse, LlmSection } from './llm.types';
+import { LlmResponse, LlmSection, CitationSource } from './llm.types';
 
 export type StreamEvent =
   | { type: 'meta'; title: string; emoji: string; lede: string }
@@ -49,6 +49,10 @@ function extractCompletedSections(text: string): LlmSection[] {
   return sections;
 }
 
+const CITATION_NOTE = `When you use web search results, cite sources inline as plain text — e.g. (Source: Name) or a bracketed number like [1] — never wrap cited sentences or paragraphs in *asterisks* or _underscores_. Do not italicise entire sentences to indicate attribution.`;
+
+const WEB_SEARCH_GUIDANCE = `You have access to a web search tool. Use it only when the question genuinely requires information that may have changed after your training cutoff — current events, recent developments, live prices, newly released products, or breaking news. For foundational concepts, historical facts, established science, or explanations you already know well, answer directly from your knowledge without searching.`;
+
 const SECTIONS_SCHEMA = `Return ONLY valid JSON, no prose, no markdown fences. Shape:
 {
   "title": "<=5 words capturing topic",
@@ -68,24 +72,30 @@ export class LlmService {
     this.client = new Anthropic({ apiKey: cfg.get<string>('anthropic.apiKey') });
   }
 
-  async *streamAnswerQuery(query: string, sectionCount = 5): AsyncGenerator<StreamEvent> {
+  async *streamAnswerQuery(query: string, sectionCount = 5, webSearch = false): AsyncGenerator<StreamEvent> {
     const prompt = `You are a research assistant. Answer this query as a structured study note with ${sectionCount} sections.
 
 Query: "${query}"
 
 ${SECTIONS_SCHEMA}
 
-Each section "body" should be 80-180 words. You MAY use GitHub-flavored markdown when it strengthens the explanation: paragraphs, **bold**, *italic*, \`inline code\`, fenced code blocks, tables, ordered/unordered lists, and > blockquotes. Use prose by default. Escape any double-quotes inside JSON strings.`;
+Each section "body" should be 80-180 words. You MAY use GitHub-flavored markdown when it strengthens the explanation: paragraphs, **bold**, *italic*, \`inline code\`, fenced code blocks, tables, ordered/unordered lists, and > blockquotes. Use prose by default. Escape any double-quotes inside JSON strings.${webSearch ? `\n\n${WEB_SEARCH_GUIDANCE}\n\n${CITATION_NOTE}` : ''}`;
 
     let accumulated = '';
     let metaEmitted = false;
     let emittedCount = 0;
 
-    const stream = this.client.messages.stream({
+    const streamParams: Parameters<typeof this.client.messages.stream>[0] = {
       model: 'claude-sonnet-4-6',
       max_tokens: 2048,
       messages: [{ role: 'user', content: prompt }],
-    });
+    };
+    if (webSearch) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (streamParams as any).tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }];
+    }
+
+    const stream = this.client.messages.stream(streamParams);
 
     for await (const chunk of stream) {
       if (chunk.type !== 'content_block_delta') continue;
@@ -120,7 +130,7 @@ Each section "body" should be 80-180 words. You MAY use GitHub-flavored markdown
     yield { type: 'done' };
   }
 
-  async answerQuery(query: string, sectionCount = 4): Promise<LlmResponse> {
+  async answerQuery(query: string, sectionCount = 4, webSearch = false): Promise<LlmResponse> {
     const prompt = `You are a research assistant. Answer this query as a structured study note. Use as many sections as the topic genuinely warrants — no more than ${sectionCount}. Do not pad with redundant or filler sections; fewer is better when the topic is focused.
 
 Query: "${query}"
@@ -129,7 +139,7 @@ ${SECTIONS_SCHEMA}
 
 Each section "body" should be 80-180 words. You MAY use GitHub-flavored markdown when it strengthens the explanation: paragraphs, **bold**, *italic*, \`inline code\`, fenced code blocks, tables, ordered/unordered lists, and > blockquotes. Use prose by default. Escape any double-quotes inside JSON strings.`;
 
-    return this.callJson(prompt);
+    return this.callJson(prompt, webSearch);
   }
 
   async expandSection(
@@ -137,6 +147,7 @@ Each section "body" should be 80-180 words. You MAY use GitHub-flavored markdown
     sectionHeading: string,
     sectionBody: string,
     sectionCount = 4,
+    webSearch = false,
   ): Promise<LlmResponse> {
     const trail = ancestors
       .map((a, i) => `${ i === 0 ? 'Root query' : 'Sub-topic'}: "${a.query}" → "${a.title}"`)
@@ -153,7 +164,7 @@ ${SECTIONS_SCHEMA}
 
 You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase capturing the deep dive. Escape double-quotes inside JSON strings.`;
 
-    return this.callJson(prompt);
+    return this.callJson(prompt, webSearch);
   }
 
   async followUpFromHighlight(
@@ -161,6 +172,7 @@ You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase 
     highlight: string,
     question: string,
     sectionCount = 4,
+    webSearch = false,
   ): Promise<LlmResponse> {
     const trail = ancestors
       .map((a, i) => `${i === 0 ? 'Root query' : 'Sub-topic'}: "${a.query}" → "${a.title}"`)
@@ -177,26 +189,43 @@ ${SECTIONS_SCHEMA}
 
 You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase capturing the answer topic. Escape double-quotes inside JSON strings.`;
 
-    return this.callJson(prompt);
+    return this.callJson(prompt, webSearch);
   }
 
-  private async callJson(prompt: string, retries = 1): Promise<LlmResponse> {
+  private async callJson(prompt: string, webSearch = false, retries = 1): Promise<LlmResponse> {
+    const fullPrompt = webSearch ? `${prompt}\n\n${WEB_SEARCH_GUIDANCE}\n\n${CITATION_NOTE}` : prompt;
     let lastError: Error | undefined;
 
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        const message = await this.client.messages.create({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const params: any = {
           model: 'claude-sonnet-4-6',
           max_tokens: 2048,
-          messages: [{ role: 'user', content: prompt }],
-        });
+          messages: [{ role: 'user', content: fullPrompt }],
+        };
+        if (webSearch) {
+          params.tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }];
+        }
+        const message = await this.client.messages.create(params);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const blocks: any[] = (message as any).content ?? [];
 
-        const raw = message.content
-          .filter((b) => b.type === 'text')
-          .map((b) => (b as { type: 'text'; text: string }).text)
+        const raw: string = blocks
+          .filter((b: { type: string }) => b.type === 'text')
+          .map((b: { text?: string }) => b.text ?? '')
           .join('');
 
-        return this.parseJson(raw);
+        const result = this.parseJson(raw);
+        if (webSearch) {
+          const allSources = this.extractAllSources(blocks);
+          if (allSources.length) {
+            const cited = this.processCitations(result.sections, allSources);
+            result.sections = cited.sections;
+            if (cited.sources.length) result.sources = cited.sources;
+          }
+        }
+        return result;
       } catch (err) {
         lastError = err as Error;
         this.logger.warn(`LLM attempt ${attempt + 1} failed: ${lastError.message}`);
@@ -204,6 +233,57 @@ You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase 
     }
 
     throw new InternalServerErrorException(`LLM call failed: ${lastError?.message}`);
+  }
+
+  // Collect all web search results (title + url) in order from all tool result blocks.
+  // The <cite index="N-..."> first number is the 1-based index into this list.
+  private extractAllSources(blocks: Array<{ type: string; content?: unknown[] }>): CitationSource[] {
+    const sources: CitationSource[] = [];
+    for (const block of blocks) {
+      if (block.type !== 'web_search_tool_result') continue;
+      for (const item of (block.content ?? []) as Array<{ type: string; title?: string; url?: string }>) {
+        if (item.type === 'web_search_result' && item.title && item.url) {
+          sources.push({ title: item.title, url: item.url });
+        }
+      }
+    }
+    return sources;
+  }
+
+  // Process all sections in one pass with a shared footnote map so that:
+  // - numbering is sequential across all sections in order of first appearance
+  // - only sources that are actually cited in the text are included in the output
+  private processCitations(
+    sections: LlmSection[],
+    allSources: CitationSource[],
+  ): { sections: LlmSection[]; sources: CitationSource[] } {
+    const docToFootnote = new Map<number, number>();
+    let nextFootnote = 1;
+
+    const processed = sections.map(s => ({
+      ...s,
+      body: s.body.replace(
+        /<cite\s+index="([^"]+)">([^<]*)<\/cite>/g,
+        (_match, indexAttr: string, text: string) => {
+          const docIdx = parseInt(indexAttr.split('-')[0], 10);
+          if (docIdx < 1 || docIdx > allSources.length) return text;
+          if (!docToFootnote.has(docIdx)) {
+            docToFootnote.set(docIdx, nextFootnote++);
+          }
+          const fn = docToFootnote.get(docIdx)!;
+          const url = allSources[docIdx - 1].url;
+          return `${text}<sup class="cite-ref"><a href="${url}" target="_blank" rel="noopener noreferrer">[${fn}]</a></sup>`;
+        },
+      ),
+    }));
+
+    // Build cited-only sources array ordered by footnote number (1-based)
+    const citedSources: CitationSource[] = new Array(docToFootnote.size);
+    docToFootnote.forEach((footnoteNum, docIdx) => {
+      citedSources[footnoteNum - 1] = allSources[docIdx - 1];
+    });
+
+    return { sections: processed, sources: citedSources };
   }
 
   private parseJson(raw: string): LlmResponse {
