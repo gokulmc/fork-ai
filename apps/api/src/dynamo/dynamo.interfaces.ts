@@ -13,6 +13,21 @@ export interface UserMetaItem {
   updatedAt: string;
   notionAccessToken?: string | null;
   hasOnboarded?: boolean;
+  creditUsd?: number;
+}
+
+export interface UsageEventItem {
+  PK: string;
+  SK: string;
+  usageId: string;
+  sub: string;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  kind: 'QUERY' | 'DEEPER' | 'ASK';
+  sessionId: string;
+  nodeId: string;
+  createdAt: string;
 }
 
 export interface SessionMetaItem {

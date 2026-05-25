@@ -6,6 +6,7 @@ import {
   ANNOTATION_MODEL,
   HIGHLIGHT_MODEL,
   SHARE_TOKEN_MODEL,
+  USAGE_EVENT_MODEL,
   DYNAMO_TABLE,
 } from './dynamo.constants';
 import type {
@@ -15,6 +16,7 @@ import type {
   AnnotationItem,
   HighlightItem,
   ShareTokenItem,
+  UsageEventItem,
 } from './dynamo.interfaces';
 
 @Injectable()
@@ -27,6 +29,7 @@ export class DynamoRepository {
     @Inject(ANNOTATION_MODEL) private readonly annotationModel: any,
     @Inject(HIGHLIGHT_MODEL) private readonly highlightModel: any,
     @Inject(SHARE_TOKEN_MODEL) private readonly shareTokenModel: any,
+    @Inject(USAGE_EVENT_MODEL) private readonly usageEventModel: any,
   ) {}
 
   // ── Key helpers ─────────────────────────────────────────────────────────────
@@ -65,11 +68,34 @@ export class DynamoRepository {
     await this.userMetaModel.create(this.clean(data), { overwrite: true });
   }
 
-  async updateUserMeta(sub: string, updates: Partial<Pick<UserMetaItem, 'hasOnboarded' | 'updatedAt'>>): Promise<void> {
+  async updateUserMeta(sub: string, updates: Partial<Pick<UserMetaItem, 'hasOnboarded' | 'creditUsd' | 'updatedAt'>>): Promise<void> {
     await this.userMetaModel.update(
       { PK: this.userPk(sub), SK: 'METADATA' },
       { updatedAt: new Date().toISOString(), ...updates },
     );
+  }
+
+  async deductCredit(sub: string, amount: number): Promise<void> {
+    await this.userMetaModel.update(
+      { PK: this.userPk(sub), SK: 'METADATA' },
+      { '$add': { creditUsd: -amount } },
+    );
+  }
+
+  async putUsageEvent(data: UsageEventItem): Promise<void> {
+    await this.usageEventModel.create(this.clean(data), { overwrite: true });
+  }
+
+  async listUsageEvents(sub: string, limit: number): Promise<UsageEventItem[]> {
+    const items = await this.usageEventModel
+      .query('PK')
+      .eq(this.userPk(sub))
+      .where('SK')
+      .beginsWith('USAGE#')
+      .sort('descending')
+      .limit(limit)
+      .exec();
+    return this.toPlainArray<UsageEventItem>(items);
   }
 
   async updateNotionToken(sub: string, token: string | null): Promise<void> {

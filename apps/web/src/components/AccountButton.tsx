@@ -2,6 +2,7 @@
 
 import { signOut, useSession } from 'next-auth/react';
 import { useState } from 'react';
+import { getUsageEvents, type UsageEvent } from '@/lib/api';
 
 const PW_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&_\-#])[A-Za-z\d@$!%*?&_\-#]{8,}$/;
 
@@ -16,21 +17,36 @@ function isGoogleUser(idToken?: string): boolean {
   }
 }
 
-export function AccountButton() {
+interface AccountButtonProps {
+  creditBalance?: number | null;
+}
+
+export function AccountButton({ creditBalance }: AccountButtonProps) {
   const { data: session } = useSession();
   const [open, setOpen] = useState(false);
   const [changePwOpen, setChangePwOpen] = useState(false);
+  const [billingOpen, setBillingOpen] = useState(false);
   const [currentPw, setCurrentPw] = useState('');
   const [newPw, setNewPw] = useState('');
   const [confirmPw, setConfirmPw] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [usageEvents, setUsageEvents] = useState<UsageEvent[] | null>(null);
+  const [usageLoading, setUsageLoading] = useState(false);
 
   if (!session?.user?.email) return null;
 
   const email = session.user.email;
   const isGoogle = isGoogleUser(session.idToken);
+  const idToken = session.idToken ?? '';
+
+  const hasCredit = creditBalance == null || creditBalance > 0;
+  const balanceLabel = creditBalance == null
+    ? null
+    : creditBalance <= 0
+      ? 'Out of credit'
+      : `$${creditBalance.toFixed(2)} remaining`;
 
   function resetChangePw() {
     setChangePwOpen(false);
@@ -39,6 +55,18 @@ export function AccountButton() {
     setCurrentPw('');
     setNewPw('');
     setConfirmPw('');
+  }
+
+  function openBilling() {
+    setOpen(false);
+    setBillingOpen(true);
+    if (usageEvents === null && idToken) {
+      setUsageLoading(true);
+      getUsageEvents(idToken)
+        .then(setUsageEvents)
+        .catch(() => setUsageEvents([]))
+        .finally(() => setUsageLoading(false));
+    }
   }
 
   async function handleChangePw() {
@@ -106,11 +134,19 @@ export function AccountButton() {
           minWidth: 220,
           fontFamily: "ui-monospace,'JetBrains Mono','SF Mono',Menlo,monospace",
         }}>
-          <div style={{ fontSize: 11, color: '#0a0a0a', marginBottom: 12, letterSpacing: '0.02em', wordBreak: 'break-all' }}>
+          <div style={{ fontSize: 11, color: '#0a0a0a', marginBottom: 6, letterSpacing: '0.02em', wordBreak: 'break-all' }}>
             {email}
           </div>
+          {balanceLabel && (
+            <div style={{ fontSize: 10, letterSpacing: '0.06em', color: hasCredit ? 'rgba(10,10,10,0.5)' : '#c0392b', marginBottom: 10 }}>
+              {balanceLabel}
+            </div>
+          )}
           <div style={{ height: 1, background: 'rgba(10,10,10,0.08)', marginBottom: 10 }} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <button onClick={openBilling} style={menuBtnStyle}>
+              Billing
+            </button>
             {!isGoogle && (
               <button onClick={() => { setOpen(false); setChangePwOpen(true); }} style={menuBtnStyle}>
                 Change password
@@ -179,6 +215,83 @@ export function AccountButton() {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Billing overlay */}
+      {billingOpen && (
+        <div
+          onClick={e => { if (e.currentTarget === e.target) setBillingOpen(false); }}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 70,
+            background: 'rgba(255,255,255,0.88)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <div style={{
+            background: '#ffffff', border: '1px solid rgba(10,10,10,0.15)',
+            borderRadius: 8, padding: '28px',
+            width: 'min(400px, 90vw)',
+            fontFamily: "ui-monospace,'JetBrains Mono','SF Mono',Menlo,monospace",
+            boxShadow: '0 8px 32px rgba(10,10,10,0.10)',
+          }}>
+            {/* Header row: title + recharge button */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <div style={{ fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'rgba(10,10,10,0.4)' }}>
+                Billing
+              </div>
+              <a
+                href="mailto:qsignage.ai@gmail.com?subject=fork.ai%20credit%20top-up&body=Hi%2C%20I%27d%20like%20to%20top%20up%20my%20fork.ai%20credit."
+                style={{
+                  background: '#0a0a0a', color: '#fff',
+                  borderRadius: 4, padding: '5px 12px',
+                  fontFamily: 'inherit', fontSize: 10, letterSpacing: '0.12em',
+                  textTransform: 'uppercase', textDecoration: 'none',
+                }}
+              >
+                Recharge ↗
+              </a>
+            </div>
+
+            {/* Balance */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 10, letterSpacing: '0.12em', color: 'rgba(10,10,10,0.4)', marginBottom: 6, textTransform: 'uppercase' }}>Balance</div>
+              {creditBalance == null ? (
+                <div style={{ fontSize: 11, color: 'rgba(10,10,10,0.4)' }}>Loading…</div>
+              ) : creditBalance <= 0 ? (
+                <div style={{ fontSize: 13, color: '#c0392b', letterSpacing: '0.04em' }}>Out of credit — recharge to continue.</div>
+              ) : (
+                <div style={{ fontSize: 20, color: '#0a0a0a', letterSpacing: '-0.02em' }}>${creditBalance.toFixed(2)}</div>
+              )}
+            </div>
+
+            {/* Usage history */}
+            <div style={{ fontSize: 10, letterSpacing: '0.12em', color: 'rgba(10,10,10,0.4)', marginBottom: 10, textTransform: 'uppercase' }}>
+              Usage history
+            </div>
+            <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+              {usageLoading ? (
+                <div style={{ fontSize: 11, color: 'rgba(10,10,10,0.4)' }}>Loading…</div>
+              ) : !usageEvents || usageEvents.length === 0 ? (
+                <div style={{ fontSize: 11, color: 'rgba(10,10,10,0.4)' }}>No usage yet.</div>
+              ) : (
+                usageEvents.map(ev => (
+                  <div key={ev.usageId} style={{
+                    display: 'flex', justifyContent: 'space-between',
+                    fontSize: 11, color: 'rgba(10,10,10,0.7)',
+                    padding: '5px 0', borderBottom: '1px solid rgba(10,10,10,0.06)',
+                  }}>
+                    <span>{new Date(ev.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+                    <span style={{ color: '#c0392b' }}>−${ev.costUsd.toFixed(4)}</span>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
+              <button onClick={() => setBillingOpen(false)} style={cancelBtnStyle}>Close</button>
+            </div>
           </div>
         </div>
       )}

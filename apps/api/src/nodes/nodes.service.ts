@@ -4,6 +4,7 @@ import { DynamoRepository } from '@/dynamo/dynamo.repository';
 import type { NodeItem } from '@/dynamo/dynamo.interfaces';
 import { LlmService } from '@/llm/llm.service';
 import { SessionsService } from '@/sessions/sessions.service';
+import { UsersService } from '@/users/users.service';
 import { CreateNodeDto } from './dto/create-node.dto';
 import { UpdateNodeDto } from './dto/update-node.dto';
 
@@ -13,9 +14,12 @@ export class NodesService {
     private readonly db: DynamoRepository,
     private readonly llm: LlmService,
     private readonly sessions: SessionsService,
+    private readonly users: UsersService,
   ) {}
 
   async createNode(sub: string, sessionId: string, dto: CreateNodeDto): Promise<NodeItem> {
+    await this.users.checkCredit(sub);
+
     const session = await this.sessions.getSession(sub, sessionId);
     const nodeById = new Map(session.nodes.map((n) => [n.nodeId, n]));
 
@@ -74,6 +78,7 @@ export class NodesService {
       // Invalidate any previous Notion export — the branch tree just changed.
       // Works for both authed and guest writes (guest can't call PATCH /sessions/:id).
       this.db.updateSessionMeta(sub, sessionId, { notionPageUrl: null }),
+      this.users.billUsage(sub, llmResult.usage.inputTokens, llmResult.usage.outputTokens, dto.kind, sessionId, node.nodeId),
     ]);
 
     return node;

@@ -63,6 +63,7 @@ import {
   shareApi,
   getMe,
   patchMe,
+  ApiError,
   type SessionSummary,
   type NotionPage,
 } from '@/lib/api';
@@ -229,6 +230,9 @@ export function App() {
   const [hasOnboarded, setHasOnboarded] = useState(true);
   const [tourPhase, setTourPhase] = useState<'landing' | 'session'>('landing');
 
+  const [creditBalance, setCreditBalance] = useState<number | null>(null);
+  const [rootQueryOutOfCredit, setRootQueryOutOfCredit] = useState(false);
+
   const wsRef = useRef<HTMLElement>(null);
   const appRef = useRef<HTMLDivElement>(null);
 
@@ -291,7 +295,10 @@ export function App() {
   useEffect(() => {
     if (!idToken) return;
     getMe(idToken)
-      .then(me => setHasOnboarded(me.hasOnboarded ?? false))
+      .then(me => {
+        setHasOnboarded(me.hasOnboarded ?? false);
+        setCreditBalance(me.creditUsd ?? null);
+      })
       .catch(() => {});
   }, [idToken]);
 
@@ -581,8 +588,11 @@ export function App() {
         }
       });
     } catch (err) {
-      console.error('Failed to create session', err);
-      // Clear the failed optimistic node
+      if (err instanceof ApiError && err.status === 402) {
+        setRootQueryOutOfCredit(true);
+      } else {
+        console.error('Failed to create session', err);
+      }
       setNodes({});
       setRootId(null);
       setActiveId(null);
@@ -654,8 +664,10 @@ export function App() {
       });
       setActiveId(realNode.id);
     } catch (err) {
-      console.error('Failed to expand section', err);
-      setNodes(prev => ({ ...prev, [tempId]: { ...prev[tempId], loading: false, error: 'Failed to load. Try again.' } }));
+      const msg = err instanceof ApiError && err.status === 402
+        ? 'Out of credit — open Billing to recharge'
+        : 'Failed to load. Try again.';
+      setNodes(prev => ({ ...prev, [tempId]: { ...prev[tempId], loading: false, error: msg } }));
     } finally {
       setSectionLoading(null);
       setLoadingNodes(prev => { const n = new Set(prev); n.delete(tempId); return n; });
@@ -715,8 +727,10 @@ export function App() {
       // Stay on current node — user navigates via mind map chip
       persistHighlight(source.nodeId, source.sectionId, source.text, lastHlColors.bg, lastHlColors.fg, source.start, source.end);
     } catch (err) {
-      console.error('Failed to ask from highlight', err);
-      setNodes(prev => ({ ...prev, [tempId]: { ...prev[tempId], loading: false, error: 'Failed to load. Try again.' } }));
+      const msg = err instanceof ApiError && err.status === 402
+        ? 'Out of credit — open Billing to recharge'
+        : 'Failed to load. Try again.';
+      setNodes(prev => ({ ...prev, [tempId]: { ...prev[tempId], loading: false, error: msg } }));
     } finally {
       setLoadingNodes(prev => { const n = new Set(prev); n.delete(tempId); return n; });
       // Only close the popup that triggered THIS request — a newer Q2 popup must survive.
@@ -1117,12 +1131,13 @@ export function App() {
     );
     else inner = (
       <Landing
-        onSubmit={submitRootQuery}
+        onSubmit={q => { setRootQueryOutOfCredit(false); submitRootQuery(q); }}
         loading={loadingRoot}
         onShowHistory={() => setView('history')}
+        outOfCredit={rootQueryOutOfCredit}
       />
     );
-    return <>{persistentBrand}{inner}<AccountButton /><TweaksPanel tweaks={tweaks} setTweak={setTweak} fontPairOptions={FONT_PAIR_OPTIONS} accentOptions={ACCENTS} onRestartTour={restartTour} />{tourEl}</>;
+    return <>{persistentBrand}{inner}<AccountButton creditBalance={creditBalance} /><TweaksPanel tweaks={tweaks} setTweak={setTweak} fontPairOptions={FONT_PAIR_OPTIONS} accentOptions={ACCENTS} onRestartTour={restartTour} />{tourEl}</>;
   }
 
   // ── Workspace ─────────────────────────────────────────────────────────────
@@ -1130,7 +1145,7 @@ export function App() {
   return (
     <>
       {persistentBrand}
-      <AccountButton />
+      <AccountButton creditBalance={creditBalance} />
     <div className="app" ref={appRef}>
       <header className="topbar">
         <div className="crumbs">

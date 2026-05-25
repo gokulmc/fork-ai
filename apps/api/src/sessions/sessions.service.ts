@@ -4,6 +4,7 @@ import { randomBytes } from 'crypto';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
 import type { NodeItem, AnnotationItem, HighlightItem, SessionMetaItem } from '@/dynamo/dynamo.interfaces';
 import { LlmService } from '@/llm/llm.service';
+import { UsersService } from '@/users/users.service';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { UpdateSessionDto } from './dto/update-session.dto';
 
@@ -32,6 +33,7 @@ export class SessionsService {
   constructor(
     private readonly db: DynamoRepository,
     private readonly llm: LlmService,
+    private readonly users: UsersService,
   ) {}
 
   private userPk(sub: string) { return `USER#${sub}`; }
@@ -42,6 +44,8 @@ export class SessionsService {
     dto: CreateSessionDto,
     send: (data: object) => void,
   ): Promise<void> {
+    await this.users.checkCredit(sub);
+
     const sessionId = ulid();
     const nodeId = ulid();
     const now = new Date().toISOString();
@@ -94,12 +98,15 @@ export class SessionsService {
         };
 
         await Promise.all([this.db.putNode(rootNode), this.db.putSessionMeta(sessionMeta)]);
+        await this.users.billUsage(sub, event.usage.inputTokens, event.usage.outputTokens, 'QUERY', sessionId, nodeId);
         send({ type: 'done', sessionId, nodeId });
       }
     }
   }
 
   async create(sub: string, dto: CreateSessionDto): Promise<FullSession> {
+    await this.users.checkCredit(sub);
+
     const sessionId = ulid();
     const nodeId = ulid();
     const now = new Date().toISOString();
@@ -140,6 +147,7 @@ export class SessionsService {
     };
 
     await Promise.all([this.db.putNode(rootNode), this.db.putSessionMeta(sessionMeta)]);
+    await this.users.billUsage(sub, llmResult.usage.inputTokens, llmResult.usage.outputTokens, 'QUERY', sessionId, nodeId);
 
     return {
       sessionId,

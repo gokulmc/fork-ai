@@ -184,6 +184,13 @@ export interface UserProfile {
   sub: string;
   email: string;
   hasOnboarded?: boolean;
+  creditUsd?: number;
+}
+
+export interface UsageEvent {
+  usageId: string;
+  costUsd: number;
+  createdAt: string;
 }
 
 export function getMe(idToken: string): Promise<UserProfile> {
@@ -195,6 +202,10 @@ export function patchMe(idToken: string, updates: { hasOnboarded: boolean }): Pr
     method: 'PATCH',
     body: JSON.stringify(updates),
   });
+}
+
+export function getUsageEvents(idToken: string): Promise<UsageEvent[]> {
+  return apiFetch<UsageEvent[]>('/users/me/usage', idToken);
 }
 
 // ── Sessions ─────────────────────────────────────────────────────────────────
