@@ -779,7 +779,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
         }}>
           {/* Step hint */}
           <div style={{ fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase' as const, color: 'rgba(10,10,10,0.32)' }}>
-            {step === 'password' && `continue as ${email}`}
+            {step === 'password' && `signing up as ${email}`}
             {step === 'signup-password' && `creating account for ${email}`}
             {step === 'verify' && `verify ${email}`}
           </div>
