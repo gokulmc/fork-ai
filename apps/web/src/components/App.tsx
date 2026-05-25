@@ -140,6 +140,11 @@ export function App() {
 
   const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const [view, setView] = useState<'landing' | 'history'>('landing');
+  const [showLogin, setShowLogin] = useState(
+    () => typeof window === 'undefined' || !localStorage.getItem('fork.ai.visited'),
+  );
+  // Show login whenever the session is unauthenticated (covers logout → re-login)
+  useEffect(() => { if (status === 'unauthenticated') setShowLogin(true); }, [status]);
 
   // Session list (shown on history page)
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -878,12 +883,18 @@ export function App() {
     </div>
   );
 
+  if (status === 'unauthenticated' || (showLogin && !loadingRoot)) {
+    return (
+      <LoginPage
+        onEnter={() => {
+          localStorage.setItem('fork.ai.visited', '1');
+          setShowLogin(false);
+        }}
+      />
+    );
+  }
+
   if (!rootId) {
-    if (!loadingRoot && status === 'unauthenticated') {
-      return (
-        <LoginPage onEnter={() => {}} />
-      );
-    }
     let inner;
     if (loadingRoot) inner = <ResearchingScreen sessions={sessions} />;
     else if (view === 'history') inner = (
