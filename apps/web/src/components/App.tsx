@@ -151,6 +151,8 @@ export function App() {
     if (typeof window === 'undefined') return null;
     return new URLSearchParams(window.location.search).get('sk');
   });
+  const [invalidLink, setInvalidLink] = useState(false);
+  const [invalidLinkCountdown, setInvalidLinkCountdown] = useState(3);
 
   const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const [view, setView] = useState<'landing' | 'history'>(() => {
@@ -420,11 +422,20 @@ export function App() {
         })
         .catch(err => {
           console.error('Failed to load shared session', err);
-          setGuestToken(null);
+          setInvalidLink(true);
+          setInvalidLinkCountdown(3);
         })
         .finally(() => setLoadingRoot(false));
     }
   }, [guestToken, status, idToken, loadSession]);
+
+  // ── Invalid share link countdown → redirect to login ─────────────────────
+  useEffect(() => {
+    if (!invalidLink) return;
+    if (invalidLinkCountdown <= 0) { setGuestToken(null); setInvalidLink(false); return; }
+    const t = setTimeout(() => setInvalidLinkCountdown(n => n - 1), 1000);
+    return () => clearTimeout(t);
+  }, [invalidLink, invalidLinkCountdown]);
 
   // ── Persist highlights (optimistic + background API sync) ─────────────────
 
@@ -1038,6 +1049,18 @@ export function App() {
     return (
       <div className="auth-screen">
         <span className="spinner-lg" />
+      </div>
+    );
+  }
+
+  if (invalidLink) {
+    return (
+      <div className="auth-screen">
+        <div className="invalid-link-msg">
+          <span className="invalid-link-icon">🔗</span>
+          <p>Link not valid</p>
+          <p className="invalid-link-sub">Redirecting to login in {invalidLinkCountdown}…</p>
+        </div>
       </div>
     );
   }
