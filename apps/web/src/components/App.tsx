@@ -137,7 +137,6 @@ function ResearchingScreen({ sessions }: { sessions: SessionSummary[] }) {
 
 export function App() {
   const { data: authSession, status } = useSession();
-  // Auth disabled for local testing — guard bypassed on API side, so any non-empty token works
   const idToken = authSession?.idToken ?? '';
 
   const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
@@ -648,12 +647,13 @@ export function App() {
       if (sectionEl) {
         const r = rangeFromOffsets(sectionEl, hlMenu.start, hlMenu.end);
         if (r) CSS.highlights.set('temp-hl', new Highlight(r));
-        else CSS.highlights.delete('temp-hl');
+        // Safari won't repaint on delete — empty Highlight forces a style recalc
+        else CSS.highlights.set('temp-hl', new Highlight());
       } else {
-        CSS.highlights.delete('temp-hl');
+        CSS.highlights.set('temp-hl', new Highlight());
       }
     } else {
-      CSS.highlights.delete('temp-hl');
+      CSS.highlights.set('temp-hl', new Highlight());
     }
 
     return () => {

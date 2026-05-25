@@ -378,7 +378,8 @@ export function getNotionStatus(idToken: string): Promise<{ connected: boolean }
 }
 
 export function getNotionAuthUrl(idToken: string): Promise<{ url: string }> {
-  return apiFetch<{ url: string }>('/notion/auth', idToken);
+  // redirect:'error' prevents fetch from following a stale 302 cross-origin to api.notion.com
+  return apiFetch<{ url: string }>('/notion/auth', idToken, { redirect: 'error' });
 }
 
 export function searchNotionPages(idToken: string, q: string): Promise<NotionPage[]> {
