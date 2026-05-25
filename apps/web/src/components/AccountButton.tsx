@@ -39,6 +39,15 @@ const PACKAGES: { label: string; usd: number }[] = [
   { label: '$10', usd: 10 },
 ];
 
+function groupByDay(events: UsageEvent[]): { date: string; totalCost: number }[] {
+  const map = new Map<string, number>();
+  for (const ev of events) {
+    const label = new Date(ev.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    map.set(label, (map.get(label) ?? 0) + ev.costUsd);
+  }
+  return Array.from(map.entries()).map(([date, totalCost]) => ({ date, totalCost }));
+}
+
 interface AccountButtonProps {
   creditBalance?: number | null;
   onCreditUpdated?: (newBalance: number) => void;
@@ -458,20 +467,21 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
             <div style={{ fontSize: 10, letterSpacing: '0.12em', color: 'rgba(10,10,10,0.4)', marginBottom: 10, textTransform: 'uppercase' }}>
               Usage history
             </div>
-            <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+            <div style={{ height: 112, overflowY: 'auto' }}>
               {usageLoading ? (
                 <div style={{ fontSize: 11, color: 'rgba(10,10,10,0.4)' }}>Loading…</div>
               ) : !usageEvents || usageEvents.length === 0 ? (
                 <div style={{ fontSize: 11, color: 'rgba(10,10,10,0.4)' }}>No usage yet.</div>
               ) : (
-                usageEvents.map(ev => (
-                  <div key={ev.usageId} style={{
+                groupByDay(usageEvents).map(day => (
+                  <div key={day.date} style={{
                     display: 'flex', justifyContent: 'space-between',
                     fontSize: 11, color: 'rgba(10,10,10,0.7)',
                     padding: '5px 0', borderBottom: '1px solid rgba(10,10,10,0.06)',
+                    height: 28, alignItems: 'center', boxSizing: 'border-box',
                   }}>
-                    <span>{new Date(ev.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
-                    <span style={{ color: '#c0392b' }}>−${ev.costUsd.toFixed(4)}</span>
+                    <span>{day.date}</span>
+                    <span style={{ color: '#c0392b' }}>−${day.totalCost.toFixed(4)}</span>
                   </div>
                 ))
               )}

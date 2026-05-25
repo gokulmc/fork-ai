@@ -13,9 +13,9 @@ export const validationSchema = Joi.object({
   FRONTEND_URL: Joi.string().optional().default('http://localhost:3001'),
   SIGNUP_CREDIT_USD: Joi.number().default(5.00),
   CREDIT_MULTIPLIER: Joi.number().default(1.5),
-  RAZORPAY_KEY_ID: Joi.string().optional(),
-  RAZORPAY_KEY_SECRET: Joi.string().optional(),
-  RAZORPAY_WEBHOOK_SECRET: Joi.string().optional(),
+  RAZORPAY_KEY_ID: Joi.string().allow('').optional(),
+  RAZORPAY_KEY_SECRET: Joi.string().allow('').optional(),
+  RAZORPAY_WEBHOOK_SECRET: Joi.string().allow('').optional(),
 });
 
 export const configuration = () => ({
