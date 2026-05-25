@@ -535,6 +535,23 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
   display: inline-flex; align-items: center; justify-content: center;
 }
 
+/* Share button states */
+.share-btn-group { display: inline-flex; align-items: center; gap: 1px; }
+.icon-btn.share-btn--active { color: var(--accent); }
+.icon-btn.share-btn--active:hover { color: var(--accent); }
+.icon-btn.share-btn--stop { padding: 4px 6px; opacity: .65; }
+.icon-btn.share-btn--stop:hover { opacity: 1; color: var(--danger, #dc2626); }
+
+/* Inline spinner for loading states inside buttons */
+.spinner-sm {
+  display: inline-block;
+  width: 10px; height: 10px;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin .6s linear infinite;
+}
+
 /* ============================================================
    Mind map pane
    ============================================================ */

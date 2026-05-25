@@ -161,7 +161,10 @@ async function apiFetch<T>(
 
   if (!res.ok) {
     const msg = await res.text().catch(() => res.statusText);
-    if (res.status === 401) unauthorizedHandler?.();
+    // Only treat 401 as a session-expired signal when we actually sent a token.
+    // A 401 on an empty Bearer means "this endpoint requires auth" — calling
+    // signOut() in that case kicks unauthenticated guests off the share page.
+    if (res.status === 401 && idToken) unauthorizedHandler?.();
     throw new ApiError(res.status, msg);
   }
   if (res.status === 204) return undefined as T;
@@ -404,3 +407,66 @@ export function pushToNotion(
     body: JSON.stringify({ title, blocks, childrenMap, parentPageId }),
   });
 }
+
+// ── Share API (guest endpoints — no idToken required except claimSession) ────
+
+async function shareFetch<T>(path: string, init?: RequestInit, idToken?: string): Promise<T> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
+  const res = await fetch(`${base()}${path}`, { ...init, headers });
+  if (!res.ok) {
+    const msg = await res.text().catch(() => res.statusText);
+    throw new ApiError(res.status, msg);
+  }
+  if (res.status === 204) return undefined as T;
+  const text = await res.text();
+  if (!text.trim()) return undefined as T;
+  return JSON.parse(text) as T;
+}
+
+export const shareApi = {
+  getSession(token: string): Promise<FullSession> {
+    return shareFetch<FullSession>(`/share/${token}`);
+  },
+
+  createNode(token: string, payload: CreateNodePayload): Promise<ApiNode> {
+    return shareFetch<ApiNode>(`/share/${token}/nodes`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  createHighlight(token: string, payload: CreateHighlightPayload): Promise<ApiHighlight> {
+    return shareFetch<ApiHighlight>(`/share/${token}/highlights`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  updateHighlight(token: string, hlId: string, payload: { bg?: string | null; fg?: string | null }): Promise<void> {
+    return shareFetch<void>(`/share/${token}/highlights/${hlId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  deleteHighlight(token: string, hlId: string): Promise<void> {
+    return shareFetch<void>(`/share/${token}/highlights/${hlId}`, { method: 'DELETE' });
+  },
+
+  claimSession(token: string, idToken: string): Promise<SessionSummary> {
+    return shareFetch<SessionSummary>(`/share/${token}/claim`, { method: 'POST' }, idToken);
+  },
+
+  getShareStatus(idToken: string, sessionId: string): Promise<{ active: boolean; token?: string }> {
+    return apiFetch<{ active: boolean; token?: string }>(`/sessions/${sessionId}/share`, idToken);
+  },
+
+  generateShareToken(idToken: string, sessionId: string): Promise<{ token: string }> {
+    return apiFetch<{ token: string }>(`/sessions/${sessionId}/share`, idToken, { method: 'POST' });
+  },
+
+  revokeShareToken(idToken: string, sessionId: string): Promise<void> {
+    return apiFetch<void>(`/sessions/${sessionId}/share`, idToken, { method: 'DELETE' });
+  },
+};

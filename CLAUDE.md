@@ -134,7 +134,7 @@ Key constraints to keep in mind:
 - **Tables are the exception**: Notion requires rows inside `table.children` (the type-specific sub-object, not the block-level `children`). `splitBlocks` never touches `table.children`, so rows travel inline in `pages.create`.
 - The markdown-to-blocks parser (`mdToBlocks` in `notion-clipboard.ts`) is line-by-line. `splitTableRow` splits cells character-by-character to handle `|` inside backtick spans correctly.
 - Toggle heading text colour is set on `rich_text[].annotations.color`, NOT on the block-level `color` field (block-level `color` sets the background).
-- Empty string `''` stored in `notionPageUrl` DynamoDB field means "cleared" — `toSummary` maps it to `null` via `|| null`.
+- **Invalidation is server-side.** `NodesService.createNode` calls `db.updateSessionMeta(sub, sessionId, { notionPageUrl: null })` after persisting any new node. The repository translates `null` to a Dynamoose `$REMOVE` (see "Dynamoose null handling" below) so the attribute is dropped from the item entirely. Works for both authed and guest writes — frontend does NOT need to call `PATCH /sessions/:id` to invalidate.
 
 ---
 
@@ -243,7 +243,80 @@ The next-auth type augmentation lives in `apps/web/src/types/next-auth.d.ts` —
 `useEffect` hooks that reference `loadSession` (a `useCallback` declared mid-file) **must appear after the `loadSession` declaration**, otherwise the dependency array `[..., loadSession]` is evaluated in the temporal dead zone and throws `ReferenceError: Cannot access 'loadSession' before initialization` at runtime. Keep new effects that touch `loadSession` below its `useCallback`.
 
 ### JWT auth guard (backend)
-`JwtAuthGuard` (`apps/api/src/auth/jwt-auth.guard.ts`) validates the Cognito `id_token` via `passport-jwt` + `jwks-rsa`. It must **not** be bypassed in production. The `sub` claim is the stable user ID for all DynamoDB keys — bypassing it (e.g. hardcoding `sub: 'dev-user'`) causes all users to share the same session list. Routes that must skip auth use the `@Public()` decorator (currently: `GET /notion/callback` only).
+`JwtAuthGuard` (`apps/api/src/auth/jwt-auth.guard.ts`) validates the Cognito `id_token` via `passport-jwt` + `jwks-rsa`. It must **not** be bypassed in production. The `sub` claim is the stable user ID for all DynamoDB keys — bypassing it (e.g. hardcoding `sub: 'dev-user'`) causes all users to share the same session list. Routes that must skip auth use the `@Public()` decorator. Currently `@Public()`:
+- `GET /notion/callback`
+- `GET /share/:token`
+- `POST /share/:token/nodes`
+- `POST /share/:token/highlights`
+- `PATCH /share/:token/highlights/:hlId`
+- `DELETE /share/:token/highlights/:hlId`
+
+`POST /share/:token/claim` is intentionally NOT `@Public()` — claiming a shared session requires a Cognito JWT to know which user to attach it to.
+
+---
+
+## Session sharing — Share Tokens & Guest Mode
+
+See `CONTEXT.md` for the domain definitions of **Share Token**, **Guest**, **Guest Mode**, and **Claim**. See `docs/adr/0001-share-token-as-opaque-db-record.md` and `docs/adr/0002-guest-api-isolation.md` for the architectural decisions.
+
+### Backend
+- `ShareController` (`apps/api/src/share/share.controller.ts`) exposes the public `/share/:token/*` surface — strictly isolated from the authenticated `/sessions/*` controller (per ADR-0002).
+- `SessionsService.generateShareToken / revokeShareToken / getShareStatus` manage one active token per Session. Token format: `randomBytes(32).toString('base64url')`. Stored at `PK: SHARE#<token>, SK: METADATA` (per ADR-0001).
+- `SessionsService.claimSession(guestSub, token)` creates a `SessionMeta` row under the claimant's `sub` pointing at the same nodes/annotations/highlights. Idempotent — a second claim returns the existing summary.
+
+### Dynamoose null handling
+Dynamoose v4 rejects `null` for typed `String` fields (even when `required: false`). `DynamoRepository.updateSessionMeta` therefore translates `null` values into a `$REMOVE` expression:
+
+```ts
+for (const [k, v] of Object.entries(updates)) {
+  if (v === null) remove.push(k);
+  else if (v !== undefined) set[k] = v;
+}
+const op: Record<string, unknown> = { ...set };
+if (remove.length) op.$REMOVE = remove;
+```
+
+Without this, clearing `shareToken` (on revoke) or `notionPageUrl` (on any node create) throws `TypeMismatch: Expected <field> to be of type string, instead found type null` and 500s the request. Any future schema field that may be cleared must rely on this pattern.
+
+### Frontend — guest mode mechanics
+
+| State | Set when | Cleared when |
+|---|---|---|
+| `guestToken` | URL has `?sk=<token>` on mount, OR `?sk=` is read on any render | Successful claim, or `shareApi.getSession` 403 |
+| `forceLogin` | Guest clicks "Login to Save" or "Save to Notion" | `LoginPage.onEnter()` fires (1500ms after sign-in succeeds) |
+
+**The `?sk=` token stays in the URL for the lifetime of guest mode.** Earlier attempts to strip it broke refresh (`guestToken` re-init from a clean URL fell into the login gate) and StrictMode double-mounts (same root cause). The token IS the share link by design, so URL visibility is not a leak.
+
+**Login gate** ([App.tsx](apps/web/src/components/App.tsx)):
+```ts
+if (forceLogin || (!guestToken && (status === 'unauthenticated' || showLogin))) {
+  return <LoginPage onEnter={() => { setShowLogin(false); setForceLogin(false); }} />;
+}
+```
+- `forceLogin` short-circuits the `!guestToken` bypass so a guest can explicitly invoke LoginPage while still keeping `guestToken` set for the post-login claim effect.
+- Do **NOT** add `status !== 'authenticated'` to the outer condition — it unmounts LoginPage mid-animation. The 1500ms animation completes only when `onEnter()` clears both flags.
+
+**Claim-on-login effect** ([App.tsx:310-319](apps/web/src/components/App.tsx#L310-L319)):
+```ts
+useEffect(() => {
+  if (status !== 'authenticated' || !idToken || !guestToken || hasClaimedRef.current) return;
+  hasClaimedRef.current = true;
+  shareApi.claimSession(guestToken, idToken)
+    .then(summary => { setGuestToken(null); return loadSession(summary.sessionId); });
+}, [status, idToken, guestToken, loadSession]);
+```
+
+### 401 handler is gated on `idToken`
+`apiFetch` only fires `unauthorizedHandler?.()` when the request actually carried a token:
+```ts
+if (res.status === 401 && idToken) unauthorizedHandler?.();
+```
+Without the `&& idToken` guard, a guest who accidentally hits an authed endpoint (e.g. `updateSessionNotionUrl` with empty `idToken`) gets bounced to login by `signOut()`. The handler is for *expired* sessions only, never *missing* ones.
+
+### Guest UI rules
+- `idToken` only — `History` button visible.
+- `guestToken && !idToken` — `Login to Save` button visible next to where History would be. `ShareButton` is NOT rendered (sharing is host-only).
+- `Save to Notion` (inside MindMap) calls `setForceLogin(true)` for guests rather than opening the picker.
 
 ---
 

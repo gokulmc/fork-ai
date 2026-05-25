@@ -103,9 +103,20 @@ export class DynamoRepository {
     sessionId: string,
     updates: Partial<Pick<SessionMetaItem, 'title' | 'nodeCount' | 'notionPageUrl' | 'shareToken' | 'updatedAt' | 'gsi1sk'>>,
   ): Promise<void> {
+    // Dynamoose v4 rejects null for typed fields. Translate null → $REMOVE so
+    // callers can clear optional fields (shareToken, notionPageUrl) by passing null.
+    const set: Record<string, unknown> = {};
+    const remove: string[] = [];
+    for (const [k, v] of Object.entries(updates)) {
+      if (v === null) remove.push(k);
+      else if (v !== undefined) set[k] = v;
+    }
+    const op: Record<string, unknown> = { ...set };
+    if (remove.length) op.$REMOVE = remove;
+    if (!Object.keys(op).length) return;
     await this.sessionMetaModel.update(
       { PK: this.userPk(sub), SK: this.sessionSk(sessionId) },
-      updates,
+      op,
     );
   }
 

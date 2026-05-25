@@ -68,4 +68,26 @@ export class SessionsController {
   delete(@CurrentUser() user: CognitoUser, @Param('sessionId') sessionId: string) {
     return this.sessionsService.delete(user.sub, sessionId);
   }
+
+  @Post(':sessionId/share')
+  @ApiOperation({ summary: 'Generate a share token for this session' })
+  @ApiParam({ name: 'sessionId', description: 'ULID session ID' })
+  generateShare(@CurrentUser() user: CognitoUser, @Param('sessionId') sessionId: string) {
+    return this.sessionsService.generateShareToken(user.sub, sessionId);
+  }
+
+  @Delete(':sessionId/share')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Revoke the active share token for this session' })
+  @ApiParam({ name: 'sessionId', description: 'ULID session ID' })
+  revokeShare(@CurrentUser() user: CognitoUser, @Param('sessionId') sessionId: string) {
+    return this.sessionsService.revokeShareToken(user.sub, sessionId);
+  }
+
+  @Get(':sessionId/share')
+  @ApiOperation({ summary: 'Get share status for this session' })
+  @ApiParam({ name: 'sessionId', description: 'ULID session ID' })
+  getShare(@CurrentUser() user: CognitoUser, @Param('sessionId') sessionId: string) {
+    return this.sessionsService.getShareStatus(user.sub, sessionId);
+  }
 }

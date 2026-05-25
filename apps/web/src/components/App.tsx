@@ -156,6 +156,11 @@ export function App() {
   const [showLogin, setShowLogin] = useState(
     () => typeof window === 'undefined' || !localStorage.getItem('fork.ai.visited'),
   );
+  // Set when a guest explicitly chooses to sign in mid-session (e.g. clicks
+  // "Login to Save"). Overrides the guest-token bypass on the login gate so
+  // LoginPage renders even while guestToken is set. Cleared once the guest is
+  // authenticated, at which point the claim effect runs.
+  const [forceLogin, setForceLogin] = useState(false);
   // Show login whenever the session is unauthenticated (covers logout → re-login)
   useEffect(() => { if (status === 'unauthenticated') setShowLogin(true); }, [status]);
 
@@ -355,16 +360,9 @@ export function App() {
   }, [status, idToken, loadSession]);
 
   // ── Guest mode: load shared session via ?sk= token ───────────────────────
-  // Strip ?sk= from URL immediately so it doesn't persist in history/clipboard.
-  useEffect(() => {
-    if (!guestToken) return;
-    const params = new URLSearchParams(window.location.search);
-    params.delete('sk');
-    const qs = params.toString();
-    history.replaceState(null, '', qs ? `?${qs}` : window.location.pathname + window.location.hash);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // run once on mount
-
+  // The ?sk= token stays in the URL so refresh keeps the guest in the session.
+  // The token is the share link by design — anyone with the URL already has
+  // access — so keeping it visible is not a leak.
   const hasLoadedShareRef = useRef(false);
   useEffect(() => {
     if (!guestToken || hasLoadedShareRef.current || status === 'loading') return;
@@ -561,7 +559,7 @@ export function App() {
   // ── Branch: Go Deeper ─────────────────────────────────────────────────────
 
   const expandSectionAsChild = useCallback(async (parentNodeId: string, section: ForkNode['sections'][0]) => {
-    if (!sessionId || !idToken) return;
+    if (!sessionId || (!idToken && !guestToken)) return;
     const parent = nodes[parentNodeId];
     if (!parent) return;
 
@@ -585,10 +583,9 @@ export function App() {
         loading: true,
       },
     }));
-    if (notionSavedUrl) {
-      setNotionSavedUrl(null);
-      updateSessionNotionUrl(idToken, sessionId, null).catch(() => {});
-    }
+    // Notion export goes stale as soon as the branch tree changes — backend
+    // clears notionPageUrl inside createNode (works for guest writes too).
+    if (notionSavedUrl) setNotionSavedUrl(null);
     setActiveId(tempId);
     scrollWsTop();
 
@@ -648,10 +645,8 @@ export function App() {
         loading: true,
       },
     }));
-    if (notionSavedUrl) {
-      setNotionSavedUrl(null);
-      updateSessionNotionUrl(idToken, sessionId, null).catch(() => {});
-    }
+    // Backend clears notionPageUrl inside createNode — frontend only updates UI.
+    if (notionSavedUrl) setNotionSavedUrl(null);
 
     try {
       const nodePayload = {
@@ -931,8 +926,9 @@ export function App() {
 
   const openNotionPicker = useCallback(async () => {
     if (!idToken) {
-      // Guest trying to save — prompt login
-      setShowLogin(true);
+      // Guest trying to save — show LoginPage. Claim effect auto-loads the
+      // session under the new auth identity after sign-in completes.
+      setForceLogin(true);
       return;
     }
     setNotionError(null);
@@ -1021,14 +1017,19 @@ export function App() {
     </div>
   );
 
-  // Guests with a share token skip the login gate entirely.
-  // Unauthenticated users without a share token always see login.
-  if (!guestToken && (status === 'unauthenticated' || showLogin)) {
+  // Guests with a share token skip the login gate — UNLESS forceLogin is set
+  // (guest clicked "Login to Save" or "Save to Notion"). Unauthenticated users
+  // without a share token always see login.
+  // Gate stays true through the post-login animation: it only flips off when
+  // both `showLogin` and `forceLogin` have been cleared by onEnter (1500ms after
+  // signIn succeeds), preserving the existing graph animation.
+  if (forceLogin || (!guestToken && (status === 'unauthenticated' || showLogin))) {
     return (
       <LoginPage
         onEnter={() => {
           localStorage.setItem('fork.ai.visited', '1');
           setShowLogin(false);
+          setForceLogin(false);
         }}
       />
     );
@@ -1084,9 +1085,23 @@ export function App() {
           })}
         </div>
         <div className="tools">
-          <button className="icon-btn" onClick={() => { setView('history'); setRootId(null); setNodes({}); setSessionId(null); }} title="Research history">
-            <Clock size={14} /> History
-          </button>
+          {idToken && (
+            <button className="icon-btn" onClick={() => { setView('history'); setRootId(null); setNodes({}); setSessionId(null); }} title="Research history">
+              <Clock size={14} /> History
+            </button>
+          )}
+          {guestToken && !idToken && (
+            <button
+              className="icon-btn"
+              onClick={() => setForceLogin(true)}
+              title="Sign in to save this session to your account"
+            >
+              <Bookmark size={14} /> Login to Save
+            </button>
+          )}
+          {sessionId && idToken && (
+            <ShareButton sessionId={sessionId} idToken={idToken} />
+          )}
           <button className="icon-btn has-badge" onClick={() => setDrawerOpen(true)} title="Highlights & Callouts">
             <Bookmark size={14} /> Notes
             {(annotations.length + highlightsList.length) > 0 && <span className="badge">{annotations.length + highlightsList.length}</span>}

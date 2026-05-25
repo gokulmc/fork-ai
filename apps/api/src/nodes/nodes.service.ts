@@ -70,6 +70,9 @@ export class NodesService {
     await Promise.all([
       this.sessions.touchUpdatedAt(sub, sessionId),
       this.sessions.incrementNodeCount(sub, sessionId, 1),
+      // Invalidate any previous Notion export — the branch tree just changed.
+      // Works for both authed and guest writes (guest can't call PATCH /sessions/:id).
+      this.db.updateSessionMeta(sub, sessionId, { notionPageUrl: null }),
     ]);
 
     return node;
