@@ -5,13 +5,20 @@ import { DynamoRepository } from '@/dynamo/dynamo.repository';
 import { LlmService } from '@/llm/llm.service';
 
 const mockDb = {
-  put: jest.fn(),
-  get: jest.fn(),
-  query: jest.fn(),
-  queryGsi: jest.fn(),
-  update: jest.fn(),
-  delete: jest.fn(),
-  batchDelete: jest.fn(),
+  putNode: jest.fn(),
+  putSessionMeta: jest.fn(),
+  getSessionMeta: jest.fn(),
+  listSessionMeta: jest.fn(),
+  updateSessionMeta: jest.fn(),
+  deleteSessionMeta: jest.fn(),
+  queryNodes: jest.fn(),
+  queryAnnotations: jest.fn(),
+  queryHighlights: jest.fn(),
+  batchDeleteNodes: jest.fn(),
+  batchDeleteAnnotations: jest.fn(),
+  batchDeleteHighlights: jest.fn(),
+  deleteShareToken: jest.fn(),
+  putShareToken: jest.fn(),
 };
 
 const mockLlm = {
@@ -41,6 +48,8 @@ const sessionMeta = {
   lede: 'How neural networks work.',
   rootNodeId: 'root-node-id',
   nodeCount: 1,
+  gsi1pk: `USER#${SUB}`,
+  gsi1sk: `UPDATED#${NOW}`,
   createdAt: NOW,
   updatedAt: NOW,
 };
@@ -61,14 +70,17 @@ describe('SessionsService', () => {
   });
 
   describe('create', () => {
+    beforeEach(() => {
+      mockDb.putNode.mockResolvedValue(undefined);
+      mockDb.putSessionMeta.mockResolvedValue(undefined);
+    });
+
     it('calls LLM and persists root node + session meta', async () => {
       mockLlm.answerQuery.mockResolvedValue(llmResult);
-      mockDb.put.mockResolvedValue(undefined);
-
       const result = await service.create(SUB, { query: 'What is ML?' });
-
-      expect(mockLlm.answerQuery).toHaveBeenCalledWith('What is ML?', 5);
-      expect(mockDb.put).toHaveBeenCalledTimes(2);
+      expect(mockLlm.answerQuery).toHaveBeenCalledWith('What is ML?', 4, false);
+      expect(mockDb.putNode).toHaveBeenCalledTimes(1);
+      expect(mockDb.putSessionMeta).toHaveBeenCalledTimes(1);
       expect(result.title).toBe('Neural Nets');
       expect(result.nodes).toHaveLength(1);
       expect(result.nodes[0]['kind']).toBe('QUERY');
@@ -76,101 +88,111 @@ describe('SessionsService', () => {
 
     it('uses custom sectionCount when provided', async () => {
       mockLlm.answerQuery.mockResolvedValue(llmResult);
-      mockDb.put.mockResolvedValue(undefined);
       await service.create(SUB, { query: 'Q', sectionCount: 3 });
-      expect(mockLlm.answerQuery).toHaveBeenCalledWith('Q', 3);
+      expect(mockLlm.answerQuery).toHaveBeenCalledWith('Q', 3, false);
+    });
+
+    it('forwards webSearch flag to LLM and stores sources on root node', async () => {
+      const llmWithSources = {
+        ...llmResult,
+        sources: [{ title: 'Ref', url: 'https://ref.com' }],
+      };
+      mockLlm.answerQuery.mockResolvedValue(llmWithSources);
+      const result = await service.create(SUB, { query: 'Q', webSearch: true });
+      expect(mockLlm.answerQuery).toHaveBeenCalledWith('Q', 4, true);
+      expect(result.nodes[0]['sources']).toHaveLength(1);
     });
 
     it('assigns section IDs via ulid', async () => {
       mockLlm.answerQuery.mockResolvedValue(llmResult);
-      mockDb.put.mockResolvedValue(undefined);
       const result = await service.create(SUB, { query: 'test' });
       expect((result.nodes[0]['sections'] as Array<{ id: string }>)[0].id).toBeDefined();
     });
   });
 
   describe('list', () => {
-    it('queries GSI and returns session summaries', async () => {
-      mockDb.queryGsi.mockResolvedValue([
-        { ...sessionMeta, SK: `SESSION#${SESSION_ID}` },
-      ]);
+    it('queries and returns session summaries with highlight counts', async () => {
+      mockDb.listSessionMeta.mockResolvedValue([sessionMeta]);
+      mockDb.queryHighlights.mockResolvedValue([{ hlId: 'h1' }, { hlId: 'h2' }]);
       const result = await service.list(SUB);
-      expect(mockDb.queryGsi).toHaveBeenCalledWith('gsi1', `USER#${SUB}`, { scanIndexForward: false });
+      expect(mockDb.listSessionMeta).toHaveBeenCalledWith(SUB);
       expect(result).toHaveLength(1);
       expect(result[0].sessionId).toBe(SESSION_ID);
+      expect(result[0].highlightCount).toBe(2);
     });
 
-    it('filters out non-SESSION# items from GSI results', async () => {
-      mockDb.queryGsi.mockResolvedValue([
-        { SK: 'METADATA', sessionId: 'x' },
-        { ...sessionMeta, SK: `SESSION#${SESSION_ID}` },
-      ]);
+    it('returns empty array when no sessions', async () => {
+      mockDb.listSessionMeta.mockResolvedValue([]);
       const result = await service.list(SUB);
-      expect(result).toHaveLength(1);
+      expect(result).toHaveLength(0);
     });
   });
 
   describe('getSession', () => {
     it('throws NotFoundException when session not found', async () => {
-      mockDb.get.mockResolvedValue(null);
+      mockDb.getSessionMeta.mockResolvedValue(null);
       await expect(service.getSession(SUB, SESSION_ID)).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it('returns full session with nodes and annotations split', async () => {
-      mockDb.get.mockResolvedValue(sessionMeta);
-      mockDb.query.mockResolvedValue([
-        { PK: `SESSION#${SESSION_ID}`, SK: 'NODE#n1', nodeId: 'n1' },
-        { PK: `SESSION#${SESSION_ID}`, SK: 'ANN#a1', annId: 'a1' },
-        { PK: `SESSION#${SESSION_ID}`, SK: 'HL#h1', hlId: 'h1' },
-      ]);
+    it('returns full session with nodes, annotations, and highlights split', async () => {
+      mockDb.getSessionMeta.mockResolvedValue(sessionMeta);
+      mockDb.queryNodes.mockResolvedValue([{ nodeId: 'n1' }]);
+      mockDb.queryAnnotations.mockResolvedValue([{ annId: 'a1' }]);
+      mockDb.queryHighlights.mockResolvedValue([{ hlId: 'h1' }]);
       const result = await service.getSession(SUB, SESSION_ID);
       expect(result.nodes).toHaveLength(1);
       expect(result.annotations).toHaveLength(1);
       expect(result.highlights).toHaveLength(1);
+      expect(result.highlightCount).toBe(1);
     });
   });
 
   describe('update', () => {
     it('throws when session not found', async () => {
-      mockDb.get.mockResolvedValue(null);
+      mockDb.getSessionMeta.mockResolvedValue(null);
       await expect(service.update(SUB, SESSION_ID, { title: 'New' })).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('updates title and GSI sort key', async () => {
-      mockDb.get.mockResolvedValue(sessionMeta);
-      mockDb.update.mockResolvedValue(undefined);
+      mockDb.getSessionMeta.mockResolvedValue(sessionMeta);
+      mockDb.updateSessionMeta.mockResolvedValue(undefined);
       await service.update(SUB, SESSION_ID, { title: 'Renamed' });
-      const updates = mockDb.update.mock.calls[0][2];
+      const [, , updates] = mockDb.updateSessionMeta.mock.calls[0];
       expect(updates.title).toBe('Renamed');
       expect(updates.gsi1sk).toMatch(/^UPDATED#/);
     });
   });
 
   describe('delete', () => {
+    beforeEach(() => {
+      mockDb.queryNodes.mockResolvedValue([{ nodeId: 'n1' }]);
+      mockDb.queryAnnotations.mockResolvedValue([{ annId: 'a1' }]);
+      mockDb.queryHighlights.mockResolvedValue([]);
+      mockDb.batchDeleteNodes.mockResolvedValue(undefined);
+      mockDb.batchDeleteAnnotations.mockResolvedValue(undefined);
+      mockDb.batchDeleteHighlights.mockResolvedValue(undefined);
+      mockDb.deleteSessionMeta.mockResolvedValue(undefined);
+    });
+
     it('throws when session not found', async () => {
-      mockDb.get.mockResolvedValue(null);
+      mockDb.getSessionMeta.mockResolvedValue(null);
       await expect(service.delete(SUB, SESSION_ID)).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it('batch-deletes all session items plus the meta item', async () => {
-      mockDb.get.mockResolvedValue(sessionMeta);
-      mockDb.query.mockResolvedValue([
-        { PK: `SESSION#${SESSION_ID}`, SK: 'NODE#n1' },
-        { PK: `SESSION#${SESSION_ID}`, SK: 'ANN#a1' },
-      ]);
-      mockDb.batchDelete.mockResolvedValue(undefined);
+    it('deletes all nodes, annotations, highlights, and session meta', async () => {
+      mockDb.getSessionMeta.mockResolvedValue(sessionMeta);
       await service.delete(SUB, SESSION_ID);
-      const keys = mockDb.batchDelete.mock.calls[0][0];
-      // 2 session items + 1 meta item
-      expect(keys).toHaveLength(3);
+      expect(mockDb.batchDeleteNodes).toHaveBeenCalledWith(SESSION_ID, ['n1']);
+      expect(mockDb.batchDeleteAnnotations).toHaveBeenCalledWith(SESSION_ID, ['a1']);
+      expect(mockDb.deleteSessionMeta).toHaveBeenCalledWith(SUB, SESSION_ID);
     });
   });
 
   describe('touchUpdatedAt', () => {
-    it('updates gsi1sk timestamp', async () => {
-      mockDb.update.mockResolvedValue(undefined);
+    it('updates updatedAt and gsi1sk', async () => {
+      mockDb.updateSessionMeta.mockResolvedValue(undefined);
       await service.touchUpdatedAt(SUB, SESSION_ID);
-      const updates = mockDb.update.mock.calls[0][2];
+      const [, , updates] = mockDb.updateSessionMeta.mock.calls[0];
       expect(updates.updatedAt).toBeDefined();
       expect(updates.gsi1sk).toMatch(/^UPDATED#/);
     });
@@ -178,23 +200,25 @@ describe('SessionsService', () => {
 
   describe('incrementNodeCount', () => {
     it('increments by positive delta', async () => {
-      mockDb.get.mockResolvedValue({ ...sessionMeta, nodeCount: 3 });
-      mockDb.update.mockResolvedValue(undefined);
+      mockDb.getSessionMeta.mockResolvedValue({ ...sessionMeta, nodeCount: 3 });
+      mockDb.updateSessionMeta.mockResolvedValue(undefined);
       await service.incrementNodeCount(SUB, SESSION_ID, 1);
-      expect(mockDb.update.mock.calls[0][2].nodeCount).toBe(4);
+      const [, , updates] = mockDb.updateSessionMeta.mock.calls[0];
+      expect(updates.nodeCount).toBe(4);
     });
 
     it('decrements but floors at 0', async () => {
-      mockDb.get.mockResolvedValue({ ...sessionMeta, nodeCount: 1 });
-      mockDb.update.mockResolvedValue(undefined);
+      mockDb.getSessionMeta.mockResolvedValue({ ...sessionMeta, nodeCount: 1 });
+      mockDb.updateSessionMeta.mockResolvedValue(undefined);
       await service.incrementNodeCount(SUB, SESSION_ID, -5);
-      expect(mockDb.update.mock.calls[0][2].nodeCount).toBe(0);
+      const [, , updates] = mockDb.updateSessionMeta.mock.calls[0];
+      expect(updates.nodeCount).toBe(0);
     });
 
     it('does nothing when session meta is gone', async () => {
-      mockDb.get.mockResolvedValue(null);
+      mockDb.getSessionMeta.mockResolvedValue(null);
       await service.incrementNodeCount(SUB, SESSION_ID, 1);
-      expect(mockDb.update).not.toHaveBeenCalled();
+      expect(mockDb.updateSessionMeta).not.toHaveBeenCalled();
     });
   });
 });

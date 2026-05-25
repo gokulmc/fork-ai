@@ -61,9 +61,12 @@ import {
   updateSessionNotionUrl,
   setUnauthorizedHandler,
   shareApi,
+  getMe,
+  patchMe,
   type SessionSummary,
   type NotionPage,
 } from '@/lib/api';
+import { OnboardingTour } from './OnboardingTour';
 import { MindMap } from './MindMap';
 import { Section } from './Section';
 import { SkeletonSections } from './SkeletonSections';
@@ -88,6 +91,7 @@ const TWEAK_DEFAULTS = {
   mapLayout: 'vertical' as const,
   fontPair: 'newsreader-geist',
   maxSections: 4,
+  webSearch: false,
 };
 
 const FONT_PAIRS: Record<string, { serif: string; sans: string; label: string }> = {
@@ -147,6 +151,8 @@ export function App() {
     if (typeof window === 'undefined') return null;
     return new URLSearchParams(window.location.search).get('sk');
   });
+  const [invalidLink, setInvalidLink] = useState(false);
+  const [invalidLinkCountdown, setInvalidLinkCountdown] = useState(3);
 
   const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const [view, setView] = useState<'landing' | 'history'>(() => {
@@ -219,6 +225,10 @@ export function App() {
   const [notionSavedUrl, setNotionSavedUrl] = useState<string | null>(null);
   const [notionError, setNotionError] = useState<string | null>(null);
 
+  // Onboarding tour — default true to suppress flash before API responds
+  const [hasOnboarded, setHasOnboarded] = useState(true);
+  const [tourPhase, setTourPhase] = useState<'landing' | 'session'>('landing');
+
   const wsRef = useRef<HTMLElement>(null);
   const appRef = useRef<HTMLDivElement>(null);
 
@@ -267,7 +277,7 @@ export function App() {
     root.style.setProperty('--sans', pair.sans);
   }, [tweaks]);
 
-  // ── Load session list once idToken is available ───────────────────────────
+  // ── Load session list + onboarding state once idToken is available ──────────
 
   useEffect(() => {
     if (!idToken) return;
@@ -277,6 +287,18 @@ export function App() {
       .catch(err => console.error('Failed to load sessions', err))
       .finally(() => setLoadingSessions(false));
   }, [idToken]);
+
+  useEffect(() => {
+    if (!idToken) return;
+    getMe(idToken)
+      .then(me => setHasOnboarded(me.hasOnboarded ?? false))
+      .catch(() => {});
+  }, [idToken]);
+
+  // Transition tour to session phase when workspace first loads
+  useEffect(() => {
+    if (rootId && tourPhase === 'landing') setTourPhase('session');
+  }, [rootId, tourPhase]);
 
   const scrollWsTop = useCallback(() => {
     requestAnimationFrame(() => {
@@ -400,11 +422,20 @@ export function App() {
         })
         .catch(err => {
           console.error('Failed to load shared session', err);
-          setGuestToken(null);
+          setInvalidLink(true);
+          setInvalidLinkCountdown(3);
         })
         .finally(() => setLoadingRoot(false));
     }
   }, [guestToken, status, idToken, loadSession]);
+
+  // ── Invalid share link countdown → redirect to login ─────────────────────
+  useEffect(() => {
+    if (!invalidLink) return;
+    if (invalidLinkCountdown <= 0) { setGuestToken(null); setInvalidLink(false); return; }
+    const t = setTimeout(() => setInvalidLinkCountdown(n => n - 1), 1000);
+    return () => clearTimeout(t);
+  }, [invalidLink, invalidLinkCountdown]);
 
   // ── Persist highlights (optimistic + background API sync) ─────────────────
 
@@ -490,9 +521,18 @@ export function App() {
 
     try {
       let realNodeId = tempId;
+      // Captured from the meta event so the done handler can use them
+      // without reading from nodes state (reading inside a setNodes updater
+      // causes the updater to run multiple times, duplicating setSessions calls).
+      let metaTitle = '';
+      let metaEmoji: string | null = null;
+      let metaLede = '';
 
-      await createSessionStream(idToken, query, tweaks.maxSections, (event) => {
+      await createSessionStream(idToken, query, tweaks.maxSections, tweaks.webSearch, (event) => {
         if (event.type === 'meta') {
+          metaTitle = event.title;
+          metaEmoji = event.emoji;
+          metaLede = event.lede;
           setNodes(prev => {
             const node = prev[tempId];
             if (!node) return prev;
@@ -520,21 +560,23 @@ export function App() {
           });
           setRootId(realNodeId);
           setActiveId(realNodeId);
-          // Add to session list
-          setNodes(prev => {
-            const node = prev[realNodeId];
-            if (!node) return prev;
-            setSessions(s => [{
+          // Patch any open UI state that was anchored to the optimistic temp ID
+          setHlMenu(prev => prev?.nodeId === tempId ? { ...prev, nodeId: realNodeId } : prev);
+          setFollowUp(prev => prev?.nodeId === tempId ? { ...prev, nodeId: realNodeId } : prev);
+          // Prepend to session list — called directly (not inside a setNodes updater)
+          // to avoid React running the updater multiple times and duplicating entries.
+          setSessions(s => {
+            if (s.some(x => x.sessionId === event.sessionId)) return s;
+            return [{
               sessionId: event.sessionId,
-              title: node.title,
-              emoji: node.emoji ?? '',
-              lede: node.lede,
-              createdAt: new Date(node.createdAt).toISOString(),
-              updatedAt: new Date(node.createdAt).toISOString(),
+              title: metaTitle,
+              emoji: metaEmoji ?? '',
+              lede: metaLede,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
               nodeCount: 1,
               highlightCount: 0,
-            }, ...s]);
-            return prev;
+            }, ...s];
           });
         }
       });
@@ -598,6 +640,7 @@ export function App() {
         query: section.heading,
         sectionBody: section.body,
         sectionCount: tweaks.maxSections,
+        webSearch: tweaks.webSearch,
       };
       const apiNode = guestToken && !idToken
         ? await shareApi.createNode(guestToken, nodePayload)
@@ -657,6 +700,7 @@ export function App() {
         query: question,
         highlightText: source.text,
         sectionCount: tweaks.maxSections,
+        webSearch: tweaks.webSearch,
       };
       const apiNode = guestToken && !idToken
         ? await shareApi.createNode(guestToken, nodePayload)
@@ -1009,11 +1053,35 @@ export function App() {
     );
   }
 
+  if (invalidLink) {
+    return (
+      <div className="auth-screen">
+        <div className="invalid-link-msg">
+          <span className="invalid-link-icon">🔗</span>
+          <p>Link not valid</p>
+          <p className="invalid-link-sub">Redirecting to login in {invalidLinkCountdown}…</p>
+        </div>
+      </div>
+    );
+  }
+
   // ── Landing / history / loading ───────────────────────────────────────────
 
   const goHome = () => { setRootId(null); setNodes({}); setSessionId(null); setActiveId(null); setView('landing'); };
+  const isGuest = !!(guestToken && !idToken);
+  const showTour = !hasOnboarded && status === 'authenticated' && !guestToken;
+  const restartTour = status === 'authenticated' && idToken
+    ? () => patchMe(idToken, { hasOnboarded: false }).catch(() => {}).finally(() => window.location.reload())
+    : undefined;
+  const tourEl = showTour ? (
+    <OnboardingTour
+      phase={tourPhase}
+      idToken={idToken}
+      onDone={() => setHasOnboarded(true)}
+    />
+  ) : null;
   const persistentBrand = (
-    <div className="app-brand" onClick={goHome} title="Go to home">
+    <div className="app-brand" onClick={isGuest ? undefined : goHome} title={isGuest ? 'fork.ai' : 'Go to home'} style={isGuest ? { cursor: 'default' } : undefined}>
       <img src="/logo.svg" alt="" /> fork.ai
     </div>
   );
@@ -1054,7 +1122,7 @@ export function App() {
         onShowHistory={() => setView('history')}
       />
     );
-    return <>{persistentBrand}{inner}<AccountButton /><TweaksPanel tweaks={tweaks} setTweak={setTweak} fontPairOptions={FONT_PAIR_OPTIONS} accentOptions={ACCENTS} /></>;
+    return <>{persistentBrand}{inner}<AccountButton /><TweaksPanel tweaks={tweaks} setTweak={setTweak} fontPairOptions={FONT_PAIR_OPTIONS} accentOptions={ACCENTS} onRestartTour={restartTour} />{tourEl}</>;
   }
 
   // ── Workspace ─────────────────────────────────────────────────────────────
@@ -1087,7 +1155,7 @@ export function App() {
         </div>
         <div className="tools">
           {idToken && (
-            <button className="icon-btn" onClick={() => { setView('history'); setRootId(null); setNodes({}); setSessionId(null); }} title="Research history">
+            <button data-tour="tour-history" className="icon-btn" onClick={() => { setView('history'); setRootId(null); setNodes({}); setSessionId(null); }} title="Research history">
               <Clock size={14} /> History
             </button>
           )}
@@ -1101,7 +1169,9 @@ export function App() {
             </button>
           )}
           {sessionId && idToken && (
-            <ShareButton sessionId={sessionId} idToken={idToken} />
+            <span data-tour="tour-share">
+              <ShareButton sessionId={sessionId} idToken={idToken} />
+            </span>
           )}
           <button className="icon-btn has-badge" onClick={() => setDrawerOpen(true)} title="Highlights & Callouts">
             <Bookmark size={14} /> Notes
@@ -1151,6 +1221,7 @@ export function App() {
                       : <><Search size={12} className="ic" /> Query</>}
                 </span>
                 <span className="pill"><Hash size={12} className="ic" /> {active.sections.length || '—'} sections</span>
+                {active.sources?.length ? <span className="pill pill-search">🔍 Web search</span> : null}
                 {active.loading && (
                   <span className="thinking">
                     Thinking<span className="dots"><span /><span /><span /></span>
@@ -1197,6 +1268,18 @@ export function App() {
                   onRemoveCallout={removeAnnotation}
                 />
               ))}
+              {active.sources?.length ? (
+                <div className="ws-sources">
+                  <div className="ws-sources-label">Sources</div>
+                  <ol className="ws-sources-list">
+                    {active.sources.map((src, i) => (
+                      <li key={i}>
+                        <a href={src.url} target="_blank" rel="noopener noreferrer">{src.title}</a>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              ) : null}
             </>
           )}
         </div>
@@ -1253,6 +1336,7 @@ export function App() {
         setTweak={setTweak}
         fontPairOptions={FONT_PAIR_OPTIONS}
         accentOptions={ACCENTS}
+        onRestartTour={restartTour}
       />
 
       {notionPickerOpen && (
@@ -1288,6 +1372,7 @@ export function App() {
         </div>
       )}
     </div>
+    {tourEl}
     </>
   );
 }

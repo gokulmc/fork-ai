@@ -284,13 +284,14 @@ export function MindMap({
 
   return (
     <>
-      <div className="mindmap-header">
+      <div className="mindmap-header" data-tour="tour-mindmap">
         <span className="label">
           <Map size={13} />
           {nodeCount} {nodeCount === 1 ? 'node' : 'nodes'}
         </span>
         {onSaveToNotion && (
           <button
+            data-tour="tour-notion"
             className={`mm-copy-btn${notionSavedUrl ? ' mm-copy-btn--copied' : notionError ? ' mm-copy-btn--error' : ''}`}
             onClick={notionSavedUrl
               ? () => window.open(notionSavedUrl, '_blank')
@@ -365,6 +366,7 @@ export function MindMap({
                       <div className="mm-kicker">{kicker}</div>
                       <div className="mm-label" title={n.title || 'Untitled'}>{n.title || 'Untitled'}</div>
                     </div>
+                    {n.sources?.length ? <span className="mm-search-badge">🔍</span> : null}
                   </div>
                 </foreignObject>
               </g>

@@ -38,11 +38,11 @@ export class NodesService {
 
     if (dto.kind === 'DEEPER') {
       if (!dto.sectionBody) throw new BadRequestException('sectionBody required for DEEPER nodes');
-      llmResult = await this.llm.expandSection(ancestors, dto.query, dto.sectionBody, dto.sectionCount ?? 4);
+      llmResult = await this.llm.expandSection(ancestors, dto.query, dto.sectionBody, dto.sectionCount ?? 4, dto.webSearch ?? false);
       fromText = `${dto.query}: ${dto.sectionBody.slice(0, 200)}…`;
     } else {
       if (!dto.highlightText) throw new BadRequestException('highlightText required for ASK nodes');
-      llmResult = await this.llm.followUpFromHighlight(ancestors, dto.highlightText, dto.query, dto.sectionCount ?? 4);
+      llmResult = await this.llm.followUpFromHighlight(ancestors, dto.highlightText, dto.query, dto.sectionCount ?? 4, dto.webSearch ?? false);
       fromText = dto.highlightText;
     }
 
@@ -64,6 +64,7 @@ export class NodesService {
       fromSection: dto.fromSection,
       fromText,
       createdAt: now,
+      ...(llmResult.sources?.length ? { sources: llmResult.sources } : {}),
     };
 
     await this.db.putNode(node);

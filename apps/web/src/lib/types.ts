@@ -4,6 +4,11 @@ export interface Section {
   body: string;
 }
 
+export interface CitationSource {
+  title: string;
+  url: string;
+}
+
 export interface ForkNode {
   id: string;
   parentId: string | null;
@@ -18,6 +23,7 @@ export interface ForkNode {
   createdAt: number;
   loading: boolean;
   error?: string;
+  sources?: CitationSource[];
 }
 
 export interface Annotation {
@@ -54,6 +60,7 @@ export interface Tweaks {
   mapLayout: 'vertical' | 'horizontal';
   fontPair: string;
   maxSections: number;
+  webSearch: boolean;
 }
 
 export interface HlMenuState {

@@ -40,7 +40,7 @@ export function Landing({ onSubmit, loading, onShowHistory }: LandingProps) {
           Type a question. Get an answer split into sections you can dive deeper into, highlight,
           and branch from. Every detour becomes a node on your mind map.
         </p>
-        <div className="query-box">
+        <div className="query-box" data-tour="tour-query">
           <span className="icon"><Search size={20} /></span>
           <input
             type="text"

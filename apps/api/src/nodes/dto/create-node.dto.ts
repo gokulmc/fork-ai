@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsIn, IsOptional, IsInt, Min, Max, MinLength, MaxLength } from 'class-validator';
+import { IsString, IsIn, IsOptional, IsInt, IsBoolean, Min, Max, MinLength, MaxLength } from 'class-validator';
 import { NodeKind } from '@/llm/llm.types';
 
 export class CreateNodeDto {
@@ -37,4 +37,9 @@ export class CreateNodeDto {
   @Min(4)
   @Max(8)
   sectionCount?: number;
+
+  @ApiPropertyOptional({ description: 'Enable live web search (max 3 searches)', example: false })
+  @IsOptional()
+  @IsBoolean()
+  webSearch?: boolean;
 }

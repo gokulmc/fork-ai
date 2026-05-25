@@ -188,9 +188,10 @@ interface TweaksPanelProps {
   setTweak: SetTweak;
   fontPairOptions: { value: string; label: string }[];
   accentOptions: string[];
+  onRestartTour?: () => void;
 }
 
-export function TweaksPanel({ tweaks, setTweak, fontPairOptions, accentOptions }: TweaksPanelProps) {
+export function TweaksPanel({ tweaks, setTweak, fontPairOptions, accentOptions, onRestartTour }: TweaksPanelProps) {
   const [open, setOpen] = useState(false);
   const dragRef = useRef<HTMLDivElement>(null);
   const offsetRef = useRef({ x: PAD, y: PAD });
@@ -309,6 +310,12 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, accentOptions }
               options={[4, 5, 6, 7, 8].map(n => ({ value: String(n), label: String(n) }))}
               onChange={v => setTweak('maxSections', Number(v))}
             />
+            <TweakRadio
+              label="Web search"
+              value={tweaks.webSearch ? 'on' : 'off'}
+              options={[{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }]}
+              onChange={v => setTweak('webSearch', v === 'on')}
+            />
             <TweakSection label="Ask AI shortcuts" />
             <div className="twk-shortcuts">
               {([['?', 'what'], ['!?', 'how'], ['/?', 'why'], ['>?', 'explain']] as const).map(([sym, word]) => (
@@ -319,6 +326,16 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, accentOptions }
                 </div>
               ))}
             </div>
+            {onRestartTour && (
+              <>
+                <TweakSection label="Onboarding" />
+                <div className="twk-row">
+                  <button className="twk-restart-btn" onClick={onRestartTour}>
+                    Restart tour
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

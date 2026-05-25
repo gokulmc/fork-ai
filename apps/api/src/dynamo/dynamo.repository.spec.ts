@@ -1,112 +1,212 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConfigService } from '@nestjs/config';
 import { DynamoRepository } from './dynamo.repository';
-import { DYNAMO_CLIENT } from './dynamo.module';
+import {
+  DYNAMO_TABLE,
+  USER_META_MODEL,
+  SESSION_META_MODEL,
+  NODE_MODEL,
+  ANNOTATION_MODEL,
+  HIGHLIGHT_MODEL,
+  SHARE_TOKEN_MODEL,
+} from './dynamo.constants';
 
-const mockSend = jest.fn();
-const mockClient = { send: mockSend };
-const mockCfg = { get: () => 'test-table' };
+// Factory for a Dynamoose-model-shaped mock with chainable query builder
+function makeModelMock() {
+  const mock = {
+    get: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
+    batchDelete: jest.fn(),
+    query: jest.fn(),
+  };
+  // query().eq().using().sort().exec() chain
+  const queryChain = { eq: jest.fn(), using: jest.fn(), sort: jest.fn(), exec: jest.fn(), where: jest.fn(), beginsWith: jest.fn() };
+  queryChain.eq.mockReturnValue(queryChain);
+  queryChain.using.mockReturnValue(queryChain);
+  queryChain.sort.mockReturnValue(queryChain);
+  queryChain.where.mockReturnValue(queryChain);
+  queryChain.beginsWith.mockReturnValue(queryChain);
+  queryChain.exec.mockResolvedValue([]);
+  mock.query.mockReturnValue(queryChain);
+  return { mock, queryChain };
+}
+
+const SUB = 'user-123';
+const SESSION_ID = 'sess-abc';
+const NODE_ID = 'node-xyz';
 
 describe('DynamoRepository', () => {
   let repo: DynamoRepository;
+  let userMeta: ReturnType<typeof makeModelMock>;
+  let sessionMeta: ReturnType<typeof makeModelMock>;
+  let node: ReturnType<typeof makeModelMock>;
+  let annotation: ReturnType<typeof makeModelMock>;
+  let highlight: ReturnType<typeof makeModelMock>;
+  let shareToken: ReturnType<typeof makeModelMock>;
 
   beforeEach(async () => {
-    mockSend.mockReset();
+    userMeta = makeModelMock();
+    sessionMeta = makeModelMock();
+    node = makeModelMock();
+    annotation = makeModelMock();
+    highlight = makeModelMock();
+    shareToken = makeModelMock();
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DynamoRepository,
-        { provide: DYNAMO_CLIENT, useValue: mockClient },
-        { provide: ConfigService, useValue: mockCfg },
+        { provide: DYNAMO_TABLE, useValue: 'test-table' },
+        { provide: USER_META_MODEL, useValue: userMeta.mock },
+        { provide: SESSION_META_MODEL, useValue: sessionMeta.mock },
+        { provide: NODE_MODEL, useValue: node.mock },
+        { provide: ANNOTATION_MODEL, useValue: annotation.mock },
+        { provide: HIGHLIGHT_MODEL, useValue: highlight.mock },
+        { provide: SHARE_TOKEN_MODEL, useValue: shareToken.mock },
       ],
     }).compile();
     repo = module.get<DynamoRepository>(DynamoRepository);
   });
 
-  describe('put', () => {
-    it('sends PutCommand with table name', async () => {
-      mockSend.mockResolvedValue({});
-      await repo.put({ PK: 'USER#1', SK: 'METADATA', name: 'Alice' });
-      expect(mockSend).toHaveBeenCalledTimes(1);
-      const cmd = mockSend.mock.calls[0][0];
-      expect(cmd.input.TableName).toBe('test-table');
-      expect(cmd.input.Item.PK).toBe('USER#1');
-    });
-  });
-
-  describe('get', () => {
-    it('returns the item when found', async () => {
-      mockSend.mockResolvedValue({ Item: { PK: 'pk', SK: 'sk', data: 42 } });
-      const result = await repo.get('pk', 'sk');
-      expect(result).toEqual({ PK: 'pk', SK: 'sk', data: 42 });
-    });
-
-    it('returns null when item does not exist', async () => {
-      mockSend.mockResolvedValue({});
-      const result = await repo.get('pk', 'sk');
+  describe('getUserMeta', () => {
+    it('returns null when not found', async () => {
+      userMeta.mock.get.mockResolvedValue(null);
+      const result = await repo.getUserMeta(SUB);
       expect(result).toBeNull();
     });
-  });
 
-  describe('query', () => {
-    it('queries by PK only when no skPrefix given', async () => {
-      mockSend.mockResolvedValue({ Items: [] });
-      await repo.query('SESSION#abc');
-      const cmd = mockSend.mock.calls[0][0];
-      expect(cmd.input.KeyConditionExpression).toBe('PK = :pk');
-      expect(cmd.input.ExpressionAttributeValues[':sk']).toBeUndefined();
-    });
-
-    it('queries with begins_with when skPrefix is given', async () => {
-      mockSend.mockResolvedValue({ Items: [{ PK: 'p', SK: 'NODE#1' }] });
-      const results = await repo.query('SESSION#abc', 'NODE#');
-      expect(cmd(0).input.KeyConditionExpression).toContain('begins_with');
-      expect(results).toHaveLength(1);
+    it('returns plain item when found', async () => {
+      userMeta.mock.get.mockResolvedValue({ PK: `USER#${SUB}`, SK: 'METADATA', email: 'a@b.com' });
+      const result = await repo.getUserMeta(SUB);
+      expect(result?.email).toBe('a@b.com');
     });
   });
 
-  describe('update', () => {
-    it('builds SET expression for each field', async () => {
-      mockSend.mockResolvedValue({});
-      await repo.update('pk', 'sk', { title: 'New title', updatedAt: '2026-01-01' });
-      const cmd = mockSend.mock.calls[0][0];
-      expect(cmd.input.UpdateExpression).toContain('SET');
-      expect(cmd.input.UpdateExpression).toContain('#title');
-      expect(cmd.input.UpdateExpression).toContain('#updatedAt');
+  describe('putUserMeta', () => {
+    it('calls create with cleaned data', async () => {
+      userMeta.mock.create.mockResolvedValue({});
+      await repo.putUserMeta({ PK: `USER#${SUB}`, SK: 'METADATA', sub: SUB, email: 'a@b.com', createdAt: 'now', updatedAt: 'now' });
+      expect(userMeta.mock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ PK: `USER#${SUB}` }),
+        { overwrite: true },
+      );
     });
   });
 
-  describe('delete', () => {
-    it('sends DeleteCommand with correct key', async () => {
-      mockSend.mockResolvedValue({});
-      await repo.delete('pk', 'sk');
-      const cmd = mockSend.mock.calls[0][0];
-      expect(cmd.input.Key).toEqual({ PK: 'pk', SK: 'sk' });
+  describe('getSessionMeta', () => {
+    it('returns null when not found', async () => {
+      sessionMeta.mock.get.mockResolvedValue(null);
+      const result = await repo.getSessionMeta(SUB, SESSION_ID);
+      expect(result).toBeNull();
+    });
+
+    it('returns item when found', async () => {
+      sessionMeta.mock.get.mockResolvedValue({ PK: `USER#${SUB}`, SK: `SESSION#${SESSION_ID}`, sessionId: SESSION_ID, title: 'T' });
+      const result = await repo.getSessionMeta(SUB, SESSION_ID);
+      expect(result?.sessionId).toBe(SESSION_ID);
     });
   });
 
-  describe('batchDelete', () => {
+  describe('listSessionMeta', () => {
+    it('queries GSI descending and returns items', async () => {
+      sessionMeta.queryChain.exec.mockResolvedValue([{ sessionId: SESSION_ID }]);
+      const result = await repo.listSessionMeta(SUB);
+      expect(sessionMeta.mock.query).toHaveBeenCalledWith('gsi1pk');
+      expect(sessionMeta.queryChain.eq).toHaveBeenCalledWith(`USER#${SUB}`);
+      expect(result).toHaveLength(1);
+    });
+  });
+
+  describe('updateSessionMeta', () => {
+    it('sends set fields normally', async () => {
+      sessionMeta.mock.update.mockResolvedValue({});
+      await repo.updateSessionMeta(SUB, SESSION_ID, { title: 'New' });
+      expect(sessionMeta.mock.update).toHaveBeenCalledWith(
+        { PK: `USER#${SUB}`, SK: `SESSION#${SESSION_ID}` },
+        expect.objectContaining({ title: 'New' }),
+      );
+    });
+
+    it('translates null values into $REMOVE', async () => {
+      sessionMeta.mock.update.mockResolvedValue({});
+      await repo.updateSessionMeta(SUB, SESSION_ID, { shareToken: null });
+      const op = sessionMeta.mock.update.mock.calls[0][1];
+      expect(op.$REMOVE).toContain('shareToken');
+    });
+
+    it('does nothing when updates object is empty', async () => {
+      await repo.updateSessionMeta(SUB, SESSION_ID, {});
+      expect(sessionMeta.mock.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('putNode', () => {
+    it('creates node with overwrite', async () => {
+      node.mock.create.mockResolvedValue({});
+      await repo.putNode({ PK: `SESSION#${SESSION_ID}`, SK: `NODE#${NODE_ID}`, nodeId: NODE_ID, kind: 'QUERY', title: 'T', query: 'Q', lede: 'L', sections: [], createdAt: 'now' });
+      expect(node.mock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ nodeId: NODE_ID }),
+        { overwrite: true },
+      );
+    });
+  });
+
+  describe('getNode', () => {
+    it('returns null when not found', async () => {
+      node.mock.get.mockResolvedValue(null);
+      expect(await repo.getNode(SESSION_ID, NODE_ID)).toBeNull();
+    });
+
+    it('returns item when found', async () => {
+      node.mock.get.mockResolvedValue({ nodeId: NODE_ID });
+      const result = await repo.getNode(SESSION_ID, NODE_ID);
+      expect(result?.nodeId).toBe(NODE_ID);
+    });
+  });
+
+  describe('queryNodes', () => {
+    it('queries PK beginsWith NODE#', async () => {
+      node.queryChain.exec.mockResolvedValue([{ nodeId: NODE_ID }]);
+      const result = await repo.queryNodes(SESSION_ID);
+      expect(node.mock.query).toHaveBeenCalledWith('PK');
+      expect(node.queryChain.beginsWith).toHaveBeenCalledWith('NODE#');
+      expect(result).toHaveLength(1);
+    });
+  });
+
+  describe('batchDeleteNodes', () => {
     it('does nothing for empty array', async () => {
-      await repo.batchDelete([]);
-      expect(mockSend).not.toHaveBeenCalled();
+      await repo.batchDeleteNodes(SESSION_ID, []);
+      expect(node.mock.batchDelete).not.toHaveBeenCalled();
     });
 
-    it('chunks keys into groups of 25', async () => {
-      mockSend.mockResolvedValue({});
-      const keys = Array.from({ length: 30 }, (_, i) => ({ pk: `pk${i}`, sk: `sk${i}` }));
-      await repo.batchDelete(keys);
-      // 30 keys → 2 chunks (25 + 5)
-      expect(mockSend).toHaveBeenCalledTimes(2);
+    it('chunks into groups of 25', async () => {
+      node.mock.batchDelete.mockResolvedValue({});
+      const ids = Array.from({ length: 30 }, (_, i) => `n${i}`);
+      await repo.batchDeleteNodes(SESSION_ID, ids);
+      expect(node.mock.batchDelete).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('putShareToken / getShareToken / deleteShareToken', () => {
+    it('puts a share token record', async () => {
+      shareToken.mock.create.mockResolvedValue({});
+      await repo.putShareToken('tok123', SESSION_ID, SUB);
+      expect(shareToken.mock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ token: 'tok123', sessionId: SESSION_ID }),
+        { overwrite: true },
+      );
     });
 
-    it('sends correct DeleteRequest shape', async () => {
-      mockSend.mockResolvedValue({});
-      await repo.batchDelete([{ pk: 'pk1', sk: 'sk1' }]);
-      const sent = mockSend.mock.calls[0][0];
-      const requests = sent.input.RequestItems['test-table'];
-      expect(requests[0].DeleteRequest.Key).toEqual({ PK: 'pk1', SK: 'sk1' });
+    it('returns null for missing share token', async () => {
+      shareToken.mock.get.mockResolvedValue(null);
+      expect(await repo.getShareToken('tok')).toBeNull();
+    });
+
+    it('deletes share token by value', async () => {
+      shareToken.mock.delete.mockResolvedValue({});
+      await repo.deleteShareToken('tok123');
+      expect(shareToken.mock.delete).toHaveBeenCalledWith({ PK: 'SHARE#tok123', SK: 'METADATA' });
     });
   });
 });
-
-// Helper to get nth call's command
-function cmd(n: number) { return mockSend.mock.calls[n][0]; }

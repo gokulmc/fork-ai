@@ -8,6 +8,7 @@ export const UserMetaSchema = new dynamoose.Schema({
   createdAt: String,
   updatedAt: String,
   notionAccessToken: { type: String, required: false },
+  hasOnboarded: { type: Boolean, required: false },
 });
 
 export const SessionMetaSchema = new dynamoose.Schema({
@@ -66,6 +67,19 @@ export const NodeSchema = new dynamoose.Schema({
   fromSection: { type: String, required: false },
   fromText: { type: String, required: false },
   createdAt: String,
+  sources: {
+    type: Array,
+    required: false,
+    schema: [
+      {
+        type: Object,
+        schema: {
+          title: String,
+          url: String,
+        },
+      },
+    ],
+  },
 });
 
 export const AnnotationSchema = new dynamoose.Schema({
