@@ -215,8 +215,8 @@ The app uses a **custom email/password login UI** instead of the Cognito Hosted 
 - The Google OAuth button still calls `signIn('cognito')` → Cognito Hosted UI (existing flow unchanged).
 - `triggerRef` in `LoginPage.tsx` is updated on each step change via `useEffect([step, ...])` — center dot always calls the current step's action. The graph animation trigger is stored separately in `graphTriggerRef` and fires only after successful auth.
 
-### In-progress / known issue
-The `/api/cognito/login` route was returning 400. Most likely cause: `USER_PASSWORD_AUTH` not enabled on the App Client in AWS Console. Check the Next.js server logs for `[cognito/login] <ErrorName> <ErrorMessage>` to confirm.
+### Session persistence
+Login survives tab close. `App.tsx` gates the login page solely on `status === 'unauthenticated'` from next-auth — there is no separate `showLogin` state. next-auth's JWT cookie has a 30-day maxAge by default, so it persists across browser restarts. Do **not** re-introduce any `sessionStorage`-backed gate for login visibility — `sessionStorage` is tab-scoped and would break persistence.
 
 ---
 

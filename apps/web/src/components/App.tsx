@@ -140,9 +140,6 @@ export function App() {
 
   const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const [view, setView] = useState<'landing' | 'history'>('landing');
-  const [showLogin, setShowLogin] = useState(
-    () => typeof window === 'undefined' || !sessionStorage.getItem('fork.ai.visited'),
-  );
 
   // Session list (shown on history page)
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -882,14 +879,9 @@ export function App() {
   );
 
   if (!rootId) {
-    if (!loadingRoot && (showLogin || status === 'unauthenticated')) {
+    if (!loadingRoot && status === 'unauthenticated') {
       return (
-        <LoginPage
-          onEnter={() => {
-            sessionStorage.setItem('fork.ai.visited', '1');
-            setShowLogin(false);
-          }}
-        />
+        <LoginPage onEnter={() => {}} />
       );
     }
     let inner;
