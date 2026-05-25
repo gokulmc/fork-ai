@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import { Sparkles } from './Icons';
+import { Sparkles, X } from './Icons';
 import { truncate } from '@/lib/utils';
 
 interface Rect {
@@ -74,17 +74,22 @@ export function FollowUpPop({ rect, sourceText, loading, onSubmit, onClose }: Fo
       />
       <div className="actions">
         <span className="hint">⌘ + ⏎ to send · Esc to close</span>
-        <button
-          className="btn-primary"
-          disabled={!q.trim() || loading}
-          onClick={handleSubmit}
-        >
-          {loading ? (
-            <><span className="spinner" style={{ width: 10, height: 10 }} /> Asking…</>
-          ) : (
-            <><Sparkles size={13} /> Branch</>
-          )}
-        </button>
+        <div className="actions-right">
+          <button className="btn-close" onClick={onClose} title="Close" aria-label="Close">
+            <X size={14} />
+          </button>
+          <button
+            className="btn-primary"
+            disabled={!q.trim() || loading}
+            onClick={handleSubmit}
+          >
+            {loading ? (
+              <><span className="spinner" style={{ width: 10, height: 10 }} /> Asking…</>
+            ) : (
+              <><Sparkles size={13} /> Branch</>
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );

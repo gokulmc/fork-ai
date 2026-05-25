@@ -185,7 +185,7 @@ The tree is reconstructed by grouping nodes by `parentId` — never stored as a 
 | `MindMap.tsx` | `'use client'` — SVG pan/zoom, `ResizeObserver`, `requestAnimationFrame` easing |
 | `Section.tsx` | `'use client'` — clean marked HTML via `dangerouslySetInnerHTML`; hljs + CSS Highlight API in `useEffect` |
 | `HighlightMenu.tsx` | `'use client'` — positions itself relative to `getBoundingClientRect()` |
-| `FollowUpPop.tsx` | `'use client'` — positions below/above selection rect |
+| `FollowUpPop.tsx` | `'use client'` — positions below/above selection rect; Escape or X button (beside Branch) closes it |
 | `TweaksPanel.tsx` | `'use client'` — draggable via `mousemove` listeners; rendered on ALL pages (Landing, History, Workspace) so the settings icon is always accessible |
 | `Landing.tsx` | `'use client'` — controlled input only |
 | `NotesDrawer.tsx` | `'use client'` — tab state |

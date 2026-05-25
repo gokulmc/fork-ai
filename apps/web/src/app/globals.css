@@ -918,6 +918,9 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 .followup-pop textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 .followup-pop .actions { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
 .followup-pop .hint { font-family: var(--sans); font-size: 11px; color: var(--ink-3); }
+.followup-pop .actions-right { display: flex; align-items: center; gap: 6px; }
+.followup-pop .btn-close { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 1px solid var(--line-strong); border-radius: 5px; background: transparent; color: var(--ink-2); cursor: pointer; }
+.followup-pop .btn-close:hover { background: var(--panel); color: var(--ink); }
 .followup-pop .btn-primary { background: var(--ink); color: var(--bg); border: 0; border-radius: 5px; height: 30px; padding: 0 12px; font-size: 13px; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
 .followup-pop .btn-primary:disabled { opacity: .4; cursor: not-allowed; }
 .followup-pop .btn-primary:hover:not(:disabled) { opacity: 0.88; }
