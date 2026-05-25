@@ -51,6 +51,8 @@ function extractCompletedSections(text: string): LlmSection[] {
 
 const CITATION_NOTE = `When you use web search results, cite sources inline as plain text — e.g. (Source: Name) or a bracketed number like [1] — never wrap cited sentences or paragraphs in *asterisks* or _underscores_. Do not italicise entire sentences to indicate attribution.`;
 
+const WEB_SEARCH_GUIDANCE = `You have access to a web search tool. Use it only when the question genuinely requires information that may have changed after your training cutoff — current events, recent developments, live prices, newly released products, or breaking news. For foundational concepts, historical facts, established science, or explanations you already know well, answer directly from your knowledge without searching.`;
+
 const SECTIONS_SCHEMA = `Return ONLY valid JSON, no prose, no markdown fences. Shape:
 {
   "title": "<=5 words capturing topic",
@@ -77,7 +79,7 @@ Query: "${query}"
 
 ${SECTIONS_SCHEMA}
 
-Each section "body" should be 80-180 words. You MAY use GitHub-flavored markdown when it strengthens the explanation: paragraphs, **bold**, *italic*, \`inline code\`, fenced code blocks, tables, ordered/unordered lists, and > blockquotes. Use prose by default. Escape any double-quotes inside JSON strings.${webSearch ? `\n\n${CITATION_NOTE}` : ''}`;
+Each section "body" should be 80-180 words. You MAY use GitHub-flavored markdown when it strengthens the explanation: paragraphs, **bold**, *italic*, \`inline code\`, fenced code blocks, tables, ordered/unordered lists, and > blockquotes. Use prose by default. Escape any double-quotes inside JSON strings.${webSearch ? `\n\n${WEB_SEARCH_GUIDANCE}\n\n${CITATION_NOTE}` : ''}`;
 
     let accumulated = '';
     let metaEmitted = false;
@@ -191,7 +193,7 @@ You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase 
   }
 
   private async callJson(prompt: string, webSearch = false, retries = 1): Promise<LlmResponse> {
-    const fullPrompt = webSearch ? `${prompt}\n\n${CITATION_NOTE}` : prompt;
+    const fullPrompt = webSearch ? `${prompt}\n\n${WEB_SEARCH_GUIDANCE}\n\n${CITATION_NOTE}` : prompt;
     let lastError: Error | undefined;
 
     for (let attempt = 0; attempt <= retries; attempt++) {
