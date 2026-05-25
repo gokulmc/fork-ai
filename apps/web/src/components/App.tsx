@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
-import { useSession } from 'next-auth/react';
+import { useSession, signOut } from 'next-auth/react';
 import type { ForkNode, Annotation, HlMenuState, FollowUpState, ContextMenuState, PersistentHighlight, HighlightRecord } from '@/lib/types';
 import { uid, short5, stripMarkdown, getRangeOffsets } from '@/lib/utils';
 
@@ -59,6 +59,7 @@ import {
   searchNotionPages,
   pushToNotion,
   updateSessionNotionUrl,
+  setUnauthorizedHandler,
   type SessionSummary,
   type NotionPage,
 } from '@/lib/api';
@@ -149,6 +150,9 @@ export function App() {
   );
   // Show login whenever the session is unauthenticated (covers logout → re-login)
   useEffect(() => { if (status === 'unauthenticated') setShowLogin(true); }, [status]);
+
+  // Auto sign-out on any 401 (expired Cognito id_token)
+  useEffect(() => { setUnauthorizedHandler(() => void signOut()); }, []);
 
   // Keep ?view=history in the URL so refresh lands on the right page
   useEffect(() => {

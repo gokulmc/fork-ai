@@ -1,5 +1,9 @@
 import type { ForkNode, Annotation, HighlightRecord, PersistentHighlight } from './types';
 
+// Called on any 401 — set once at app startup to trigger sign-out
+let unauthorizedHandler: (() => void) | null = null;
+export function setUnauthorizedHandler(fn: () => void) { unauthorizedHandler = fn; }
+
 // ── Response shapes from NestJS ─────────────────────────────────────────────
 
 export interface ApiNode {
@@ -157,6 +161,7 @@ async function apiFetch<T>(
 
   if (!res.ok) {
     const msg = await res.text().catch(() => res.statusText);
+    if (res.status === 401) unauthorizedHandler?.();
     throw new ApiError(res.status, msg);
   }
   if (res.status === 204) return undefined as T;
