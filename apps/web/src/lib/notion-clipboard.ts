@@ -80,7 +80,10 @@ type NBlock =
   | { type: 'callout'; callout: { rich_text: NRichText[]; icon: { type: 'emoji'; emoji: string }; color: string } }
   | { type: 'code'; code: { rich_text: NRichText[]; caption: []; language: string } }
   | { type: 'quote'; quote: { rich_text: NRichText[]; color: string } }
-  | { type: 'bulleted_list_item'; bulleted_list_item: { rich_text: NRichText[]; color: string } };
+  | { type: 'bulleted_list_item'; bulleted_list_item: { rich_text: NRichText[]; color: string } }
+  | { type: 'numbered_list_item'; numbered_list_item: { rich_text: NRichText[]; color: string } }
+  | { type: 'table'; table: { table_width: number; has_column_header: boolean; has_row_header: boolean; children: NBlock[] } }
+  | { type: 'table_row'; table_row: { cells: NRichText[][] } };
 
 function makeRT(content: string, ann: Partial<NAnnotations> = {}): NRichText {
   return {
@@ -134,10 +137,24 @@ function inlineToRT(line: string, baseAnn: Partial<NAnnotations> = {}): NRichTex
   return result.length ? result : [makeRT(line, baseAnn)];
 }
 
-// Parse a markdown body → NBlock[]
+// Split a table row on | while ignoring | inside backtick spans
+function splitTableRow(row: string): NRichText[][] {
+  const cells: NRichText[][] = [];
+  let cur = '';
+  let inCode = false;
+  for (const ch of row) {
+    if (ch === '`') inCode = !inCode;
+    if (ch === '|' && !inCode) { cells.push(inlineToRT(cur.trim())); cur = ''; }
+    else cur += ch;
+  }
+  cells.push(inlineToRT(cur.trim()));
+  return cells.slice(1, -1); // drop the empty strings from leading/trailing |
+}
+
+// Parse a markdown body → NBlock[] (line-by-line to handle mixed content correctly)
 function mdToBlocks(body: string, highlights: PersistentHighlight[]): NBlock[] {
   const blocks: NBlock[] = [];
-  // Split off fenced code blocks first
+  // Split off fenced code blocks first; process the rest line by line
   const parts = body.split(/(```[\s\S]*?```)/g);
   for (const part of parts) {
     const codeMatch = part.match(/^```(\w*)\n?([\s\S]*?)```$/);
@@ -152,44 +169,92 @@ function mdToBlocks(body: string, highlights: PersistentHighlight[]): NBlock[] {
       });
       continue;
     }
-    // Split by paragraphs
-    for (const para of part.split(/\n\n+/)) {
-      const trimmed = para.trim();
-      if (!trimmed) continue;
-      const lines = trimmed.split('\n');
-      const firstLine = lines[0];
+
+    const lines = part.split('\n');
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      if (!line.trim()) { i++; continue; }
 
       // Heading
-      const hm = firstLine.match(/^(#{1,4})\s+(.+)/);
+      const hm = line.match(/^(#{1,4})\s+(.+)/);
       if (hm) {
         const level = Math.min(hm[1].length, 3);
         const rt = applyHlsToRichText(inlineToRT(hm[2]), highlights);
         if (level === 1) blocks.push({ type: 'heading_1', heading_1: { rich_text: rt, is_toggleable: false as unknown as true, color: 'default' } });
         else if (level === 2) blocks.push({ type: 'heading_2', heading_2: { rich_text: rt, is_toggleable: false, color: 'default' } });
         else blocks.push({ type: 'heading_3', heading_3: { rich_text: rt, is_toggleable: false, color: 'default' } });
-        continue;
+        i++; continue;
       }
+
       // Blockquote
-      if (firstLine.startsWith('> ')) {
-        const rt = applyHlsToRichText(inlineToRT(firstLine.slice(2)), highlights);
+      if (line.startsWith('> ')) {
+        const rt = applyHlsToRichText(inlineToRT(line.slice(2)), highlights);
         blocks.push({ type: 'quote', quote: { rich_text: rt, color: 'default' } });
-        continue;
+        i++; continue;
       }
-      // Bullet list
-      if (firstLine.match(/^[-*]\s/)) {
-        for (const line of lines) {
-          const lm = line.match(/^[-*]\s+(.+)/);
-          if (lm) {
-            const rt = applyHlsToRichText(inlineToRT(lm[1]), highlights);
-            blocks.push({ type: 'bulleted_list_item', bulleted_list_item: { rich_text: rt, color: 'default' } });
-          }
+
+      // Bullet list item
+      if (line.match(/^[-*]\s/)) {
+        const lm = line.match(/^[-*]\s+(.+)/);
+        if (lm) {
+          const rt = applyHlsToRichText(inlineToRT(lm[1]), highlights);
+          blocks.push({ type: 'bulleted_list_item', bulleted_list_item: { rich_text: rt, color: 'default' } });
+        }
+        i++; continue;
+      }
+
+      // Numbered list item
+      if (line.match(/^\d+\.\s/)) {
+        const lm = line.match(/^\d+\.\s+(.+)/);
+        if (lm) {
+          const rt = applyHlsToRichText(inlineToRT(lm[1]), highlights);
+          blocks.push({ type: 'numbered_list_item', numbered_list_item: { rich_text: rt, color: 'default' } });
+        }
+        i++; continue;
+      }
+
+      // Table — consume all consecutive pipe-starting lines
+      if (line.trimStart().startsWith('|')) {
+        const tableLines: string[] = [];
+        while (i < lines.length && lines[i].trimStart().startsWith('|')) {
+          tableLines.push(lines[i]);
+          i++;
+        }
+        // Drop separator rows (e.g. |---|---|)
+        const dataRows = tableLines.filter(l => !l.match(/^\|[-:\s|]+\|$/));
+        if (dataRows.length > 0) {
+          const parsedRows = dataRows.map(splitTableRow);
+          const tableWidth = Math.max(...parsedRows.map(r => r.length));
+          const tableChildren: NBlock[] = parsedRows.map(cells => {
+            const padded = [...cells];
+            while (padded.length < tableWidth) padded.push([makeRT('')]);
+            return { type: 'table_row' as const, table_row: { cells: padded } };
+          });
+          blocks.push({
+            type: 'table' as const,
+            table: { table_width: tableWidth, has_column_header: true, has_row_header: false, children: tableChildren },
+          });
         }
         continue;
       }
-      // Paragraph: inline-parse all lines joined
-      const rt = inlineToRT(trimmed.replace(/\n/g, ' '));
-      const rtWithHl = applyHlsToRichText(rt, highlights);
-      blocks.push({ type: 'paragraph', paragraph: { rich_text: rtWithHl, color: 'default' } });
+
+      // Paragraph — collect consecutive plain lines (stop at blank, special syntax, or code fence)
+      const paraLines: string[] = [];
+      while (
+        i < lines.length &&
+        lines[i].trim() &&
+        !lines[i].match(/^(#{1,4}\s|>|[-*]\s|\d+\.\s)/) &&
+        !lines[i].trimStart().startsWith('|') &&
+        !lines[i].startsWith('```')
+      ) {
+        paraLines.push(lines[i]);
+        i++;
+      }
+      if (paraLines.length > 0) {
+        const rt = applyHlsToRichText(inlineToRT(paraLines.join(' ')), highlights);
+        blocks.push({ type: 'paragraph', paragraph: { rich_text: rt, color: 'default' } });
+      }
     }
   }
   return blocks;
@@ -439,9 +504,12 @@ function renderNodePlain(
 }
 
 // ── Block tree splitting ──────────────────────────────────────────────────────
-// Notion's pages.create rejects blocks with inline `children`. We split the
-// nested tree into a flat block array + a recursive children map so the server
-// can do a depth-first append after creating the page flat.
+// Notion's pages.create rejects toggle-heading blocks with inline `children`.
+// We split those into a flat block array + a recursive children map so the
+// server can depth-first append them after page creation.
+//
+// Tables are exempt: their rows live inside `table.children` (not block-level
+// `children`), so splitBlocks never sees them and they travel inline as-is.
 
 export interface ChildEntry {
   index: number;

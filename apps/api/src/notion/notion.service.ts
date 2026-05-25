@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadGatewayException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Client } from '@notionhq/client';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
@@ -106,24 +106,37 @@ export class NotionService {
     const token = await this.requireToken(sub);
     const notion = new Client({ auth: token });
 
-    // blocks are already flat (no children) — client splits before sending.
+    // blocks contain flat blocks (toggle children stripped) + inline table rows.
     const firstBatch = blocks.slice(0, 100) as any[];
     const rest = blocks.slice(100);
 
-    const page = await notion.pages.create({
-      parent: { page_id: parentPageId },
-      properties: {
-        title: { title: [{ type: 'text', text: { content: title } }] },
-      },
-      children: firstBatch,
-    });
+    let page: Awaited<ReturnType<typeof notion.pages.create>>;
+    try {
+      page = await notion.pages.create({
+        parent: { page_id: parentPageId },
+        properties: {
+          title: { title: [{ type: 'text', text: { content: title } }] },
+        },
+        children: firstBatch,
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : JSON.stringify(err);
+      console.error('[notion/push] pages.create failed:', msg);
+      throw new BadGatewayException(`Notion pages.create: ${msg}`);
+    }
 
     if (rest.length) {
       for (let i = 0; i < rest.length; i += 100) {
-        await notion.blocks.children.append({
-          block_id: page.id,
-          children: rest.slice(i, i + 100) as any[],
-        });
+        try {
+          await notion.blocks.children.append({
+            block_id: page.id,
+            children: rest.slice(i, i + 100) as any[],
+          });
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : JSON.stringify(err);
+          console.error(`[notion/push] append batch ${i} failed:`, msg);
+          throw new BadGatewayException(`Notion append batch ${i}: ${msg}`);
+        }
       }
     }
 
@@ -145,10 +158,16 @@ export class NotionService {
       const blockId = parentIds[index];
 
       for (let i = 0; i < children.length; i += 100) {
-        await notion.blocks.children.append({
-          block_id: blockId,
-          children: children.slice(i, i + 100) as any[],
-        });
+        try {
+          await notion.blocks.children.append({
+            block_id: blockId,
+            children: children.slice(i, i + 100) as any[],
+          });
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : JSON.stringify(err);
+          console.error(`[notion/push] appendChildren (blockId=${blockId} index=${index} batch=${i}) failed:`, msg);
+          throw new BadGatewayException(`Notion appendChildren blockId=${blockId}: ${msg}`);
+        }
       }
 
       if (subMap.length > 0) {

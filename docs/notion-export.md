@@ -59,7 +59,7 @@ NotionController → NotionService
 | Section heading (root) | `heading_1` in blue |
 | Section heading (depth 1) | `heading_3` default |
 | Section heading (depth 2+) | `paragraph` bold |
-| Section body (markdown) | `paragraph`, `bulleted_list_item`, `code`, `quote` |
+| Section body (markdown) | `paragraph`, `bulleted_list_item`, `numbered_list_item`, `code`, `quote`, `table` |
 | Child node (depth 1) | `heading_2` toggle, purple text, `emoji title` |
 | Child node (depth 2) | `heading_3` toggle, green text, `emoji title` |
 | Child node (depth 3+) | `heading_3` toggle, yellow text, `emoji title` |
@@ -84,16 +84,19 @@ NotionController → NotionService
 
 ## The nested-blocks problem
 
-The Notion API's `pages.create` endpoint **rejects any block that has an inline `children` property**. Toggle headings with child content must be appended separately via `blocks.children.append` after the page is created.
+The Notion API's `pages.create` endpoint **rejects any block that has an inline block-level `children` property**. Toggle headings with child content must be appended separately via `blocks.children.append` after the page is created.
+
+**Exception — tables**: Notion requires table rows to live inside `table.children` (the type-specific sub-object), not at the block level. An empty `table` block is invalid. `splitBlocks` only strips block-level `children`, so table rows travel inline as-is.
 
 ### Solution: client-side tree split
 
 `notion-clipboard.ts` exports `buildNotionClipboard`, which:
 
-1. Calls `nodeToNBlocks` to build the full nested block tree (toggle headings with inline `children`).
+1. Calls `nodeToNBlocks` to build the full nested block tree (toggle headings with block-level `children`; tables with rows in `table.children`).
 2. Passes the result through `splitBlocks`, which recursively:
-   - Strips `children` from every block → produces a flat `blocks` array safe for `pages.create`.
+   - Strips block-level `children` from every block → produces a flat `blocks` array safe for `pages.create`.
    - Records which block indices had children in a `childrenMap: ChildEntry[]` tree.
+   - Table blocks are unaffected because their rows are in `table.children`, not block-level `children`.
 
 ```ts
 interface ChildEntry {
