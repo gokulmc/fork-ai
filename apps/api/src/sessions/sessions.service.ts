@@ -100,7 +100,7 @@ export class SessionsService {
     const nodeId = ulid();
     const now = new Date().toISOString();
 
-    const llmResult = await this.llm.answerQuery(dto.query, dto.sectionCount ?? 5);
+    const llmResult = await this.llm.answerQuery(dto.query, dto.sectionCount ?? 4);
     const sections = llmResult.sections.map((s) => ({ id: ulid(), ...s }));
 
     const rootNode: NodeItem = {

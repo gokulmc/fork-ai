@@ -267,6 +267,7 @@ export interface CreateNodePayload {
   query: string;
   sectionBody?: string;    // for DEEPER
   highlightText?: string;  // for ASK
+  sectionCount?: number;
 }
 
 export function createNode(

@@ -83,6 +83,7 @@ const TWEAK_DEFAULTS = {
   density: 'comfortable' as const,
   mapLayout: 'vertical' as const,
   fontPair: 'newsreader-geist',
+  maxSections: 4,
 };
 
 const FONT_PAIRS: Record<string, { serif: string; sans: string; label: string }> = {
@@ -383,7 +384,7 @@ export function App() {
     try {
       let realNodeId = tempId;
 
-      await createSessionStream(idToken, query, 5, (event) => {
+      await createSessionStream(idToken, query, tweaks.maxSections, (event) => {
         if (event.type === 'meta') {
           setNodes(prev => {
             const node = prev[tempId];
@@ -489,6 +490,7 @@ export function App() {
         fromSection: section.id,
         query: section.heading,
         sectionBody: section.body,
+        sectionCount: tweaks.maxSections,
       });
       const realNode = toForkNode(apiNode);
       setNodes(prev => {
@@ -546,6 +548,7 @@ export function App() {
         fromSection: source.sectionId,
         query: question,
         highlightText: source.text,
+        sectionCount: tweaks.maxSections,
       });
       const realNode = toForkNode(apiNode);
       setNodes(prev => {

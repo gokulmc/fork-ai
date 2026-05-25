@@ -136,9 +136,9 @@ Key constraints to keep in mind:
 
 | Function | Trigger | Sections returned |
 |---|---|---|
-| `answerQuery(query, n=5)` | New root query (`POST /sessions`) | 5 sections |
-| `expandSection(rootQuery, heading, body)` | "Go deeper" (`POST /sessions/:id/nodes` with `kind: DEEPER`) | 3–4 sections |
-| `followUpFromHighlight(rootQuery, highlight, question)` | "Ask AI" (`POST /sessions/:id/nodes` with `kind: ASK`) | 3–4 sections |
+| `answerQuery(query, sectionCount)` | New root query (`POST /sessions`) | up to `sectionCount` (default 4) |
+| `expandSection(ancestors, heading, body, sectionCount)` | "Go deeper" (`POST /sessions/:id/nodes` with `kind: DEEPER`) | up to `sectionCount` (default 4) |
+| `followUpFromHighlight(ancestors, highlight, question, sectionCount)` | "Ask AI" (`POST /sessions/:id/nodes` with `kind: ASK`) | up to `sectionCount` (default 4) |
 
 All three return: `{ title, emoji, lede, sections: [{ heading, body }] }`.
 
