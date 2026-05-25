@@ -222,7 +222,25 @@ The app uses a **custom email/password login UI** instead of the Cognito Hosted 
 - `triggerRef` in `LoginPage.tsx` is updated on each step change via `useEffect([step, ...])` — center dot always calls the current step's action. The graph animation trigger is stored separately in `graphTriggerRef` and fires only after successful auth.
 
 ### Session persistence
-Login survives tab close. `App.tsx` gates the login page on two conditions: `status === 'unauthenticated'` (covers logout from any page) and `showLogin && !loadingRoot` (keeps `LoginPage` mounted during the post-login animation). `showLogin` is initialised from `localStorage` (persists across tab closes) and is set back to `true` by a `useEffect` whenever `status` becomes `'unauthenticated'`. Do **not** use `sessionStorage` for this — it is tab-scoped and would break persistence.
+Login survives tab close. `App.tsx` gates the login page on two conditions: `status === 'unauthenticated'` (covers logout from any page) and `showLogin` (keeps `LoginPage` mounted during the post-login animation). `showLogin` is initialised from `localStorage` (persists across tab closes) and is set back to `true` by a `useEffect` whenever `status` becomes `'unauthenticated'`. Do **not** use `sessionStorage` for this — it is tab-scoped and would break persistence.
+
+**Do not add `!loadingRoot` to the login gate.** The earlier version `(showLogin && !loadingRoot)` looked safe but broke the post-login animation: on a logout→reload→login flow, `loadingRoot` is initialised to `true` from a stored session in `localStorage`, and `loadSession()` also sets it back to `true` as soon as `status` becomes `'authenticated'`. That caused `LoginPage` to unmount mid-animation. `showLogin` alone is sufficient — it stays `true` until `onEnter()` fires at the end of the 1500ms animation.
+
+### Cognito refresh token flow
+`id_token` from Cognito expires after 1 hour. To keep users logged in for 30 days (the refresh-token lifetime):
+
+- `/api/cognito/login` and `/api/cognito/confirm` return `{ idToken, refreshToken, expiresIn }`.
+- `LoginPage.tsx` forwards all three into `signIn('cognito-token', { idToken, refreshToken, expiresAt, redirect: false })`.
+- The credentials provider in `src/auth.ts` stores `refreshToken` and `expiresAt` on the JWT.
+- The `jwt` callback in `src/auth.ts` auto-refreshes the `id_token` 60s before expiry via Cognito's `REFRESH_TOKEN_AUTH` flow (also needs `SECRET_HASH`).
+- If refresh fails (e.g., the refresh token itself has expired after 30 days), the callback returns `{ ...token, error: 'RefreshTokenExpired' }`.
+- `App.tsx` watches `authSession?.error === 'RefreshTokenExpired'` and calls `signOut()` to send the user back to the login page.
+- Session `maxAge` is set to 30 days in `NextAuth` config to match the Cognito refresh-token lifetime.
+
+The next-auth type augmentation lives in `apps/web/src/types/next-auth.d.ts` — adds `refreshToken`, `expiresAt`, `error` to `JWT`/`User`/`Session`.
+
+### Hook ordering caveat in App.tsx
+`useEffect` hooks that reference `loadSession` (a `useCallback` declared mid-file) **must appear after the `loadSession` declaration**, otherwise the dependency array `[..., loadSession]` is evaluated in the temporal dead zone and throws `ReferenceError: Cannot access 'loadSession' before initialization` at runtime. Keep new effects that touch `loadSession` below its `useCallback`.
 
 ### JWT auth guard (backend)
 `JwtAuthGuard` (`apps/api/src/auth/jwt-auth.guard.ts`) validates the Cognito `id_token` via `passport-jwt` + `jwks-rsa`. It must **not** be bypassed in production. The `sub` claim is the stable user ID for all DynamoDB keys — bypassing it (e.g. hardcoding `sub: 'dev-user'`) causes all users to share the same session list. Routes that must skip auth use the `@Public()` decorator (currently: `GET /notion/callback` only).
