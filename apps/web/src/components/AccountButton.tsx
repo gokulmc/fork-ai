@@ -1,8 +1,8 @@
 'use client';
 
 import { signOut, useSession } from 'next-auth/react';
-import { useState } from 'react';
-import { getUsageEvents, type UsageEvent } from '@/lib/api';
+import { useState, useEffect, useRef } from 'react';
+import { getUsageEvents, createRechargeOrder, verifyPayment, type UsageEvent } from '@/lib/api';
 
 const PW_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&_\-#])[A-Za-z\d@$!%*?&_\-#]{8,}$/;
 
@@ -17,11 +17,34 @@ function isGoogleUser(idToken?: string): boolean {
   }
 }
 
-interface AccountButtonProps {
-  creditBalance?: number | null;
+declare global {
+  interface Window {
+    Razorpay: new (options: Record<string, unknown>) => { open(): void };
+  }
 }
 
-export function AccountButton({ creditBalance }: AccountButtonProps) {
+function loadRazorpayScript(): Promise<void> {
+  return new Promise((resolve) => {
+    if (document.getElementById('rzp-checkout-js')) { resolve(); return; }
+    const s = document.createElement('script');
+    s.id = 'rzp-checkout-js';
+    s.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    s.onload = () => resolve();
+    document.head.appendChild(s);
+  });
+}
+
+const PACKAGES: { label: string; usd: number }[] = [
+  { label: '$5', usd: 5 },
+  { label: '$10', usd: 10 },
+];
+
+interface AccountButtonProps {
+  creditBalance?: number | null;
+  onCreditUpdated?: (newBalance: number) => void;
+}
+
+export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonProps) {
   const { data: session } = useSession();
   const [open, setOpen] = useState(false);
   const [changePwOpen, setChangePwOpen] = useState(false);
@@ -35,18 +58,30 @@ export function AccountButton({ creditBalance }: AccountButtonProps) {
   const [usageEvents, setUsageEvents] = useState<UsageEvent[] | null>(null);
   const [usageLoading, setUsageLoading] = useState(false);
 
+  // Recharge state
+  const [rechargeOpen, setRechargeOpen] = useState(false);
+  const [customUsd, setCustomUsd] = useState('');
+  const [rechargeLoading, setRechargeLoading] = useState(false);
+  const [rechargeError, setRechargeError] = useState<string | null>(null);
+  const [rechargeSuccess, setRechargeSuccess] = useState<number | null>(null);
+  const customInputRef = useRef<HTMLInputElement>(null);
+
+  // Balance shown in billing overlay — starts from prop, updates after recharge
+  const [localBalance, setLocalBalance] = useState<number | null | undefined>(creditBalance);
+  useEffect(() => { setLocalBalance(creditBalance); }, [creditBalance]);
+
   if (!session?.user?.email) return null;
 
   const email = session.user.email;
   const isGoogle = isGoogleUser(session.idToken);
   const idToken = session.idToken ?? '';
 
-  const hasCredit = creditBalance == null || creditBalance > 0;
-  const balanceLabel = creditBalance == null
+  const hasCredit = localBalance == null || localBalance > 0;
+  const balanceLabel = localBalance == null
     ? null
-    : creditBalance <= 0
+    : localBalance <= 0
       ? 'Out of credit'
-      : `$${creditBalance.toFixed(2)} remaining`;
+      : `$${localBalance.toFixed(2)} remaining`;
 
   function resetChangePw() {
     setChangePwOpen(false);
@@ -66,6 +101,78 @@ export function AccountButton({ creditBalance }: AccountButtonProps) {
         .then(setUsageEvents)
         .catch(() => setUsageEvents([]))
         .finally(() => setUsageLoading(false));
+    }
+  }
+
+  function openRecharge() {
+    setRechargeOpen(true);
+    setRechargeError(null);
+    setRechargeSuccess(null);
+    setCustomUsd('');
+  }
+
+  function closeRecharge() {
+    setRechargeOpen(false);
+    setRechargeError(null);
+    setRechargeSuccess(null);
+    setCustomUsd('');
+  }
+
+  async function startRecharge(amountUsd: number) {
+    if (rechargeLoading) return;
+    setRechargeError(null);
+    setRechargeLoading(true);
+
+    try {
+      await loadRazorpayScript();
+      const order = await createRechargeOrder(idToken, amountUsd);
+      const inrDisplay = (order.amountInr / 100).toLocaleString('en-IN', {
+        style: 'currency', currency: 'INR', maximumFractionDigits: 0,
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        const rzp = new window.Razorpay({
+          key: order.keyId,
+          order_id: order.orderId,
+          amount: order.amountInr,
+          currency: 'INR',
+          name: 'fork.ai',
+          description: `Add $${amountUsd.toFixed(2)} credit (${inrDisplay})`,
+          theme: { color: '#0a0a0a' },
+          handler: async (response: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
+            try {
+              const result = await verifyPayment(
+                idToken,
+                response.razorpay_order_id,
+                response.razorpay_payment_id,
+                response.razorpay_signature,
+              );
+              const credited = result.credited;
+              setRechargeSuccess(credited);
+              const updated = (localBalance ?? 0) + credited;
+              setLocalBalance(updated);
+              onCreditUpdated?.(updated);
+              // Refresh usage events list
+              setUsageEvents(null);
+              if (idToken) {
+                getUsageEvents(idToken).then(setUsageEvents).catch(() => setUsageEvents([]));
+              }
+              resolve();
+            } catch {
+              reject(new Error('Payment verification failed — contact support if credit was deducted.'));
+            }
+          },
+          modal: {
+            ondismiss: () => reject(new Error('cancelled')),
+          },
+        });
+        rzp.open();
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Something went wrong';
+      if (msg !== 'cancelled') setRechargeError(msg);
+    } finally {
+      setRechargeLoading(false);
     }
   }
 
@@ -222,7 +329,7 @@ export function AccountButton({ creditBalance }: AccountButtonProps) {
       {/* Billing overlay */}
       {billingOpen && (
         <div
-          onClick={e => { if (e.currentTarget === e.target) setBillingOpen(false); }}
+          onClick={e => { if (e.currentTarget === e.target) { setBillingOpen(false); closeRecharge(); } }}
           style={{
             position: 'fixed', inset: 0, zIndex: 70,
             background: 'rgba(255,255,255,0.88)', backdropFilter: 'blur(4px)',
@@ -236,35 +343,116 @@ export function AccountButton({ creditBalance }: AccountButtonProps) {
             fontFamily: "ui-monospace,'JetBrains Mono','SF Mono',Menlo,monospace",
             boxShadow: '0 8px 32px rgba(10,10,10,0.10)',
           }}>
-            {/* Header row: title + recharge button */}
+            {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <div style={{ fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'rgba(10,10,10,0.4)' }}>
                 Billing
               </div>
-              <a
-                href="mailto:qsignage.ai@gmail.com?subject=fork.ai%20credit%20top-up&body=Hi%2C%20I%27d%20like%20to%20top%20up%20my%20fork.ai%20credit."
-                style={{
-                  background: '#0a0a0a', color: '#fff',
-                  borderRadius: 4, padding: '5px 12px',
-                  fontFamily: 'inherit', fontSize: 10, letterSpacing: '0.12em',
-                  textTransform: 'uppercase', textDecoration: 'none',
-                }}
+              <button
+                onClick={openRecharge}
+                disabled={rechargeLoading}
+                style={submitBtnStyle}
               >
-                Recharge ↗
-              </a>
+                Add Credit
+              </button>
             </div>
 
             {/* Balance */}
             <div style={{ marginBottom: 20 }}>
               <div style={{ fontSize: 10, letterSpacing: '0.12em', color: 'rgba(10,10,10,0.4)', marginBottom: 6, textTransform: 'uppercase' }}>Balance</div>
-              {creditBalance == null ? (
+              {localBalance == null ? (
                 <div style={{ fontSize: 11, color: 'rgba(10,10,10,0.4)' }}>Loading…</div>
-              ) : creditBalance <= 0 ? (
-                <div style={{ fontSize: 13, color: '#c0392b', letterSpacing: '0.04em' }}>Out of credit — recharge to continue.</div>
+              ) : localBalance <= 0 ? (
+                <div style={{ fontSize: 13, color: '#c0392b', letterSpacing: '0.04em' }}>Out of credit — add credit to continue.</div>
               ) : (
-                <div style={{ fontSize: 20, color: '#0a0a0a', letterSpacing: '-0.02em' }}>${creditBalance.toFixed(2)}</div>
+                <div style={{ fontSize: 20, color: '#0a0a0a', letterSpacing: '-0.02em' }}>${localBalance.toFixed(2)}</div>
               )}
             </div>
+
+            {/* Recharge panel */}
+            {rechargeOpen && (
+              <div style={{
+                marginBottom: 20,
+                border: '1px solid rgba(10,10,10,0.10)',
+                borderRadius: 6, padding: '16px',
+                background: 'rgba(10,10,10,0.02)',
+              }}>
+                <div style={{ fontSize: 10, letterSpacing: '0.12em', color: 'rgba(10,10,10,0.4)', marginBottom: 12, textTransform: 'uppercase' }}>
+                  Select amount
+                </div>
+
+                {rechargeSuccess != null ? (
+                  <div style={{ fontSize: 11, color: '#27ae60', letterSpacing: '0.04em' }}>
+                    ${rechargeSuccess.toFixed(2)} credit added.
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                      {PACKAGES.map(pkg => (
+                        <button
+                          key={pkg.usd}
+                          onClick={() => void startRecharge(pkg.usd)}
+                          disabled={rechargeLoading}
+                          style={{
+                            flex: 1, padding: '8px 0',
+                            background: '#0a0a0a', color: '#fff', border: 0,
+                            borderRadius: 4, cursor: 'pointer',
+                            fontFamily: 'inherit', fontSize: 11, letterSpacing: '0.06em',
+                            opacity: rechargeLoading ? 0.6 : 1,
+                          }}
+                        >
+                          {pkg.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <span style={{ fontSize: 10, color: 'rgba(10,10,10,0.4)' }}>$</span>
+                      <input
+                        ref={customInputRef}
+                        type="number"
+                        min="1"
+                        step="1"
+                        placeholder="Custom (min $1)"
+                        value={customUsd}
+                        onChange={e => { setRechargeError(null); setCustomUsd(e.target.value); }}
+                        disabled={rechargeLoading}
+                        style={{
+                          flex: 1, border: 0, borderBottom: '1px solid rgba(10,10,10,0.15)',
+                          padding: '6px 0', background: 'transparent', outline: 'none',
+                          fontFamily: 'inherit', fontSize: 11, color: '#0a0a0a',
+                        }}
+                      />
+                      <button
+                        onClick={() => {
+                          const v = parseFloat(customUsd);
+                          if (!customUsd || isNaN(v) || v < 1) {
+                            setRechargeError('Minimum $1');
+                            return;
+                          }
+                          void startRecharge(v);
+                        }}
+                        disabled={rechargeLoading || !customUsd}
+                        style={submitBtnStyle}
+                      >
+                        Pay
+                      </button>
+                    </div>
+
+                    {rechargeError && (
+                      <div style={{ fontSize: 10, color: '#c0392b', marginTop: 8, letterSpacing: '0.04em' }}>{rechargeError}</div>
+                    )}
+                    {rechargeLoading && (
+                      <div style={{ fontSize: 10, color: 'rgba(10,10,10,0.4)', marginTop: 8 }}>Opening payment…</div>
+                    )}
+                  </>
+                )}
+
+                {rechargeSuccess == null && (
+                  <button onClick={closeRecharge} style={{ ...cancelBtnStyle, marginTop: 12, fontSize: 9 }}>Cancel</button>
+                )}
+              </div>
+            )}
 
             {/* Usage history */}
             <div style={{ fontSize: 10, letterSpacing: '0.12em', color: 'rgba(10,10,10,0.4)', marginBottom: 10, textTransform: 'uppercase' }}>
@@ -290,7 +478,7 @@ export function AccountButton({ creditBalance }: AccountButtonProps) {
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
-              <button onClick={() => setBillingOpen(false)} style={cancelBtnStyle}>Close</button>
+              <button onClick={() => { setBillingOpen(false); closeRecharge(); }} style={cancelBtnStyle}>Close</button>
             </div>
           </div>
         </div>

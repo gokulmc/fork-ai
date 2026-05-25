@@ -7,6 +7,7 @@ import {
   HIGHLIGHT_MODEL,
   SHARE_TOKEN_MODEL,
   USAGE_EVENT_MODEL,
+  PAYMENT_MODEL,
   DYNAMO_TABLE,
 } from './dynamo.constants';
 import type {
@@ -17,6 +18,7 @@ import type {
   HighlightItem,
   ShareTokenItem,
   UsageEventItem,
+  PaymentItem,
 } from './dynamo.interfaces';
 
 @Injectable()
@@ -30,6 +32,7 @@ export class DynamoRepository {
     @Inject(HIGHLIGHT_MODEL) private readonly highlightModel: any,
     @Inject(SHARE_TOKEN_MODEL) private readonly shareTokenModel: any,
     @Inject(USAGE_EVENT_MODEL) private readonly usageEventModel: any,
+    @Inject(PAYMENT_MODEL) private readonly paymentModel: any,
   ) {}
 
   // ── Key helpers ─────────────────────────────────────────────────────────────
@@ -96,6 +99,24 @@ export class DynamoRepository {
       .limit(limit)
       .exec();
     return this.toPlainArray<UsageEventItem>(items);
+  }
+
+  // ── Payments ─────────────────────────────────────────────────────────────────
+
+  async getPayment(sub: string, paymentId: string): Promise<PaymentItem | null> {
+    const item = await this.paymentModel.get({ PK: this.userPk(sub), SK: `PAYMENT#${paymentId}` });
+    return item ? this.toPlain<PaymentItem>(item) : null;
+  }
+
+  async putPayment(data: PaymentItem): Promise<void> {
+    await this.paymentModel.create(this.clean(data), { overwrite: false });
+  }
+
+  async addCredit(sub: string, amount: number): Promise<void> {
+    await this.userMetaModel.update(
+      { PK: this.userPk(sub), SK: 'METADATA' },
+      { '$add': { creditUsd: amount } },
+    );
   }
 
   async updateNotionToken(sub: string, token: string | null): Promise<void> {

@@ -91,6 +91,17 @@ export interface AnnotationItem {
   createdAt: string;
 }
 
+export interface PaymentItem {
+  PK: string;
+  SK: string;
+  paymentId: string;
+  orderId: string;
+  sub: string;
+  amountUsd: number;
+  amountInr: number;
+  createdAt: string;
+}
+
 export interface HighlightItem {
   PK: string;
   SK: string;

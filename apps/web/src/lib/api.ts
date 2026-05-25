@@ -208,6 +208,35 @@ export function getUsageEvents(idToken: string): Promise<UsageEvent[]> {
   return apiFetch<UsageEvent[]>('/users/me/usage', idToken);
 }
 
+// ── Billing ──────────────────────────────────────────────────────────────────
+
+export interface RechargeOrder {
+  orderId: string;
+  amountInr: number;
+  amountUsd: number;
+  currency: string;
+  keyId: string;
+}
+
+export function createRechargeOrder(idToken: string, amountUsd: number): Promise<RechargeOrder> {
+  return apiFetch<RechargeOrder>('/billing/orders', idToken, {
+    method: 'POST',
+    body: JSON.stringify({ amountUsd }),
+  });
+}
+
+export function verifyPayment(
+  idToken: string,
+  orderId: string,
+  paymentId: string,
+  signature: string,
+): Promise<{ credited: number }> {
+  return apiFetch<{ credited: number }>('/billing/verify', idToken, {
+    method: 'POST',
+    body: JSON.stringify({ orderId, paymentId, signature }),
+  });
+}
+
 // ── Sessions ─────────────────────────────────────────────────────────────────
 
 export function listSessions(idToken: string): Promise<SessionSummary[]> {

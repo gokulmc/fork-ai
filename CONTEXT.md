@@ -43,10 +43,16 @@ A progressive, floating-tooltip walkthrough shown once to each authenticated Use
 A monetary balance in USD held against a User's account, used to pay for LLM calls. Every new User receives a one-time signup Credit on first account creation. The amount is set by the `SIGNUP_CREDIT_USD` environment variable (default $5.00). Credit is stored as a floating-point number (`creditUsd`) on the User's `UserMetaItem` in DynamoDB. LLM calls are blocked (HTTP 402) when `creditUsd <= 0`; concurrent calls may briefly over-draft by one call's worth due to optimistic deduction. Guests have no Credit of their own — their LLM calls are charged against the session owner's Credit.
 
 ## Billing Overlay
-A modal panel in the Account popover (same interaction pattern as the Change Password overlay) that shows the User's current Credit balance, a chronological list of Usage Events (date and cost per call, newest first, capped at 50), and a Recharge button. The Recharge button opens a mailto link — no self-serve payment gateway in v1. When `creditUsd <= 0`, the balance line is replaced with a "Out of credit — recharge to continue" prompt. Accessible only to authenticated Users (Guests have no account panel).
+A modal panel in the Account popover (same interaction pattern as the Change Password overlay) that shows the User's current Credit balance, a chronological list of Usage Events (date and cost per call, newest first, capped at 50), and an "Add Credit" button. Clicking "Add Credit" expands the overlay to show three recharge tiers ($5 / $10 / custom, minimum $1 USD). Selecting a tier creates a Recharge Order and opens the Razorpay payment modal. On payment success, the credit balance updates in real time. When `creditUsd <= 0`, the balance line is replaced with a "Out of credit — recharge to continue" prompt. Accessible only to authenticated Users (Guests have no account panel).
 
 ## Credit Multiplier
 A scalar applied on top of the raw Anthropic API cost to compute how much Credit is deducted per LLM call. Formula: `deduction = (inputTokens × $3/1M + outputTokens × $15/1M) × multiplier`. Configured via the `CREDIT_MULTIPLIER` env var (default `1.5`). Server-side only — not stored per-user or per-call.
 
 ## Usage Event
 A record of a single LLM call made by or on behalf of a User. Stored in DynamoDB at `PK: USER#{sub}, SK: USAGE#{ulid}`. Fields: `inputTokens`, `outputTokens`, `costUsd` (post-multiplier deduction), `kind` (QUERY/DEEPER/ASK), `sessionId`, `nodeId`, `createdAt`. Usage Events are append-only and are never updated or deleted. They power the usage history shown in the Billing overlay.
+
+## Recharge Order
+A server-side Razorpay order created when a User initiates a credit top-up. The order amount is always in INR (paise), derived from the chosen USD package via a live exchange rate fetched from `api.exchangerate-api.com`. The USD amount is stored in Razorpay's order `notes` field so the credit amount is unambiguous at verification time. One order per top-up attempt; unconfirmed orders are abandoned if the user closes the Razorpay modal.
+
+## Payment
+A record of a successfully captured Razorpay payment, stored in DynamoDB at `PK: USER#{sub}, SK: PAYMENT#{razorpayPaymentId}`. Fields: `paymentId`, `orderId`, `sub`, `amountUsd`, `amountInr`, `createdAt`. Used as an idempotency key — both the direct verification endpoint and the Razorpay webhook check for an existing Payment record before crediting the User, so a User is never double-credited regardless of which path processes the event first.

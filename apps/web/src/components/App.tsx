@@ -1137,7 +1137,7 @@ export function App() {
         outOfCredit={rootQueryOutOfCredit}
       />
     );
-    return <>{persistentBrand}{inner}<AccountButton creditBalance={creditBalance} /><TweaksPanel tweaks={tweaks} setTweak={setTweak} fontPairOptions={FONT_PAIR_OPTIONS} accentOptions={ACCENTS} onRestartTour={restartTour} />{tourEl}</>;
+    return <>{persistentBrand}{inner}<AccountButton creditBalance={creditBalance} onCreditUpdated={setCreditBalance} /><TweaksPanel tweaks={tweaks} setTweak={setTweak} fontPairOptions={FONT_PAIR_OPTIONS} accentOptions={ACCENTS} onRestartTour={restartTour} />{tourEl}</>;
   }
 
   // ── Workspace ─────────────────────────────────────────────────────────────
@@ -1145,7 +1145,7 @@ export function App() {
   return (
     <>
       {persistentBrand}
-      <AccountButton creditBalance={creditBalance} />
+      <AccountButton creditBalance={creditBalance} onCreditUpdated={setCreditBalance} />
     <div className="app" ref={appRef}>
       <header className="topbar">
         <div className="crumbs">
