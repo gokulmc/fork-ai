@@ -15,7 +15,10 @@ export interface SessionSummary {
   createdAt: string;
   updatedAt: string;
   nodeCount: number;
+  highlightCount: number;
   notionPageUrl?: string | null;
+  shareToken?: string | null;
+  ownerSub?: string | null;
 }
 
 export interface FullSession extends SessionSummary {
@@ -145,6 +148,7 @@ export class SessionsService {
       createdAt: now,
       updatedAt: now,
       nodeCount: 1,
+      highlightCount: 0,
       nodes: [rootNode],
       annotations: [],
       highlights: [],
@@ -153,7 +157,10 @@ export class SessionsService {
 
   async list(sub: string): Promise<SessionSummary[]> {
     const items = await this.db.listSessionMeta(sub);
-    return items.map(this.toSummary);
+    const counts = await Promise.all(
+      items.map(async (m) => (await this.db.queryHighlights(m.sessionId)).length),
+    );
+    return items.map((m, i) => ({ ...this.toSummary(m), highlightCount: counts[i] }));
   }
 
   async getSession(sub: string, sessionId: string): Promise<FullSession> {
@@ -166,7 +173,7 @@ export class SessionsService {
       this.db.queryHighlights(sessionId),
     ]);
 
-    return { ...this.toSummary(meta), nodes, annotations, highlights };
+    return { ...this.toSummary(meta), highlightCount: highlights.length, nodes, annotations, highlights };
   }
 
   async update(sub: string, sessionId: string, dto: UpdateSessionDto): Promise<void> {
@@ -257,7 +264,7 @@ export class SessionsService {
       this.db.getSessionMeta(share.ownerSub, share.sessionId),
     ]);
     if (!meta) throw new ForbiddenException('Invalid or revoked share token');
-    return { ...this.toSummary(meta), nodes, annotations, highlights };
+    return { ...this.toSummary(meta), highlightCount: highlights.length, nodes, annotations, highlights };
   }
 
   async claimSession(guestSub: string, token: string): Promise<SessionSummary> {
@@ -285,7 +292,10 @@ export class SessionsService {
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
       nodeCount: item.nodeCount ?? 0,
+      highlightCount: 0,
       notionPageUrl: item.notionPageUrl || null,
+      shareToken: item.shareToken || null,
+      ownerSub: item.ownerSub || null,
     };
   }
 }

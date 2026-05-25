@@ -335,7 +335,52 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
   font-family: var(--sans);
   font-size: 11px;
   color: var(--ink-3);
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.meta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--hover);
+  color: var(--ink-2, var(--ink-3));
+  line-height: 1;
+  white-space: nowrap;
+}
+.meta-chip--share {
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+.history-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.history-group { display: flex; flex-direction: column; gap: 8px; }
+.history-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 2px;
+}
+.history-divider-label {
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
   flex-shrink: 0;
+}
+.history-divider-line {
+  flex: 1;
+  height: 1px;
+  background: var(--line);
 }
 
 .landing-foot {

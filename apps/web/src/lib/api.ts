@@ -49,7 +49,10 @@ export interface SessionSummary {
   createdAt: string;
   updatedAt: string;
   nodeCount: number;
+  highlightCount: number;
   notionPageUrl?: string | null;
+  shareToken?: string | null;
+  ownerSub?: string | null;
 }
 
 export interface FullSession extends SessionSummary {

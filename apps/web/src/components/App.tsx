@@ -532,6 +532,7 @@ export function App() {
               createdAt: new Date(node.createdAt).toISOString(),
               updatedAt: new Date(node.createdAt).toISOString(),
               nodeCount: 1,
+              highlightCount: 0,
             }, ...s]);
             return prev;
           });
