@@ -1048,7 +1048,7 @@ export function App() {
   const isGuest = !!(guestToken && !idToken);
   const showTour = !hasOnboarded && status === 'authenticated' && !guestToken;
   const restartTour = status === 'authenticated' && idToken
-    ? () => { patchMe(idToken, { hasOnboarded: false }).catch(() => {}); window.location.reload(); }
+    ? () => patchMe(idToken, { hasOnboarded: false }).catch(() => {}).finally(() => window.location.reload())
     : undefined;
   const tourEl = showTour ? (
     <OnboardingTour
@@ -1313,6 +1313,7 @@ export function App() {
         setTweak={setTweak}
         fontPairOptions={FONT_PAIR_OPTIONS}
         accentOptions={ACCENTS}
+        onRestartTour={restartTour}
       />
 
       {notionPickerOpen && (
