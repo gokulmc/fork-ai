@@ -9,6 +9,32 @@ export const UserMetaSchema = new dynamoose.Schema({
   updatedAt: String,
   notionAccessToken: { type: String, required: false },
   hasOnboarded: { type: Boolean, required: false },
+  creditUsd: { type: Number, required: false },
+});
+
+export const UsageEventSchema = new dynamoose.Schema({
+  PK: { type: String, hashKey: true },
+  SK: { type: String, rangeKey: true },
+  usageId: String,
+  sub: String,
+  inputTokens: Number,
+  outputTokens: Number,
+  costUsd: Number,
+  kind: String,
+  sessionId: String,
+  nodeId: String,
+  createdAt: String,
+});
+
+export const PaymentSchema = new dynamoose.Schema({
+  PK: { type: String, hashKey: true },
+  SK: { type: String, rangeKey: true },
+  paymentId: String,
+  orderId: String,
+  sub: String,
+  amountUsd: Number,
+  amountInr: Number,
+  createdAt: String,
 });
 
 export const SessionMetaSchema = new dynamoose.Schema({

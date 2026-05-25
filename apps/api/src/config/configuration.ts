@@ -11,6 +11,11 @@ export const validationSchema = Joi.object({
   NOTION_CLIENT_SECRET: Joi.string().optional(),
   NOTION_REDIRECT_URI: Joi.string().optional().default('http://localhost:3000/notion/callback'),
   FRONTEND_URL: Joi.string().optional().default('http://localhost:3001'),
+  SIGNUP_CREDIT_USD: Joi.number().default(5.00),
+  CREDIT_MULTIPLIER: Joi.number().default(1.5),
+  RAZORPAY_KEY_ID: Joi.string().allow('').optional(),
+  RAZORPAY_KEY_SECRET: Joi.string().allow('').optional(),
+  RAZORPAY_WEBHOOK_SECRET: Joi.string().allow('').optional(),
 });
 
 export const configuration = () => ({
@@ -34,4 +39,13 @@ export const configuration = () => ({
     redirectUri: process.env.NOTION_REDIRECT_URI ?? 'http://localhost:3000/notion/callback',
   },
   frontendUrl: process.env.FRONTEND_URL ?? 'http://localhost:3001',
+  billing: {
+    signupCreditUsd: parseFloat(process.env.SIGNUP_CREDIT_USD ?? '5.00'),
+    creditMultiplier: parseFloat(process.env.CREDIT_MULTIPLIER ?? '1.5'),
+  },
+  razorpay: {
+    keyId: process.env.RAZORPAY_KEY_ID ?? '',
+    keySecret: process.env.RAZORPAY_KEY_SECRET ?? '',
+    webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET ?? '',
+  },
 });
