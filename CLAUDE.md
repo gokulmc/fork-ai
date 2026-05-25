@@ -105,6 +105,10 @@ persistentHl: Record<string, Array<{ text: string; start?: number; end?: number;
 
 `start`/`end` are character offsets into the section's rendered plain text (after markdown parsing). Applied via the **CSS Custom Highlight API** (`CSS.highlights`) in a `useEffect` inside `Section.tsx` — no span injection. Per-section named highlights (`hl-{sectionId}`) are styled with rules injected via `adoptedStyleSheets`. Highlights without offsets (legacy) are skipped.
 
+**Safari CSS Custom Highlight API quirks (App.tsx):**
+- `CSS.highlights.delete('temp-hl')` does not schedule a repaint in Safari — use `CSS.highlights.set('temp-hl', new Highlight())` (empty Highlight) instead when clearing `temp-hl` to force a style recalc.
+- Safari won't repaint a stale highlight layer if `CSS.highlights` is mutated *after* a frame has already been painted. `hlMenu` is cleared in a `mousedown` handler (not deferred to `mouseup + setTimeout`) so that React's `useLayoutEffect` runs and empties `CSS.highlights` *before* the browser paints the first frame following the click.
+
 ### Annotations
 
 ```ts

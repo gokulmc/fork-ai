@@ -140,12 +140,27 @@ export function App() {
   const idToken = authSession?.idToken ?? '';
 
   const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
-  const [view, setView] = useState<'landing' | 'history'>('landing');
+  const [view, setView] = useState<'landing' | 'history'>(() => {
+    if (typeof window === 'undefined') return 'landing';
+    return new URLSearchParams(window.location.search).get('view') === 'history' ? 'history' : 'landing';
+  });
   const [showLogin, setShowLogin] = useState(
     () => typeof window === 'undefined' || !localStorage.getItem('fork.ai.visited'),
   );
   // Show login whenever the session is unauthenticated (covers logout → re-login)
   useEffect(() => { if (status === 'unauthenticated') setShowLogin(true); }, [status]);
+
+  // Keep ?view=history in the URL so refresh lands on the right page
+  useEffect(() => {
+    if (view === 'history') {
+      history.replaceState(null, '', '?view=history');
+    } else {
+      const params = new URLSearchParams(window.location.search);
+      params.delete('view');
+      const qs = params.toString();
+      history.replaceState(null, '', qs ? `?${qs}` : window.location.pathname);
+    }
+  }, [view]);
 
   // Session list (shown on history page)
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -614,6 +629,20 @@ export function App() {
     document.addEventListener('mouseup', onMouseUp);
     return () => document.removeEventListener('mouseup', onMouseUp);
   }, [activeId]);
+
+  // Clear hlMenu on mousedown so useLayoutEffect runs before paint — Safari won't
+  // repaint CSS.highlights after a deferred (post-paint) mutation, so we must
+  // clear temp-hl before the browser draws the frame that follows the click.
+  useEffect(() => {
+    if (!hlMenu) return;
+    const onMouseDown = (e: MouseEvent) => {
+      const target = e.target as Element;
+      if (target.closest?.('.hl-menu') || target.closest?.('.followup-pop')) return;
+      setHlMenu(null);
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [hlMenu]);
 
   // Single effect owns all named highlights so they are always re-registered together.
   useLayoutEffect(() => {
