@@ -11,8 +11,8 @@ interface ChildEntry {
 
 @Injectable()
 export class NotionService {
-  // Short-lived in-memory map: state → sub (survives only the OAuth round-trip, ~60 s)
-  private readonly pendingStates = new Map<string, { sub: string; expiresAt: number }>();
+  // Short-lived in-memory map: state → sub+email (survives only the OAuth round-trip, ~60 s)
+  private readonly pendingStates = new Map<string, { sub: string; email: string; expiresAt: number }>();
 
   constructor(
     private readonly cfg: ConfigService,
@@ -21,9 +21,9 @@ export class NotionService {
 
   // ── OAuth ──────────────────────────────────────────────────────────────────
 
-  buildAuthUrl(sub: string): string {
+  buildAuthUrl(sub: string, email: string): string {
     const state = `${sub}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    this.pendingStates.set(state, { sub, expiresAt: Date.now() + 5 * 60_000 });
+    this.pendingStates.set(state, { sub, email, expiresAt: Date.now() + 5 * 60_000 });
     const params = new URLSearchParams({
       client_id: this.cfg.get<string>('notion.clientId')!,
       redirect_uri: this.cfg.get<string>('notion.redirectUri')!,
@@ -41,8 +41,14 @@ export class NotionService {
     }
     this.pendingStates.delete(state);
 
-    const { sub } = entry;
+    const { sub, email } = entry;
     const token = await this.exchangeCode(code);
+    // Upsert UserMeta so the record exists even if the user never called GET /users/me
+    const existing = await this.db.getUserMeta(sub);
+    if (!existing) {
+      const now = new Date().toISOString();
+      await this.db.putUserMeta({ PK: `USER#${sub}`, SK: 'METADATA', sub, email, createdAt: now, updatedAt: now });
+    }
     await this.db.updateNotionToken(sub, token);
     return sub;
   }

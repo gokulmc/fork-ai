@@ -377,6 +377,10 @@ export function getNotionStatus(idToken: string): Promise<{ connected: boolean }
   return apiFetch<{ connected: boolean }>('/notion/status', idToken);
 }
 
+export function getNotionAuthUrl(idToken: string): Promise<{ url: string }> {
+  return apiFetch<{ url: string }>('/notion/auth', idToken);
+}
+
 export function searchNotionPages(idToken: string, q: string): Promise<NotionPage[]> {
   const qs = q ? `?q=${encodeURIComponent(q)}` : '';
   return apiFetch<NotionPage[]>(`/notion/pages${qs}`, idToken);

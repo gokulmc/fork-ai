@@ -55,6 +55,7 @@ import {
   toHighlightRecords,
   deleteHighlight,
   getNotionStatus,
+  getNotionAuthUrl,
   searchNotionPages,
   pushToNotion,
   updateSessionNotionUrl,
@@ -805,8 +806,9 @@ export function App() {
     try {
       const { connected } = await getNotionStatus(idToken);
       if (!connected) {
-        // Redirect to backend OAuth — returns to this page with ?notion=connected
-        window.location.href = `${process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3000'}/notion/auth`;
+        // Fetch the OAuth URL (needs Bearer token), then redirect the browser to Notion
+        const { url } = await getNotionAuthUrl(idToken);
+        window.location.href = url;
         return;
       }
     } catch {
