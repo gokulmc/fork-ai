@@ -909,7 +909,7 @@ export function App() {
         onShowHistory={() => setView('history')}
       />
     );
-    return <>{persistentBrand}{inner}<AccountButton /></>;
+    return <>{persistentBrand}{inner}<AccountButton /><TweaksPanel tweaks={tweaks} setTweak={setTweak} fontPairOptions={FONT_PAIR_OPTIONS} accentOptions={ACCENTS} /></>;
   }
 
   // ── Workspace ─────────────────────────────────────────────────────────────

@@ -186,7 +186,7 @@ The tree is reconstructed by grouping nodes by `parentId` — never stored as a 
 | `Section.tsx` | `'use client'` — clean marked HTML via `dangerouslySetInnerHTML`; hljs + CSS Highlight API in `useEffect` |
 | `HighlightMenu.tsx` | `'use client'` — positions itself relative to `getBoundingClientRect()` |
 | `FollowUpPop.tsx` | `'use client'` — positions below/above selection rect |
-| `TweaksPanel.tsx` | `'use client'` — draggable via `mousemove` listeners |
+| `TweaksPanel.tsx` | `'use client'` — draggable via `mousemove` listeners; rendered on ALL pages (Landing, History, Workspace) so the settings icon is always accessible |
 | `Landing.tsx` | `'use client'` — controlled input only |
 | `NotesDrawer.tsx` | `'use client'` — tab state |
 | `SkeletonSections.tsx` | Pure presentational — no `'use client'` needed |
