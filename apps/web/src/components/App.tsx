@@ -138,7 +138,7 @@ function ResearchingScreen({ sessions }: { sessions: SessionSummary[] }) {
 export function App() {
   const { data: authSession, status } = useSession();
   // Auth disabled for local testing — guard bypassed on API side, so any non-empty token works
-  const idToken = authSession?.idToken ?? 'dev-bypass';
+  const idToken = authSession?.idToken ?? '';
 
   const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const [view, setView] = useState<'landing' | 'history'>('landing');
@@ -235,6 +235,7 @@ export function App() {
   // ── Load session list once idToken is available ───────────────────────────
 
   useEffect(() => {
+    if (!idToken) return;
     setLoadingSessions(true);
     listSessions(idToken)
       .then(setSessions)
@@ -296,6 +297,7 @@ export function App() {
   // Restore on first load — prefer URL hash, fall back to localStorage
   const hasRestoredRef = useRef(false);
   useEffect(() => {
+    if (status !== 'authenticated' || !idToken) return;
     if (hasRestoredRef.current) return;
     const hash = window.location.hash.slice(1);
     if (hash) {
@@ -307,7 +309,7 @@ export function App() {
     if (!savedSession) return;
     hasRestoredRef.current = true;
     loadSession(savedSession, savedNode);
-  }, [loadSession]);
+  }, [status, idToken, loadSession]);
 
   // ── Persist highlights (optimistic + background API sync) ─────────────────
 
