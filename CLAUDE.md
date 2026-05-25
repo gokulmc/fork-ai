@@ -105,6 +105,10 @@ persistentHl: Record<string, Array<{ text: string; start?: number; end?: number;
 
 `start`/`end` are character offsets into the section's rendered plain text (after markdown parsing). Applied via the **CSS Custom Highlight API** (`CSS.highlights`) in a `useEffect` inside `Section.tsx` — no span injection. Per-section named highlights (`hl-{sectionId}`) are styled with rules injected via `adoptedStyleSheets`. Highlights without offsets (legacy) are skipped.
 
+**Safari CSS Custom Highlight API quirks (App.tsx):**
+- `CSS.highlights.delete('temp-hl')` does not schedule a repaint in Safari — use `CSS.highlights.set('temp-hl', new Highlight())` (empty Highlight) instead when clearing `temp-hl` to force a style recalc.
+- Safari won't repaint a stale highlight layer if `CSS.highlights` is mutated *after* a frame has already been painted. `hlMenu` is cleared in a `mousedown` handler (not deferred to `mouseup + setTimeout`) so that React's `useLayoutEffect` runs and empties `CSS.highlights` *before* the browser paints the first frame following the click.
+
 ### Annotations
 
 ```ts
@@ -126,9 +130,11 @@ Sessions can be pushed to Notion as a structured page. The page opens with a Mer
 See **[`docs/notion-export.md`](docs/notion-export.md)** for the full technical reference (block mapping, colour scheme, the nested-blocks API problem and its solution, URL persistence, stale-export invalidation, OAuth setup, and error handling).
 
 Key constraints to keep in mind:
-- The Notion API rejects blocks with inline `children` in `pages.create`. The client splits the nested block tree into `{ blocks: FlatBlock[], childrenMap: ChildEntry[] }` before sending; the server depth-first appends each level via `blocks.children.append`.
+- The Notion API rejects **toggle heading** blocks with inline `children` in `pages.create`. The client splits the nested block tree into `{ blocks: FlatBlock[], childrenMap: ChildEntry[] }` before sending; the server depth-first appends each level via `blocks.children.append`.
+- **Tables are the exception**: Notion requires rows inside `table.children` (the type-specific sub-object, not the block-level `children`). `splitBlocks` never touches `table.children`, so rows travel inline in `pages.create`.
+- The markdown-to-blocks parser (`mdToBlocks` in `notion-clipboard.ts`) is line-by-line. `splitTableRow` splits cells character-by-character to handle `|` inside backtick spans correctly.
 - Toggle heading text colour is set on `rich_text[].annotations.color`, NOT on the block-level `color` field (block-level `color` sets the background).
-- Empty string `''` stored in `notionPageUrl` DynamoDB field means "cleared" — `toSummary` maps it to `null` via `|| null`.
+- **Invalidation is server-side.** `NodesService.createNode` calls `db.updateSessionMeta(sub, sessionId, { notionPageUrl: null })` after persisting any new node. The repository translates `null` to a Dynamoose `$REMOVE` (see "Dynamoose null handling" below) so the attribute is dropped from the item entirely. Works for both authed and guest writes — frontend does NOT need to call `PATCH /sessions/:id` to invalidate.
 
 ---
 
@@ -136,9 +142,9 @@ Key constraints to keep in mind:
 
 | Function | Trigger | Sections returned |
 |---|---|---|
-| `answerQuery(query, n=5)` | New root query (`POST /sessions`) | 5 sections |
-| `expandSection(rootQuery, heading, body)` | "Go deeper" (`POST /sessions/:id/nodes` with `kind: DEEPER`) | 3–4 sections |
-| `followUpFromHighlight(rootQuery, highlight, question)` | "Ask AI" (`POST /sessions/:id/nodes` with `kind: ASK`) | 3–4 sections |
+| `answerQuery(query, sectionCount)` | New root query (`POST /sessions`) | up to `sectionCount` (default 4) |
+| `expandSection(ancestors, heading, body, sectionCount)` | "Go deeper" (`POST /sessions/:id/nodes` with `kind: DEEPER`) | up to `sectionCount` (default 4) |
+| `followUpFromHighlight(ancestors, highlight, question, sectionCount)` | "Ask AI" (`POST /sessions/:id/nodes` with `kind: ASK`) | up to `sectionCount` (default 4) |
 
 All three return: `{ title, emoji, lede, sections: [{ heading, body }] }`.
 
@@ -215,8 +221,102 @@ The app uses a **custom email/password login UI** instead of the Cognito Hosted 
 - The Google OAuth button still calls `signIn('cognito')` → Cognito Hosted UI (existing flow unchanged).
 - `triggerRef` in `LoginPage.tsx` is updated on each step change via `useEffect([step, ...])` — center dot always calls the current step's action. The graph animation trigger is stored separately in `graphTriggerRef` and fires only after successful auth.
 
-### In-progress / known issue
-The `/api/cognito/login` route was returning 400. Most likely cause: `USER_PASSWORD_AUTH` not enabled on the App Client in AWS Console. Check the Next.js server logs for `[cognito/login] <ErrorName> <ErrorMessage>` to confirm.
+### Session persistence
+Login survives tab close. `App.tsx` gates the login page on two conditions: `status === 'unauthenticated'` (covers logout from any page) and `showLogin` (keeps `LoginPage` mounted during the post-login animation). `showLogin` is initialised from `localStorage` (persists across tab closes) and is set back to `true` by a `useEffect` whenever `status` becomes `'unauthenticated'`. Do **not** use `sessionStorage` for this — it is tab-scoped and would break persistence.
+
+**Do not add `!loadingRoot` to the login gate.** The earlier version `(showLogin && !loadingRoot)` looked safe but broke the post-login animation: on a logout→reload→login flow, `loadingRoot` is initialised to `true` from a stored session in `localStorage`, and `loadSession()` also sets it back to `true` as soon as `status` becomes `'authenticated'`. That caused `LoginPage` to unmount mid-animation. `showLogin` alone is sufficient — it stays `true` until `onEnter()` fires at the end of the 1500ms animation.
+
+### Cognito refresh token flow
+`id_token` from Cognito expires after 1 hour. To keep users logged in for 30 days (the refresh-token lifetime):
+
+- `/api/cognito/login` and `/api/cognito/confirm` return `{ idToken, refreshToken, expiresIn }`.
+- `LoginPage.tsx` forwards all three into `signIn('cognito-token', { idToken, refreshToken, expiresAt, redirect: false })`.
+- The credentials provider in `src/auth.ts` stores `refreshToken` and `expiresAt` on the JWT.
+- The `jwt` callback in `src/auth.ts` auto-refreshes the `id_token` 60s before expiry via Cognito's `REFRESH_TOKEN_AUTH` flow (also needs `SECRET_HASH`).
+- If refresh fails (e.g., the refresh token itself has expired after 30 days), the callback returns `{ ...token, error: 'RefreshTokenExpired' }`.
+- `App.tsx` watches `authSession?.error === 'RefreshTokenExpired'` and calls `signOut()` to send the user back to the login page.
+- Session `maxAge` is set to 30 days in `NextAuth` config to match the Cognito refresh-token lifetime.
+
+The next-auth type augmentation lives in `apps/web/src/types/next-auth.d.ts` — adds `refreshToken`, `expiresAt`, `error` to `JWT`/`User`/`Session`.
+
+### Hook ordering caveat in App.tsx
+`useEffect` hooks that reference `loadSession` (a `useCallback` declared mid-file) **must appear after the `loadSession` declaration**, otherwise the dependency array `[..., loadSession]` is evaluated in the temporal dead zone and throws `ReferenceError: Cannot access 'loadSession' before initialization` at runtime. Keep new effects that touch `loadSession` below its `useCallback`.
+
+### JWT auth guard (backend)
+`JwtAuthGuard` (`apps/api/src/auth/jwt-auth.guard.ts`) validates the Cognito `id_token` via `passport-jwt` + `jwks-rsa`. It must **not** be bypassed in production. The `sub` claim is the stable user ID for all DynamoDB keys — bypassing it (e.g. hardcoding `sub: 'dev-user'`) causes all users to share the same session list. Routes that must skip auth use the `@Public()` decorator. Currently `@Public()`:
+- `GET /notion/callback`
+- `GET /share/:token`
+- `POST /share/:token/nodes`
+- `POST /share/:token/highlights`
+- `PATCH /share/:token/highlights/:hlId`
+- `DELETE /share/:token/highlights/:hlId`
+
+`POST /share/:token/claim` is intentionally NOT `@Public()` — claiming a shared session requires a Cognito JWT to know which user to attach it to.
+
+---
+
+## Session sharing — Share Tokens & Guest Mode
+
+See `CONTEXT.md` for the domain definitions of **Share Token**, **Guest**, **Guest Mode**, and **Claim**. See `docs/adr/0001-share-token-as-opaque-db-record.md` and `docs/adr/0002-guest-api-isolation.md` for the architectural decisions.
+
+### Backend
+- `ShareController` (`apps/api/src/share/share.controller.ts`) exposes the public `/share/:token/*` surface — strictly isolated from the authenticated `/sessions/*` controller (per ADR-0002).
+- `SessionsService.generateShareToken / revokeShareToken / getShareStatus` manage one active token per Session. Token format: `randomBytes(32).toString('base64url')`. Stored at `PK: SHARE#<token>, SK: METADATA` (per ADR-0001).
+- `SessionsService.claimSession(guestSub, token)` creates a `SessionMeta` row under the claimant's `sub` pointing at the same nodes/annotations/highlights. Idempotent — a second claim returns the existing summary.
+
+### Dynamoose null handling
+Dynamoose v4 rejects `null` for typed `String` fields (even when `required: false`). `DynamoRepository.updateSessionMeta` therefore translates `null` values into a `$REMOVE` expression:
+
+```ts
+for (const [k, v] of Object.entries(updates)) {
+  if (v === null) remove.push(k);
+  else if (v !== undefined) set[k] = v;
+}
+const op: Record<string, unknown> = { ...set };
+if (remove.length) op.$REMOVE = remove;
+```
+
+Without this, clearing `shareToken` (on revoke) or `notionPageUrl` (on any node create) throws `TypeMismatch: Expected <field> to be of type string, instead found type null` and 500s the request. Any future schema field that may be cleared must rely on this pattern.
+
+### Frontend — guest mode mechanics
+
+| State | Set when | Cleared when |
+|---|---|---|
+| `guestToken` | URL has `?sk=<token>` on mount, OR `?sk=` is read on any render | Successful claim, or `shareApi.getSession` 403 |
+| `forceLogin` | Guest clicks "Login to Save" or "Save to Notion" | `LoginPage.onEnter()` fires (1500ms after sign-in succeeds) |
+
+**The `?sk=` token stays in the URL for the lifetime of guest mode.** Earlier attempts to strip it broke refresh (`guestToken` re-init from a clean URL fell into the login gate) and StrictMode double-mounts (same root cause). The token IS the share link by design, so URL visibility is not a leak.
+
+**Login gate** ([App.tsx](apps/web/src/components/App.tsx)):
+```ts
+if (forceLogin || (!guestToken && (status === 'unauthenticated' || showLogin))) {
+  return <LoginPage onEnter={() => { setShowLogin(false); setForceLogin(false); }} />;
+}
+```
+- `forceLogin` short-circuits the `!guestToken` bypass so a guest can explicitly invoke LoginPage while still keeping `guestToken` set for the post-login claim effect.
+- Do **NOT** add `status !== 'authenticated'` to the outer condition — it unmounts LoginPage mid-animation. The 1500ms animation completes only when `onEnter()` clears both flags.
+
+**Claim-on-login effect** ([App.tsx:310-319](apps/web/src/components/App.tsx#L310-L319)):
+```ts
+useEffect(() => {
+  if (status !== 'authenticated' || !idToken || !guestToken || hasClaimedRef.current) return;
+  hasClaimedRef.current = true;
+  shareApi.claimSession(guestToken, idToken)
+    .then(summary => { setGuestToken(null); return loadSession(summary.sessionId); });
+}, [status, idToken, guestToken, loadSession]);
+```
+
+### 401 handler is gated on `idToken`
+`apiFetch` only fires `unauthorizedHandler?.()` when the request actually carried a token:
+```ts
+if (res.status === 401 && idToken) unauthorizedHandler?.();
+```
+Without the `&& idToken` guard, a guest who accidentally hits an authed endpoint (e.g. `updateSessionNotionUrl` with empty `idToken`) gets bounced to login by `signOut()`. The handler is for *expired* sessions only, never *missing* ones.
+
+### Guest UI rules
+- `idToken` only — `History` button visible.
+- `guestToken && !idToken` — `Login to Save` button visible next to where History would be. `ShareButton` is NOT rendered (sharing is host-only).
+- `Save to Notion` (inside MindMap) calls `setForceLogin(true)` for guests rather than opening the picker.
 
 ---
 

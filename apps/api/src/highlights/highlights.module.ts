@@ -8,5 +8,6 @@ import { HighlightsService } from './highlights.service';
   imports: [DynamoModule, SessionsModule],
   controllers: [HighlightsController],
   providers: [HighlightsService],
+  exports: [HighlightsService],
 })
 export class HighlightsModule {}

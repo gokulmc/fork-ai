@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
-import { useSession } from 'next-auth/react';
+import { useSession, signOut } from 'next-auth/react';
 import type { ForkNode, Annotation, HlMenuState, FollowUpState, ContextMenuState, PersistentHighlight, HighlightRecord } from '@/lib/types';
 import { uid, short5, stripMarkdown, getRangeOffsets } from '@/lib/utils';
 
@@ -55,9 +55,12 @@ import {
   toHighlightRecords,
   deleteHighlight,
   getNotionStatus,
+  getNotionAuthUrl,
   searchNotionPages,
   pushToNotion,
   updateSessionNotionUrl,
+  setUnauthorizedHandler,
+  shareApi,
   type SessionSummary,
   type NotionPage,
 } from '@/lib/api';
@@ -72,6 +75,7 @@ import { LoginPage } from './LoginPage';
 import { HistoryPage } from './HistoryPage';
 import { TweaksPanel } from './TweaksPanel';
 import { AccountButton } from './AccountButton';
+import { ShareButton } from './ShareButton';
 import {
   Search, Bookmark, ChevronRight, Sparkles, CornerDownRight, Hash,
   Quote, AlertCircle, ArrowUpRight, Pencil, Trash, Clock,
@@ -83,6 +87,7 @@ const TWEAK_DEFAULTS = {
   density: 'comfortable' as const,
   mapLayout: 'vertical' as const,
   fontPair: 'newsreader-geist',
+  maxSections: 4,
 };
 
 const FONT_PAIRS: Record<string, { serif: string; sans: string; label: string }> = {
@@ -135,14 +140,47 @@ function ResearchingScreen({ sessions }: { sessions: SessionSummary[] }) {
 
 export function App() {
   const { data: authSession, status } = useSession();
-  // Auth disabled for local testing — guard bypassed on API side, so any non-empty token works
-  const idToken = authSession?.idToken ?? 'dev-bypass';
+  const idToken = authSession?.idToken ?? '';
+
+  // Guest mode — set from ?sk= query param on mount; cleared after claim
+  const [guestToken, setGuestToken] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return new URLSearchParams(window.location.search).get('sk');
+  });
 
   const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
-  const [view, setView] = useState<'landing' | 'history'>('landing');
+  const [view, setView] = useState<'landing' | 'history'>(() => {
+    if (typeof window === 'undefined') return 'landing';
+    return new URLSearchParams(window.location.search).get('view') === 'history' ? 'history' : 'landing';
+  });
   const [showLogin, setShowLogin] = useState(
-    () => typeof window === 'undefined' || !sessionStorage.getItem('fork.ai.visited'),
+    () => typeof window === 'undefined' || !localStorage.getItem('fork.ai.visited'),
   );
+  // Set when a guest explicitly chooses to sign in mid-session (e.g. clicks
+  // "Login to Save"). Overrides the guest-token bypass on the login gate so
+  // LoginPage renders even while guestToken is set. Cleared once the guest is
+  // authenticated, at which point the claim effect runs.
+  const [forceLogin, setForceLogin] = useState(false);
+  // Show login whenever the session is unauthenticated (covers logout → re-login)
+  useEffect(() => { if (status === 'unauthenticated') setShowLogin(true); }, [status]);
+
+  // Auto sign-out on any 401 (expired Cognito id_token)
+  useEffect(() => { setUnauthorizedHandler(() => void signOut()); }, []);
+
+  // Sign out when the refresh token itself has expired (30-day limit reached)
+  useEffect(() => { if (authSession?.error === 'RefreshTokenExpired') void signOut(); }, [authSession?.error]);
+
+  // Keep ?view=history in the URL so refresh lands on the right page
+  useEffect(() => {
+    if (view === 'history') {
+      history.replaceState(null, '', '?view=history');
+    } else {
+      const params = new URLSearchParams(window.location.search);
+      params.delete('view');
+      const qs = params.toString();
+      history.replaceState(null, '', qs ? `?${qs}` : window.location.pathname);
+    }
+  }, [view]);
 
   // Session list (shown on history page)
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -153,10 +191,11 @@ export function App() {
   const [nodes, setNodes] = useState<Record<string, ForkNode>>({});
   const [rootId, setRootId] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
-  // Start in loading state if hash or localStorage has a session — prevents landing flash on refresh
+  // Start in loading state if hash, localStorage, or ?sk= share token present — prevents landing flash on refresh
   const [loadingRoot, setLoadingRoot] = useState(() => {
     if (typeof window === 'undefined') return false;
-    return !!(window.location.hash.slice(1) || localStorage.getItem('fork.ai.session'));
+    const hasSk = !!new URLSearchParams(window.location.search).get('sk');
+    return !!(window.location.hash.slice(1) || localStorage.getItem('fork.ai.session') || hasSk);
   });
   const [loadingNodes, setLoadingNodes] = useState<Set<string>>(new Set());
   const [sectionLoading, setSectionLoading] = useState<string | null>(null);
@@ -231,6 +270,7 @@ export function App() {
   // ── Load session list once idToken is available ───────────────────────────
 
   useEffect(() => {
+    if (!idToken) return;
     setLoadingSessions(true);
     listSessions(idToken)
       .then(setSessions)
@@ -270,6 +310,19 @@ export function App() {
     }
   }, [idToken]);
 
+  // When a guest logs in while a guestToken is active, claim the session then reload it under their auth
+  const hasClaimedRef = useRef(false);
+  useEffect(() => {
+    if (status !== 'authenticated' || !idToken || !guestToken || hasClaimedRef.current) return;
+    hasClaimedRef.current = true;
+    shareApi.claimSession(guestToken, idToken)
+      .then(summary => {
+        setGuestToken(null);
+        return loadSession(summary.sessionId);
+      })
+      .catch(err => console.error('Failed to claim session after login', err));
+  }, [status, idToken, guestToken, loadSession]);
+
   // ── Persist active session to URL hash + localStorage (survive refresh) ────
 
   // Track whether we've ever had a session this mount — only clear storage on
@@ -292,6 +345,7 @@ export function App() {
   // Restore on first load — prefer URL hash, fall back to localStorage
   const hasRestoredRef = useRef(false);
   useEffect(() => {
+    if (status !== 'authenticated' || !idToken) return;
     if (hasRestoredRef.current) return;
     const hash = window.location.hash.slice(1);
     if (hash) {
@@ -303,7 +357,54 @@ export function App() {
     if (!savedSession) return;
     hasRestoredRef.current = true;
     loadSession(savedSession, savedNode);
-  }, [loadSession]);
+  }, [status, idToken, loadSession]);
+
+  // ── Guest mode: load shared session via ?sk= token ───────────────────────
+  // The ?sk= token stays in the URL so refresh keeps the guest in the session.
+  // The token is the share link by design — anyone with the URL already has
+  // access — so keeping it visible is not a leak.
+  const hasLoadedShareRef = useRef(false);
+  useEffect(() => {
+    if (!guestToken || hasLoadedShareRef.current || status === 'loading') return;
+    hasLoadedShareRef.current = true;
+
+    if (status === 'authenticated' && idToken) {
+      // Already logged in — claim immediately then load via normal auth path
+      shareApi.claimSession(guestToken, idToken)
+        .then(summary => {
+          setGuestToken(null);
+          return loadSession(summary.sessionId);
+        })
+        .catch(err => {
+          console.error('Failed to claim shared session', err);
+          setLoadingRoot(false);
+        });
+    } else {
+      // Guest (unauthenticated) — load directly via share token
+      setLoadingRoot(true);
+      shareApi.getSession(guestToken)
+        .then(session => {
+          const forkNodes = session.nodes.map(toForkNode);
+          const nodeMap: Record<string, ForkNode> = {};
+          for (const n of forkNodes) nodeMap[n.id] = n;
+          const root = forkNodes.find(n => n.parentId === null);
+          setSessionId(session.sessionId);
+          setNodes(nodeMap);
+          setRootId(root?.id ?? null);
+          setActiveId(root?.id ?? null);
+          setAnnotations(session.annotations.map(toAnnotation));
+          setPersistentHl(toHlMap(session.highlights));
+          setHighlightsList(toHighlightRecords(session.highlights, nodeMap));
+          setNotionSavedUrl(session.notionPageUrl ?? null);
+          setShowLogin(false);
+        })
+        .catch(err => {
+          console.error('Failed to load shared session', err);
+          setGuestToken(null);
+        })
+        .finally(() => setLoadingRoot(false));
+    }
+  }, [guestToken, status, idToken, loadSession]);
 
   // ── Persist highlights (optimistic + background API sync) ─────────────────
 
@@ -318,9 +419,14 @@ export function App() {
       const fromTitle = nodes[nodeId]?.title ?? 'Untitled';
       setHighlightsList(prev => [...prev, { hlId: tempId, text, nodeId, sectionId, fromTitle }]);
 
-      if (sessionId && idToken) {
-        createHighlight(idToken, sessionId, { nodeId, sectionId, text, start, end, bg: bg ?? null, fg: fg ?? null })
-          .then(apiHl => {
+      if (sessionId) {
+        const hlPromise = guestToken && !idToken
+          ? shareApi.createHighlight(guestToken, { nodeId, sectionId, text, start, end, bg: bg ?? null, fg: fg ?? null })
+          : idToken
+            ? createHighlight(idToken, sessionId, { nodeId, sectionId, text, start, end, bg: bg ?? null, fg: fg ?? null })
+            : null;
+        hlPromise
+          ?.then(apiHl => {
             const realId = ((apiHl as unknown as Record<string, unknown>)['hlId'] as string) ?? apiHl.id;
             setPersistentHl(prev => ({
               ...prev,
@@ -331,7 +437,7 @@ export function App() {
           .catch(err => console.error('Failed to persist highlight', err));
       }
     },
-    [nodes, sessionId, idToken],
+    [nodes, sessionId, idToken, guestToken],
   );
 
   const removeHighlight = useCallback((hlId: string) => {
@@ -344,10 +450,14 @@ export function App() {
       return next;
     });
     setHighlightsList(prev => prev.filter(h => h.hlId !== hlId));
-    if (sessionId && idToken) {
-      deleteHighlight(idToken, sessionId, hlId).catch(err => console.error('Failed to delete highlight', err));
+    if (sessionId) {
+      if (guestToken && !idToken) {
+        shareApi.deleteHighlight(guestToken, hlId).catch(err => console.error('Failed to delete highlight', err));
+      } else if (idToken) {
+        deleteHighlight(idToken, sessionId, hlId).catch(err => console.error('Failed to delete highlight', err));
+      }
     }
-  }, [sessionId, idToken]);
+  }, [sessionId, idToken, guestToken]);
 
   // ── Start a new root research session (streaming) ────────────────────────
 
@@ -381,7 +491,7 @@ export function App() {
     try {
       let realNodeId = tempId;
 
-      await createSessionStream(idToken, query, 5, (event) => {
+      await createSessionStream(idToken, query, tweaks.maxSections, (event) => {
         if (event.type === 'meta') {
           setNodes(prev => {
             const node = prev[tempId];
@@ -422,6 +532,7 @@ export function App() {
               createdAt: new Date(node.createdAt).toISOString(),
               updatedAt: new Date(node.createdAt).toISOString(),
               nodeCount: 1,
+              highlightCount: 0,
             }, ...s]);
             return prev;
           });
@@ -449,7 +560,7 @@ export function App() {
   // ── Branch: Go Deeper ─────────────────────────────────────────────────────
 
   const expandSectionAsChild = useCallback(async (parentNodeId: string, section: ForkNode['sections'][0]) => {
-    if (!sessionId || !idToken) return;
+    if (!sessionId || (!idToken && !guestToken)) return;
     const parent = nodes[parentNodeId];
     if (!parent) return;
 
@@ -473,21 +584,24 @@ export function App() {
         loading: true,
       },
     }));
-    if (notionSavedUrl) {
-      setNotionSavedUrl(null);
-      updateSessionNotionUrl(idToken, sessionId, null).catch(() => {});
-    }
+    // Notion export goes stale as soon as the branch tree changes — backend
+    // clears notionPageUrl inside createNode (works for guest writes too).
+    if (notionSavedUrl) setNotionSavedUrl(null);
     setActiveId(tempId);
     scrollWsTop();
 
     try {
-      const apiNode = await createNode(idToken, sessionId, {
-        kind: 'DEEPER',
+      const nodePayload = {
+        kind: 'DEEPER' as const,
         parentNodeId,
         fromSection: section.id,
         query: section.heading,
         sectionBody: section.body,
-      });
+        sectionCount: tweaks.maxSections,
+      };
+      const apiNode = guestToken && !idToken
+        ? await shareApi.createNode(guestToken, nodePayload)
+        : await createNode(idToken, sessionId, nodePayload);
       const realNode = toForkNode(apiNode);
       setNodes(prev => {
         const next = { ...prev };
@@ -503,12 +617,12 @@ export function App() {
       setSectionLoading(null);
       setLoadingNodes(prev => { const n = new Set(prev); n.delete(tempId); return n; });
     }
-  }, [nodes, sessionId, idToken, scrollWsTop, notionSavedUrl]);
+  }, [nodes, sessionId, idToken, guestToken, scrollWsTop, notionSavedUrl]);
 
   // ── Branch: Ask AI from highlight ────────────────────────────────────────
 
   const askFromHighlight = useCallback(async (question: string, source: FollowUpState) => {
-    if (!sessionId || !idToken) return;
+    if (!sessionId || (!idToken && !guestToken)) return;
     const parent = nodes[source.nodeId];
     if (!parent) return;
 
@@ -532,19 +646,21 @@ export function App() {
         loading: true,
       },
     }));
-    if (notionSavedUrl) {
-      setNotionSavedUrl(null);
-      updateSessionNotionUrl(idToken, sessionId, null).catch(() => {});
-    }
+    // Backend clears notionPageUrl inside createNode — frontend only updates UI.
+    if (notionSavedUrl) setNotionSavedUrl(null);
 
     try {
-      const apiNode = await createNode(idToken, sessionId, {
-        kind: 'ASK',
+      const nodePayload = {
+        kind: 'ASK' as const,
         parentNodeId: source.nodeId,
         fromSection: source.sectionId,
         query: question,
         highlightText: source.text,
-      });
+        sectionCount: tweaks.maxSections,
+      };
+      const apiNode = guestToken && !idToken
+        ? await shareApi.createNode(guestToken, nodePayload)
+        : await createNode(idToken, sessionId, nodePayload);
       const realNode = toForkNode(apiNode);
       setNodes(prev => {
         const next = { ...prev };
@@ -566,7 +682,7 @@ export function App() {
         return prev;
       });
     }
-  }, [nodes, sessionId, idToken, lastHlColors, scrollWsTop, persistHighlight, notionSavedUrl]);
+  }, [nodes, sessionId, idToken, guestToken, lastHlColors, scrollWsTop, persistHighlight, notionSavedUrl]);
 
   // ── Text selection → highlight menu ──────────────────────────────────────
 
@@ -608,6 +724,20 @@ export function App() {
     return () => document.removeEventListener('mouseup', onMouseUp);
   }, [activeId]);
 
+  // Clear hlMenu on mousedown so useLayoutEffect runs before paint — Safari won't
+  // repaint CSS.highlights after a deferred (post-paint) mutation, so we must
+  // clear temp-hl before the browser draws the frame that follows the click.
+  useEffect(() => {
+    if (!hlMenu) return;
+    const onMouseDown = (e: MouseEvent) => {
+      const target = e.target as Element;
+      if (target.closest?.('.hl-menu') || target.closest?.('.followup-pop')) return;
+      setHlMenu(null);
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [hlMenu]);
+
   // Single effect owns all named highlights so they are always re-registered together.
   useLayoutEffect(() => {
     if (!CSS_HL_SUPPORTED) return;
@@ -640,12 +770,13 @@ export function App() {
       if (sectionEl) {
         const r = rangeFromOffsets(sectionEl, hlMenu.start, hlMenu.end);
         if (r) CSS.highlights.set('temp-hl', new Highlight(r));
-        else CSS.highlights.delete('temp-hl');
+        // Safari won't repaint on delete — empty Highlight forces a style recalc
+        else CSS.highlights.set('temp-hl', new Highlight());
       } else {
-        CSS.highlights.delete('temp-hl');
+        CSS.highlights.set('temp-hl', new Highlight());
       }
     } else {
-      CSS.highlights.delete('temp-hl');
+      CSS.highlights.set('temp-hl', new Highlight());
     }
 
     return () => {
@@ -795,13 +926,19 @@ export function App() {
   }, [notionPickerOpen, notionQuery, idToken]);
 
   const openNotionPicker = useCallback(async () => {
-    if (!idToken) return;
+    if (!idToken) {
+      // Guest trying to save — show LoginPage. Claim effect auto-loads the
+      // session under the new auth identity after sign-in completes.
+      setForceLogin(true);
+      return;
+    }
     setNotionError(null);
     try {
       const { connected } = await getNotionStatus(idToken);
       if (!connected) {
-        // Redirect to backend OAuth — returns to this page with ?notion=connected
-        window.location.href = `${process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3000'}/notion/auth`;
+        // Fetch the OAuth URL (needs Bearer token), then redirect the browser to Notion
+        const { url } = await getNotionAuthUrl(idToken);
+        window.location.href = url;
         return;
       }
     } catch {
@@ -881,17 +1018,25 @@ export function App() {
     </div>
   );
 
+  // Guests with a share token skip the login gate — UNLESS forceLogin is set
+  // (guest clicked "Login to Save" or "Save to Notion"). Unauthenticated users
+  // without a share token always see login.
+  // Gate stays true through the post-login animation: it only flips off when
+  // both `showLogin` and `forceLogin` have been cleared by onEnter (1500ms after
+  // signIn succeeds), preserving the existing graph animation.
+  if (forceLogin || (!guestToken && (status === 'unauthenticated' || showLogin))) {
+    return (
+      <LoginPage
+        onEnter={() => {
+          localStorage.setItem('fork.ai.visited', '1');
+          setShowLogin(false);
+          setForceLogin(false);
+        }}
+      />
+    );
+  }
+
   if (!rootId) {
-    if (!loadingRoot && (showLogin || status === 'unauthenticated')) {
-      return (
-        <LoginPage
-          onEnter={() => {
-            sessionStorage.setItem('fork.ai.visited', '1');
-            setShowLogin(false);
-          }}
-        />
-      );
-    }
     let inner;
     if (loadingRoot) inner = <ResearchingScreen sessions={sessions} />;
     else if (view === 'history') inner = (
@@ -909,7 +1054,7 @@ export function App() {
         onShowHistory={() => setView('history')}
       />
     );
-    return <>{persistentBrand}{inner}<AccountButton /></>;
+    return <>{persistentBrand}{inner}<AccountButton /><TweaksPanel tweaks={tweaks} setTweak={setTweak} fontPairOptions={FONT_PAIR_OPTIONS} accentOptions={ACCENTS} /></>;
   }
 
   // ── Workspace ─────────────────────────────────────────────────────────────
@@ -941,9 +1086,23 @@ export function App() {
           })}
         </div>
         <div className="tools">
-          <button className="icon-btn" onClick={() => { setView('history'); setRootId(null); setNodes({}); setSessionId(null); }} title="Research history">
-            <Clock size={14} /> History
-          </button>
+          {idToken && (
+            <button className="icon-btn" onClick={() => { setView('history'); setRootId(null); setNodes({}); setSessionId(null); }} title="Research history">
+              <Clock size={14} /> History
+            </button>
+          )}
+          {guestToken && !idToken && (
+            <button
+              className="icon-btn"
+              onClick={() => setForceLogin(true)}
+              title="Sign in to save this session to your account"
+            >
+              <Bookmark size={14} /> Login to Save
+            </button>
+          )}
+          {sessionId && idToken && (
+            <ShareButton sessionId={sessionId} idToken={idToken} />
+          )}
           <button className="icon-btn has-badge" onClick={() => setDrawerOpen(true)} title="Highlights & Callouts">
             <Bookmark size={14} /> Notes
             {(annotations.length + highlightsList.length) > 0 && <span className="badge">{annotations.length + highlightsList.length}</span>}

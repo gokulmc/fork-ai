@@ -9,5 +9,6 @@ import { NodesService } from './nodes.service';
   imports: [DynamoModule, LlmModule, SessionsModule],
   controllers: [NodesController],
   providers: [NodesService],
+  exports: [NodesService],
 })
 export class NodesModule {}

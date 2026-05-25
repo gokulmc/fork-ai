@@ -1,9 +1,9 @@
 import {
-  Controller, Get, Post, Query, Body, Res, Req,
+  Controller, Get, Post, Query, Body, Res,
   HttpCode, HttpStatus,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags, ApiQuery, ApiBody } from '@nestjs/swagger';
-import { Response, Request } from 'express';
+import { Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { NotionService } from './notion.service';
 import { Public } from '@/auth/public.decorator';
@@ -32,10 +32,9 @@ export class NotionController {
   ) {}
 
   @Get('auth')
-  @ApiOperation({ summary: 'Redirect user to Notion OAuth' })
-  auth(@CurrentUser() user: CognitoUser, @Res() res: Response) {
-    const url = this.notionSvc.buildAuthUrl(user.sub);
-    res.redirect(url);
+  @ApiOperation({ summary: 'Return Notion OAuth URL for the frontend to redirect to' })
+  auth(@CurrentUser() user: CognitoUser) {
+    return { url: this.notionSvc.buildAuthUrl(user.sub, user.email) };
   }
 
   @Public()

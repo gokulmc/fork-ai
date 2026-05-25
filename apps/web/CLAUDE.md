@@ -57,10 +57,10 @@ frontend/
 │   │   ├── HighlightMenu.tsx   # Floating menu on text selection
 │   │   ├── FollowUpPop.tsx     # Follow-up question popup
 │   │   ├── NotesDrawer.tsx     # Slide-out notes & callouts drawer
-│   │   ├── TweaksPanel.tsx     # Draggable tweaks panel (theme, font, density, layout)
+│   │   ├── TweaksPanel.tsx     # Draggable tweaks panel (theme, font, density, layout, maxSections)
 │   │   └── Icons.tsx           # Lucide-style SVG icons via make() factory
 │   ├── hooks/
-│   │   └── useTweaks.ts        # useTweaks(defaults) → [values, setTweak]
+│   │   └── useTweaks.ts        # useTweaks(defaults) → [values, setTweak]; persists to localStorage under fork.ai.tweaks
 │   └── lib/
 │       ├── types.ts            # Shared TypeScript interfaces (ForkNode, Section, Annotation, …)
 │       ├── utils.ts            # uid, short5, stripMarkdown, pickEmoji, wrapTextInElement, …
@@ -185,8 +185,8 @@ The tree is reconstructed by grouping nodes by `parentId` — never stored as a 
 | `MindMap.tsx` | `'use client'` — SVG pan/zoom, `ResizeObserver`, `requestAnimationFrame` easing |
 | `Section.tsx` | `'use client'` — clean marked HTML via `dangerouslySetInnerHTML`; hljs + CSS Highlight API in `useEffect` |
 | `HighlightMenu.tsx` | `'use client'` — positions itself relative to `getBoundingClientRect()` |
-| `FollowUpPop.tsx` | `'use client'` — positions below/above selection rect |
-| `TweaksPanel.tsx` | `'use client'` — draggable via `mousemove` listeners |
+| `FollowUpPop.tsx` | `'use client'` — positions below/above selection rect; Escape or X button (beside Branch) closes it |
+| `TweaksPanel.tsx` | `'use client'` — draggable via `mousemove` listeners; rendered on ALL pages (Landing, History, Workspace) so the settings icon is always accessible |
 | `Landing.tsx` | `'use client'` — controlled input only |
 | `NotesDrawer.tsx` | `'use client'` — tab state |
 | `SkeletonSections.tsx` | Pure presentational — no `'use client'` needed |

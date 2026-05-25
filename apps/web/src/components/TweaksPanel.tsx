@@ -302,6 +302,13 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, accentOptions }
               options={[{ value: 'horizontal', label: 'Horizontal' }, { value: 'vertical', label: 'Vertical' }]}
               onChange={v => setTweak('mapLayout', v as Tweaks['mapLayout'])}
             />
+            <TweakSection label="Content" />
+            <TweakRadio
+              label="Max sections"
+              value={String(tweaks.maxSections)}
+              options={[4, 5, 6, 7, 8].map(n => ({ value: String(n), label: String(n) }))}
+              onChange={v => setTweak('maxSections', Number(v))}
+            />
             <TweakSection label="Ask AI shortcuts" />
             <div className="twk-shortcuts">
               {([['?', 'what'], ['!?', 'how'], ['/?', 'why'], ['>?', 'explain']] as const).map(([sym, word]) => (

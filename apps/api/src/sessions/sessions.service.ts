@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { ulid } from 'ulid';
+import { randomBytes } from 'crypto';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
 import type { NodeItem, AnnotationItem, HighlightItem, SessionMetaItem } from '@/dynamo/dynamo.interfaces';
 import { LlmService } from '@/llm/llm.service';
@@ -14,7 +15,10 @@ export interface SessionSummary {
   createdAt: string;
   updatedAt: string;
   nodeCount: number;
+  highlightCount: number;
   notionPageUrl?: string | null;
+  shareToken?: string | null;
+  ownerSub?: string | null;
 }
 
 export interface FullSession extends SessionSummary {
@@ -100,7 +104,7 @@ export class SessionsService {
     const nodeId = ulid();
     const now = new Date().toISOString();
 
-    const llmResult = await this.llm.answerQuery(dto.query, dto.sectionCount ?? 5);
+    const llmResult = await this.llm.answerQuery(dto.query, dto.sectionCount ?? 4);
     const sections = llmResult.sections.map((s) => ({ id: ulid(), ...s }));
 
     const rootNode: NodeItem = {
@@ -144,6 +148,7 @@ export class SessionsService {
       createdAt: now,
       updatedAt: now,
       nodeCount: 1,
+      highlightCount: 0,
       nodes: [rootNode],
       annotations: [],
       highlights: [],
@@ -152,7 +157,10 @@ export class SessionsService {
 
   async list(sub: string): Promise<SessionSummary[]> {
     const items = await this.db.listSessionMeta(sub);
-    return items.map(this.toSummary);
+    const counts = await Promise.all(
+      items.map(async (m) => (await this.db.queryHighlights(m.sessionId)).length),
+    );
+    return items.map((m, i) => ({ ...this.toSummary(m), highlightCount: counts[i] }));
   }
 
   async getSession(sub: string, sessionId: string): Promise<FullSession> {
@@ -165,7 +173,7 @@ export class SessionsService {
       this.db.queryHighlights(sessionId),
     ]);
 
-    return { ...this.toSummary(meta), nodes, annotations, highlights };
+    return { ...this.toSummary(meta), highlightCount: highlights.length, nodes, annotations, highlights };
   }
 
   async update(sub: string, sessionId: string, dto: UpdateSessionDto): Promise<void> {
@@ -212,6 +220,69 @@ export class SessionsService {
     });
   }
 
+  async generateShareToken(sub: string, sessionId: string): Promise<{ token: string }> {
+    const meta = await this.db.getSessionMeta(sub, sessionId);
+    if (!meta) throw new NotFoundException(`Session ${sessionId} not found`);
+
+    // Revoke existing token if present
+    if (meta.shareToken) {
+      await this.db.deleteShareToken(meta.shareToken);
+    }
+
+    const token = randomBytes(32).toString('base64url');
+    await Promise.all([
+      this.db.putShareToken(token, sessionId, sub),
+      this.db.updateSessionMeta(sub, sessionId, { shareToken: token }),
+    ]);
+    return { token };
+  }
+
+  async revokeShareToken(sub: string, sessionId: string): Promise<void> {
+    const meta = await this.db.getSessionMeta(sub, sessionId);
+    if (!meta) throw new NotFoundException(`Session ${sessionId} not found`);
+    if (!meta.shareToken) return;
+    await Promise.all([
+      this.db.deleteShareToken(meta.shareToken),
+      this.db.updateSessionMeta(sub, sessionId, { shareToken: null }),
+    ]);
+  }
+
+  async getShareStatus(sub: string, sessionId: string): Promise<{ active: boolean; token?: string }> {
+    const meta = await this.db.getSessionMeta(sub, sessionId);
+    if (!meta) throw new NotFoundException(`Session ${sessionId} not found`);
+    if (!meta.shareToken) return { active: false };
+    return { active: true, token: meta.shareToken };
+  }
+
+  async getSessionByToken(token: string): Promise<FullSession> {
+    const share = await this.db.getShareToken(token);
+    if (!share) throw new ForbiddenException('Invalid or revoked share token');
+    const [nodes, annotations, highlights, meta] = await Promise.all([
+      this.db.queryNodes(share.sessionId),
+      this.db.queryAnnotations(share.sessionId),
+      this.db.queryHighlights(share.sessionId),
+      this.db.getSessionMeta(share.ownerSub, share.sessionId),
+    ]);
+    if (!meta) throw new ForbiddenException('Invalid or revoked share token');
+    return { ...this.toSummary(meta), highlightCount: highlights.length, nodes, annotations, highlights };
+  }
+
+  async claimSession(guestSub: string, token: string): Promise<SessionSummary> {
+    const share = await this.db.getShareToken(token);
+    if (!share) throw new ForbiddenException('Invalid or revoked share token');
+
+    // No-op if already claimed
+    const existing = await this.db.getSessionMeta(guestSub, share.sessionId);
+    if (existing) return this.toSummary(existing);
+
+    const ownerMeta = await this.db.getSessionMeta(share.ownerSub, share.sessionId);
+    if (!ownerMeta) throw new ForbiddenException('Invalid or revoked share token');
+
+    await this.db.putClaimedSessionMeta(guestSub, ownerMeta);
+    const claimed = await this.db.getSessionMeta(guestSub, share.sessionId);
+    return this.toSummary(claimed!);
+  }
+
   private toSummary(item: SessionMetaItem): SessionSummary {
     return {
       sessionId: item.sessionId,
@@ -221,7 +292,10 @@ export class SessionsService {
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
       nodeCount: item.nodeCount ?? 0,
+      highlightCount: 0,
       notionPageUrl: item.notionPageUrl || null,
+      shareToken: item.shareToken || null,
+      ownerSub: item.ownerSub || null,
     };
   }
 }

@@ -38,11 +38,11 @@ export class NodesService {
 
     if (dto.kind === 'DEEPER') {
       if (!dto.sectionBody) throw new BadRequestException('sectionBody required for DEEPER nodes');
-      llmResult = await this.llm.expandSection(ancestors, dto.query, dto.sectionBody);
+      llmResult = await this.llm.expandSection(ancestors, dto.query, dto.sectionBody, dto.sectionCount ?? 4);
       fromText = `${dto.query}: ${dto.sectionBody.slice(0, 200)}…`;
     } else {
       if (!dto.highlightText) throw new BadRequestException('highlightText required for ASK nodes');
-      llmResult = await this.llm.followUpFromHighlight(ancestors, dto.highlightText, dto.query);
+      llmResult = await this.llm.followUpFromHighlight(ancestors, dto.highlightText, dto.query, dto.sectionCount ?? 4);
       fromText = dto.highlightText;
     }
 
@@ -70,6 +70,9 @@ export class NodesService {
     await Promise.all([
       this.sessions.touchUpdatedAt(sub, sessionId),
       this.sessions.incrementNodeCount(sub, sessionId, 1),
+      // Invalidate any previous Notion export — the branch tree just changed.
+      // Works for both authed and guest writes (guest can't call PATCH /sessions/:id).
+      this.db.updateSessionMeta(sub, sessionId, { notionPageUrl: null }),
     ]);
 
     return node;

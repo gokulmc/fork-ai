@@ -120,8 +120,8 @@ Each section "body" should be 80-180 words. You MAY use GitHub-flavored markdown
     yield { type: 'done' };
   }
 
-  async answerQuery(query: string, sectionCount = 5): Promise<LlmResponse> {
-    const prompt = `You are a research assistant. Answer this query as a structured study note with ${sectionCount} sections.
+  async answerQuery(query: string, sectionCount = 4): Promise<LlmResponse> {
+    const prompt = `You are a research assistant. Answer this query as a structured study note. Use as many sections as the topic genuinely warrants — no more than ${sectionCount}. Do not pad with redundant or filler sections; fewer is better when the topic is focused.
 
 Query: "${query}"
 
@@ -136,6 +136,7 @@ Each section "body" should be 80-180 words. You MAY use GitHub-flavored markdown
     ancestors: Array<{ title: string; query: string }>,
     sectionHeading: string,
     sectionBody: string,
+    sectionCount = 4,
   ): Promise<LlmResponse> {
     const trail = ancestors
       .map((a, i) => `${ i === 0 ? 'Root query' : 'Sub-topic'}: "${a.query}" → "${a.title}"`)
@@ -146,7 +147,7 @@ ${trail}
 Go DEEPER on the section titled "${sectionHeading}" within this context.
 Section content for reference: "${sectionBody.slice(0, 400)}"
 
-Produce a focused deep-dive with 3-4 sections, each 80-180 words. Stay relevant to the full research trail.
+Produce a focused deep-dive with as many sections as the topic warrants — no more than ${sectionCount}. Do not pad; fewer sections is better when the scope is narrow. Each section should be 80-180 words. Stay relevant to the full research trail.
 
 ${SECTIONS_SCHEMA}
 
@@ -159,6 +160,7 @@ You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase 
     ancestors: Array<{ title: string; query: string }>,
     highlight: string,
     question: string,
+    sectionCount = 4,
   ): Promise<LlmResponse> {
     const trail = ancestors
       .map((a, i) => `${i === 0 ? 'Root query' : 'Sub-topic'}: "${a.query}" → "${a.title}"`)
@@ -169,7 +171,7 @@ ${trail}
 The user highlighted this passage: "${highlight.slice(0, 800)}"
 They asked: "${question}"
 
-Answer with 3-4 sections, each 80-180 words. Keep the answer grounded in the research trail context.
+Answer with as many sections as the question warrants — no more than ${sectionCount}. Do not pad; fewer sections is better when the answer is focused. Each section should be 80-180 words. Keep the answer grounded in the research trail context.
 
 ${SECTIONS_SCHEMA}
 
