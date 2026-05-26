@@ -342,6 +342,16 @@ if (remove.length) op.$REMOVE = remove;
 
 Without this, clearing `shareToken` (on revoke) or `notionPageUrl` (on any node create) throws `TypeMismatch: Expected <field> to be of type string, instead found type null` and 500s the request. Any future schema field that may be cleared must rely on this pattern.
 
+### Dynamoose update operators are case-sensitive — uppercase only
+
+Dynamoose v4 only recognises **`$ADD`**, **`$SET`**, **`$REMOVE`**, **`$DELETE`** as update operators. Lowercase variants (`$add`, `$set`, …) are silently dropped — the key is treated as a regular attribute name, the operator is never emitted into the DynamoDB `UpdateExpression`, and the call either no-ops or rejects with `ValidationException: ExpressionAttributeValues must not be empty`.
+
+This footgun has bitten the codebase twice:
+- `deductCredit` used `$add` → every `POST /sessions/:id/nodes` returned 500 (fixed in commit `2a2d1b6`).
+- `addCredit` used `$add` → Razorpay top-ups silently never credited; the `PaymentItem` row was still written by the sibling `Promise.all` call, so the idempotency log marked the payment as done and prevented webhook retry from rescuing it.
+
+Any new repository method that uses an update operator must use uppercase. There is no runtime warning from Dynamoose if you get this wrong.
+
 ### Frontend — guest mode mechanics
 
 | State | Set when | Cleared when |

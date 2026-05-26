@@ -142,10 +142,8 @@ export class BillingService {
       createdAt: now,
     };
 
-    await Promise.all([
-      this.db.addCredit(sub, amountUsd),
-      this.db.putPayment(payment),
-    ]);
+    await this.db.addCredit(sub, amountUsd);
+    await this.db.putPayment(payment);
 
     return { credited: amountUsd };
   }
