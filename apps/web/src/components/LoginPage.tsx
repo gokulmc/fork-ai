@@ -708,6 +708,20 @@ export function LoginPage({ onEnter }: LoginPageProps) {
         opacity: barHidden ? 0 : 1,
         pointerEvents: barHidden ? 'none' : 'auto',
       }}>
+        {/* Gives the browser's password manager a real username token so it
+            doesn't fall back to using the password value as the username
+            in the Save prompt on signup. */}
+        <input
+          type="text"
+          name="username"
+          autoComplete="username"
+          value={email}
+          readOnly
+          tabIndex={-1}
+          aria-hidden="true"
+          style={{ position: 'absolute', opacity: 0, height: 0, width: 0, pointerEvents: 'none' }}
+        />
+
         {/* Row 1 */}
         <div style={{ display: 'flex', alignItems: 'stretch', flex: '0 0 44px' }}>
           <input
@@ -816,6 +830,13 @@ export function LoginPage({ onEnter }: LoginPageProps) {
             {step === 'signup-password' && `creating account for ${email}`}
             {step === 'verify' && `verify ${email}`}
           </div>
+
+          {/* Spam-folder hint */}
+          {step === 'verify' && (
+            <div style={{ fontSize: 10, letterSpacing: '0.06em', color: 'rgba(10,10,10,0.4)', lineHeight: 1.5 }}>
+              We emailed you a code. If it&rsquo;s not in your inbox, check your spam folder.
+            </div>
+          )}
 
           {/* Error */}
           {error && (
