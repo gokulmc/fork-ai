@@ -91,8 +91,8 @@ const TWEAK_DEFAULTS = {
   density: 'comfortable' as const,
   mapLayout: 'vertical' as const,
   fontPair: 'newsreader-geist',
-  maxSections: 4,
-  webSearch: false,
+  maxSections: 6,
+  webSearch: true,
 };
 
 const FONT_PAIRS: Record<string, { serif: string; sans: string; label: string }> = {
@@ -1096,7 +1096,7 @@ export function App() {
   ) : null;
   const persistentBrand = (
     <div className="app-brand" onClick={isGuest ? undefined : goHome} title={isGuest ? 'fork.ai' : 'Go to home'} style={isGuest ? { cursor: 'default' } : undefined}>
-      <img src="/logo.svg" alt="" /> fork.ai
+      <span className="brand-logo" aria-hidden="true" /> fork.ai
     </div>
   );
 

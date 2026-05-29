@@ -1,6 +1,7 @@
-import { Controller, Get, Patch, Body } from '@nestjs/common';
+import { Controller, Get, Patch, Body, Req } from '@nestjs/common';
 import { ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
 import { IsBoolean, IsOptional } from 'class-validator';
+import { Request } from 'express';
 import { CurrentUser } from '@/auth/current-user.decorator';
 import { CognitoUser } from '@/auth/jwt.strategy';
 import { UsersService } from './users.service';
@@ -19,8 +20,8 @@ export class UsersController {
 
   @Get('me')
   @ApiOperation({ summary: 'Get current user profile (auto-creates on first call)' })
-  async getMe(@CurrentUser() user: CognitoUser) {
-    return this.usersService.upsert(user);
+  async getMe(@CurrentUser() user: CognitoUser, @Req() req: Request) {
+    return this.usersService.upsert(user, req.ip);
   }
 
   @Patch('me')

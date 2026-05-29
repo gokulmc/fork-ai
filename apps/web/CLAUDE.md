@@ -42,7 +42,7 @@ frontend/
 ├── next.config.ts
 ├── src/
 │   ├── app/
-│   │   ├── layout.tsx          # Root layout — Google Fonts <link>, imports globals.css
+│   │   ├── layout.tsx          # Root layout — Google Fonts <link>, theme-aware favicon <link>s, imports globals.css
 │   │   ├── globals.css         # Full design system (ported from styles.css)
 │   │   ├── page.tsx            # Renders <App /> (or <SessionsDashboard /> if logged in with no active session)
 │   │   └── api/
@@ -51,6 +51,8 @@ frontend/
 │   ├── components/
 │   │   ├── App.tsx             # Root client component — all research state
 │   │   ├── Landing.tsx         # Landing page (unauthenticated or new session)
+│   │   ├── HistoryPage.tsx     # Research history — date-grouped session cards + topic bubbles
+│   │   ├── HistoryBubbles.tsx  # Force-directed topic-bubble cluster atop HistoryPage
 │   │   ├── MindMap.tsx         # SVG mind map — pan/zoom/layout
 │   │   ├── Section.tsx         # Section renderer — marked + hljs
 │   │   ├── SkeletonSections.tsx
@@ -188,9 +190,33 @@ The tree is reconstructed by grouping nodes by `parentId` — never stored as a 
 | `FollowUpPop.tsx` | `'use client'` — positions below/above selection rect; Escape or X button (beside Branch) closes it |
 | `TweaksPanel.tsx` | `'use client'` — draggable via `mousemove` listeners; rendered on ALL pages (Landing, History, Workspace) so the settings icon is always accessible |
 | `Landing.tsx` | `'use client'` — controlled input only |
+| `HistoryPage.tsx` | `'use client'` — date-grouped session cards; renders `<HistoryBubbles>` above the list |
+| `HistoryBubbles.tsx` | `'use client'` — force-directed topic cluster; see "History — topic bubbles" below |
 | `NotesDrawer.tsx` | `'use client'` — tab state |
 | `SkeletonSections.tsx` | Pure presentational — no `'use client'` needed |
 | `Icons.tsx` | Pure presentational — no `'use client'` needed |
+
+---
+
+## History — topic bubbles
+
+`HistoryBubbles.tsx` renders a force-directed cluster in the top ~25 % of the History page (`max-height: 25vh` stage), above the unchanged chronological card list.
+
+- **Clustering is client-side, keyword-based.** Sessions are grouped by the most globally-frequent significant word in their title (stopwords stripped; longer word breaks ties). One bubble can hold many sessions; leftovers fall into "Other". There is **no** topic field on the backend — if grouping ever needs to be sharper, that's the change to make.
+- **Size encodes node count.** Bubble area ∝ total `nodeCount` across its sessions (sqrt scale so *area*, not radius, tracks count). The badge shows node count with the `GitBranch` icon, matching the session cards.
+- **Layout is a radial-rank model, not emergent packing.** Each bubble gets an orbit rank `t ∈ [0,1]` by size (`0` = biggest, `1` = smallest) and is spring-pulled toward an **elliptical** ring at that rank — biggest dead-centre, smaller ones on wider rings. The ellipse uses the full (wide) stage so small bubbles spread horizontally instead of piling onto one cramped central ring. A hard positional non-overlap pass (mass-weighted, `mass ∝ r²`) guarantees no overlap and keeps the heavy centre bubble anchored. Cursor repulsion + damping give the elastic feel.
+- **Auto-fit:** bubble radii are scaled so their combined area ≤ `FILL_FRAC` of the stage, so a crowded set shrinks rather than overlaps.
+- **Perf:** the rAF loop writes `transform`/size **straight to the DOM via refs** — no per-frame React re-render (same discipline as `MindMap`). All physics constants are tunables at the top of the file.
+
+---
+
+## Logo & favicon (theming)
+
+The brand mark exists as two SVGs in `public/`: **`icon.svg` (light)** and **`icon_b.svg` (dark)**. `logo.png` / `logo.svg` are **legacy and unreferenced** — do not reintroduce them.
+
+- **Tab favicon follows the OS colour scheme**, via explicit `<link rel="icon" media="(prefers-color-scheme: …)">` tags in `layout.tsx`. It does **not** track the in-app `data-theme` toggle — browsers can't swap a favicon from a class on `<html>`.
+- **Do NOT put `icon.svg` in `src/app/`.** Next.js App Router auto-detects `app/icon.*` and injects a **media-less** `<link>` that overrides the dark variant. Both icons live in `public/` and are wired manually in `layout.tsx`; `app/icon.svg` was deliberately removed.
+- **The in-app brand logo** (`.app-brand .brand-logo` in `App.tsx`) is a CSS `background-image` that swaps `icon.svg` → `icon_b.svg` under `[data-theme="dark"]` — i.e. it *does* track the in-app toggle (the correct behaviour for an in-page element). The login arrived-screen logo is hard-coded to `icon.svg` (always on a white background).
 
 ---
 
@@ -202,6 +228,8 @@ Key CSS variables (set on `<html>` via `App.tsx` useEffect based on tweaks):
 - `--accent`, `--serif`, `--sans` — changed dynamically by TweaksPanel
 - `data-theme="light|dark"` on `<html>` — dark mode
 - `data-density="comfortable|compact"` on `<html>` — density
+
+**Dark-mode gotcha — white control surfaces.** Several controls default to white/near-white backgrounds (`.twk-field` select, `.twk-seg-thumb` toggle thumb) and the highlight backgrounds are fixed light pastels. With light text in dark mode these go invisible, so each needs an explicit `[data-theme="dark"]` override: dark surfaces for the panel controls, and `color: #0a0a0a` on background-only `::highlight(fork-hl-*)` rules. Any new white-surfaced control or light-background highlight must add its own dark override.
 
 Fonts loaded via Google Fonts `<link>` in `layout.tsx`: Newsreader, Spectral, Fraunces, DM Sans, IBM Plex Sans, JetBrains Mono, Geist.
 

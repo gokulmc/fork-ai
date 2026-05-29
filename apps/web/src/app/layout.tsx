@@ -11,6 +11,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <head>
+        {/* Theme-aware favicon: follows the OS/browser colour scheme. */}
+        <link rel="icon" type="image/svg+xml" media="(prefers-color-scheme: light)" href="/icon.svg" />
+        <link rel="icon" type="image/svg+xml" media="(prefers-color-scheme: dark)" href="/icon_b.svg" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link

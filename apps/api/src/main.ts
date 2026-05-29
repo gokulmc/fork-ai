@@ -9,6 +9,9 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
 
+  // Behind the EB Classic LB → read the real client IP from X-Forwarded-For.
+  app.getHttpAdapter().getInstance().set('trust proxy', true);
+
   app.use(
     json({
       limit: '10mb',

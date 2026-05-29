@@ -19,6 +19,10 @@ export const validationSchema = Joi.object({
 });
 
 export const configuration = () => ({
+  app: {
+    commit: process.env.APP_COMMIT ?? process.env.CODEBUILD_RESOLVED_SOURCE_VERSION ?? 'dev',
+    version: process.env.APP_VERSION ?? '0.1.0',
+  },
   aws: {
     region: process.env.AWS_REGION ?? 'ap-south-1',
   },

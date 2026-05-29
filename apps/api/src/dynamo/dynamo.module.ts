@@ -11,6 +11,7 @@ import {
   SHARE_TOKEN_MODEL,
   USAGE_EVENT_MODEL,
   PAYMENT_MODEL,
+  ADMIN_AUDIT_MODEL,
   DYNAMO_TABLE,
 } from './dynamo.constants';
 import {
@@ -22,6 +23,7 @@ import {
   ShareTokenSchema,
   UsageEventSchema,
   PaymentSchema,
+  AdminAuditSchema,
 } from './dynamo.schemas';
 import { DynamoRepository } from './dynamo.repository';
 
@@ -78,6 +80,11 @@ const DYNAMO_CONFIGURED = 'DYNAMO_CONFIGURED';
       useFactory: () => dynamoose.model('Payment', PaymentSchema),
     },
     {
+      provide: ADMIN_AUDIT_MODEL,
+      inject: [DYNAMO_CONFIGURED],
+      useFactory: () => dynamoose.model('AdminAudit', AdminAuditSchema),
+    },
+    {
       // Binds all models to the physical DynamoDB table.
       // DynamoRepository injects this to guarantee the Table is set up first.
       provide: DYNAMO_TABLE,
@@ -91,6 +98,7 @@ const DYNAMO_CONFIGURED = 'DYNAMO_CONFIGURED';
         SHARE_TOKEN_MODEL,
         USAGE_EVENT_MODEL,
         PAYMENT_MODEL,
+        ADMIN_AUDIT_MODEL,
         ConfigService,
       ],
       useFactory: (
@@ -103,11 +111,12 @@ const DYNAMO_CONFIGURED = 'DYNAMO_CONFIGURED';
         shareToken: any,
         usageEvent: any,
         payment: any,
+        adminAudit: any,
         cfg: ConfigService,
       ) =>
         new dynamoose.Table(
           cfg.get<string>('dynamo.tableName')!,
-          [userMeta, sessionMeta, node, annotation, highlight, shareToken, usageEvent, payment],
+          [userMeta, sessionMeta, node, annotation, highlight, shareToken, usageEvent, payment, adminAudit],
           { create: false, waitForActive: false },
         ),
     },
