@@ -1157,7 +1157,10 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
 
   if (!rootId) {
     let inner;
-    if (loadingRoot) inner = <ResearchingScreen sessions={sessions} />;
+    // A pending guest/trial session must never fall through to Landing while it
+    // loads (or while SSR — which can't read localStorage — has rendered Landing).
+    // Keep the loading screen until the session resolves or the token is cleared.
+    if (loadingRoot || (guestToken && !invalidLink)) inner = <ResearchingScreen sessions={sessions} />;
     else if (view === 'history') inner = (
       <HistoryPage
         sessions={sessions}
