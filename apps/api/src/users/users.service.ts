@@ -155,26 +155,32 @@ export class UsersService {
 
   async recordReferral(sub: string, referrerSlug: string): Promise<void> {
     const user = await this.db.getUserMeta(sub);
-    if (!user || user.referredBy) return;
+    if (!user) { this.logger.log(`[referral] recordReferral: user not found sub=${sub}`); return; }
+    if (user.referredBy) { this.logger.log(`[referral] recordReferral: already attributed sub=${sub} referredBy=${user.referredBy}`); return; }
 
     const referrer = await this.db.getReferralBySlug(referrerSlug);
-    if (!referrer || referrer.sub === sub) return;
+    if (!referrer) { this.logger.log(`[referral] recordReferral: slug not found slug=${referrerSlug}`); return; }
+    if (referrer.sub === sub) { this.logger.log(`[referral] recordReferral: self-referral blocked sub=${sub}`); return; }
 
     await this.db.updateUserMeta(sub, { referredBy: referrer.sub });
+    this.logger.log(`[referral] recorded: sub=${sub} referredBy=${referrer.sub}`);
   }
 
   private async maybeAwardReferralCredit(sub: string): Promise<void> {
     try {
       const user = await this.db.getUserMeta(sub);
-      if (!user?.referredBy || user.referralCreditAwarded) return;
+      if (!user?.referredBy) { return; }
+      if (user.referralCreditAwarded) { return; }
 
       const referralCreditUsd = this.cfg.get<number>('billing.referralCreditUsd') ?? 5.00;
+      this.logger.log(`[referral] awarding $${referralCreditUsd} to referrer=${user.referredBy} for referred=${sub}`);
       await Promise.all([
         this.db.addCredit(user.referredBy, referralCreditUsd),
         this.db.updateUserMeta(sub, { referralCreditAwarded: true }),
       ]);
+      this.logger.log(`[referral] credit awarded OK referrer=${user.referredBy}`);
     } catch (err) {
-      this.logger.warn(`Referral credit award failed for ${sub}: ${String(err)}`);
+      this.logger.warn(`[referral] award failed for ${sub}: ${String(err)}`);
     }
   }
 }
