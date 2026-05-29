@@ -91,8 +91,8 @@ const TWEAK_DEFAULTS = {
   density: 'comfortable' as const,
   mapLayout: 'vertical' as const,
   fontPair: 'newsreader-geist',
-  maxSections: 4,
-  webSearch: false,
+  maxSections: 6,
+  webSearch: true,
 };
 
 const FONT_PAIRS: Record<string, { serif: string; sans: string; label: string }> = {
