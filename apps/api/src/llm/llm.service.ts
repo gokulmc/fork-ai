@@ -201,18 +201,18 @@ You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase 
 Return ONLY valid JSON, no prose, no markdown fences:
 {
   "topics": [
-    "Short label one",
-    "Short label two",
-    "Short label three",
-    "Short label four"
+    "Question one",
+    "Question two",
+    "Question three",
+    "Question four"
   ]
 }
 
 Rules:
-- Each label must be 3-5 words max — a noun phrase, not a full question
+- Each topic is a full, natural question a curious person would ask
 - Must be newsworthy within the last 2 weeks, not evergreen
 - Mix: roughly 2 science/technology + 2 politics/world affairs
-- Name the specific thing: "OpenAI o3 reasoning", "Iran nuclear deal", "LHC anomaly" — not "AI advances" or "Middle East conflict"`;
+- Name the specific thing: "How does OpenAI's o3 reasoning model work?", "What's in the new Iran nuclear deal?" — not "AI advances" or "Middle East conflict"`;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const params: any = {
