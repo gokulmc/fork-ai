@@ -56,3 +56,9 @@ A server-side Razorpay order created when a User initiates a credit top-up. The 
 
 ## Payment
 A record of a successfully captured Razorpay payment, stored in DynamoDB at `PK: USER#{sub}, SK: PAYMENT#{razorpayPaymentId}`. Fields: `paymentId`, `orderId`, `sub`, `amountUsd`, `amountInr`, `createdAt`. Used as an idempotency key — both the direct verification endpoint and the Razorpay webhook check for an existing Payment record before crediting the User, so a User is never double-credited regardless of which path processes the event first.
+
+## Change Password
+The flow by which an already-authenticated User replaces their password by supplying their current one. Lives in the Account popover. Requires an active session. Distinct from Forgot Password, which is unauthenticated. Not offered for accounts that sign in via Google — they have no native password.
+
+## Forgot Password
+The self-service flow by which an unauthenticated person recovers an account whose native password they cannot supply. Identity is proven by a one-time code emailed to the account address; on success the person chooses a new password and is signed in. Offered only after an incorrect-password attempt during sign-in. Distinct from Change Password, which requires the current password. Not available for accounts that sign in via Google — there is no native password to reset.
