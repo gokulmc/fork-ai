@@ -833,8 +833,17 @@ export function LoginPage({ onEnter }: LoginPageProps) {
 
           {/* Spam-folder hint */}
           {step === 'verify' && (
-            <div style={{ fontSize: 10, letterSpacing: '0.06em', color: 'rgba(10,10,10,0.4)', lineHeight: 1.5 }}>
-              We emailed you a code. If it&rsquo;s not in your inbox, check your spam folder.
+            <div style={{
+              display: 'flex', gap: 8, alignItems: 'flex-start',
+              fontSize: 11.5, letterSpacing: '0.02em', color: 'rgba(10,10,10,0.7)', lineHeight: 1.5,
+              background: 'rgba(10,10,10,0.045)', border: '1px solid rgba(10,10,10,0.10)',
+              borderLeft: '2px solid rgba(10,10,10,0.45)',
+              borderRadius: 4, padding: '9px 11px',
+            }}>
+              <span aria-hidden style={{ fontSize: 13, lineHeight: 1.3 }}>✉</span>
+              <span>
+                We emailed you a code. If it&rsquo;s not in your inbox, <strong style={{ fontWeight: 600, color: '#0a0a0a' }}>check your spam folder</strong>.
+              </span>
             </div>
           )}
 
@@ -871,7 +880,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
           }}
         >
           <img
-            src="/logo.svg" alt="Fork"
+            src="/icon.svg" alt="Fork"
             style={{ width: 56, height: 56, animation: 'lp-rise 1.4s 0.3s cubic-bezier(.2,.8,.2,1) both' }}
           />
           <div style={{

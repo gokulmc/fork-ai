@@ -1096,7 +1096,7 @@ export function App() {
   ) : null;
   const persistentBrand = (
     <div className="app-brand" onClick={isGuest ? undefined : goHome} title={isGuest ? 'fork.ai' : 'Go to home'} style={isGuest ? { cursor: 'default' } : undefined}>
-      <img src="/logo.svg" alt="" /> fork.ai
+      <span className="brand-logo" aria-hidden="true" /> fork.ai
     </div>
   );
 
