@@ -1,5 +1,5 @@
 import {
-  AdminSetUserPasswordCommand,
+  ChangePasswordCommand,
   CognitoIdentityProviderClient,
   InitiateAuthCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
@@ -20,27 +20,35 @@ export async function POST(req: NextRequest) {
     newPassword: string;
   };
 
-  // Verify current password
+  // Verify current password and capture the AccessToken — ChangePassword below is a
+  // user-scoped (non-admin) call, so it works on Amplify where the Lambda has no IAM creds.
+  // AdminSetUserPassword would 500 with CredentialsProviderError in that environment.
+  let accessToken: string | undefined;
   try {
-    await client.send(
+    const auth = await client.send(
       new InitiateAuthCommand({
         AuthFlow: 'USER_PASSWORD_AUTH',
         ClientId: process.env.COGNITO_CLIENT_ID!,
         AuthParameters: { USERNAME: email, PASSWORD: currentPassword, SECRET_HASH: computeSecretHash(email) },
       }),
     );
+    accessToken = auth.AuthenticationResult?.AccessToken;
   } catch {
     return Response.json({ error: 'CurrentPasswordIncorrect' }, { status: 400 });
   }
 
-  // Set new password permanently
+  if (!accessToken) {
+    // No AccessToken means Cognito returned a challenge (e.g. NEW_PASSWORD_REQUIRED) instead
+    // of completing auth — the account can't self-service a password change in this state.
+    return Response.json({ error: 'CurrentPasswordIncorrect' }, { status: 400 });
+  }
+
   try {
     await client.send(
-      new AdminSetUserPasswordCommand({
-        UserPoolId: process.env.COGNITO_USER_POOL_ID!,
-        Username: email,
-        Password: newPassword,
-        Permanent: true,
+      new ChangePasswordCommand({
+        AccessToken: accessToken,
+        PreviousPassword: currentPassword,
+        ProposedPassword: newPassword,
       }),
     );
     return Response.json({ ok: true });

@@ -203,20 +203,28 @@ The app uses a **custom email/password login UI** instead of the Cognito Hosted 
 | `email` | email address | Enter/center dot → `password` step |
 | `password` | password | Submit → call `/api/cognito/login` |
 | → if `UserNotFoundException` | — | transition to `signup-password` |
-| → if `NotAuthorizedException` | — | show "Incorrect password" error |
+| → if `NotAuthorizedException` | — | show "Incorrect password" + reveal a `forgot password?` link |
 | → if success | — | `signIn('cognito-token')` → graph animation → `onEnter()` |
 | `signup-password` | password + confirm | Password regex validation → call `/api/cognito/signup` |
 | `verify` | code from email | Call `/api/cognito/confirm` → auto-login → animation |
+| `reset` | code + new password + confirm | Forgot Password flow (one combined step). Reached via the `forgot password?` link, which first calls `/api/cognito/forgot-password`. Submit → `/api/cognito/confirm-forgot-password` → auto-login → animation |
+
+Input rows carry **no submit arrow** — every step submits via Enter or the centre seed dot (`triggerRef`). The bar height is derived from the row count (`44 + (rows-1)*46`). The spam-folder hint shows on both `verify` and `reset`.
+
+The **Forgot Password** flow (see `CONTEXT.md`) is offered only after a wrong-password attempt (`resetAvailable` flips true on `NotAuthorizedException`). A Google/federated account has no native password: `ForgotPassword` fails with `NotAuthorizedException: …cannot be reset…`, which the UI maps to a "use the Google button" hint.
 
 ### Next.js API routes (all server-side, call Cognito AWS SDK)
 - `POST /api/cognito/login` — `InitiateAuth USER_PASSWORD_AUTH`
 - `POST /api/cognito/signup` — `SignUp`
 - `POST /api/cognito/confirm` — `ConfirmSignUp` then auto-`InitiateAuth`
 - `POST /api/cognito/resend` — `ResendConfirmationCode`
+- `POST /api/cognito/forgot-password` — `ForgotPassword` (sends reset code)
+- `POST /api/cognito/confirm-forgot-password` — `ConfirmForgotPassword` then auto-`InitiateAuth`
+- `POST /api/cognito/change-password` — verify current via `InitiateAuth`, then `ChangePassword` (user-scoped, NOT the admin `AdminSetUserPassword` — that has no IAM creds on the Amplify Lambda)
 
 ### Key constraints
 - **`USER_PASSWORD_AUTH` flow must be enabled** on the Cognito App Client (AWS Console → User Pool → App clients → Auth flows). If missing, Cognito returns `NotAuthorizedException: ALLOW_USER_PASSWORD_AUTH flow not enabled for this client`.
-- **`SECRET_HASH` required when App Client has a client secret.** Every Cognito SDK call (`InitiateAuth`, `SignUp`, `ConfirmSignUp`, `ResendConfirmationCode`) must include a `SECRET_HASH`. The helper is `computeSecretHash(email)` in `src/lib/cognito-secrets.ts` — `Base64(HMAC-SHA256(username + clientId, clientSecret))`.
+- **`SECRET_HASH` required when App Client has a client secret.** Every Cognito SDK call (`InitiateAuth`, `SignUp`, `ConfirmSignUp`, `ResendConfirmationCode`, `ForgotPassword`, `ConfirmForgotPassword`) must include a `SECRET_HASH`. The helper is `computeSecretHash(email)` in `src/lib/cognito-secrets.ts` — `Base64(HMAC-SHA256(username + clientId, clientSecret))`.
 - Password regex: `^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&_\-#])[A-Za-z\d@$!%*?&_\-#]{8,}$` — must match the User Pool's password policy.
 - The Google OAuth button still calls `signIn('cognito')` → Cognito Hosted UI (existing flow unchanged).
 - `triggerRef` in `LoginPage.tsx` is updated on each step change via `useEffect([step, ...])` — center dot always calls the current step's action. The graph animation trigger is stored separately in `graphTriggerRef` and fires only after successful auth.

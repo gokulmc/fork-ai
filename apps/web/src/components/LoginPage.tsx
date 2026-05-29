@@ -117,7 +117,7 @@ function buildGraph(): Graph | null {
   return { W, H, COLS, ROWS, nodes, adj, centerId, edgeList, edgeMap, pathActive: false, centerAnimId: null };
 }
 
-type Step = 'email' | 'password' | 'signup-password' | 'verify';
+type Step = 'email' | 'password' | 'signup-password' | 'verify' | 'reset';
 
 // Must match User Pool password policy
 const PW_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&_\-#])[A-Za-z\d@$!%*?&_\-#]{8,}$/;
@@ -146,6 +146,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [userExists, setUserExists] = useState<boolean | null>(null);
+  const [resetAvailable, setResetAvailable] = useState(false);
   const [barHidden, setBarHidden] = useState(false);
   const [uiHidden, setUiHidden] = useState(false);
   const [arrived, setArrived] = useState(false);
@@ -153,6 +154,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
 
   const inputRef = useRef<HTMLInputElement>(null);
   const confirmRef = useRef<HTMLInputElement>(null);
+  const resetPwRef = useRef<HTMLInputElement>(null);
 
   // Focus the primary input when step changes
   useEffect(() => {
@@ -174,6 +176,9 @@ export function LoginPage({ onEnter }: LoginPageProps) {
       case 'verify':
         triggerRef.current = () => void handleVerifySubmit();
         break;
+      case 'reset':
+        triggerRef.current = () => void handleResetSubmit();
+        break;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, email, password, confirmPw, verifyCode]);
@@ -181,12 +186,13 @@ export function LoginPage({ onEnter }: LoginPageProps) {
   const handleRegen = () => {
     setArrived(false); setBarHidden(false); setUiHidden(false);
     setStep('email'); setPassword(''); setConfirmPw(''); setVerifyCode(''); setError(null);
-    setUserExists(null);
+    setUserExists(null); setResetAvailable(false);
     setGen(g => g + 1);
   };
 
   async function goToPassword() {
     if (!email.trim()) return;
+    setResetAvailable(false);
     setLoading(true);
     try {
       const res = await fetch('/api/cognito/check-email', {
@@ -229,6 +235,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
         setStep('verify');
       } else if (data.error === 'NotAuthorizedException') {
         setError('Incorrect password');
+        setResetAvailable(true);
       } else if (data.error === 'ChallengeRequired') {
         setError('This account requires a password reset — use Sign Up to create a new account');
       } else if (data.error) {
@@ -320,6 +327,94 @@ export function LoginPage({ onEnter }: LoginPageProps) {
         body: JSON.stringify({ email }),
       });
     } catch { /* silent */ }
+  }
+
+  // Forgot Password: sends a reset code, then moves to the combined `reset` step.
+  async function handleForgotPassword() {
+    if (loading) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/cognito/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const data = (await res.json()) as { ok?: boolean; error?: string; message?: string };
+      if (data.error) {
+        if (data.error === 'NotAuthorizedException' && /cannot be reset/i.test(data.message ?? '')) {
+          setError('This account uses Google sign-in — use the Google button below.');
+        } else if (data.error === 'LimitExceededException') {
+          setError('Too many attempts. Please try again later.');
+        } else {
+          setError('Could not send a reset code. Try again.');
+        }
+        return;
+      }
+      setPassword(''); setConfirmPw(''); setVerifyCode('');
+      setStep('reset');
+    } catch {
+      setError('Connection error');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleResendReset() {
+    try {
+      await fetch('/api/cognito/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+    } catch { /* silent */ }
+  }
+
+  // Confirms the reset code + new password (one call), then auto-logs-in via the server route.
+  async function handleResetSubmit() {
+    if (!verifyCode.trim() || !password.trim() || !confirmPw.trim() || loading) return;
+    if (!PW_REGEX.test(password)) {
+      setError('Min 8 chars · uppercase · lowercase · number · symbol (@$!%*?&_-#)');
+      return;
+    }
+    if (password !== confirmPw) {
+      setError('Passwords do not match');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/cognito/confirm-forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, code: verifyCode, password }),
+      });
+      const data = (await res.json()) as { idToken?: string; refreshToken?: string; expiresIn?: number; error?: string };
+      if (data.error) {
+        if (data.error === 'CodeMismatchException' || data.error === 'ExpiredCodeException') {
+          setError('Invalid or expired code');
+        } else if (data.error === 'InvalidPasswordException') {
+          setError('Password does not meet requirements');
+        } else if (data.error === 'LimitExceededException') {
+          setError('Too many attempts. Please try again later.');
+        } else {
+          setError('Could not reset password. Try again.');
+        }
+        return;
+      }
+      const result = await signIn('cognito-token', {
+        idToken: data.idToken,
+        refreshToken: data.refreshToken,
+        expiresAt: String(Date.now() + (data.expiresIn ?? 3600) * 1000),
+        redirect: false,
+      });
+      if (result?.error) { setError(result.error); return; }
+      graphTriggerRef.current?.();
+    } catch {
+      setError('Connection error');
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -632,8 +727,34 @@ export function LoginPage({ onEnter }: LoginPageProps) {
     };
   }, [gen]);
 
-  const isSignupStep = step === 'signup-password';
-  const barH = isSignupStep ? 90 : 44;
+  // Each step renders N stacked input rows (no submit arrows — Enter / the centre seed dot submit).
+  type BarRow = {
+    key: string; type: string; value: string; set: (v: string) => void;
+    placeholder: string; autoComplete: string;
+    ref: React.RefObject<HTMLInputElement | null>; onEnter: () => void;
+  };
+  const barRows: BarRow[] = (() => {
+    switch (step) {
+      case 'email':
+        return [{ key: 'email', type: 'email', value: email, set: setEmail, placeholder: 'enter email to login or signup', autoComplete: 'email', ref: inputRef, onEnter: () => { if (email.trim()) void goToPassword(); } }];
+      case 'password':
+        return [{ key: 'password', type: 'password', value: password, set: setPassword, placeholder: 'password', autoComplete: 'current-password', ref: inputRef, onEnter: () => void handlePasswordSubmit() }];
+      case 'signup-password':
+        return [
+          { key: 'new', type: 'password', value: password, set: setPassword, placeholder: 'new password', autoComplete: 'new-password', ref: inputRef, onEnter: () => confirmRef.current?.focus() },
+          { key: 'confirm', type: 'password', value: confirmPw, set: setConfirmPw, placeholder: 'confirm password', autoComplete: 'new-password', ref: confirmRef, onEnter: () => void handleSignupSubmit() },
+        ];
+      case 'verify':
+        return [{ key: 'code', type: 'text', value: verifyCode, set: setVerifyCode, placeholder: 'verification code from email', autoComplete: 'one-time-code', ref: inputRef, onEnter: () => void handleVerifySubmit() }];
+      case 'reset':
+        return [
+          { key: 'rcode', type: 'text', value: verifyCode, set: setVerifyCode, placeholder: 'reset code from email', autoComplete: 'one-time-code', ref: inputRef, onEnter: () => resetPwRef.current?.focus() },
+          { key: 'rnew', type: 'password', value: password, set: setPassword, placeholder: 'new password', autoComplete: 'new-password', ref: resetPwRef, onEnter: () => confirmRef.current?.focus() },
+          { key: 'rconfirm', type: 'password', value: confirmPw, set: setConfirmPw, placeholder: 'confirm new password', autoComplete: 'new-password', ref: confirmRef, onEnter: () => void handleResetSubmit() },
+        ];
+    }
+  })();
+  const barH = 44 + (barRows.length - 1) * 46;
 
   return (
     <div style={{
@@ -722,73 +843,22 @@ export function LoginPage({ onEnter }: LoginPageProps) {
           style={{ position: 'absolute', opacity: 0, height: 0, width: 0, pointerEvents: 'none' }}
         />
 
-        {/* Row 1 */}
-        <div style={{ display: 'flex', alignItems: 'stretch', flex: '0 0 44px' }}>
-          <input
-            ref={inputRef}
-            type={step === 'email' ? 'email' : step === 'verify' ? 'text' : 'password'}
-            value={step === 'email' ? email : step === 'verify' ? verifyCode : password}
-            onChange={e => {
-              setError(null);
-              if (step === 'email') setEmail(e.target.value);
-              else if (step === 'verify') setVerifyCode(e.target.value);
-              else setPassword(e.target.value);
-            }}
-            onKeyDown={e => {
-              if (e.key !== 'Enter') return;
-              e.preventDefault();
-              if (step === 'email' && email.trim()) void goToPassword();
-              else if (step === 'password') void handlePasswordSubmit();
-              else if (step === 'signup-password') confirmRef.current?.focus();
-              else if (step === 'verify') void handleVerifySubmit();
-            }}
-            placeholder={
-              step === 'email' ? 'enter email to login or signup' :
-              step === 'password' ? 'password' :
-              step === 'signup-password' ? 'new password' :
-              'verification code from email'
-            }
-            autoComplete={step === 'email' ? 'email' : step === 'verify' ? 'one-time-code' : step === 'signup-password' ? 'new-password' : 'current-password'}
-            disabled={loading}
+        {barRows.map((r, i) => (
+          <div
+            key={r.key}
             style={{
-              flex: 1, minWidth: 0, border: 0, outline: 0, background: 'transparent',
-              padding: '0 14px', fontFamily: 'inherit', fontSize: 11,
-              letterSpacing: '0.04em', color: '#0a0a0a',
+              display: 'flex', alignItems: 'stretch', flex: i === 0 ? '0 0 44px' : '0 0 46px',
+              ...(i > 0 ? { borderTop: '1px solid rgba(10,10,10,0.10)' } : null),
             }}
-          />
-          <button
-            onClick={() => {
-              if (step === 'email' && email.trim()) void goToPassword();
-              else if (step === 'password') void handlePasswordSubmit();
-              else if (step === 'signup-password') confirmRef.current?.focus();
-              else if (step === 'verify') void handleVerifySubmit();
-            }}
-            type="button"
-            disabled={loading}
-            style={{
-              flex: '0 0 44px', border: 0, borderLeft: '1px solid rgba(10,10,10,0.12)',
-              background: 'transparent', fontFamily: 'inherit', fontSize: 16,
-              color: loading ? 'rgba(10,10,10,0.28)' : 'rgba(10,10,10,0.78)',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}
-            aria-label="Continue"
           >
-            {loading ? '…' : '→'}
-          </button>
-        </div>
-
-        {/* Row 2 — confirm password (signup-password step only) */}
-        {isSignupStep && (
-          <div style={{ display: 'flex', alignItems: 'stretch', flex: '0 0 46px', borderTop: '1px solid rgba(10,10,10,0.10)' }}>
             <input
-              ref={confirmRef}
-              type="password"
-              value={confirmPw}
-              onChange={e => { setError(null); setConfirmPw(e.target.value); }}
-              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void handleSignupSubmit(); } }}
-              placeholder="confirm password"
-              autoComplete="new-password"
+              ref={r.ref}
+              type={r.type}
+              value={r.value}
+              onChange={e => { setError(null); r.set(e.target.value); }}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); r.onEnter(); } }}
+              placeholder={r.placeholder}
+              autoComplete={r.autoComplete}
               disabled={loading}
               style={{
                 flex: 1, minWidth: 0, border: 0, outline: 0, background: 'transparent',
@@ -796,23 +866,8 @@ export function LoginPage({ onEnter }: LoginPageProps) {
                 letterSpacing: '0.04em', color: '#0a0a0a',
               }}
             />
-            <button
-              onClick={() => void handleSignupSubmit()}
-              type="button"
-              disabled={loading}
-              style={{
-                flex: '0 0 44px', border: 0, borderLeft: '1px solid rgba(10,10,10,0.12)',
-                background: 'transparent', fontSize: 16,
-                color: loading ? 'rgba(10,10,10,0.28)' : 'rgba(10,10,10,0.78)',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}
-              aria-label="Create account"
-            >
-              {loading ? '…' : '→'}
-            </button>
           </div>
-        )}
+        ))}
       </div>
 
       {/* Step label + error + back + resend */}
@@ -829,10 +884,11 @@ export function LoginPage({ onEnter }: LoginPageProps) {
             {step === 'password' && (userExists === false ? `signing up as ${email}` : `signing in as ${email}`)}
             {step === 'signup-password' && `creating account for ${email}`}
             {step === 'verify' && `verify ${email}`}
+            {step === 'reset' && `reset password for ${email}`}
           </div>
 
           {/* Spam-folder hint */}
-          {step === 'verify' && (
+          {(step === 'verify' || step === 'reset') && (
             <div style={{
               display: 'flex', gap: 8, alignItems: 'flex-start',
               fontSize: 11.5, letterSpacing: '0.02em', color: 'rgba(10,10,10,0.7)', lineHeight: 1.5,
@@ -855,7 +911,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
           {/* Actions row */}
           <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
             <button
-              onClick={() => { setStep('email'); setPassword(''); setConfirmPw(''); setVerifyCode(''); setError(null); }}
+              onClick={() => { setStep('email'); setPassword(''); setConfirmPw(''); setVerifyCode(''); setError(null); setResetAvailable(false); }}
               style={subLinkStyle}
             >
               ← back
@@ -863,6 +919,16 @@ export function LoginPage({ onEnter }: LoginPageProps) {
             {step === 'verify' && (
               <button onClick={() => void handleResendCode()} style={subLinkStyle}>
                 resend code
+              </button>
+            )}
+            {step === 'reset' && (
+              <button onClick={() => void handleResendReset()} style={subLinkStyle}>
+                resend code
+              </button>
+            )}
+            {step === 'password' && resetAvailable && (
+              <button onClick={() => void handleForgotPassword()} style={subLinkStyle}>
+                forgot password?
               </button>
             )}
           </div>
