@@ -88,7 +88,7 @@ import {
 const TWEAK_DEFAULTS = {
   theme: 'light' as const,
   accent: '#525252',
-  density: 'comfortable' as const,
+  density: 'compact' as const,
   mapLayout: 'vertical' as const,
   fontPair: 'newsreader-geist',
   maxSections: 6,
@@ -101,7 +101,6 @@ const FONT_PAIRS: Record<string, { serif: string; sans: string; label: string }>
   'fraunces-mono':    { serif: '"Fraunces", Georgia, serif',   sans: '"IBM Plex Sans", system-ui, sans-serif', label: 'Fraunces + Plex' },
 };
 
-const ACCENTS = ['#525252', '#888888', '#2383e2', '#7a8c5a', '#b4683b'];
 const FONT_PAIR_OPTIONS = Object.entries(FONT_PAIRS).map(([v, p]) => ({ value: v, label: p.label }));
 
 function ResearchingScreen({ sessions }: { sessions: SessionSummary[] }) {
@@ -1137,7 +1136,7 @@ export function App() {
         outOfCredit={rootQueryOutOfCredit}
       />
     );
-    return <>{persistentBrand}{inner}<AccountButton creditBalance={creditBalance} onCreditUpdated={setCreditBalance} /><TweaksPanel tweaks={tweaks} setTweak={setTweak} fontPairOptions={FONT_PAIR_OPTIONS} accentOptions={ACCENTS} onRestartTour={restartTour} />{tourEl}</>;
+    return <>{persistentBrand}{inner}<AccountButton creditBalance={creditBalance} onCreditUpdated={setCreditBalance} /><TweaksPanel tweaks={tweaks} setTweak={setTweak} fontPairOptions={FONT_PAIR_OPTIONS} onRestartTour={restartTour} />{tourEl}</>;
   }
 
   // ── Workspace ─────────────────────────────────────────────────────────────
@@ -1350,7 +1349,6 @@ export function App() {
         tweaks={tweaks}
         setTweak={setTweak}
         fontPairOptions={FONT_PAIR_OPTIONS}
-        accentOptions={ACCENTS}
         onRestartTour={restartTour}
       />
 

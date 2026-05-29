@@ -187,11 +187,10 @@ interface TweaksPanelProps {
   tweaks: Tweaks;
   setTweak: SetTweak;
   fontPairOptions: { value: string; label: string }[];
-  accentOptions: string[];
   onRestartTour?: () => void;
 }
 
-export function TweaksPanel({ tweaks, setTweak, fontPairOptions, accentOptions, onRestartTour }: TweaksPanelProps) {
+export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour }: TweaksPanelProps) {
   const [open, setOpen] = useState(false);
   const dragRef = useRef<HTMLDivElement>(null);
   const offsetRef = useRef({ x: PAD, y: PAD });
@@ -282,12 +281,6 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, accentOptions, 
               value={tweaks.density}
               options={[{ value: 'comfortable', label: 'Cozy' }, { value: 'compact', label: 'Compact' }]}
               onChange={v => setTweak('density', v as Tweaks['density'])}
-            />
-            <TweakColor
-              label="Accent"
-              value={tweaks.accent}
-              options={accentOptions}
-              onChange={v => setTweak('accent', v)}
             />
             <TweakSection label="Typography" />
             <TweakSelect
