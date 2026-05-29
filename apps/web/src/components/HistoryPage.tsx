@@ -1,5 +1,6 @@
 'use client';
 import { ArrowLeft, Highlighter, GitBranch, Link as LinkIcon, ArrowUpRight } from './Icons';
+import { HistoryBubbles } from './HistoryBubbles';
 import type { SessionSummary } from '@/lib/api';
 
 interface HistoryPageProps {
@@ -64,7 +65,9 @@ export function HistoryPage({ sessions, loading, onLoadSession, onBack }: Histor
             </button>
           </div>
         ) : (
-          <div className="history-groups">
+          <>
+            <HistoryBubbles sessions={sessions} onLoadSession={onLoadSession} />
+            <div className="history-groups">
             {groups.map(group => (
               <section key={group.day} className="history-group">
                 <div className="history-divider">
@@ -110,7 +113,8 @@ export function HistoryPage({ sessions, loading, onLoadSession, onBack }: Histor
                 </div>
               </section>
             ))}
-          </div>
+            </div>
+          </>
         )}
       </div>
 
