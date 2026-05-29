@@ -14,6 +14,10 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     const err = e as Error;
     if (err.name === 'UserNotFoundException') return Response.json({ exists: false });
-    return Response.json({ error: err.name }, { status: 500 });
+    // AdminGetUser needs IAM creds the Amplify Lambda lacks (CredentialsProviderError).
+    // Degrade to "unknown" so the email step proceeds — login disambiguates new vs
+    // existing via Cognito's own error (PreventUserExistenceErrors=LEGACY).
+    console.error('[cognito/check-email]', err.name, err.message);
+    return Response.json({ exists: null });
   }
 }

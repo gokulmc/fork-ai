@@ -1,4 +1,4 @@
-import { AdminGetUserCommand, CognitoIdentityProviderClient, InitiateAuthCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { CognitoIdentityProviderClient, InitiateAuthCommand } from '@aws-sdk/client-cognito-identity-provider';
 import type { NextRequest } from 'next/server';
 import { computeSecretHash } from '@/lib/cognito-secrets';
 
@@ -26,24 +26,13 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     const err = e as Error;
     console.error('[cognito/login]', err.name, err.message);
-    // When "prevent user existence errors" is on, Cognito returns NotAuthorizedException
-    // for both wrong password AND unknown user. Use AdminGetUser to disambiguate.
-    if (err.name === 'NotAuthorizedException') {
-      try {
-        const { UserStatus } = await client.send(new AdminGetUserCommand({
-          UserPoolId: process.env.COGNITO_USER_POOL_ID!,
-          Username: email,
-        }));
-        if (UserStatus === 'UNCONFIRMED') {
-          return Response.json({ error: 'UserNotConfirmedException' }, { status: 400 });
-        }
-        // User exists and confirmed → wrong password
-        return Response.json({ error: 'NotAuthorizedException', message: 'Incorrect password' }, { status: 400 });
-      } catch {
-        // User not found → treat as new user
-        return Response.json({ error: 'UserNotFoundException', message: 'User does not exist' }, { status: 400 });
-      }
-    }
+    // With PreventUserExistenceErrors=LEGACY the pool returns distinct errors we map
+    // straight through — no IAM-only AdminGetUser disambiguation (that throws on the
+    // Amplify Lambda, which has no IAM credentials, and wrongly reported every failed
+    // login as UserNotFoundException → the signup step):
+    //   NotAuthorizedException     → wrong password (frontend shows the reset link)
+    //   UserNotFoundException      → no account     (frontend routes to signup)
+    //   UserNotConfirmedException  → needs email verification
     return Response.json({ error: err.name, message: err.message }, { status: 400 });
   }
 }
