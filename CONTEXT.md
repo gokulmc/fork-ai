@@ -62,3 +62,21 @@ The flow by which an already-authenticated User replaces their password by suppl
 
 ## Forgot Password
 The self-service flow by which an unauthenticated person recovers an account whose native password they cannot supply. Identity is proven by a one-time code emailed to the account address; on success the person chooses a new password and is signed in. Offered only after an incorrect-password attempt during sign-in. Distinct from Change Password, which requires the current password. Not available for accounts that sign in via Google — there is no native password to reset.
+
+## Support Ticket
+A message submitted by any user (authenticated or guest) via the Contact Support form in the Tweaks panel. Fields: name, email, subject (Bug / Billing / Feature Request / Other), and free-text message. Delivered to `info@stemlabs.co.in` via Amazon SES; the submitter's email is set as Reply-To so replies go directly to them. Not stored in DynamoDB — fire-and-forget delivery only.
+
+## Terms & Conditions
+The legal agreement between fork ai and its users, operated by CURIOSTEM LEARNING PRIVATE LIMITED (Erode, Tamil Nadu, India; GST: 33AAMCC6984A1ZM). Covers account eligibility, credits and billing (Razorpay, non-refundable, credit multiplier), acceptable use, guest access, intellectual property, liability cap, privacy, termination, and governing law (courts of Erode). Accessible via the Account popover. Contact for legal matters: `info@stemlabs.co.in`.
+
+## Trial Session
+A Session created by an unauthenticated visitor (no Share Token URL, no Cognito identity) via the trial flow. Owned by the House Account in DynamoDB. Subject to a 5-node limit — further node creation is blocked until the visitor logs in or signs up. Converted to a regular user-owned Session on login via the standard Claim flow.
+
+## Trial Token
+An opaque, cryptographically random credential (same format as a Share Token) that grants an unauthenticated visitor access to their Trial Session. Created lazily on the visitor's first query submission via `POST /share` (no existing token). Stored in `localStorage` so the visitor returns to the same Trial Session on revisit. Indistinguishable from a Share Token in structure; identified as a trial by the `isTrial: true` flag returned on `GET /share/:token`.
+
+## House Account
+A synthetic `UserMetaItem` in DynamoDB (not a real Cognito identity) whose sub is configured via the `TRIAL_HOUSE_SUB` environment variable. Holds a `creditUsd` balance that absorbs the LLM cost of all Trial Session calls. Pre-funded manually via the DynamoDB console. Usage Events for trial calls are written under this sub, providing full cost visibility.
+
+## Trial Limit Overlay
+A blocking UI overlay shown when a trial user hits the 5-node limit. Displays "Limit reached — login or signup to continue (your session will be saved)" with a single CTA that triggers the standard login/signup flow. On successful login, the Trial Session is Claimed and attached to the new user's account.
