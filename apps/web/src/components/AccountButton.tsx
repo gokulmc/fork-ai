@@ -2,7 +2,7 @@
 
 import { signOut, useSession } from 'next-auth/react';
 import { useState, useEffect, useRef } from 'react';
-import { getUsageEvents, createRechargeOrder, verifyPayment, getReferralLink, type UsageEvent } from '@/lib/api';
+import { getUsageEvents, getCreditEvents, createRechargeOrder, verifyPayment, getReferralLink, type UsageEvent, type CreditEvent } from '@/lib/api';
 
 const PW_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&_\-#])[A-Za-z\d@$!%*?&_\-#]{8,}$/;
 
@@ -39,13 +39,20 @@ const PACKAGES: { label: string; usd: number }[] = [
   { label: '$10', usd: 10 },
 ];
 
-function groupByDay(events: UsageEvent[]): { date: string; totalCost: number }[] {
-  const map = new Map<string, number>();
+function groupByDay(events: UsageEvent[]): { date: string; isoDate: string; totalCost: number }[] {
+  const map = new Map<string, { isoDate: string; totalCost: number }>();
   for (const ev of events) {
+    const d = ev.createdAt.slice(0, 10); // YYYY-MM-DD
     const label = new Date(ev.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-    map.set(label, (map.get(label) ?? 0) + ev.costUsd);
+    const existing = map.get(d);
+    if (existing) existing.totalCost += ev.costUsd;
+    else map.set(d, { isoDate: ev.createdAt, totalCost: ev.costUsd });
   }
-  return Array.from(map.entries()).map(([date, totalCost]) => ({ date, totalCost }));
+  return Array.from(map.entries()).map(([, v]) => ({
+    date: new Date(v.isoDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+    isoDate: v.isoDate,
+    totalCost: v.totalCost,
+  }));
 }
 
 interface AccountButtonProps {
@@ -66,6 +73,7 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [usageEvents, setUsageEvents] = useState<UsageEvent[] | null>(null);
+  const [creditEvents, setCreditEvents] = useState<CreditEvent[] | null>(null);
   const [usageLoading, setUsageLoading] = useState(false);
 
   // Recharge state
@@ -133,9 +141,11 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
     setBillingOpen(true);
     if (usageEvents === null && idToken) {
       setUsageLoading(true);
-      getUsageEvents(idToken)
-        .then(setUsageEvents)
-        .catch(() => setUsageEvents([]))
+      Promise.all([
+        getUsageEvents(idToken).catch(() => [] as UsageEvent[]),
+        getCreditEvents(idToken).catch(() => [] as CreditEvent[]),
+      ])
+        .then(([usage, credits]) => { setUsageEvents(usage); setCreditEvents(credits); })
         .finally(() => setUsageLoading(false));
     }
   }
@@ -188,10 +198,14 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
               const updated = (localBalance ?? 0) + credited;
               setLocalBalance(updated);
               onCreditUpdated?.(updated);
-              // Refresh usage events list
+              // Refresh billing history
               setUsageEvents(null);
+              setCreditEvents(null);
               if (idToken) {
-                getUsageEvents(idToken).then(setUsageEvents).catch(() => setUsageEvents([]));
+                Promise.all([
+                  getUsageEvents(idToken).catch(() => [] as UsageEvent[]),
+                  getCreditEvents(idToken).catch(() => [] as CreditEvent[]),
+                ]).then(([usage, credits]) => { setUsageEvents(usage); setCreditEvents(credits); });
               }
               resolve();
             } catch {
@@ -512,28 +526,41 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
               </div>
             )}
 
-            {/* Usage history */}
+            {/* Billing history — usage (debits) + credit events (credits) */}
             <div style={{ fontSize: 10, letterSpacing: '0.12em', color: 'rgba(10,10,10,0.4)', marginBottom: 10, textTransform: 'uppercase' }}>
-              Usage history
+              Billing history
             </div>
-            <div style={{ height: 112, overflowY: 'auto' }}>
+            <div style={{ height: 140, overflowY: 'auto' }}>
               {usageLoading ? (
                 <div style={{ fontSize: 11, color: 'rgba(10,10,10,0.4)' }}>Loading…</div>
-              ) : !usageEvents || usageEvents.length === 0 ? (
-                <div style={{ fontSize: 11, color: 'rgba(10,10,10,0.4)' }}>No usage yet.</div>
-              ) : (
-                groupByDay(usageEvents).map(day => (
-                  <div key={day.date} style={{
-                    display: 'flex', justifyContent: 'space-between',
+              ) : (() => {
+                const rows: Array<{ isoDate: string; label: string; amount: number; positive: boolean; key: string }> = [];
+                for (const ev of (creditEvents ?? [])) {
+                  const label = ev.type === 'REFERRAL' ? 'Referral credit' : 'Top-up';
+                  rows.push({ isoDate: ev.createdAt, label, amount: ev.amountUsd, positive: true, key: ev.creditEventId });
+                }
+                for (const day of groupByDay(usageEvents ?? [])) {
+                  rows.push({ isoDate: day.isoDate, label: 'Usage', amount: day.totalCost, positive: false, key: `usage-${day.date}` });
+                }
+                rows.sort((a, b) => b.isoDate.localeCompare(a.isoDate));
+                if (rows.length === 0) return <div style={{ fontSize: 11, color: 'rgba(10,10,10,0.4)' }}>No activity yet.</div>;
+                return rows.map(row => (
+                  <div key={row.key} style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                     fontSize: 11, color: 'rgba(10,10,10,0.7)',
                     padding: '5px 0', borderBottom: '1px solid rgba(10,10,10,0.06)',
-                    height: 28, alignItems: 'center', boxSizing: 'border-box',
+                    height: 28, boxSizing: 'border-box',
                   }}>
-                    <span>{day.date}</span>
-                    <span style={{ color: '#c0392b' }}>−${day.totalCost.toFixed(4)}</span>
+                    <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <span>{new Date(row.isoDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+                      {row.positive && <span style={{ fontSize: 9, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#27ae60', opacity: 0.8 }}>{row.label}</span>}
+                    </span>
+                    <span style={{ color: row.positive ? '#27ae60' : '#c0392b' }}>
+                      {row.positive ? '+' : '−'}${row.positive ? row.amount.toFixed(2) : row.amount.toFixed(4)}
+                    </span>
                   </div>
-                ))
-              )}
+                ));
+              })()}
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>

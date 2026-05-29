@@ -31,6 +31,16 @@ export interface ReferralItem {
   createdAt: string;
 }
 
+export interface CreditEventItem {
+  PK: string;               // USER#{sub}
+  SK: string;               // CREDITEVT#{ulid}
+  creditEventId: string;
+  sub: string;
+  type: 'REFERRAL' | 'TOPUP';
+  amountUsd: number;
+  createdAt: string;
+}
+
 export interface AdminAuditItem {
   PK: string;
   SK: string;

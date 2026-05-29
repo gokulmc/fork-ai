@@ -3,7 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import Razorpay from 'razorpay';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
-import type { PaymentItem } from '@/dynamo/dynamo.interfaces';
+import type { PaymentItem, CreditEventItem } from '@/dynamo/dynamo.interfaces';
+import { ulid } from 'ulid';
 
 @Injectable()
 export class BillingService {
@@ -142,8 +143,21 @@ export class BillingService {
       createdAt: now,
     };
 
-    await this.db.addCredit(sub, amountUsd);
-    await this.db.putPayment(payment);
+    const creditEventId = ulid();
+    const creditEvent: CreditEventItem = {
+      PK: `USER#${sub}`,
+      SK: `CREDITEVT#${creditEventId}`,
+      creditEventId,
+      sub,
+      type: 'TOPUP',
+      amountUsd,
+      createdAt: now,
+    };
+    await Promise.all([
+      this.db.addCredit(sub, amountUsd),
+      this.db.putPayment(payment),
+      this.db.putCreditEvent(creditEvent),
+    ]);
 
     return { credited: amountUsd };
   }

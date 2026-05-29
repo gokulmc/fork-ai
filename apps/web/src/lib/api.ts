@@ -214,6 +214,17 @@ export function getUsageEvents(idToken: string): Promise<UsageEvent[]> {
   return apiFetch<UsageEvent[]>('/users/me/usage', idToken);
 }
 
+export interface CreditEvent {
+  creditEventId: string;
+  type: 'REFERRAL' | 'TOPUP';
+  amountUsd: number;
+  createdAt: string;
+}
+
+export function getCreditEvents(idToken: string): Promise<CreditEvent[]> {
+  return apiFetch<CreditEvent[]>('/users/me/credit-events', idToken);
+}
+
 export function getReferralLink(idToken: string): Promise<{ slug: string; url: string }> {
   return apiFetch<{ slug: string; url: string }>('/users/me/referral-link', idToken, { method: 'POST' });
 }

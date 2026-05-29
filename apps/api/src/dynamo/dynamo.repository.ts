@@ -10,6 +10,7 @@ import {
   PAYMENT_MODEL,
   ADMIN_AUDIT_MODEL,
   REFERRAL_MODEL,
+  CREDIT_EVENT_MODEL,
   DYNAMO_TABLE,
 } from './dynamo.constants';
 import type {
@@ -23,6 +24,7 @@ import type {
   PaymentItem,
   AdminAuditItem,
   ReferralItem,
+  CreditEventItem,
 } from './dynamo.interfaces';
 
 @Injectable()
@@ -39,6 +41,7 @@ export class DynamoRepository {
     @Inject(PAYMENT_MODEL) private readonly paymentModel: any,
     @Inject(ADMIN_AUDIT_MODEL) private readonly adminAuditModel: any,
     @Inject(REFERRAL_MODEL) private readonly referralModel: any,
+    @Inject(CREDIT_EVENT_MODEL) private readonly creditEventModel: any,
   ) {}
 
   // ── Key helpers ─────────────────────────────────────────────────────────────
@@ -391,6 +394,24 @@ export class DynamoRepository {
 
   async createReferral(data: ReferralItem): Promise<void> {
     await this.referralModel.create(this.clean(data), { overwrite: false });
+  }
+
+  // ── Credit events ────────────────────────────────────────────────────────────
+
+  async putCreditEvent(data: CreditEventItem): Promise<void> {
+    await this.creditEventModel.create(this.clean(data), { overwrite: true });
+  }
+
+  async listCreditEvents(sub: string, limit: number): Promise<CreditEventItem[]> {
+    const items = await this.creditEventModel
+      .query('PK')
+      .eq(this.userPk(sub))
+      .where('SK')
+      .beginsWith('CREDITEVT#')
+      .sort('descending')
+      .limit(limit)
+      .exec();
+    return this.toPlainArray<CreditEventItem>(items);
   }
 
   // ── Admin: audit log ─────────────────────────────────────────────────────────

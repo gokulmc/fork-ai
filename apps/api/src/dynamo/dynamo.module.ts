@@ -13,6 +13,7 @@ import {
   PAYMENT_MODEL,
   ADMIN_AUDIT_MODEL,
   REFERRAL_MODEL,
+  CREDIT_EVENT_MODEL,
   DYNAMO_TABLE,
 } from './dynamo.constants';
 import {
@@ -26,6 +27,7 @@ import {
   PaymentSchema,
   AdminAuditSchema,
   ReferralSchema,
+  CreditEventSchema,
 } from './dynamo.schemas';
 import { DynamoRepository } from './dynamo.repository';
 
@@ -92,6 +94,11 @@ const DYNAMO_CONFIGURED = 'DYNAMO_CONFIGURED';
       useFactory: () => dynamoose.model('Referral', ReferralSchema),
     },
     {
+      provide: CREDIT_EVENT_MODEL,
+      inject: [DYNAMO_CONFIGURED],
+      useFactory: () => dynamoose.model('CreditEvent', CreditEventSchema),
+    },
+    {
       // Binds all models to the physical DynamoDB table.
       // DynamoRepository injects this to guarantee the Table is set up first.
       provide: DYNAMO_TABLE,
@@ -107,6 +114,7 @@ const DYNAMO_CONFIGURED = 'DYNAMO_CONFIGURED';
         PAYMENT_MODEL,
         ADMIN_AUDIT_MODEL,
         REFERRAL_MODEL,
+        CREDIT_EVENT_MODEL,
         ConfigService,
       ],
       useFactory: (
@@ -121,11 +129,12 @@ const DYNAMO_CONFIGURED = 'DYNAMO_CONFIGURED';
         payment: any,
         adminAudit: any,
         referral: any,
+        creditEvent: any,
         cfg: ConfigService,
       ) =>
         new dynamoose.Table(
           cfg.get<string>('dynamo.tableName')!,
-          [userMeta, sessionMeta, node, annotation, highlight, shareToken, usageEvent, payment, adminAudit, referral],
+          [userMeta, sessionMeta, node, annotation, highlight, shareToken, usageEvent, payment, adminAudit, referral, creditEvent],
           { create: false, waitForActive: false },
         ),
     },

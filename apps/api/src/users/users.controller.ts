@@ -42,6 +42,12 @@ export class UsersController {
     return this.usersService.getUsageEvents(user.sub);
   }
 
+  @Get('me/credit-events')
+  @ApiOperation({ summary: 'Get last 50 credit events (top-ups and referral awards)' })
+  async getCreditEvents(@CurrentUser() user: CognitoUser) {
+    return this.usersService.getCreditEvents(user.sub);
+  }
+
   @Post('me/referral-link')
   @ApiOperation({ summary: 'Get or create personal referral link (lazy slug generation)' })
   async getReferralLink(@CurrentUser() user: CognitoUser) {

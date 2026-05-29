@@ -27,6 +27,16 @@ export const ReferralSchema = new dynamoose.Schema({
   createdAt: String,
 });
 
+export const CreditEventSchema = new dynamoose.Schema({
+  PK: { type: String, hashKey: true },
+  SK: { type: String, rangeKey: true },
+  creditEventId: String,
+  sub: String,
+  type: String,
+  amountUsd: Number,
+  createdAt: String,
+});
+
 export const AdminAuditSchema = new dynamoose.Schema({
   PK: { type: String, hashKey: true },
   SK: { type: String, rangeKey: true },

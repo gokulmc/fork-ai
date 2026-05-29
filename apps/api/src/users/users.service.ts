@@ -2,7 +2,7 @@ import { Injectable, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ulid } from 'ulid';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
-import type { UserMetaItem, UsageEventItem } from '@/dynamo/dynamo.interfaces';
+import type { UserMetaItem, UsageEventItem, CreditEventItem } from '@/dynamo/dynamo.interfaces';
 import { CognitoUser } from '@/auth/jwt.strategy';
 
 @Injectable()
@@ -116,6 +116,10 @@ export class UsersService {
     return this.db.listUsageEvents(sub, 50);
   }
 
+  async getCreditEvents(sub: string): Promise<CreditEventItem[]> {
+    return this.db.listCreditEvents(sub, 50);
+  }
+
   async getOrCreateReferralLink(sub: string, email: string): Promise<{ slug: string; url: string }> {
     const existing = await this.db.getUserMeta(sub);
     if (existing?.referralSlug) {
@@ -174,9 +178,20 @@ export class UsersService {
 
       const referralCreditUsd = this.cfg.get<number>('billing.referralCreditUsd') ?? 5.00;
       this.logger.log(`[referral] awarding $${referralCreditUsd} to referrer=${user.referredBy} for referred=${sub}`);
+      const creditEventId = ulid();
+      const creditEvent: CreditEventItem = {
+        PK: `USER#${user.referredBy}`,
+        SK: `CREDITEVT#${creditEventId}`,
+        creditEventId,
+        sub: user.referredBy,
+        type: 'REFERRAL',
+        amountUsd: referralCreditUsd,
+        createdAt: new Date().toISOString(),
+      };
       await Promise.all([
         this.db.addCredit(user.referredBy, referralCreditUsd),
         this.db.updateUserMeta(sub, { referralCreditAwarded: true }),
+        this.db.putCreditEvent(creditEvent),
       ]);
       this.logger.log(`[referral] credit awarded OK referrer=${user.referredBy}`);
     } catch (err) {
