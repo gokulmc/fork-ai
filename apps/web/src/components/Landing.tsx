@@ -70,7 +70,7 @@ export function Landing({ onSubmit, loading, onShowHistory, outOfCredit }: Landi
           ))}
         </div>
       </div>
-      <div className="landing-foot">FORK.AI · V0.1 · BRANCHING RESEARCH, BY YOU</div>
+      <div className="landing-foot">FORK AI · V0.1 · BRANCHING RESEARCH, BY YOU</div>
     </div>
   );
 }

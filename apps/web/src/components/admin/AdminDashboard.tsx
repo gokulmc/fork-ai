@@ -111,7 +111,7 @@ function Shell({ health, authed, email, children }: { health: HealthStatus | nul
       <header className="ad-header">
         <div className="ad-brand">
           <span className="ad-logo">◆</span>
-          <span>fork.ai <b>admin</b></span>
+          <span>fork ai <b>admin</b></span>
         </div>
         <div className="ad-headright">
           <StatusPill health={health} />

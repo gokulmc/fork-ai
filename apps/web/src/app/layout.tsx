@@ -3,7 +3,7 @@ import './globals.css';
 import { Providers } from '@/components/Providers';
 
 export const metadata: Metadata = {
-  title: 'fork.ai',
+  title: 'fork ai',
   description: 'A branching research workspace — ask once, branch forever.',
 };
 

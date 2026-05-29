@@ -14,7 +14,7 @@ const TOUR_STEPS: TourStep[] = [
   {
     dataTour: 'tour-query',
     title: 'Ask anything',
-    body: 'Type a research question and press Enter. fork.ai structures the answer into sections you can explore.',
+    body: 'Type a research question and press Enter. fork ai structures the answer into sections you can explore.',
     position: 'bottom',
     phase: 'landing',
   },
