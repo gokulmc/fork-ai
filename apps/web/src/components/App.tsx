@@ -241,6 +241,13 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
   const wsRef = useRef<HTMLElement>(null);
   const appRef = useRef<HTMLDivElement>(null);
 
+  // Always-current refs so branch callbacks never close over stale sessionId / guestToken.
+  // useCallback re-creation lags one render behind state commits in some codepaths.
+  const sessionIdRef = useRef(sessionId);
+  const guestTokenRef = useRef(guestToken);
+  useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
+  useEffect(() => { guestTokenRef.current = guestToken; }, [guestToken]);
+
   // Read once — stable across renders.
   const initSplitRef = useRef(
     typeof window !== 'undefined'
@@ -637,7 +644,9 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
   // ── Branch: Go Deeper ─────────────────────────────────────────────────────
 
   const expandSectionAsChild = useCallback(async (parentNodeId: string, section: ForkNode['sections'][0]) => {
-    if (!sessionId || (!idToken && !guestToken)) return;
+    const sid = sessionIdRef.current;
+    const gt = guestTokenRef.current;
+    if (!sid || (!idToken && !gt)) return;
     const parent = nodes[parentNodeId];
     if (!parent) return;
 
@@ -677,9 +686,9 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
         sectionCount: tweaks.maxSections,
         webSearch: tweaks.webSearch,
       };
-      const apiNode = guestToken && !idToken
-        ? await shareApi.createNode(guestToken, nodePayload)
-        : await createNode(idToken, sessionId, nodePayload);
+      const apiNode = gt && !idToken
+        ? await shareApi.createNode(gt, nodePayload)
+        : await createNode(idToken, sid, nodePayload);
       const realNode = toForkNode(apiNode);
       setNodes(prev => {
         const next = { ...prev };
@@ -697,12 +706,14 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
       setSectionLoading(null);
       setLoadingNodes(prev => { const n = new Set(prev); n.delete(tempId); return n; });
     }
-  }, [nodes, sessionId, idToken, guestToken, scrollWsTop, notionSavedUrl]);
+  }, [nodes, idToken, scrollWsTop, notionSavedUrl]);
 
   // ── Branch: Ask AI from highlight ────────────────────────────────────────
 
   const askFromHighlight = useCallback(async (question: string, source: FollowUpState) => {
-    if (!sessionId || (!idToken && !guestToken)) return;
+    const sid = sessionIdRef.current;
+    const gt = guestTokenRef.current;
+    if (!sid || (!idToken && !gt)) return;
     const parent = nodes[source.nodeId];
     if (!parent) return;
 
@@ -739,9 +750,9 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
         sectionCount: tweaks.maxSections,
         webSearch: tweaks.webSearch,
       };
-      const apiNode = guestToken && !idToken
-        ? await shareApi.createNode(guestToken, nodePayload)
-        : await createNode(idToken, sessionId, nodePayload);
+      const apiNode = gt && !idToken
+        ? await shareApi.createNode(gt, nodePayload)
+        : await createNode(idToken, sid, nodePayload);
       const realNode = toForkNode(apiNode);
       setNodes(prev => {
         const next = { ...prev };
@@ -765,7 +776,7 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
         return prev;
       });
     }
-  }, [nodes, sessionId, idToken, guestToken, lastHlColors, scrollWsTop, persistHighlight, notionSavedUrl]);
+  }, [nodes, idToken, lastHlColors, scrollWsTop, persistHighlight, notionSavedUrl]);
 
   // ── Text selection → highlight menu ──────────────────────────────────────
 
