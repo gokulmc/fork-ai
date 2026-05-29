@@ -307,9 +307,11 @@ Login survives tab close. `App.tsx` gates the login page on two conditions: `sta
 - The `jwt` callback in `src/auth.ts` auto-refreshes the `id_token` 60s before expiry via Cognito's `REFRESH_TOKEN_AUTH` flow (also needs `SECRET_HASH`).
 - If refresh fails (e.g., the refresh token itself has expired after 30 days), the callback returns `{ ...token, error: 'RefreshTokenExpired' }`.
 - `App.tsx` watches `authSession?.error === 'RefreshTokenExpired'` and calls `signOut()` to send the user back to the login page.
-- Session `maxAge` is set to 30 days in `NextAuth` config to match the Cognito refresh-token lifetime.
+- Session `maxAge` is set to 30 days in `NextAuth` config; the Cognito App Client's **Refresh token expiration must also be 30 days** (set in the AWS Console). These two values must match — if the Cognito refresh token is shorter (it was once 5 days), users get silently logged out at that shorter interval even though the next-auth cookie thinks the session is still valid.
 
-The next-auth type augmentation lives in `apps/web/src/types/next-auth.d.ts` — adds `refreshToken`, `expiresAt`, `error` to `JWT`/`User`/`Session`.
+**`SECRET_HASH` for refresh MUST use `cognito:username`, NOT the email.** The pool uses `UsernameAttributes: ["email"]`, so the real username is a generated UUID and email is only a sign-in alias. `USER_PASSWORD_AUTH` (login) accepts a `SECRET_HASH` computed from the submitted email, but `REFRESH_TOKEN_AUTH` validates the hash against the **canonical UUID username**. Computing `secretHash(email)` for refresh fails with `NotAuthorizedException`, which `refreshIdToken` swallowed into `RefreshTokenExpired` → the user was logged out every hour (`IdTokenValidity: 60min`) at the refresh boundary while login kept working. The fix: `authorize()` reads `cognito:username` from the id_token, stores it on the JWT as `token.username`, and the refresh uses `secretHash(token.username)`. The catch in `refreshIdToken` now logs the Cognito error so a future regression is visible in the Lambda logs.
+
+The next-auth type augmentation lives in `apps/web/src/types/next-auth.d.ts` — adds `refreshToken`, `expiresAt`, `error`, `username` to `JWT`/`User`/`Session`.
 
 ### Hook ordering caveat in App.tsx
 `useEffect` hooks that reference `loadSession` (a `useCallback` declared mid-file) **must appear after the `loadSession` declaration**, otherwise the dependency array `[..., loadSession]` is evaluated in the temporal dead zone and throws `ReferenceError: Cannot access 'loadSession' before initialization` at runtime. Keep new effects that touch `loadSession` below its `useCallback`.
