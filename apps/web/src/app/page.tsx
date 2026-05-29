@@ -11,7 +11,7 @@ async function fetchTopics(): Promise<string[]> {
   try {
     const res = await fetch(
       `${process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3000'}/topics`,
-      { next: { revalidate: 86400 } },
+      { cache: 'no-store' },
     );
     if (!res.ok) return FALLBACK_TOPICS;
     const data = (await res.json()) as { topics: string[] };
