@@ -650,6 +650,40 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
   font-family: var(--sans);
   font-size: 14px;
 }
+.history-game-wrapper {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+.history-game-tagline {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--ink);
+  text-align: center;
+  padding: 22px 0 0;
+  margin: 0;
+  flex-shrink: 0;
+}
+.history-game-sub {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  text-align: center;
+  margin: 6px 0 0;
+  flex-shrink: 0;
+}
+.fork-trace-game {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
 
 /* ============================================================
    App shell

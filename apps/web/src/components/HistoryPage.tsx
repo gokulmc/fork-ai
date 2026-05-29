@@ -1,6 +1,7 @@
 'use client';
 import { ArrowLeft, Highlighter, GitBranch, Link as LinkIcon, ArrowUpRight } from './Icons';
 import { HistoryBubbles } from './HistoryBubbles';
+import { ForkTraceGame } from './ForkTraceGame';
 import type { SessionSummary } from '@/lib/api';
 
 interface HistoryPageProps {
@@ -38,6 +39,8 @@ export function HistoryPage({ sessions, loading, onLoadSession, onBack }: Histor
     else groups.push({ day, items: [s] });
   }
 
+  const isEmpty = !loading && sessions.length === 0;
+
   return (
     <div className="history-page">
       <header className="history-topbar">
@@ -47,78 +50,79 @@ export function HistoryPage({ sessions, loading, onLoadSession, onBack }: Histor
         </button>
       </header>
 
-      <div className="history-body">
-        <div className="history-title">
-          <h2>Research history</h2>
-          <p className="history-sub">Pick up where you left off</p>
+      {isEmpty ? (
+        <div className="history-game-wrapper">
+          <p className="history-game-tagline">Nothing here, let&apos;s play a game</p>
+          <p className="history-game-sub">FORK AI · V0.1 · BRANCHING RESEARCH, BY YOU</p>
+          <ForkTraceGame />
         </div>
+      ) : (
+        <div className="history-body">
+          <div className="history-title">
+            <h2>Research history</h2>
+            <p className="history-sub">Pick up where you left off</p>
+          </div>
 
-        {loading ? (
-          <div className="history-loading">
-            <span className="spinner" style={{ width: 22, height: 22 }} />
-          </div>
-        ) : sessions.length === 0 ? (
-          <div className="history-empty">
-            <p>No research sessions yet.</p>
-            <button className="submit" style={{ marginTop: 16 }} onClick={onBack}>
-              Start your first research
-            </button>
-          </div>
-        ) : (
-          <>
-            <HistoryBubbles sessions={sessions} onLoadSession={onLoadSession} />
-            <div className="history-groups">
-            {groups.map(group => (
-              <section key={group.day} className="history-group">
-                <div className="history-divider">
-                  <span className="history-divider-label">{dividerLabel(group.day)}</span>
-                  <span className="history-divider-line" />
-                </div>
-                <div className="sessions-grid history-grid">
-                  {group.items.map(s => {
-                    const sharedByMe = !!s.shareToken;
-                    const sharedWithMe = !!s.ownerSub;
-                    return (
-                      <button
-                        key={s.sessionId}
-                        className="session-card"
-                        onClick={() => onLoadSession(s.sessionId)}
-                      >
-                        <span className="session-card-emoji">{s.emoji}</span>
-                        <div className="session-card-body">
-                          <div className="session-card-title">{s.title}</div>
-                          <div className="session-card-lede">{s.lede}</div>
-                          <div className="session-card-meta">
-                            <span className="meta-chip" title={`${s.nodeCount} node${s.nodeCount !== 1 ? 's' : ''}`}>
-                              <GitBranch size={11} /> {s.nodeCount}
-                            </span>
-                            <span className="meta-chip" title={`${s.highlightCount} highlight${s.highlightCount !== 1 ? 's' : ''}`}>
-                              <Highlighter size={11} /> {s.highlightCount}
-                            </span>
-                            {sharedByMe && (
-                              <span className="meta-chip meta-chip--share" title="You shared this session">
-                                <LinkIcon size={11} /> Shared by you
-                              </span>
-                            )}
-                            {sharedWithMe && (
-                              <span className="meta-chip meta-chip--share" title="Shared with you">
-                                <ArrowUpRight size={11} /> Shared with you
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </section>
-            ))}
+          {loading ? (
+            <div className="history-loading">
+              <span className="spinner" style={{ width: 22, height: 22 }} />
             </div>
-          </>
-        )}
-      </div>
+          ) : (
+            <>
+              <HistoryBubbles sessions={sessions} onLoadSession={onLoadSession} />
+              <div className="history-groups">
+              {groups.map(group => (
+                <section key={group.day} className="history-group">
+                  <div className="history-divider">
+                    <span className="history-divider-label">{dividerLabel(group.day)}</span>
+                    <span className="history-divider-line" />
+                  </div>
+                  <div className="sessions-grid history-grid">
+                    {group.items.map(s => {
+                      const sharedByMe = !!s.shareToken;
+                      const sharedWithMe = !!s.ownerSub;
+                      return (
+                        <button
+                          key={s.sessionId}
+                          className="session-card"
+                          onClick={() => onLoadSession(s.sessionId)}
+                        >
+                          <span className="session-card-emoji">{s.emoji}</span>
+                          <div className="session-card-body">
+                            <div className="session-card-title">{s.title}</div>
+                            <div className="session-card-lede">{s.lede}</div>
+                            <div className="session-card-meta">
+                              <span className="meta-chip" title={`${s.nodeCount} node${s.nodeCount !== 1 ? 's' : ''}`}>
+                                <GitBranch size={11} /> {s.nodeCount}
+                              </span>
+                              <span className="meta-chip" title={`${s.highlightCount} highlight${s.highlightCount !== 1 ? 's' : ''}`}>
+                                <Highlighter size={11} /> {s.highlightCount}
+                              </span>
+                              {sharedByMe && (
+                                <span className="meta-chip meta-chip--share" title="You shared this session">
+                                  <LinkIcon size={11} /> Shared by you
+                                </span>
+                              )}
+                              {sharedWithMe && (
+                                <span className="meta-chip meta-chip--share" title="Shared with you">
+                                  <ArrowUpRight size={11} /> Shared with you
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
-      <div className="landing-foot">FORK AI · V0.1 · BRANCHING RESEARCH, BY YOU</div>
+      {!isEmpty && <div className="landing-foot">FORK AI · V0.1 · BRANCHING RESEARCH, BY YOU</div>}
     </div>
   );
 }
