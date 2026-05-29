@@ -257,7 +257,7 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 .query-box .submit:disabled { opacity: .45; cursor: not-allowed; transform: none; }
 
 .examples {
-  margin-top: 28px;
+  margin: 28px auto 0;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
