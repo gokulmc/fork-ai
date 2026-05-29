@@ -18,6 +18,10 @@
   },
   "dependencies": {
     "ink": "^7.0.3",
+    "next": "15.5.18",
     "react": "^19.2.6"
+  },
+  "overrides": {
+    "next": "15.5.18"
   }
 }

@@ -115,7 +115,7 @@ export class DynamoRepository {
   async addCredit(sub: string, amount: number): Promise<void> {
     await this.userMetaModel.update(
       { PK: this.userPk(sub), SK: 'METADATA' },
-      { '$add': { creditUsd: amount } },
+      { '$ADD': { creditUsd: amount } },
     );
   }
 

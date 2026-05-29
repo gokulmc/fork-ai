@@ -8,8 +8,8 @@ const TRIGGER_SOURCES = new Set([
 ]);
 
 function subject(triggerSource) {
-  if (triggerSource === 'CustomMessage_ForgotPassword') return 'Reset your fork.ai password';
-  return 'Your fork.ai verification code';
+  if (triggerSource === 'CustomMessage_ForgotPassword') return 'Reset your fork ai password';
+  return 'Your fork ai verification code';
 }
 
 function htmlEmail(code) {
@@ -18,7 +18,7 @@ function htmlEmail(code) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>fork.ai verification</title>
+  <title>fork ai verification</title>
 </head>
 <body style="margin:0;padding:0;background:#f5f5f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased">
   <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#f5f5f4;padding:48px 16px">
@@ -28,8 +28,17 @@ function htmlEmail(code) {
 
           <!-- Header -->
           <tr>
-            <td style="padding:28px 36px;border-bottom:1px solid #f0efee">
-              <span style="font-size:18px;font-weight:700;color:#1c1917;letter-spacing:-0.4px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">fork.ai</span>
+            <td style="padding:24px 36px;border-bottom:1px solid #f0efee">
+              <table cellpadding="0" cellspacing="0" role="presentation">
+                <tr>
+                  <td style="vertical-align:middle;padding-right:11px">
+                    <img src="https://forkai.in/logo.png" width="34" height="34" alt="fork ai" style="display:block;border-radius:8px">
+                  </td>
+                  <td style="vertical-align:middle">
+                    <span style="font-size:18px;font-weight:700;color:#1c1917;letter-spacing:-0.4px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">fork ai</span>
+                  </td>
+                </tr>
+              </table>
             </td>
           </tr>
 
@@ -55,7 +64,7 @@ function htmlEmail(code) {
               </table>
 
               <p style="margin:28px 0 0;font-size:13px;color:#a8a29e;line-height:1.6">
-                If you didn't create an account with fork.ai, you can safely ignore this email. Someone may have typed your address by mistake.
+                If you didn't create an account with fork ai, you can safely ignore this email. Someone may have typed your address by mistake.
               </p>
             </td>
           </tr>
@@ -64,7 +73,7 @@ function htmlEmail(code) {
           <tr>
             <td style="padding:18px 36px;background:#fafaf9;border-top:1px solid #f0efee">
               <p style="margin:0;font-size:12px;color:#a8a29e;line-height:1.6">
-                fork.ai &nbsp;·&nbsp;
+                fork ai &nbsp;·&nbsp;
                 <a href="https://forkai.in" style="color:#78716c;text-decoration:none">forkai.in</a>
                 &nbsp;·&nbsp;
                 <span>This is an automated message — please do not reply.</span>

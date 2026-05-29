@@ -216,10 +216,74 @@ The app uses a **custom email/password login UI** instead of the Cognito Hosted 
 
 ### Key constraints
 - **`USER_PASSWORD_AUTH` flow must be enabled** on the Cognito App Client (AWS Console → User Pool → App clients → Auth flows). If missing, Cognito returns `NotAuthorizedException: ALLOW_USER_PASSWORD_AUTH flow not enabled for this client`.
-- **`SECRET_HASH` required when App Client has a client secret.** Every Cognito SDK call (`InitiateAuth`, `SignUp`, `ConfirmSignUp`, `ResendConfirmationCode`) must include a `SECRET_HASH` computed as `Base64(HMAC-SHA256(username + clientId, clientSecret))`. Omitting it returns 400. The helper lives in each route file — `crypto.createHmac('sha256', COGNITO_CLIENT_SECRET).update(email + COGNITO_CLIENT_ID).digest('base64')`.
+- **`SECRET_HASH` required when App Client has a client secret.** Every Cognito SDK call (`InitiateAuth`, `SignUp`, `ConfirmSignUp`, `ResendConfirmationCode`) must include a `SECRET_HASH`. The helper is `computeSecretHash(email)` in `src/lib/cognito-secrets.ts` — `Base64(HMAC-SHA256(username + clientId, clientSecret))`.
 - Password regex: `^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&_\-#])[A-Za-z\d@$!%*?&_\-#]{8,}$` — must match the User Pool's password policy.
 - The Google OAuth button still calls `signIn('cognito')` → Cognito Hosted UI (existing flow unchanged).
 - `triggerRef` in `LoginPage.tsx` is updated on each step change via `useEffect([step, ...])` — center dot always calls the current step's action. The graph animation trigger is stored separately in `graphTriggerRef` and fires only after successful auth.
+
+---
+
+## Deployment
+
+### API — CodeBuild → Docker → Elastic Beanstalk
+
+| Resource | Value |
+|---|---|
+| CodeBuild project | `forkai-api-deploy` (ap-south-1) |
+| ECR repo | `forkai-api` |
+| EB app / env | `forkai-api` / `forkai-api-prod` |
+| EB LB | Classic LB `awseb-e-t-AWSEBLoa-CXJ72Y7Y13FA`, SG `sg-0453dabdaefe71c37` |
+| API URL | `https://api.forkai.in` (CNAME → EB hostname, HTTPS via ACM `forkai.in`/`*.forkai.in` cert) |
+| S3 artifacts bucket | `forkai-eb-artifacts` |
+| Buildspec | `apps/api/buildspec.yml` |
+
+**How a deploy works:**
+1. Push to `prod` branch → CodeBuild webhook fires
+2. `docker build` using `apps/api/Dockerfile` with repo root as context
+3. Image pushed to ECR with tag `$CODEBUILD_RESOLVED_SOURCE_VERSION` (commit SHA) + `latest`
+4. `Dockerrun.aws.json` uploaded to `s3://forkai-eb-artifacts/<sha>/`
+5. Single `elasticbeanstalk update-environment` call deploys version AND injects secrets
+
+**Critical constraints (hard-won):**
+- **Docker base image**: use `public.ecr.aws/docker/library/node:22-alpine` — NOT `node:22-alpine`. Docker Hub has unauthenticated pull rate limits (429) in CodeBuild. ECR Public mirror has none.
+- **Single `update-environment` call**: never split deploying a version and updating env vars into two separate calls. EB allows only one update at a time; the second call will hit `OperationInProgress`.
+- **`create-application-version` is idempotent**: buildspec uses `|| true` because re-running on the same commit SHA returns `InvalidParameterValue: version already exists`.
+- **`forkai-build-role` IAM**: needs `AdministratorAccess-AWSElasticBeanstalk` managed policy (EB's `UpdateEnvironment` internally checks CloudFormation, S3, EC2 permissions on the caller). Also needs S3 read/write on `elasticbeanstalk-ap-south-1-643830915895`.
+- **EB default S3 bucket policy** (`elasticbeanstalk-ap-south-1-643830915895`): `forkai-build-role` must be an explicit principal — the bucket policy is not open to all IAM roles in the account.
+- **`forkai-api-role` (EC2 instance profile)**: must have ECR pull permissions (`ecr:GetAuthorizationToken`, `ecr:BatchGetImage`, `ecr:GetDownloadUrlForLayer` on `arn:aws:ecr:ap-south-1:643830915895:repository/forkai-api`). Without this the instance cannot pull the Docker image and EB rolls back silently.
+- **HTTPS on the EB Classic LB**: HTTPS (443) listener uses the `forkai.in` ACM cert (which has `*.forkai.in` SAN — covers `api.forkai.in`). Port 443 must be open on the LB security group (`sg-0453dabdaefe71c37`) — it is NOT open by default when EB creates the LB. LB forwards to EC2 port 80 (nginx proxy) → Docker port 8080.
+- **`CORS_ORIGIN`** on EB is set to `https://forkai.in`. NestJS CORS allows only that origin — any change to the frontend domain requires updating this env var and redeploying.
+
+**Triggering a manual redeploy (if webhook didn't fire):**
+```bash
+aws codebuild start-build --project-name forkai-api-deploy \
+  --region ap-south-1 --source-version prod
+```
+
+---
+
+### Frontend — Amplify (Next.js SSR)
+
+| Resource | Value |
+|---|---|
+| Amplify app | `forkai-web` (AppId: `d2ej36ff5hc50c`, ap-south-1) |
+| Branch | `prod` → PRODUCTION stage |
+| Build spec | `amplify.yml` at repo root |
+| Live URL | `https://forkai.in` (custom domain) |
+
+**Critical constraints (hard-won):**
+- **`AMPLIFY_MONOREPO_APP_ROOT=apps/web`** must be set on the Amplify branch as an environment variable. Without it, Amplify's framework detector reads the root `package.json` (which has no `next` dep) and errors with `Cannot read 'next' version in package.json`.
+- **Next.js must be pinned to 15.x** — Amplify's detector does not recognise Next.js 16. Pin is enforced in two places: `apps/web/package.json` (`"next": "^15.5.18"`) and root `package.json` `overrides` + direct dep. The override is required because `next-auth`'s peer dep range includes 16, which npm would otherwise hoist to root `node_modules`, causing TypeScript to see two conflicting Next.js type definitions simultaneously.
+- **`$CODEBUILD_SRC_DIR` is NOT the repo root**: in Amplify's build environment it is the *parent* of the repo clone (e.g. `/codebuild/output/.../src`), and `PWD` starts at the appRoot (`apps/web`). The repo root is therefore always `$(pwd)/../..` from inside the build phases. The `amplify.yml` preBuild uses `cd $(pwd)/../../ && npm ci` to reach it.
+- **npm workspaces + Amplify**: there is no per-workspace `package-lock.json`. The lock file lives at the repo root, so `npm ci` must run from the repo root, not from `apps/web`.
+- **Amplify WEB_COMPUTE Lambda does NOT inject branch env vars at runtime.** Non-`NEXT_PUBLIC_` env vars set on the Amplify branch are available during the **build phase** but are NOT forwarded to the SSR Lambda function at request time. Symptoms: `process.env.COGNITO_CLIENT_SECRET` is `undefined` inside a route handler even though it's set in the Amplify console. Fix: add the server-side secrets to the `env` block in `next.config.ts` — webpack's DefinePlugin inlines them into the Lambda bundle at build time. See `apps/web/next.config.ts`. **Do not attempt to read them from AWS Secrets Manager / SSM at runtime** — the Amplify-managed Lambda execution role has no IAM credentials available (`CredentialsProviderError`).
+- **Amplify WEB_COMPUTE Lambda execution role is Amplify-managed** and does NOT appear in your account's Lambda or IAM console. You cannot attach custom policies to it. If a route handler needs AWS SDK calls (e.g. Cognito), those work because Cognito is a public API using the client secret — not IAM credentials.
+- **next-auth v5 + Amplify: three required settings in `auth.ts`:**
+  1. `secret: process.env.NEXTAUTH_SECRET` — next-auth v5 reads `AUTH_SECRET` internally (in node_modules, not webpack-transformed). Pass it explicitly so the constructor receives the build-time-inlined value.
+  2. `AUTH_SECRET: process.env.NEXTAUTH_SECRET` in the `next.config.ts` `env` block — belt-and-suspenders so it's also available as a real env var.
+  3. `trustHost: true` — next-auth v5 validates the request host against `AUTH_URL`; without this it rejects all requests at non-localhost URLs. Required for any CDN/serverless deployment.
+
+---
 
 ### Session persistence
 Login survives tab close. `App.tsx` gates the login page on two conditions: `status === 'unauthenticated'` (covers logout from any page) and `showLogin` (keeps `LoginPage` mounted during the post-login animation). `showLogin` is initialised from `localStorage` (persists across tab closes) and is set back to `true` by a `useEffect` whenever `status` becomes `'unauthenticated'`. Do **not** use `sessionStorage` for this — it is tab-scoped and would break persistence.
@@ -277,6 +341,16 @@ if (remove.length) op.$REMOVE = remove;
 ```
 
 Without this, clearing `shareToken` (on revoke) or `notionPageUrl` (on any node create) throws `TypeMismatch: Expected <field> to be of type string, instead found type null` and 500s the request. Any future schema field that may be cleared must rely on this pattern.
+
+### Dynamoose update operators are case-sensitive — uppercase only
+
+Dynamoose v4 only recognises **`$ADD`**, **`$SET`**, **`$REMOVE`**, **`$DELETE`** as update operators. Lowercase variants (`$add`, `$set`, …) are silently dropped — the key is treated as a regular attribute name, the operator is never emitted into the DynamoDB `UpdateExpression`, and the call either no-ops or rejects with `ValidationException: ExpressionAttributeValues must not be empty`.
+
+This footgun has bitten the codebase twice:
+- `deductCredit` used `$add` → every `POST /sessions/:id/nodes` returned 500 (fixed in commit `2a2d1b6`).
+- `addCredit` used `$add` → Razorpay top-ups silently never credited; the `PaymentItem` row was still written by the sibling `Promise.all` call, so the idempotency log marked the payment as done and prevented webhook retry from rescuing it.
+
+Any new repository method that uses an update operator must use uppercase. There is no runtime warning from Dynamoose if you get this wrong.
 
 ### Frontend — guest mode mechanics
 

@@ -40,6 +40,9 @@ async function refreshIdToken(
 }
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  secret: process.env.NEXTAUTH_SECRET,
+  // Required for serverless/CDN deployments where AUTH_URL isn't set at runtime
+  trustHost: true,
   session: {
     strategy: 'jwt',
     maxAge: 30 * 24 * 60 * 60, // 30 days — matches Cognito refresh token lifetime

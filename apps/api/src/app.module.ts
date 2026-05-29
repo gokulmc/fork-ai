@@ -14,6 +14,7 @@ import { HighlightsModule } from '@/highlights/highlights.module';
 import { NotionModule } from '@/notion/notion.module';
 import { ShareModule } from '@/share/share.module';
 import { BillingModule } from '@/billing/billing.module';
+import { HealthController } from './health.controller';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { BillingModule } from '@/billing/billing.module';
     ShareModule,
     BillingModule,
   ],
+  controllers: [HealthController],
   providers: [
     // Apply JWT guard globally; controllers opt out via @Public()
     { provide: APP_GUARD, useClass: JwtAuthGuard },
