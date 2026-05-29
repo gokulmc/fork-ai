@@ -580,12 +580,16 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
   z-index: 100;
   user-select: none;
 }
-.app-brand img {
+.app-brand .brand-logo {
   width: 24px;
   height: 24px;
   border-radius: 5px;
-  object-fit: contain;
-  display: block;
+  flex-shrink: 0;
+  background: url('/icon.svg') center / contain no-repeat;
+}
+/* Match the in-app theme toggle (data-theme), not the OS colour scheme. */
+[data-theme="dark"] .app-brand .brand-logo {
+  background-image: url('/icon_b.svg');
 }
 
 /* ============================================================
