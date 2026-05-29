@@ -53,6 +53,46 @@ export class SessionsService {
     const nodeId = ulid();
     const now = new Date().toISOString();
 
+    // Writes to a disconnected client throw — swallow so the LLM loop still
+    // completes and the full result is persisted even if the user navigated away.
+    const emit = (data: object) => { try { send(data); } catch { /* client gone */ } };
+
+    const rootNode: NodeItem = {
+      PK: `SESSION#${sessionId}`,
+      SK: `NODE#${nodeId}`,
+      nodeId,
+      parentId: null,
+      kind: 'QUERY',
+      title: dto.query.slice(0, 60),
+      emoji: null,
+      query: dto.query,
+      lede: '',
+      sections: [],
+      fromSection: null,
+      fromText: null,
+      createdAt: now,
+    };
+    const sessionMeta: SessionMetaItem = {
+      PK: this.userPk(sub),
+      SK: this.sessionSk(sessionId),
+      sessionId,
+      title: dto.query.slice(0, 60),
+      emoji: '',
+      lede: '',
+      rootNodeId: nodeId,
+      nodeCount: 1,
+      createdAt: now,
+      updatedAt: now,
+      gsi1pk: this.userPk(sub),
+      gsi1sk: `UPDATED#${now}`,
+    };
+
+    // Persist the session up-front and tell the client its id NOW (the `init`
+    // event), so the URL updates immediately and a refresh mid-stream restores
+    // the real session instead of dropping to Landing. Filled in as it streams.
+    await Promise.all([this.db.putNode(rootNode), this.db.putSessionMeta(sessionMeta)]);
+    emit({ type: 'init', sessionId, nodeId });
+
     let title = '';
     let emoji = '';
     let lede = '';
@@ -63,46 +103,20 @@ export class SessionsService {
         title = event.title;
         emoji = event.emoji;
         lede = event.lede;
-        send({ type: 'meta', title, emoji, lede });
+        emit({ type: 'meta', title, emoji, lede });
       } else if (event.type === 'section') {
         const section = { id: ulid(), heading: event.heading, body: event.body };
         sections.push(section);
-        send({ type: 'section', ...section });
+        emit({ type: 'section', ...section });
+        // Incrementally persist so a refresh shows progress, not an empty node.
+        await this.db.putNode({ ...rootNode, title: title || rootNode.title, emoji, lede, sections: [...sections] });
       } else if (event.type === 'done') {
-        const rootNode: NodeItem = {
-          PK: `SESSION#${sessionId}`,
-          SK: `NODE#${nodeId}`,
-          nodeId,
-          parentId: null,
-          kind: 'QUERY',
-          title,
-          emoji,
-          query: dto.query,
-          lede,
-          sections,
-          fromSection: null,
-          fromText: null,
-          createdAt: now,
-        };
-
-        const sessionMeta: SessionMetaItem = {
-          PK: this.userPk(sub),
-          SK: this.sessionSk(sessionId),
-          sessionId,
-          title,
-          emoji,
-          lede,
-          rootNodeId: nodeId,
-          nodeCount: 1,
-          createdAt: now,
-          updatedAt: now,
-          gsi1pk: this.userPk(sub),
-          gsi1sk: `UPDATED#${now}`,
-        };
-
-        await Promise.all([this.db.putNode(rootNode), this.db.putSessionMeta(sessionMeta)]);
+        await Promise.all([
+          this.db.putNode({ ...rootNode, title, emoji, lede, sections }),
+          this.db.putSessionMeta({ ...sessionMeta, title, emoji, lede }),
+        ]);
         await this.users.billUsage(sub, event.usage.inputTokens, event.usage.outputTokens, 'QUERY', sessionId, nodeId);
-        send({ type: 'done', sessionId, nodeId });
+        emit({ type: 'done', sessionId, nodeId });
       }
     }
   }
@@ -121,6 +135,51 @@ export class SessionsService {
     const token = randomBytes(32).toString('base64url');
     const now = new Date().toISOString();
 
+    // Writes to a disconnected client throw — swallow so the LLM loop still
+    // completes and the full result is persisted even if the user navigated away.
+    const emit = (data: object) => { try { send(data); } catch { /* client gone */ } };
+
+    const rootNode: NodeItem = {
+      PK: `SESSION#${sessionId}`,
+      SK: `NODE#${nodeId}`,
+      nodeId,
+      parentId: null,
+      kind: 'QUERY',
+      title: dto.query.slice(0, 60),
+      emoji: null,
+      query: dto.query,
+      lede: '',
+      sections: [],
+      fromSection: null,
+      fromText: null,
+      createdAt: now,
+    };
+    const sessionMeta: SessionMetaItem = {
+      PK: this.userPk(houseSub),
+      SK: this.sessionSk(sessionId),
+      sessionId,
+      title: dto.query.slice(0, 60),
+      emoji: '',
+      lede: '',
+      rootNodeId: nodeId,
+      nodeCount: 1,
+      isTrial: true,
+      shareToken: token,
+      createdAt: now,
+      updatedAt: now,
+      gsi1pk: this.userPk(houseSub),
+      gsi1sk: `UPDATED#${now}`,
+    };
+
+    // Persist the session + share token up-front so a refresh mid-stream can
+    // restore it. The node/meta are filled in as sections stream and at `done`.
+    await Promise.all([
+      this.db.putNode(rootNode),
+      this.db.putSessionMeta(sessionMeta),
+      this.db.putShareToken(token, sessionId, houseSub),
+    ]);
+    emit({ type: 'init', sessionId, nodeId, token });
+
     let title = '';
     let emoji = '';
     let lede = '';
@@ -131,52 +190,20 @@ export class SessionsService {
         title = event.title;
         emoji = event.emoji;
         lede = event.lede;
-        send({ type: 'meta', title, emoji, lede });
+        emit({ type: 'meta', title, emoji, lede });
       } else if (event.type === 'section') {
         const section = { id: ulid(), heading: event.heading, body: event.body };
         sections.push(section);
-        send({ type: 'section', ...section });
+        emit({ type: 'section', ...section });
+        // Incrementally persist so a refresh shows progress, not an empty node.
+        await this.db.putNode({ ...rootNode, title: title || rootNode.title, emoji, lede, sections: [...sections] });
       } else if (event.type === 'done') {
-        const rootNode: NodeItem = {
-          PK: `SESSION#${sessionId}`,
-          SK: `NODE#${nodeId}`,
-          nodeId,
-          parentId: null,
-          kind: 'QUERY',
-          title,
-          emoji,
-          query: dto.query,
-          lede,
-          sections,
-          fromSection: null,
-          fromText: null,
-          createdAt: now,
-        };
-
-        const sessionMeta: SessionMetaItem = {
-          PK: this.userPk(houseSub),
-          SK: this.sessionSk(sessionId),
-          sessionId,
-          title,
-          emoji,
-          lede,
-          rootNodeId: nodeId,
-          nodeCount: 1,
-          isTrial: true,
-          shareToken: token,
-          createdAt: now,
-          updatedAt: now,
-          gsi1pk: this.userPk(houseSub),
-          gsi1sk: `UPDATED#${now}`,
-        };
-
         await Promise.all([
-          this.db.putNode(rootNode),
-          this.db.putSessionMeta(sessionMeta),
-          this.db.putShareToken(token, sessionId, houseSub),
+          this.db.putNode({ ...rootNode, title, emoji, lede, sections }),
+          this.db.putSessionMeta({ ...sessionMeta, title, emoji, lede }),
         ]);
         await this.users.billUsage(houseSub, event.usage.inputTokens, event.usage.outputTokens, 'QUERY', sessionId, nodeId);
-        send({ type: 'done', sessionId, nodeId, token });
+        emit({ type: 'done', sessionId, nodeId, token });
       }
     }
   }

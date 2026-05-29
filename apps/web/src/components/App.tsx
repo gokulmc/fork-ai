@@ -1211,6 +1211,8 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
         onShowHistory={() => setView('history')}
         outOfCredit={rootQueryOutOfCredit}
         initialTopics={initialTopics}
+        loggedIn={status === 'authenticated'}
+        onLogin={() => setForceLogin(true)}
       />
     );
     return <>{persistentBrand}{inner}<AccountButton creditBalance={creditBalance} onCreditUpdated={setCreditBalance} /><TweaksPanel tweaks={tweaks} setTweak={setTweak} fontPairOptions={FONT_PAIR_OPTIONS} onRestartTour={restartTour} userEmail={authSession?.user?.email ?? ''} userName={authSession?.user?.name ?? ''} />{tourEl}</>;

@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { Search, ArrowRight, Clock } from './Icons';
+import { Search, ArrowRight, ArrowUpRight, Clock } from './Icons';
 
 interface LandingProps {
   onSubmit: (query: string) => void;
@@ -8,9 +8,11 @@ interface LandingProps {
   onShowHistory: () => void;
   outOfCredit?: boolean;
   initialTopics?: string[];
+  loggedIn?: boolean;
+  onLogin?: () => void;
 }
 
-export function Landing({ onSubmit, loading, onShowHistory, outOfCredit, initialTopics = [] }: LandingProps) {
+export function Landing({ onSubmit, loading, onShowHistory, outOfCredit, initialTopics = [], loggedIn, onLogin }: LandingProps) {
   const [q, setQ] = useState('');
   const [leaving, setLeaving] = useState(false);
 
@@ -26,6 +28,11 @@ export function Landing({ onSubmit, loading, onShowHistory, outOfCredit, initial
         <button className="icon-btn" onClick={onShowHistory}>
           <Clock size={14} /> History
         </button>
+        {!loggedIn && (
+          <button className="icon-btn" onClick={onLogin}>
+            <ArrowUpRight size={14} /> Login
+          </button>
+        )}
       </nav>
 
       <div className="landing-inner">

@@ -165,6 +165,12 @@ NOTION_REDIRECT_URI=http://localhost:3000/notion/callback
 
 ---
 
+## Root-query streaming — persist-first / `init` event (IMPORTANT)
+
+Both `SessionsService.createStreaming` (`POST /sessions/stream`) and `createTrialSessionStreaming` (`POST /share`) persist the session + root node to DynamoDB **before** the LLM stream and emit an **`init`** SSE event (`{ type: 'init', sessionId, nodeId, token? }`) up-front, re-`putNode` incrementally per section, and finalise at `done`. `send` is wrapped in a swallow-errors `emit()` so a client disconnect (refresh) doesn't abort the loop — the full result still persists. This is what lets a refresh *during* the root stream restore the real session instead of dropping the user to Landing. See root `CLAUDE.md` → "Root-query streaming". **Do not move session persistence back to the `done` block only.**
+
+---
+
 ## Coding conventions
 
 - **Repository pattern** — business logic never touches `DynamoDBDocumentClient` directly; always goes through `DynamoRepository`

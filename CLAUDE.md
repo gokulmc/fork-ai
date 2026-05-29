@@ -150,6 +150,24 @@ All three return: `{ title, emoji, lede, sections: [{ heading, body }] }`.
 
 ---
 
+## Root-query streaming — persist-first / `init` event (IMPORTANT)
+
+> **The session must exist in the DB and the client must know its id BEFORE the LLM stream finishes.** Otherwise a page refresh *during* the root-query stream has nothing to restore and drops the user back to Landing.
+
+Both streaming entry points — `SessionsService.createStreaming` (authed, `POST /sessions/stream`) and `createTrialSessionStreaming` (trial/guest, `POST /share`) — follow the same **persist-first** shape:
+
+1. **Before** consuming the LLM stream: generate `sessionId` + `nodeId` (+ a share token for trial), write an initial loading `NodeItem` (empty `sections`, `title = query.slice(0,60)`) and `SessionMetaItem` to DynamoDB, then emit an **`init`** SSE event: `{ type: 'init', sessionId, nodeId, token? }`.
+2. **Per section:** re-`putNode` with the accumulated sections so far — incremental persistence means a mid-stream refresh shows progress, not an empty node.
+3. **At `done`:** final `putNode` + `putSessionMeta` with the real `title`/`emoji`/`lede`, then bill usage.
+
+`send` is wrapped in a swallow-errors `emit(...)` so that if the client disconnects (navigates/refreshes), writes to the dead socket don't throw — the `for await` loop runs to completion and the **full** result still lands in the DB.
+
+**Frontend** (`submitRootQuery` in `App.tsx`): the `init` handler adopts the ids immediately — `setSessionId(event.sessionId)` (which makes the persist effect write the `#<sessionId>` URL hash + `fork.ai.session`), and for trial it also stores `fork.ai.trial`, sets `guestToken`, and sets `hasLoadedShareRef.current = true`. On refresh the existing restore paths (authed: `loadSession` from hash/`fork.ai.session`; trial: share-load effect from `fork.ai.trial`) reload the real session. A `fork.ai.pending` query marker (set at submit, cleared in `finally`) is a belt-and-suspenders fallback for the ~200ms window before `init` arrives — it re-runs the query if nothing was persisted yet.
+
+**Do not revert to writing the session only at `done`** — that is exactly the bug that sends a refreshing user to Landing mid-stream.
+
+---
+
 ## Coding conventions (both apps)
 
 - **TypeScript strict** — no `any`
