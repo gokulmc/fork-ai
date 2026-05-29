@@ -62,3 +62,9 @@ The flow by which an already-authenticated User replaces their password by suppl
 
 ## Forgot Password
 The self-service flow by which an unauthenticated person recovers an account whose native password they cannot supply. Identity is proven by a one-time code emailed to the account address; on success the person chooses a new password and is signed in. Offered only after an incorrect-password attempt during sign-in. Distinct from Change Password, which requires the current password. Not available for accounts that sign in via Google — there is no native password to reset.
+
+## Support Ticket
+A message submitted by any user (authenticated or guest) via the Contact Support form in the Tweaks panel. Fields: name, email, subject (Bug / Billing / Feature Request / Other), and free-text message. Delivered to `info@stemlabs.co.in` via Amazon SES; the submitter's email is set as Reply-To so replies go directly to them. Not stored in DynamoDB — fire-and-forget delivery only.
+
+## Terms & Conditions
+The legal agreement between fork ai and its users, operated by CURIOSTEM LEARNING PRIVATE LIMITED (Erode, Tamil Nadu, India; GST: 33AAMCC6984A1ZM). Covers account eligibility, credits and billing (Razorpay, non-refundable, credit multiplier), acceptable use, guest access, intellectual property, liability cap, privacy, termination, and governing law (courts of Erode). Accessible via the Account popover. Contact for legal matters: `info@stemlabs.co.in`.
