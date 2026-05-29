@@ -600,6 +600,9 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
   inset: 0;
   display: grid;
   grid-template-rows: auto 1fr auto;
+  /* Define the column explicitly — without it the implicit `auto` column sizes to
+     max-content, so each day-group's card width tracked its longest lede. */
+  grid-template-columns: minmax(0, 1fr);
   background: var(--bg);
   z-index: 50;
   overflow-y: auto;
@@ -634,7 +637,7 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
   color: var(--ink-3);
   margin: 0;
 }
-.history-grid { grid-template-columns: 1fr; }
+.history-grid { grid-template-columns: minmax(0, 1fr); }
 .history-loading {
   display: flex;
   justify-content: center;
