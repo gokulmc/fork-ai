@@ -194,6 +194,52 @@ You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase 
     return this.callJson(prompt, webSearch);
   }
 
+  async getTrendingTopics(): Promise<string[]> {
+    const today = new Date().toISOString().slice(0, 10);
+    const prompt = `Today is ${today}. Use web search to find 4 compelling, specific research questions that are trending RIGHT NOW in science, technology, or politics/world affairs.
+
+Return ONLY valid JSON, no prose, no markdown fences:
+{
+  "topics": [
+    "Question one?",
+    "Question two?",
+    "Question three?",
+    "Question four?"
+  ]
+}
+
+Rules:
+- Each question must be about something newsworthy within the last 2 weeks — not evergreen
+- Phrase as a question a curious reader would type into a research tool (5-12 words)
+- Mix: roughly 2 science/technology + 2 politics/world affairs
+- Be specific: name the technology, event, or actor (e.g. "What is OpenAI's new o3 model?" not "How does AI work?")`;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const params: any = {
+      model: 'claude-sonnet-4-6',
+      max_tokens: 512,
+      messages: [{ role: 'user', content: prompt }],
+      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }],
+    };
+
+    const message = await this.client.messages.create(params);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const blocks: any[] = (message as any).content ?? [];
+    const raw = blocks
+      .filter((b: { type: string }) => b.type === 'text')
+      .map((b: { text?: string }) => b.text ?? '')
+      .join('');
+
+    let text = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '');
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start >= 0 && end > start) text = text.slice(start, end + 1);
+
+    const parsed = JSON.parse(text) as { topics: string[] };
+    if (!Array.isArray(parsed.topics)) throw new Error('Invalid topics response shape');
+    return parsed.topics.slice(0, 4);
+  }
+
   private async callJson(prompt: string, webSearch = false, retries = 1): Promise<LlmResponse> {
     const fullPrompt = webSearch ? `${prompt}\n\n${WEB_SEARCH_GUIDANCE}\n\n${CITATION_NOTE}` : prompt;
     let lastError: Error | undefined;

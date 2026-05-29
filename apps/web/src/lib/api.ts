@@ -54,6 +54,7 @@ export interface SessionSummary {
   notionPageUrl?: string | null;
   shareToken?: string | null;
   ownerSub?: string | null;
+  isTrial?: boolean;
 }
 
 export interface FullSession extends SessionSummary {
@@ -293,7 +294,7 @@ export function updateSessionNotionUrl(
 export type StreamEvent =
   | { type: 'meta'; title: string; emoji: string; lede: string }
   | { type: 'section'; id: string; heading: string; body: string }
-  | { type: 'done'; sessionId: string; nodeId: string }
+  | { type: 'done'; sessionId: string; nodeId: string; token?: string }
   | { type: 'error'; message: string };
 
 export async function createSessionStream(
@@ -309,6 +310,43 @@ export async function createSessionStream(
       'Content-Type': 'application/json',
       Authorization: `Bearer ${idToken}`,
     },
+    body: JSON.stringify({ query, sectionCount, webSearch }),
+  });
+
+  if (!res.ok || !res.body) {
+    const msg = await res.text().catch(() => res.statusText);
+    throw new ApiError(res.status, msg);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split('\n');
+    buf = lines.pop() ?? '';
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      try {
+        const event = JSON.parse(line.slice(6)) as StreamEvent;
+        onEvent(event);
+      } catch { /* ignore malformed lines */ }
+    }
+  }
+}
+
+export async function createTrialSessionStream(
+  query: string,
+  sectionCount = 5,
+  webSearch = false,
+  onEvent: (event: StreamEvent) => void,
+): Promise<void> {
+  const res = await fetch(`${base()}/share`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query, sectionCount, webSearch }),
   });
 

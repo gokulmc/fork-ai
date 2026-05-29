@@ -43,6 +43,7 @@ import {
   listSessions,
   getSession,
   createSessionStream,
+  createTrialSessionStream,
   createNode,
   renameNode as apiRenameNode,
   deleteNode as apiDeleteNode,
@@ -142,14 +143,16 @@ function ResearchingScreen({ sessions }: { sessions: SessionSummary[] }) {
   );
 }
 
-export function App() {
+export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
   const { data: authSession, status } = useSession();
   const idToken = authSession?.idToken ?? '';
 
-  // Guest mode — set from ?sk= query param on mount; cleared after claim
+  // Guest mode — set from ?sk= query param or localStorage trial token on mount; cleared after claim
   const [guestToken, setGuestToken] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
-    return new URLSearchParams(window.location.search).get('sk');
+    const sk = new URLSearchParams(window.location.search).get('sk');
+    if (sk) return sk;
+    return localStorage.getItem('fork.ai.trial');
   });
   const [invalidLink, setInvalidLink] = useState(false);
   const [invalidLinkCountdown, setInvalidLinkCountdown] = useState(3);
@@ -159,16 +162,18 @@ export function App() {
     if (typeof window === 'undefined') return 'landing';
     return new URLSearchParams(window.location.search).get('view') === 'history' ? 'history' : 'landing';
   });
-  const [showLogin, setShowLogin] = useState(
-    () => typeof window === 'undefined' || !localStorage.getItem('fork.ai.visited'),
-  );
+  const [showLogin, setShowLogin] = useState(false);
   // Set when a guest explicitly chooses to sign in mid-session (e.g. clicks
   // "Login to Save"). Overrides the guest-token bypass on the login gate so
   // LoginPage renders even while guestToken is set. Cleared once the guest is
   // authenticated, at which point the claim effect runs.
   const [forceLogin, setForceLogin] = useState(false);
-  // Show login whenever the session is unauthenticated (covers logout → re-login)
-  useEffect(() => { if (status === 'unauthenticated') setShowLogin(true); }, [status]);
+  const [isTrial, setIsTrial] = useState(false);
+  // Show login whenever a previously-authenticated user's session is unauthenticated (covers logout → re-login).
+  // New visitors (no fork.ai.visited in localStorage) go to Landing instead.
+  useEffect(() => {
+    if (status === 'unauthenticated' && !!localStorage.getItem('fork.ai.visited')) setShowLogin(true);
+  }, [status]);
 
   // Auto sign-out on any 401 (expired Cognito id_token)
   useEffect(() => { setUnauthorizedHandler(() => void signOut()); }, []);
@@ -201,7 +206,8 @@ export function App() {
   const [loadingRoot, setLoadingRoot] = useState(() => {
     if (typeof window === 'undefined') return false;
     const hasSk = !!new URLSearchParams(window.location.search).get('sk');
-    return !!(window.location.hash.slice(1) || localStorage.getItem('fork.ai.session') || hasSk);
+    const hasTrial = !!localStorage.getItem('fork.ai.trial');
+    return !!(window.location.hash.slice(1) || localStorage.getItem('fork.ai.session') || hasSk || hasTrial);
   });
   const [loadingNodes, setLoadingNodes] = useState<Set<string>>(new Set());
   const [sectionLoading, setSectionLoading] = useState<string | null>(null);
@@ -345,7 +351,9 @@ export function App() {
     hasClaimedRef.current = true;
     shareApi.claimSession(guestToken, idToken)
       .then(summary => {
+        localStorage.removeItem('fork.ai.trial');
         setGuestToken(null);
+        setIsTrial(false);
         return loadSession(summary.sessionId);
       })
       .catch(err => console.error('Failed to claim session after login', err));
@@ -400,7 +408,9 @@ export function App() {
       // Already logged in — claim immediately then load via normal auth path
       shareApi.claimSession(guestToken, idToken)
         .then(summary => {
+          localStorage.removeItem('fork.ai.trial');
           setGuestToken(null);
+          setIsTrial(false);
           return loadSession(summary.sessionId);
         })
         .catch(err => {
@@ -425,6 +435,7 @@ export function App() {
           setHighlightsList(toHighlightRecords(session.highlights, nodeMap));
           setNotionSavedUrl(session.notionPageUrl ?? null);
           setShowLogin(false);
+          setIsTrial(session.isTrial ?? false);
         })
         .catch(err => {
           console.error('Failed to load shared session', err);
@@ -534,7 +545,12 @@ export function App() {
       let metaEmoji: string | null = null;
       let metaLede = '';
 
-      await createSessionStream(idToken, query, tweaks.maxSections, tweaks.webSearch, (event) => {
+      const isTrialQuery = !idToken && !guestToken;
+      const streamFn = isTrialQuery
+        ? (cb: Parameters<typeof createSessionStream>[4]) => createTrialSessionStream(query, tweaks.maxSections, tweaks.webSearch, cb)
+        : (cb: Parameters<typeof createSessionStream>[4]) => createSessionStream(idToken, query, tweaks.maxSections, tweaks.webSearch, cb);
+
+      await streamFn((event) => {
         if (event.type === 'meta') {
           metaTitle = event.title;
           metaEmoji = event.emoji;
@@ -584,6 +600,16 @@ export function App() {
               highlightCount: 0,
             }, ...s];
           });
+          // Store trial token so the session survives page refresh.
+          // Mark hasLoadedShareRef so the share load effect doesn't re-fetch
+          // the session (which would briefly show ResearchingScreen again and
+          // create a window where branches silently fail).
+          if (isTrialQuery && event.token) {
+            localStorage.setItem('fork.ai.trial', event.token);
+            hasLoadedShareRef.current = true;
+            setGuestToken(event.token);
+            setIsTrial(true);
+          }
         }
       });
     } catch (err) {
@@ -606,7 +632,7 @@ export function App() {
         return next;
       });
     }
-  }, [idToken]);
+  }, [idToken, guestToken]);
 
   // ── Branch: Go Deeper ─────────────────────────────────────────────────────
 
@@ -1099,13 +1125,14 @@ export function App() {
     </div>
   );
 
-  // Guests with a share token skip the login gate — UNLESS forceLogin is set
-  // (guest clicked "Login to Save" or "Save to Notion"). Unauthenticated users
-  // without a share token always see login.
+  // New visitors (no fork.ai.visited) bypass the login gate — they go to Landing first.
+  // Returning users who are logged out see LoginPage (gate uses status + showLogin).
+  // Guests with a share/trial token skip the login gate — UNLESS forceLogin is set.
   // Gate stays true through the post-login animation: it only flips off when
   // both `showLogin` and `forceLogin` have been cleared by onEnter (1500ms after
   // signIn succeeds), preserving the existing graph animation.
-  if (forceLogin || (!guestToken && (status === 'unauthenticated' || showLogin))) {
+  const isNewVisitor = typeof window !== 'undefined' && !localStorage.getItem('fork.ai.visited');
+  if (forceLogin || (!guestToken && !isNewVisitor && (status === 'unauthenticated' || showLogin))) {
     return (
       <LoginPage
         onEnter={() => {
@@ -1134,6 +1161,7 @@ export function App() {
         loading={loadingRoot}
         onShowHistory={() => setView('history')}
         outOfCredit={rootQueryOutOfCredit}
+        initialTopics={initialTopics}
       />
     );
     return <>{persistentBrand}{inner}<AccountButton creditBalance={creditBalance} onCreditUpdated={setCreditBalance} /><TweaksPanel tweaks={tweaks} setTweak={setTweak} fontPairOptions={FONT_PAIR_OPTIONS} onRestartTour={restartTour} userEmail={authSession?.user?.email ?? ''} userName={authSession?.user?.name ?? ''} />{tourEl}</>;
@@ -1387,6 +1415,39 @@ export function App() {
         </div>
       )}
     </div>
+
+    {isTrial && Object.keys(nodes).length >= 5 && (
+      <div style={{
+        position: 'fixed', inset: 0, zIndex: 1000,
+        background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(2px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <div style={{
+          background: 'var(--bg)', border: '1px solid var(--line-strong)',
+          borderRadius: 12, padding: '32px 36px',
+          maxWidth: 420, width: '90%', textAlign: 'center',
+          boxShadow: '0 8px 40px rgba(0,0,0,0.18)',
+        }}>
+          <div style={{ fontSize: 32, marginBottom: 12 }}>🔒</div>
+          <h2 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 700, color: 'var(--ink)' }}>Free session limit reached</h2>
+          <p style={{ margin: '0 0 24px', fontSize: 14, color: 'var(--ink-2)', lineHeight: 1.5 }}>
+            Login or signup to continue — your session will be saved to your account.
+          </p>
+          <button
+            style={{
+              width: '100%', background: 'var(--ink)', color: 'var(--bg)',
+              border: 0, borderRadius: 6, padding: '10px 0',
+              fontSize: 13, fontWeight: 500, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+            onClick={() => setForceLogin(true)}
+          >
+            Login / Sign up
+          </button>
+        </div>
+      </div>
+    )}
+
     {tourEl}
     </>
   );
