@@ -1,5 +1,9 @@
 # fork.ai — Domain Glossary
 
+> **IMPORTANT — Trial Session branch fix:** When a Trial Session is created via `POST /share` (streaming), the done handler sets `guestToken` and must also set `hasLoadedShareRef.current = true` synchronously (before `setGuestToken`). Without this, the share load effect fires when `guestToken` changes from `null` → token, re-fetches the session from DB, briefly sets `loadingRoot = true`, and creates a timing window where the branch callbacks (`expandSectionAsChild`, `askFromHighlight`) close over stale state and silently no-op on the first click. The fix is in `submitRootQuery`'s done handler: `hasLoadedShareRef.current = true` is set before `setGuestToken(event.token)`.
+>
+> **IMPORTANT — First branch click silent failure (AskMe/Go Deeper):** The branch callbacks depend on `guestToken` being in their closure. For Trial Sessions, `guestToken` is `null` at session start and is set only in the `done` event of the root query stream. If the share load effect fires (because it watches `guestToken`) and overwrites state before the user can interact, `expandSectionAsChild`/`askFromHighlight` may capture a stale closure. Always guard against this by setting `hasLoadedShareRef.current = true` when storing the trial token. See commit history for `e4b15e5` (AskMe branch stale nodeId) and the trial branch for the `hasLoadedShareRef` fix.
+
 ## Session
 A single research tree rooted at a user query. Contains a flat map of Nodes. Owned by one User (the creator). Can be shared via a Share Token.
 
@@ -80,3 +84,12 @@ A synthetic `UserMetaItem` in DynamoDB (not a real Cognito identity) whose sub i
 
 ## Trial Limit Overlay
 A blocking UI overlay shown when a trial user hits the 5-node limit. Displays "Limit reached — login or signup to continue (your session will be saved)" with a single CTA that triggers the standard login/signup flow. On successful login, the Trial Session is Claimed and attached to the new user's account.
+
+## Referral Slug
+A URL-safe identifier derived from a User's email local-part (lowercase, non-alphanumeric stripped). Used to construct the User's personal Referral Link. Generated lazily the first time the User clicks "Refer". Stored at `PK: REFERRAL#{slug}, SK: METADATA` in DynamoDB. Unique — collisions resolved by appending an incrementing numeric suffix (e.g. `johndoe` → `johndoe1`).
+
+## Referral Link
+A URL of the form `<appUrl>?ref=<slug>` shared by a User to invite others. Clicking it saves the slug to `localStorage` so attribution survives Google OAuth redirects and the Trial→signup conversion flow.
+
+## Referral Credit
+A one-time Credit bonus awarded to the referring User when the User they referred makes their first LLM call. Amount configured via `REFERRAL_CREDIT_USD` (default $5). Distinct from Signup Credit (which the referred User receives at account creation). Tracked by `referralCreditAwarded` on the referred User's `UserMetaItem` to prevent double-award.

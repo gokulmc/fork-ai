@@ -194,6 +194,52 @@ You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase 
     return this.callJson(prompt, webSearch);
   }
 
+  async getTrendingTopics(): Promise<string[]> {
+    const today = new Date().toISOString().slice(0, 10);
+    const prompt = `Today is ${today}. Use web search to find 4 trending topics from RIGHT NOW in science, technology, or politics/world affairs.
+
+Return ONLY valid JSON, no prose, no markdown fences:
+{
+  "topics": [
+    "Short label one",
+    "Short label two",
+    "Short label three",
+    "Short label four"
+  ]
+}
+
+Rules:
+- Each label must be 3-5 words max — a noun phrase, not a full question
+- Must be newsworthy within the last 2 weeks, not evergreen
+- Mix: roughly 2 science/technology + 2 politics/world affairs
+- Name the specific thing: "OpenAI o3 reasoning", "Iran nuclear deal", "LHC anomaly" — not "AI advances" or "Middle East conflict"`;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const params: any = {
+      model: 'claude-sonnet-4-6',
+      max_tokens: 512,
+      messages: [{ role: 'user', content: prompt }],
+      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }],
+    };
+
+    const message = await this.client.messages.create(params);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const blocks: any[] = (message as any).content ?? [];
+    const raw = blocks
+      .filter((b: { type: string }) => b.type === 'text')
+      .map((b: { text?: string }) => b.text ?? '')
+      .join('');
+
+    let text = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '');
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start >= 0 && end > start) text = text.slice(start, end + 1);
+
+    const parsed = JSON.parse(text) as { topics: string[] };
+    if (!Array.isArray(parsed.topics)) throw new Error('Invalid topics response shape');
+    return parsed.topics.slice(0, 4);
+  }
+
   private async callJson(prompt: string, webSearch = false, retries = 1): Promise<LlmResponse> {
     const fullPrompt = webSearch ? `${prompt}\n\n${WEB_SEARCH_GUIDANCE}\n\n${CITATION_NOTE}` : prompt;
     let lastError: Error | undefined;

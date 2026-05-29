@@ -2,21 +2,15 @@
 import { useState } from 'react';
 import { Search, ArrowRight, Clock } from './Icons';
 
-const EXAMPLES = [
-  'How do neural networks actually learn?',
-  'What caused the fall of the Roman Republic?',
-  'Explain the theory of plate tectonics',
-  'How does mRNA vaccine technology work?',
-];
-
 interface LandingProps {
   onSubmit: (query: string) => void;
   loading: boolean;
   onShowHistory: () => void;
   outOfCredit?: boolean;
+  initialTopics?: string[];
 }
 
-export function Landing({ onSubmit, loading, onShowHistory, outOfCredit }: LandingProps) {
+export function Landing({ onSubmit, loading, onShowHistory, outOfCredit, initialTopics = [] }: LandingProps) {
   const [q, setQ] = useState('');
   const [leaving, setLeaving] = useState(false);
 
@@ -65,7 +59,7 @@ export function Landing({ onSubmit, loading, onShowHistory, outOfCredit }: Landi
           </div>
         )}
         <div className="examples">
-          {EXAMPLES.map(ex => (
+          {initialTopics.map(ex => (
             <button key={ex} className="chip" onClick={() => setQ(ex)}>{ex}</button>
           ))}
         </div>
