@@ -1013,7 +1013,7 @@ export function App() {
     setNotionError(null);
     try {
       const { blocks, childrenMap } = buildNotionClipboard(nodes, rootId, persistentHl, annotations);
-      const title = nodes[rootId]?.title ?? 'fork.ai research';
+      const title = nodes[rootId]?.title ?? 'fork ai research';
       const { url } = await pushToNotion(idToken, title, blocks, childrenMap, page.id);
       setNotionSavedUrl(url);
       if (sessionId) {
@@ -1094,8 +1094,8 @@ export function App() {
     />
   ) : null;
   const persistentBrand = (
-    <div className="app-brand" onClick={isGuest ? undefined : goHome} title={isGuest ? 'fork.ai' : 'Go to home'} style={isGuest ? { cursor: 'default' } : undefined}>
-      <span className="brand-logo" aria-hidden="true" /> fork.ai
+    <div className="app-brand" onClick={isGuest ? undefined : goHome} title={isGuest ? 'fork ai' : 'Go to home'} style={isGuest ? { cursor: 'default' } : undefined}>
+      <span className="brand-logo" aria-hidden="true" /> fork ai
     </div>
   );
 
@@ -1136,7 +1136,7 @@ export function App() {
         outOfCredit={rootQueryOutOfCredit}
       />
     );
-    return <>{persistentBrand}{inner}<AccountButton creditBalance={creditBalance} onCreditUpdated={setCreditBalance} /><TweaksPanel tweaks={tweaks} setTweak={setTweak} fontPairOptions={FONT_PAIR_OPTIONS} onRestartTour={restartTour} />{tourEl}</>;
+    return <>{persistentBrand}{inner}<AccountButton creditBalance={creditBalance} onCreditUpdated={setCreditBalance} /><TweaksPanel tweaks={tweaks} setTweak={setTweak} fontPairOptions={FONT_PAIR_OPTIONS} onRestartTour={restartTour} userEmail={authSession?.user?.email ?? ''} userName={authSession?.user?.name ?? ''} />{tourEl}</>;
   }
 
   // ── Workspace ─────────────────────────────────────────────────────────────
@@ -1350,6 +1350,8 @@ export function App() {
         setTweak={setTweak}
         fontPairOptions={FONT_PAIR_OPTIONS}
         onRestartTour={restartTour}
+        userEmail={authSession?.user?.email ?? ''}
+        userName={authSession?.user?.name ?? ''}
       />
 
       {notionPickerOpen && (

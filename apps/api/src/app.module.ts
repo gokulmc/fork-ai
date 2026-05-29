@@ -15,6 +15,7 @@ import { NotionModule } from '@/notion/notion.module';
 import { ShareModule } from '@/share/share.module';
 import { BillingModule } from '@/billing/billing.module';
 import { AdminModule } from '@/admin/admin.module';
+import { SupportModule } from '@/support/support.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -36,6 +37,7 @@ import { HealthController } from './health.controller';
     ShareModule,
     BillingModule,
     AdminModule,
+    SupportModule,
   ],
   controllers: [HealthController],
   providers: [

@@ -1,7 +1,8 @@
 'use client';
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import type { Tweaks } from '@/lib/types';
 import type { SetTweak } from '@/hooks/useTweaks';
+import { submitSupportTicket, type SupportSubject } from '@/lib/api';
 
 // ── Sub-components ─────────────────────────────────────────────────────────
 
@@ -188,10 +189,21 @@ interface TweaksPanelProps {
   setTweak: SetTweak;
   fontPairOptions: { value: string; label: string }[];
   onRestartTour?: () => void;
+  userEmail?: string;
+  userName?: string;
 }
 
-export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour }: TweaksPanelProps) {
+export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, userEmail, userName }: TweaksPanelProps) {
   const [open, setOpen] = useState(false);
+  const [howToOpen, setHowToOpen] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
+  const [supportName, setSupportName] = useState(userName ?? '');
+  const [supportEmail, setSupportEmail] = useState(userEmail ?? '');
+  const [supportSubject, setSupportSubject] = useState<SupportSubject>('Bug');
+  const [supportMessage, setSupportMessage] = useState('');
+  const [supportLoading, setSupportLoading] = useState(false);
+  const [supportError, setSupportError] = useState<string | null>(null);
+  const [supportSent, setSupportSent] = useState(false);
   const dragRef = useRef<HTMLDivElement>(null);
   const offsetRef = useRef({ x: PAD, y: PAD });
 
@@ -329,9 +341,278 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour }
                 </div>
               </>
             )}
+            <TweakSection label="Help" />
+            <div className="twk-row">
+              <button className="twk-restart-btn" onClick={() => { setOpen(false); setHowToOpen(true); }}>
+                How to use
+              </button>
+            </div>
+            <TweakSection label="Support" />
+            <div className="twk-row">
+              <button className="twk-restart-btn" onClick={() => {
+                setSupportName(userName ?? '');
+                setSupportEmail(userEmail ?? '');
+                setSupportSent(false);
+                setSupportError(null);
+                setSupportMessage('');
+                setOpen(false);
+                setSupportOpen(true);
+              }}>
+                Contact support
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* How to Use overlay */}
+      {howToOpen && (
+        <div
+          onClick={e => { if (e.currentTarget === e.target) setHowToOpen(false); }}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 80,
+            background: 'rgba(255,255,255,0.88)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <div style={{
+            background: '#ffffff', border: '1px solid rgba(10,10,10,0.15)',
+            borderRadius: 8, padding: '28px',
+            width: 'min(620px, 92vw)',
+            maxHeight: '84vh',
+            display: 'flex', flexDirection: 'column',
+            fontFamily: "ui-monospace,'JetBrains Mono','SF Mono',Menlo,monospace",
+            boxShadow: '0 8px 32px rgba(10,10,10,0.10)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexShrink: 0 }}>
+              <div style={{ fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'rgba(10,10,10,0.4)' }}>
+                How to use fork ai
+              </div>
+              <button onClick={() => setHowToOpen(false)} style={{ background: 'none', border: 0, cursor: 'pointer', fontSize: 14, color: 'rgba(10,10,10,0.4)', lineHeight: 1 }}>✕</button>
+            </div>
+            <div style={{ overflowY: 'auto', flex: 1, fontSize: 11, lineHeight: 1.75, color: 'rgba(10,10,10,0.8)', letterSpacing: '0.02em' }}>
+              <HowToContent />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20, flexShrink: 0 }}>
+              <button
+                onClick={() => setHowToOpen(false)}
+                style={{
+                  background: 'none', border: '1px solid rgba(10,10,10,0.15)',
+                  borderRadius: 4, padding: '7px 16px', cursor: 'pointer',
+                  fontFamily: "ui-monospace,'JetBrains Mono','SF Mono',Menlo,monospace",
+                  fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(10,10,10,0.5)',
+                }}
+              >Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Support form overlay */}
+      {supportOpen && (
+        <div
+          onClick={e => { if (e.currentTarget === e.target) setSupportOpen(false); }}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 80,
+            background: 'rgba(255,255,255,0.88)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <div style={{
+            background: '#ffffff', border: '1px solid rgba(10,10,10,0.15)',
+            borderRadius: 8, padding: '28px',
+            width: 'min(420px, 92vw)',
+            fontFamily: "ui-monospace,'JetBrains Mono','SF Mono',Menlo,monospace",
+            boxShadow: '0 8px 32px rgba(10,10,10,0.10)',
+          }}>
+            <div style={{ fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'rgba(10,10,10,0.4)', marginBottom: 20 }}>
+              Contact support
+            </div>
+            {supportSent ? (
+              <div style={{ fontSize: 11, color: '#27ae60', letterSpacing: '0.04em', marginBottom: 20 }}>
+                Message sent — we&apos;ll get back to you at {supportEmail}.
+              </div>
+            ) : (
+              <>
+                {(
+                  [
+                    ['Your name', supportName, setSupportName, 'text'],
+                    ['Email address', supportEmail, setSupportEmail, 'email'],
+                  ] as [string, string, (v: string) => void, string][]
+                ).map(([placeholder, value, setter, type]) => (
+                  <input
+                    key={placeholder}
+                    type={type}
+                    value={value}
+                    onChange={e => { setSupportError(null); setter(e.target.value); }}
+                    placeholder={placeholder}
+                    disabled={supportLoading}
+                    style={{
+                      display: 'block', width: '100%', boxSizing: 'border-box',
+                      border: 0, borderBottom: '1px solid rgba(10,10,10,0.12)',
+                      padding: '10px 0', marginBottom: 14,
+                      fontFamily: 'inherit', fontSize: 11, color: '#0a0a0a',
+                      background: '#ffffff', outline: 'none', letterSpacing: '0.04em',
+                    }}
+                  />
+                ))}
+                <select
+                  value={supportSubject}
+                  onChange={e => { setSupportError(null); setSupportSubject(e.target.value as SupportSubject); }}
+                  disabled={supportLoading}
+                  style={{
+                    display: 'block', width: '100%', boxSizing: 'border-box',
+                    border: 0, borderBottom: '1px solid rgba(10,10,10,0.12)',
+                    padding: '10px 0', marginBottom: 14,
+                    fontFamily: 'inherit', fontSize: 11, color: '#0a0a0a',
+                    background: '#ffffff', outline: 'none', letterSpacing: '0.04em',
+                    appearance: 'none', cursor: 'pointer',
+                  }}
+                >
+                  {(['Bug', 'Billing', 'Feature Request', 'Other'] as SupportSubject[]).map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+                <textarea
+                  value={supportMessage}
+                  onChange={e => { setSupportError(null); setSupportMessage(e.target.value); }}
+                  placeholder="Describe your issue or question…"
+                  disabled={supportLoading}
+                  rows={5}
+                  style={{
+                    display: 'block', width: '100%', boxSizing: 'border-box',
+                    border: '1px solid rgba(10,10,10,0.12)', borderRadius: 4,
+                    padding: '10px', marginBottom: 14,
+                    fontFamily: 'inherit', fontSize: 11, color: '#0a0a0a',
+                    background: '#ffffff', outline: 'none', letterSpacing: '0.04em',
+                    resize: 'vertical',
+                  }}
+                />
+                {supportError && (
+                  <div style={{ fontSize: 10, color: '#c0392b', marginBottom: 12, letterSpacing: '0.04em' }}>{supportError}</div>
+                )}
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                  <button
+                    onClick={() => setSupportOpen(false)}
+                    style={{
+                      background: 'none', border: '1px solid rgba(10,10,10,0.15)',
+                      borderRadius: 4, padding: '7px 16px', cursor: 'pointer',
+                      fontFamily: 'inherit', fontSize: 10, letterSpacing: '0.12em',
+                      textTransform: 'uppercase', color: 'rgba(10,10,10,0.5)',
+                    }}
+                  >Cancel</button>
+                  <button
+                    disabled={supportLoading}
+                    onClick={async () => {
+                      if (!supportName.trim() || !supportEmail.trim() || !supportMessage.trim()) {
+                        setSupportError('Please fill in all fields.');
+                        return;
+                      }
+                      setSupportLoading(true);
+                      setSupportError(null);
+                      try {
+                        await submitSupportTicket({ name: supportName.trim(), email: supportEmail.trim(), subject: supportSubject, message: supportMessage.trim() });
+                        setSupportSent(true);
+                      } catch {
+                        setSupportError('Failed to send — please try again.');
+                      } finally {
+                        setSupportLoading(false);
+                      }
+                    }}
+                    style={{
+                      background: '#0a0a0a', border: 0,
+                      borderRadius: 4, padding: '7px 16px', cursor: 'pointer',
+                      fontFamily: 'inherit', fontSize: 10, letterSpacing: '0.12em',
+                      textTransform: 'uppercase', color: '#ffffff',
+                      opacity: supportLoading ? 0.6 : 1,
+                    }}
+                  >{supportLoading ? '…' : 'Send'}</button>
+                </div>
+              </>
+            )}
+            {supportSent && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setSupportOpen(false)}
+                  style={{
+                    background: 'none', border: '1px solid rgba(10,10,10,0.15)',
+                    borderRadius: 4, padding: '7px 16px', cursor: 'pointer',
+                    fontFamily: 'inherit', fontSize: 10, letterSpacing: '0.12em',
+                    textTransform: 'uppercase', color: 'rgba(10,10,10,0.5)',
+                  }}
+                >Close</button>
+              </div>
+            )}
           </div>
         </div>
       )}
     </>
+  );
+}
+
+function HowToContent() {
+  const h2: React.CSSProperties = { fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#0a0a0a', marginTop: 20, marginBottom: 6 };
+  const p: React.CSSProperties = { margin: '0 0 10px' };
+  const li: React.CSSProperties = { marginBottom: 4 };
+  const code: React.CSSProperties = {
+    fontFamily: 'inherit', background: '#ffffff',
+    padding: '1px 5px', borderRadius: 3, fontSize: 10,
+    border: '1px solid rgba(10,10,10,0.12)',
+  };
+  return (
+    <div>
+      <div style={h2}>Getting Started</div>
+      <p style={p}>Type any question into the search bar and press Enter. fork ai generates a structured answer split into focused sections — each covering a different angle on your topic.</p>
+
+      <div style={h2}>Mind Map</div>
+      <p style={p}>Every question creates a node on the mind map (left panel). As you branch deeper, new nodes appear connected to their parent — giving you a live visual overview of your entire research tree. Drag to pan, scroll to zoom. The map re-fits automatically when you add branches.</p>
+
+      <div style={h2}>Go Deeper</div>
+      <p style={p}>Click "Go deeper" on any section to expand it into a full new answer. The new node appears on the mind map as a child of the current one. You can keep branching indefinitely.</p>
+
+      <div style={h2}>Ask AI (from any text)</div>
+      <p style={p}>Select any text in a section. A floating menu appears — click "Ask AI" to open a follow-up question using your selection as context. You can also type shortcuts into the follow-up box to pre-fill the question:</p>
+      <ul style={{ paddingLeft: 16, margin: '0 0 10px' }}>
+        <li style={li}><span style={code}>?</span> → "what [selection]?"</li>
+        <li style={li}><span style={code}>!?</span> → "how [selection]?"</li>
+        <li style={li}><span style={code}>/?</span> → "why [selection]?"</li>
+        <li style={li}><span style={code}>{'>?'}</span> → "explain [selection]"</li>
+      </ul>
+
+      <div style={h2}>Highlights</div>
+      <p style={p}>Select text and click "Highlight" to save it with a colour. Highlights persist across sessions and are visible to anyone with the share link. Click an existing highlight to remove it. Colour is chosen from the highlight menu — up to 4 colours available.</p>
+
+      <div style={h2}>Notes &amp; Callouts</div>
+      <p style={p}>Select text → "Save note" or "Save callout" to anchor a note to that passage. Notes appear in the Notes drawer (accessible via the drawer icon at the bottom right of any node). Notes are plain text; callouts appear as styled pull-quotes ideal for key insights.</p>
+
+      <div style={h2}>Web Search</div>
+      <p style={p}>Toggle "Web search" in the Tweaks panel to let the AI fetch up to 3 live search results per call. Useful for recent events, current data, or fast-moving topics. When active, sources are cited as numbered footnotes below the last section. Web search is off by default.</p>
+
+      <div style={h2}>History</div>
+      <p style={p}>Click the clock icon (top-left) to view all your past research sessions, grouped by date. The topic bubble cluster above the list groups sessions by keyword. Click any session card to resume it exactly where you left off — all branches, highlights, and notes are preserved.</p>
+
+      <div style={h2}>Sharing &amp; Guest Access</div>
+      <p style={p}>Click the Share button (top-right) to generate a share link. Anyone with the link can view your session, highlight text, and branch (Go Deeper / Ask AI) — their LLM calls are charged to your credit. Revoke the link at any time from the same button. Guests see a "Login to Save" button to claim their own copy of the session.</p>
+
+      <div style={h2}>Save to Notion</div>
+      <p style={p}>Click "Save to Notion" on the mind map to export your entire research tree as a structured Notion page — a Mermaid mind-map diagram at the top, followed by collapsible toggle sections for each branch. Connect your Notion workspace first via the OAuth prompt (one-time). Re-exporting after adding branches generates a fresh page; the previous export is not overwritten.</p>
+
+      <div style={h2}>Tweaks Panel</div>
+      <p style={p}>Click ⚙ (bottom-right, always visible) to open the Tweaks panel. You can drag it anywhere on screen. Options:</p>
+      <ul style={{ paddingLeft: 16, margin: '0 0 10px' }}>
+        <li style={li}><strong>Theme</strong> — Light or Dark</li>
+        <li style={li}><strong>Density</strong> — Cozy or Compact (affects spacing and font sizes)</li>
+        <li style={li}><strong>Font pairing</strong> — change the heading and body typeface</li>
+        <li style={li}><strong>Mind map layout</strong> — Horizontal (default) or Vertical</li>
+        <li style={li}><strong>Max sections</strong> — 4 to 8 sections per answer</li>
+        <li style={li}><strong>Web search</strong> — On or Off (see above)</li>
+      </ul>
+
+      <div style={h2}>Account &amp; Credits</div>
+      <p style={p}>Click the account icon (bottom-left) to view your credit balance, usage history, and billing. Credits are prepaid in USD and consumed per LLM call based on token usage. Top up at any time via Razorpay. Unused credits do not expire. Guest branches are charged to the session owner's account.</p>
+
+      <div style={h2}>Onboarding Tour</div>
+      <p style={p}>On first login, a step-by-step walkthrough guides you through every feature with interactive tooltips. Restart it at any time via Tweaks → Onboarding → "Restart tour".</p>
+    </div>
   );
 }

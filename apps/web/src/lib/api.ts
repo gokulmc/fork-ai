@@ -684,6 +684,22 @@ export async function pingHealth(): Promise<HealthStatus> {
   }
 }
 
+export type SupportSubject = 'Bug' | 'Billing' | 'Feature Request' | 'Other';
+
+export async function submitSupportTicket(dto: {
+  name: string;
+  email: string;
+  subject: SupportSubject;
+  message: string;
+}): Promise<void> {
+  const res = await fetch(`${base()}/support`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(dto),
+  });
+  if (!res.ok) throw new Error('Failed to send support ticket');
+}
+
 // Decodes the Cognito `admins` group claim from an id_token (client-side gate;
 // the API is the real boundary).
 export function isAdminToken(idToken?: string): boolean {
