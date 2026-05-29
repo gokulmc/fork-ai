@@ -14,6 +14,21 @@ export interface UserMetaItem {
   notionAccessToken?: string | null;
   hasOnboarded?: boolean;
   creditUsd?: number;
+  signupIp?: string;
+  signupCountry?: string;
+  signupCity?: string;
+}
+
+export interface AdminAuditItem {
+  PK: string;
+  SK: string;
+  auditId: string;
+  actorSub: string;
+  actorEmail: string;
+  action: string;
+  targetSub: string;
+  detail: string;
+  createdAt: string;
 }
 
 export interface UsageEventItem {

@@ -8,6 +8,9 @@ import {
   ANNOTATION_MODEL,
   HIGHLIGHT_MODEL,
   SHARE_TOKEN_MODEL,
+  USAGE_EVENT_MODEL,
+  PAYMENT_MODEL,
+  ADMIN_AUDIT_MODEL,
 } from './dynamo.constants';
 
 // Factory for a Dynamoose-model-shaped mock with chainable query builder
@@ -44,6 +47,9 @@ describe('DynamoRepository', () => {
   let annotation: ReturnType<typeof makeModelMock>;
   let highlight: ReturnType<typeof makeModelMock>;
   let shareToken: ReturnType<typeof makeModelMock>;
+  let usageEvent: ReturnType<typeof makeModelMock>;
+  let payment: ReturnType<typeof makeModelMock>;
+  let adminAudit: ReturnType<typeof makeModelMock>;
 
   beforeEach(async () => {
     userMeta = makeModelMock();
@@ -52,6 +58,9 @@ describe('DynamoRepository', () => {
     annotation = makeModelMock();
     highlight = makeModelMock();
     shareToken = makeModelMock();
+    usageEvent = makeModelMock();
+    payment = makeModelMock();
+    adminAudit = makeModelMock();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -63,6 +72,9 @@ describe('DynamoRepository', () => {
         { provide: ANNOTATION_MODEL, useValue: annotation.mock },
         { provide: HIGHLIGHT_MODEL, useValue: highlight.mock },
         { provide: SHARE_TOKEN_MODEL, useValue: shareToken.mock },
+        { provide: USAGE_EVENT_MODEL, useValue: usageEvent.mock },
+        { provide: PAYMENT_MODEL, useValue: payment.mock },
+        { provide: ADMIN_AUDIT_MODEL, useValue: adminAudit.mock },
       ],
     }).compile();
     repo = module.get<DynamoRepository>(DynamoRepository);

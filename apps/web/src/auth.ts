@@ -16,7 +16,7 @@ function secretHash(username: string) {
 
 async function refreshIdToken(
   refreshToken: string,
-  email: string,
+  username: string,
 ): Promise<{ idToken: string; expiresAt: number } | null> {
   try {
     const result = await cognitoClient.send(
@@ -25,7 +25,12 @@ async function refreshIdToken(
         ClientId: process.env.COGNITO_CLIENT_ID!,
         AuthParameters: {
           REFRESH_TOKEN: refreshToken,
-          SECRET_HASH: secretHash(email),
+          // SECRET_HASH for REFRESH_TOKEN_AUTH must use the canonical Cognito username
+          // (the cognito:username UUID), NOT the email alias. The pool uses
+          // UsernameAttributes: ["email"], so login (USER_PASSWORD_AUTH) accepts a hash of the
+          // submitted email, but refresh validates the hash against the real username —
+          // secretHash(email) here fails with NotAuthorizedException and logs the user out.
+          SECRET_HASH: secretHash(username),
         },
       }),
     );
@@ -34,7 +39,9 @@ async function refreshIdToken(
       idToken: result.AuthenticationResult.IdToken,
       expiresAt: Date.now() + (result.AuthenticationResult.ExpiresIn ?? 3600) * 1000,
     };
-  } catch {
+  } catch (e) {
+    const err = e as Error;
+    console.error('[auth/refresh]', err.name, err.message);
     return null;
   }
 }
@@ -56,10 +63,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         try {
           const payload = JSON.parse(
             Buffer.from((idToken as string).split('.')[1], 'base64url').toString(),
-          ) as { sub: string; email: string };
+          ) as { sub: string; email: string; 'cognito:username': string };
           return {
             id: payload.sub,
             email: payload.email,
+            username: payload['cognito:username'],
             idToken: idToken as string,
             refreshToken: (refreshToken as string | undefined) ?? undefined,
             expiresAt: expiresAt ? Number(expiresAt) : Date.now() + 3600 * 1000,
@@ -84,6 +92,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.idToken = user.idToken;
         token.refreshToken = user.refreshToken;
         token.expiresAt = user.expiresAt;
+        token.username = user.username;
         return token;
       }
 
@@ -93,10 +102,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       }
 
       // Refresh token
-      if (!token.refreshToken || !token.email) {
+      if (!token.refreshToken || !token.username) {
         return { ...token, error: 'RefreshTokenExpired' };
       }
-      const refreshed = await refreshIdToken(token.refreshToken, token.email as string);
+      const refreshed = await refreshIdToken(token.refreshToken, token.username);
       if (!refreshed) {
         return { ...token, error: 'RefreshTokenExpired' };
       }
