@@ -312,12 +312,25 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
       .finally(() => setLoadingSessions(false));
   }, [idToken]);
 
+  const hasRegisteredReferralRef = useRef(false);
   useEffect(() => {
     if (!idToken) return;
     getMe(idToken)
       .then(me => {
         setHasOnboarded(me.hasOnboarded ?? false);
         setCreditBalance(me.creditUsd ?? null);
+        // Register referral AFTER upsert completes (getMe triggers upsert server-side).
+        // Running this inside then() prevents the race where POST /users/me/referrer
+        // arrives before the user record exists and recordReferral exits early.
+        if (!hasRegisteredReferralRef.current) {
+          const stored = localStorage.getItem('fork.ai.referral');
+          if (stored) {
+            hasRegisteredReferralRef.current = true;
+            registerReferral(idToken, stored)
+              .then(() => localStorage.removeItem('fork.ai.referral'))
+              .catch(() => {});
+          }
+        }
       })
       .catch(() => {});
   }, [idToken]);
@@ -359,18 +372,6 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
     }
   }, [idToken]);
 
-  // After login, register referral attribution if ?ref= was in the URL (or survived OAuth redirect via localStorage).
-  // Uses a ref guard (same pattern as hasClaimedRef) to prevent StrictMode double-fire.
-  const hasRegisteredReferralRef = useRef(false);
-  useEffect(() => {
-    if (status !== 'authenticated' || !idToken || hasRegisteredReferralRef.current) return;
-    const stored = localStorage.getItem('fork.ai.referral');
-    if (!stored) return;
-    hasRegisteredReferralRef.current = true;
-    registerReferral(idToken, stored)
-      .then(() => localStorage.removeItem('fork.ai.referral'))
-      .catch(() => {});
-  }, [status, idToken]);
 
   // When a guest logs in while a guestToken is active, claim the session then reload it under their auth
   const hasClaimedRef = useRef(false);
