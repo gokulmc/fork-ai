@@ -13,6 +13,18 @@ export const UserMetaSchema = new dynamoose.Schema({
   signupIp: { type: String, required: false },
   signupCountry: { type: String, required: false },
   signupCity: { type: String, required: false },
+  referralSlug: { type: String, required: false },
+  referredBy: { type: String, required: false },
+  referralCreditAwarded: { type: Boolean, required: false },
+});
+
+export const ReferralSchema = new dynamoose.Schema({
+  PK: { type: String, hashKey: true },
+  SK: { type: String, rangeKey: true },
+  slug: String,
+  sub: String,
+  email: String,
+  createdAt: String,
 });
 
 export const AdminAuditSchema = new dynamoose.Schema({

@@ -1,6 +1,6 @@
-import { Controller, Get, Patch, Body, Req } from '@nestjs/common';
+import { Controller, Get, Patch, Post, Body, Req } from '@nestjs/common';
 import { ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
-import { IsBoolean, IsOptional } from 'class-validator';
+import { IsBoolean, IsOptional, IsString } from 'class-validator';
 import { Request } from 'express';
 import { CurrentUser } from '@/auth/current-user.decorator';
 import { CognitoUser } from '@/auth/jwt.strategy';
@@ -11,6 +11,12 @@ class PatchMeDto {
   @IsOptional()
   @IsBoolean()
   hasOnboarded?: boolean;
+}
+
+class ReferrerDto {
+  @ApiProperty()
+  @IsString()
+  slug!: string;
 }
 
 @ApiTags('users')
@@ -34,5 +40,18 @@ export class UsersController {
   @ApiOperation({ summary: 'Get last 50 usage events for billing history' })
   async getUsage(@CurrentUser() user: CognitoUser) {
     return this.usersService.getUsageEvents(user.sub);
+  }
+
+  @Post('me/referral-link')
+  @ApiOperation({ summary: 'Get or create personal referral link (lazy slug generation)' })
+  async getReferralLink(@CurrentUser() user: CognitoUser) {
+    return this.usersService.getOrCreateReferralLink(user.sub, user.email);
+  }
+
+  @Post('me/referrer')
+  @ApiOperation({ summary: 'Record who referred this user (idempotent)' })
+  async recordReferrer(@CurrentUser() user: CognitoUser, @Body() body: ReferrerDto) {
+    await this.usersService.recordReferral(user.sub, body.slug);
+    return { ok: true };
   }
 }

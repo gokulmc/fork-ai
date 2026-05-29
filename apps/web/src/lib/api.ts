@@ -214,6 +214,17 @@ export function getUsageEvents(idToken: string): Promise<UsageEvent[]> {
   return apiFetch<UsageEvent[]>('/users/me/usage', idToken);
 }
 
+export function getReferralLink(idToken: string): Promise<{ slug: string; url: string }> {
+  return apiFetch<{ slug: string; url: string }>('/users/me/referral-link', idToken, { method: 'POST' });
+}
+
+export function registerReferral(idToken: string, slug: string): Promise<void> {
+  return apiFetch<void>('/users/me/referrer', idToken, {
+    method: 'POST',
+    body: JSON.stringify({ slug }),
+  });
+}
+
 // ── Billing ──────────────────────────────────────────────────────────────────
 
 export interface RechargeOrder {
@@ -292,6 +303,7 @@ export function updateSessionNotionUrl(
 }
 
 export type StreamEvent =
+  | { type: 'init'; sessionId: string; nodeId: string; token?: string }
   | { type: 'meta'; title: string; emoji: string; lede: string }
   | { type: 'section'; id: string; heading: string; body: string }
   | { type: 'done'; sessionId: string; nodeId: string; token?: string }
@@ -662,6 +674,10 @@ export interface AdminAuditEntry {
 }
 
 export const adminApi = {
+  getConfig(idToken: string): Promise<{ signupCreditUsd: number; referralCreditUsd: number; creditMultiplier: number }> {
+    return apiFetch<{ signupCreditUsd: number; referralCreditUsd: number; creditMultiplier: number }>('/admin/config', idToken);
+  },
+
   getMetrics(idToken: string): Promise<AdminMetrics> {
     return apiFetch<AdminMetrics>('/admin/metrics', idToken);
   },

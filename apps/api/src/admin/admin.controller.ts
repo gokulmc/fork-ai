@@ -49,6 +49,12 @@ class PageQueryDto {
 export class AdminController {
   constructor(private readonly admin: AdminService) {}
 
+  @Get('config')
+  @ApiOperation({ summary: 'Current billing config values (read-only from env)' })
+  getConfig() {
+    return this.admin.getConfig();
+  }
+
   @Get('metrics')
   @ApiOperation({ summary: 'Platform-wide totals (cached 60s)' })
   getMetrics() {

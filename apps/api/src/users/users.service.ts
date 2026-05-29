@@ -108,10 +108,74 @@ export class UsersService {
       this.db.deductCredit(sub, costUsd),
       this.db.putUsageEvent(event),
     ]);
+
+    void this.maybeAwardReferralCredit(sub);
   }
 
   async getUsageEvents(sub: string): Promise<UsageEventItem[]> {
     return this.db.listUsageEvents(sub, 50);
+  }
+
+  async getOrCreateReferralLink(sub: string, email: string): Promise<{ slug: string; url: string }> {
+    const existing = await this.db.getUserMeta(sub);
+    if (existing?.referralSlug) {
+      const frontendUrl = this.cfg.get<string>('frontendUrl') ?? 'http://localhost:3001';
+      return { slug: existing.referralSlug, url: `${frontendUrl}?ref=${existing.referralSlug}` };
+    }
+
+    const base = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
+    let candidate = base;
+    let counter = 0;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const taken = await this.db.getReferralBySlug(candidate);
+      if (!taken) break;
+      if (taken.sub === sub) {
+        await this.db.updateUserMeta(sub, { referralSlug: candidate });
+        const frontendUrl = this.cfg.get<string>('frontendUrl') ?? 'http://localhost:3001';
+        return { slug: candidate, url: `${frontendUrl}?ref=${candidate}` };
+      }
+      counter += 1;
+      candidate = `${base}${counter}`;
+    }
+
+    await this.db.createReferral({
+      PK: `REFERRAL#${candidate}`,
+      SK: 'METADATA',
+      slug: candidate,
+      sub,
+      email,
+      createdAt: new Date().toISOString(),
+    });
+    await this.db.updateUserMeta(sub, { referralSlug: candidate });
+
+    const frontendUrl = this.cfg.get<string>('frontendUrl') ?? 'http://localhost:3001';
+    return { slug: candidate, url: `${frontendUrl}?ref=${candidate}` };
+  }
+
+  async recordReferral(sub: string, referrerSlug: string): Promise<void> {
+    const user = await this.db.getUserMeta(sub);
+    if (!user || user.referredBy) return;
+
+    const referrer = await this.db.getReferralBySlug(referrerSlug);
+    if (!referrer || referrer.sub === sub) return;
+
+    await this.db.updateUserMeta(sub, { referredBy: referrer.sub });
+  }
+
+  private async maybeAwardReferralCredit(sub: string): Promise<void> {
+    try {
+      const user = await this.db.getUserMeta(sub);
+      if (!user?.referredBy || user.referralCreditAwarded) return;
+
+      const referralCreditUsd = this.cfg.get<number>('billing.referralCreditUsd') ?? 5.00;
+      await Promise.all([
+        this.db.addCredit(user.referredBy, referralCreditUsd),
+        this.db.updateUserMeta(sub, { referralCreditAwarded: true }),
+      ]);
+    } catch (err) {
+      this.logger.warn(`Referral credit award failed for ${sub}: ${String(err)}`);
+    }
   }
 }
 

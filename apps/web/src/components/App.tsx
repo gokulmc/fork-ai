@@ -64,6 +64,7 @@ import {
   shareApi,
   getMe,
   patchMe,
+  registerReferral,
   ApiError,
   type SessionSummary,
   type NotionPage,
@@ -174,6 +175,13 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
   useEffect(() => {
     if (status === 'unauthenticated' && !!localStorage.getItem('fork.ai.visited')) setShowLogin(true);
   }, [status]);
+
+  // Capture ?ref= referral slug from URL into localStorage on mount so it
+  // survives Google OAuth redirects and the trial → signup flow.
+  useEffect(() => {
+    const refSlug = new URLSearchParams(window.location.search).get('ref');
+    if (refSlug) localStorage.setItem('fork.ai.referral', refSlug);
+  }, []);
 
   // Auto sign-out on any 401 (expired Cognito id_token)
   useEffect(() => { setUnauthorizedHandler(() => void signOut()); }, []);
@@ -350,6 +358,19 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
       setLoadingRoot(false);
     }
   }, [idToken]);
+
+  // After login, register referral attribution if ?ref= was in the URL (or survived OAuth redirect via localStorage).
+  // Uses a ref guard (same pattern as hasClaimedRef) to prevent StrictMode double-fire.
+  const hasRegisteredReferralRef = useRef(false);
+  useEffect(() => {
+    if (status !== 'authenticated' || !idToken || hasRegisteredReferralRef.current) return;
+    const stored = localStorage.getItem('fork.ai.referral');
+    if (!stored) return;
+    hasRegisteredReferralRef.current = true;
+    registerReferral(idToken, stored)
+      .then(() => localStorage.removeItem('fork.ai.referral'))
+      .catch(() => {});
+  }, [status, idToken]);
 
   // When a guest logs in while a guestToken is active, claim the session then reload it under their auth
   const hasClaimedRef = useRef(false);
@@ -558,7 +579,20 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
         : (cb: Parameters<typeof createSessionStream>[4]) => createSessionStream(idToken, query, tweaks.maxSections, tweaks.webSearch, cb);
 
       await streamFn((event) => {
-        if (event.type === 'meta') {
+        if (event.type === 'init') {
+          // Backend has persisted the session + token up-front. Adopt them NOW so
+          // the URL hash updates and a refresh mid-stream restores the real session
+          // (instead of dropping to Landing). The done handler still swaps tempId.
+          realNodeId = event.nodeId;
+          setSessionId(event.sessionId);
+          if (event.token) {
+            localStorage.setItem('fork.ai.trial', event.token);
+            localStorage.removeItem('fork.ai.pending');
+            hasLoadedShareRef.current = true;
+            setGuestToken(event.token);
+            setIsTrial(true);
+          }
+        } else if (event.type === 'meta') {
           metaTitle = event.title;
           metaEmoji = event.emoji;
           metaLede = event.lede;

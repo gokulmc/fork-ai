@@ -142,9 +142,13 @@ function StatusPill({ health }: { health: HealthStatus | null }) {
 
 function Overview({ idToken }: { idToken: string }) {
   const [m, setM] = useState<AdminMetrics | null>(null);
+  const [cfg, setCfg] = useState<{ signupCreditUsd: number; referralCreditUsd: number; creditMultiplier: number } | null>(null);
   const [err, setErr] = useState('');
 
-  useEffect(() => { adminApi.getMetrics(idToken).then(setM).catch((e) => setErr(String(e))); }, [idToken]);
+  useEffect(() => {
+    adminApi.getMetrics(idToken).then(setM).catch((e) => setErr(String(e)));
+    adminApi.getConfig(idToken).then(setCfg).catch(() => {});
+  }, [idToken]);
 
   if (err) return <div className="ad-card ad-err">{err}</div>;
   if (!m) return <div className="ad-empty">Loading metrics…</div>;
@@ -198,6 +202,19 @@ function Overview({ idToken }: { idToken: string }) {
           {s.length ? <BarChart labels={labels} points={s.map((d) => d.llmSpendUsd)} color={C.amber} fmt={(n) => `$${n.toFixed(1)}`} /> : <div className="ad-empty">No data</div>}
         </div>
       </div>
+
+      {cfg && (
+        <div className="ad-card">
+          <div className="ad-card-head"><h3>Billing config</h3></div>
+          <table className="ad-table">
+            <tbody>
+              <tr><td>Signup credit</td><td>{usd(cfg.signupCreditUsd)}</td></tr>
+              <tr><td>Referral credit</td><td>{usd(cfg.referralCreditUsd)}</td></tr>
+              <tr><td>Credit multiplier</td><td>{cfg.creditMultiplier}×</td></tr>
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <DeploymentPanel idToken={idToken} />
     </div>

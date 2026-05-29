@@ -2,7 +2,7 @@
 
 import { signOut, useSession } from 'next-auth/react';
 import { useState, useEffect, useRef } from 'react';
-import { getUsageEvents, createRechargeOrder, verifyPayment, type UsageEvent } from '@/lib/api';
+import { getUsageEvents, createRechargeOrder, verifyPayment, getReferralLink, type UsageEvent } from '@/lib/api';
 
 const PW_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&_\-#])[A-Za-z\d@$!%*?&_\-#]{8,}$/;
 
@@ -80,6 +80,12 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
   const [localBalance, setLocalBalance] = useState<number | null | undefined>(creditBalance);
   useEffect(() => { setLocalBalance(creditBalance); }, [creditBalance]);
 
+  // Referral modal state
+  const [referralOpen, setReferralOpen] = useState(false);
+  const [referralUrl, setReferralUrl] = useState<string | null>(null);
+  const [referralLoading, setReferralLoading] = useState(false);
+  const [referralCopied, setReferralCopied] = useState(false);
+
   if (!session?.user?.email) return null;
 
   const email = session.user.email;
@@ -100,6 +106,26 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
     setCurrentPw('');
     setNewPw('');
     setConfirmPw('');
+  }
+
+  function openReferral() {
+    setOpen(false);
+    setReferralOpen(true);
+    if (!referralUrl && !referralLoading && idToken) {
+      setReferralLoading(true);
+      getReferralLink(idToken)
+        .then(r => setReferralUrl(r.url))
+        .catch(() => {})
+        .finally(() => setReferralLoading(false));
+    }
+  }
+
+  function copyReferralLink() {
+    if (!referralUrl) return;
+    void navigator.clipboard.writeText(referralUrl).then(() => {
+      setReferralCopied(true);
+      setTimeout(() => setReferralCopied(false), 1500);
+    });
   }
 
   function openBilling() {
@@ -255,8 +281,22 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
             {email}
           </div>
           {balanceLabel && (
-            <div style={{ fontSize: 10, letterSpacing: '0.06em', color: hasCredit ? 'rgba(10,10,10,0.5)' : '#c0392b', marginBottom: 10 }}>
-              {balanceLabel}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <span style={{ fontSize: 10, letterSpacing: '0.06em', color: hasCredit ? 'rgba(10,10,10,0.5)' : '#c0392b' }}>
+                {balanceLabel}
+              </span>
+              <button
+                onClick={openReferral}
+                style={{
+                  background: 'none', border: '1px solid rgba(10,10,10,0.2)',
+                  borderRadius: 3, padding: '2px 7px', cursor: 'pointer',
+                  fontFamily: "ui-monospace,'JetBrains Mono','SF Mono',Menlo,monospace",
+                  fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase',
+                  color: 'rgba(10,10,10,0.5)',
+                }}
+              >
+                Refer
+              </button>
             </div>
           )}
           <div style={{ height: 1, background: 'rgba(10,10,10,0.08)', marginBottom: 10 }} />
@@ -361,13 +401,18 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
               <div style={{ fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'rgba(10,10,10,0.4)' }}>
                 Billing
               </div>
-              <button
-                onClick={openRecharge}
-                disabled={rechargeLoading}
-                style={submitBtnStyle}
-              >
-                Add Credit
-              </button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={openReferral} style={cancelBtnStyle}>
+                  Refer and get $5
+                </button>
+                <button
+                  onClick={openRecharge}
+                  disabled={rechargeLoading}
+                  style={submitBtnStyle}
+                >
+                  Add Credit
+                </button>
+              </div>
             </div>
 
             {/* Balance */}
@@ -493,6 +538,59 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
               <button onClick={() => { setBillingOpen(false); closeRecharge(); }} style={cancelBtnStyle}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Referral modal */}
+      {referralOpen && (
+        <div
+          onClick={e => { if (e.currentTarget === e.target) setReferralOpen(false); }}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 70,
+            background: 'rgba(255,255,255,0.88)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <div style={{
+            background: '#ffffff', border: '1px solid rgba(10,10,10,0.15)',
+            borderRadius: 8, padding: '28px',
+            width: 'min(380px, 90vw)',
+            fontFamily: "ui-monospace,'JetBrains Mono','SF Mono',Menlo,monospace",
+            boxShadow: '0 8px 32px rgba(10,10,10,0.10)',
+          }}>
+            <div style={{ fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'rgba(10,10,10,0.4)', marginBottom: 20 }}>
+              Your referral link
+            </div>
+            <div style={{ fontSize: 11, color: 'rgba(10,10,10,0.6)', marginBottom: 16, lineHeight: 1.5 }}>
+              Share this link. When someone signs up and makes their first query, you both earn $5 credit.
+            </div>
+            {referralLoading ? (
+              <div style={{ fontSize: 11, color: 'rgba(10,10,10,0.4)', marginBottom: 20 }}>Generating link…</div>
+            ) : referralUrl ? (
+              <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+                <input
+                  readOnly
+                  value={referralUrl}
+                  onClick={e => (e.target as HTMLInputElement).select()}
+                  style={{
+                    flex: 1, border: '1px solid rgba(10,10,10,0.15)',
+                    borderRadius: 4, padding: '8px 10px',
+                    fontFamily: 'inherit', fontSize: 10, color: '#0a0a0a',
+                    background: 'rgba(10,10,10,0.02)', outline: 'none',
+                    letterSpacing: '0.02em', overflow: 'hidden', textOverflow: 'ellipsis',
+                  }}
+                />
+                <button onClick={copyReferralLink} style={submitBtnStyle}>
+                  {referralCopied ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+            ) : (
+              <div style={{ fontSize: 11, color: '#c0392b', marginBottom: 20 }}>Could not load link — try again.</div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button onClick={() => setReferralOpen(false)} style={cancelBtnStyle}>Close</button>
             </div>
           </div>
         </div>

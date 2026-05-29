@@ -12,6 +12,7 @@ export const validationSchema = Joi.object({
   NOTION_REDIRECT_URI: Joi.string().optional().default('http://localhost:3000/notion/callback'),
   FRONTEND_URL: Joi.string().optional().default('http://localhost:3001'),
   SIGNUP_CREDIT_USD: Joi.number().default(5.00),
+  REFERRAL_CREDIT_USD: Joi.number().default(5.00),
   CREDIT_MULTIPLIER: Joi.number().default(1.5),
   RAZORPAY_KEY_ID: Joi.string().allow('').optional(),
   RAZORPAY_KEY_SECRET: Joi.string().allow('').optional(),
@@ -46,6 +47,7 @@ export const configuration = () => ({
   frontendUrl: process.env.FRONTEND_URL ?? 'http://localhost:3001',
   billing: {
     signupCreditUsd: parseFloat(process.env.SIGNUP_CREDIT_USD ?? '5.00'),
+    referralCreditUsd: parseFloat(process.env.REFERRAL_CREDIT_USD ?? '5.00'),
     creditMultiplier: parseFloat(process.env.CREDIT_MULTIPLIER ?? '1.5'),
   },
   razorpay: {

@@ -9,6 +9,7 @@ import {
   USAGE_EVENT_MODEL,
   PAYMENT_MODEL,
   ADMIN_AUDIT_MODEL,
+  REFERRAL_MODEL,
   DYNAMO_TABLE,
 } from './dynamo.constants';
 import type {
@@ -21,6 +22,7 @@ import type {
   UsageEventItem,
   PaymentItem,
   AdminAuditItem,
+  ReferralItem,
 } from './dynamo.interfaces';
 
 @Injectable()
@@ -36,6 +38,7 @@ export class DynamoRepository {
     @Inject(USAGE_EVENT_MODEL) private readonly usageEventModel: any,
     @Inject(PAYMENT_MODEL) private readonly paymentModel: any,
     @Inject(ADMIN_AUDIT_MODEL) private readonly adminAuditModel: any,
+    @Inject(REFERRAL_MODEL) private readonly referralModel: any,
   ) {}
 
   // ── Key helpers ─────────────────────────────────────────────────────────────
@@ -74,7 +77,7 @@ export class DynamoRepository {
     await this.userMetaModel.create(this.clean(data), { overwrite: true });
   }
 
-  async updateUserMeta(sub: string, updates: Partial<Pick<UserMetaItem, 'hasOnboarded' | 'creditUsd' | 'updatedAt'>>): Promise<void> {
+  async updateUserMeta(sub: string, updates: Partial<Pick<UserMetaItem, 'hasOnboarded' | 'creditUsd' | 'updatedAt' | 'referralSlug' | 'referredBy' | 'referralCreditAwarded'>>): Promise<void> {
     await this.userMetaModel.update(
       { PK: this.userPk(sub), SK: 'METADATA' },
       { updatedAt: new Date().toISOString(), ...updates },
@@ -377,6 +380,17 @@ export class DynamoRepository {
       { PK: this.userPk(sub), SK: 'METADATA' },
       { updatedAt: new Date().toISOString(), ...updates },
     );
+  }
+
+  // ── Referrals ────────────────────────────────────────────────────────────────
+
+  async getReferralBySlug(slug: string): Promise<ReferralItem | null> {
+    const item = await this.referralModel.get({ PK: `REFERRAL#${slug}`, SK: 'METADATA' });
+    return item ? this.toPlain<ReferralItem>(item) : null;
+  }
+
+  async createReferral(data: ReferralItem): Promise<void> {
+    await this.referralModel.create(this.clean(data), { overwrite: false });
   }
 
   // ── Admin: audit log ─────────────────────────────────────────────────────────

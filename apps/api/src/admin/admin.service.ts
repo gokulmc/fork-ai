@@ -114,6 +114,14 @@ export class AdminService {
     return this.db.listAuditLog(limit);
   }
 
+  getConfig(): { signupCreditUsd: number; referralCreditUsd: number; creditMultiplier: number } {
+    return {
+      signupCreditUsd: this.cfg.get<number>('billing.signupCreditUsd') ?? 5.00,
+      referralCreditUsd: this.cfg.get<number>('billing.referralCreditUsd') ?? 5.00,
+      creditMultiplier: this.cfg.get<number>('billing.creditMultiplier') ?? 1.5,
+    };
+  }
+
   private async audit(actor: Actor, action: string, targetSub: string, detail: string): Promise<void> {
     const auditId = ulid();
     const item: AdminAuditItem = {

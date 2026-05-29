@@ -17,6 +17,18 @@ export interface UserMetaItem {
   signupIp?: string;
   signupCountry?: string;
   signupCity?: string;
+  referralSlug?: string;
+  referredBy?: string;
+  referralCreditAwarded?: boolean;
+}
+
+export interface ReferralItem {
+  PK: string;   // REFERRAL#{slug}
+  SK: string;   // METADATA
+  slug: string;
+  sub: string;
+  email: string;
+  createdAt: string;
 }
 
 export interface AdminAuditItem {
