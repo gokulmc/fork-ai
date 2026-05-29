@@ -57,6 +57,7 @@ export interface SessionMetaItem {
   notionPageUrl?: string | null;
   shareToken?: string | null;
   ownerSub?: string | null;
+  isTrial?: boolean;
   createdAt: string;
   updatedAt: string;
   gsi1pk: string;

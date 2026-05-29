@@ -1,8 +1,9 @@
 import {
   Controller, Get, Post, Patch, Delete,
-  Body, Param, HttpCode, HttpStatus,
+  Body, Param, HttpCode, HttpStatus, Res, Header,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiParam } from '@nestjs/swagger';
+import { Response } from 'express';
 import { Public } from '@/auth/public.decorator';
 import { CurrentUser } from '@/auth/current-user.decorator';
 import { CognitoUser } from '@/auth/jwt.strategy';
@@ -10,11 +11,29 @@ import { ShareService } from './share.service';
 import { CreateNodeDto } from '@/nodes/dto/create-node.dto';
 import { CreateHighlightDto } from '@/highlights/dto/create-highlight.dto';
 import { UpdateHighlightDto } from '@/highlights/dto/update-highlight.dto';
+import { CreateSessionDto } from '@/sessions/dto/create-session.dto';
 
 @ApiTags('share')
 @Controller('share')
 export class ShareController {
   constructor(private readonly shareService: ShareService) {}
+
+  @Public()
+  @Post()
+  @Header('Content-Type', 'text/event-stream')
+  @Header('Cache-Control', 'no-cache')
+  @Header('Connection', 'keep-alive')
+  @ApiOperation({ summary: 'Create a trial session — streams root node, returns token in done event (public)' })
+  async createTrialSession(@Body() dto: CreateSessionDto, @Res() res: Response) {
+    const send = (data: object) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+    try {
+      await this.shareService.createTrialSession(dto, send);
+    } catch (err) {
+      send({ type: 'error', message: (err as Error).message });
+    } finally {
+      res.end();
+    }
+  }
 
   @Public()
   @Get(':token')

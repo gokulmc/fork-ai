@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { ulid } from 'ulid';
 import { randomBytes } from 'crypto';
+import { ConfigService } from '@nestjs/config';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
 import type { NodeItem, AnnotationItem, HighlightItem, SessionMetaItem } from '@/dynamo/dynamo.interfaces';
 import { LlmService } from '@/llm/llm.service';
@@ -20,6 +21,7 @@ export interface SessionSummary {
   notionPageUrl?: string | null;
   shareToken?: string | null;
   ownerSub?: string | null;
+  isTrial?: boolean;
 }
 
 export interface FullSession extends SessionSummary {
@@ -34,6 +36,7 @@ export class SessionsService {
     private readonly db: DynamoRepository,
     private readonly llm: LlmService,
     private readonly users: UsersService,
+    private readonly cfg: ConfigService,
   ) {}
 
   private userPk(sub: string) { return `USER#${sub}`; }
@@ -100,6 +103,80 @@ export class SessionsService {
         await Promise.all([this.db.putNode(rootNode), this.db.putSessionMeta(sessionMeta)]);
         await this.users.billUsage(sub, event.usage.inputTokens, event.usage.outputTokens, 'QUERY', sessionId, nodeId);
         send({ type: 'done', sessionId, nodeId });
+      }
+    }
+  }
+
+  async createTrialSessionStreaming(
+    dto: CreateSessionDto,
+    send: (data: object) => void,
+  ): Promise<void> {
+    const houseSub = this.cfg.get<string>('TRIAL_HOUSE_SUB') ?? process.env.TRIAL_HOUSE_SUB;
+    if (!houseSub) throw new Error('TRIAL_HOUSE_SUB not configured');
+
+    await this.users.checkCredit(houseSub);
+
+    const sessionId = ulid();
+    const nodeId = ulid();
+    const token = randomBytes(32).toString('base64url');
+    const now = new Date().toISOString();
+
+    let title = '';
+    let emoji = '';
+    let lede = '';
+    const sections: Array<{ id: string; heading: string; body: string }> = [];
+
+    for await (const event of this.llm.streamAnswerQuery(dto.query, dto.sectionCount ?? 5, dto.webSearch ?? false)) {
+      if (event.type === 'meta') {
+        title = event.title;
+        emoji = event.emoji;
+        lede = event.lede;
+        send({ type: 'meta', title, emoji, lede });
+      } else if (event.type === 'section') {
+        const section = { id: ulid(), heading: event.heading, body: event.body };
+        sections.push(section);
+        send({ type: 'section', ...section });
+      } else if (event.type === 'done') {
+        const rootNode: NodeItem = {
+          PK: `SESSION#${sessionId}`,
+          SK: `NODE#${nodeId}`,
+          nodeId,
+          parentId: null,
+          kind: 'QUERY',
+          title,
+          emoji,
+          query: dto.query,
+          lede,
+          sections,
+          fromSection: null,
+          fromText: null,
+          createdAt: now,
+        };
+
+        const sessionMeta: SessionMetaItem = {
+          PK: this.userPk(houseSub),
+          SK: this.sessionSk(sessionId),
+          sessionId,
+          title,
+          emoji,
+          lede,
+          rootNodeId: nodeId,
+          nodeCount: 1,
+          isTrial: true,
+          shareToken: token,
+          createdAt: now,
+          updatedAt: now,
+          gsi1pk: this.userPk(houseSub),
+          gsi1sk: `UPDATED#${now}`,
+        };
+
+        await Promise.all([
+          this.db.putNode(rootNode),
+          this.db.putSessionMeta(sessionMeta),
+          this.db.putShareToken(token, sessionId, houseSub),
+        ]);
+        await this.users.billUsage(houseSub, event.usage.inputTokens, event.usage.outputTokens, 'QUERY', sessionId, nodeId);
+        send({ type: 'done', sessionId, nodeId, token });
       }
     }
   }
@@ -305,6 +382,7 @@ export class SessionsService {
       notionPageUrl: item.notionPageUrl || null,
       shareToken: item.shareToken || null,
       ownerSub: item.ownerSub || null,
+      isTrial: item.isTrial ?? false,
     };
   }
 }

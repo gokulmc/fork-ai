@@ -16,6 +16,7 @@ export const validationSchema = Joi.object({
   RAZORPAY_KEY_ID: Joi.string().allow('').optional(),
   RAZORPAY_KEY_SECRET: Joi.string().allow('').optional(),
   RAZORPAY_WEBHOOK_SECRET: Joi.string().allow('').optional(),
+  TRIAL_HOUSE_SUB: Joi.string().allow('').optional(),
 });
 
 export const configuration = () => ({
