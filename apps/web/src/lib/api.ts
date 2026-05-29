@@ -191,6 +191,11 @@ export interface UsageEvent {
   usageId: string;
   costUsd: number;
   createdAt: string;
+  kind?: 'QUERY' | 'DEEPER' | 'ASK';
+  inputTokens?: number;
+  outputTokens?: number;
+  sessionId?: string;
+  nodeId?: string;
 }
 
 export function getMe(idToken: string): Promise<UserProfile> {
@@ -537,3 +542,159 @@ export const shareApi = {
     return apiFetch<void>(`/sessions/${sessionId}/share`, idToken, { method: 'DELETE' });
   },
 };
+
+// ── Admin API (Cognito `admins` group only — backend enforces via AdminGuard) ─
+
+export interface MetricsDay {
+  date: string;
+  users: number;
+  sessions: number;
+  nodes: number;
+  revenueUsd: number;
+  llmSpendUsd: number;
+}
+
+export interface AdminMetrics {
+  userCount: number;
+  sessionCount: number;
+  nodeCount: number;
+  revenueUsd: number;
+  llmSpendUsd: number;
+  outstandingCreditUsd: number;
+  series: MetricsDay[];
+}
+
+export interface AdminDeployment {
+  commit: string;
+  version: string;
+  env: string;
+  region: string;
+  startedAt: string;
+  uptimeSec: number;
+}
+
+export interface HealthStatus {
+  status: string;
+  version?: string;
+  commit?: string;
+  uptimeSec?: number;
+  latencyMs: number;
+  ok: boolean;
+}
+
+export interface AdminUser {
+  sub: string;
+  email: string;
+  createdAt: string;
+  updatedAt: string;
+  creditUsd?: number;
+  hasOnboarded?: boolean;
+  signupCountry?: string;
+  signupCity?: string;
+}
+
+export interface AdminPayment {
+  paymentId: string;
+  orderId: string;
+  sub: string;
+  amountUsd: number;
+  amountInr: number;
+  createdAt: string;
+}
+
+interface AdminPage<T> {
+  items: T[];
+  nextCursor: string | null;
+}
+
+export interface AdminUserDetail {
+  user: AdminUser;
+  sessions: SessionSummary[];
+  usage: UsageEvent[];
+  payments: AdminPayment[];
+}
+
+export interface AdminAuditEntry {
+  auditId: string;
+  actorEmail: string;
+  action: string;
+  targetSub: string;
+  detail: string;
+  createdAt: string;
+}
+
+export const adminApi = {
+  getMetrics(idToken: string): Promise<AdminMetrics> {
+    return apiFetch<AdminMetrics>('/admin/metrics', idToken);
+  },
+
+  listUsers(idToken: string): Promise<AdminPage<AdminUser>> {
+    return apiFetch<AdminPage<AdminUser>>('/admin/users', idToken);
+  },
+
+  getUser(idToken: string, sub: string): Promise<AdminUserDetail> {
+    return apiFetch<AdminUserDetail>(`/admin/users/${encodeURIComponent(sub)}`, idToken);
+  },
+
+  listPayments(idToken: string): Promise<AdminPage<AdminPayment>> {
+    return apiFetch<AdminPage<AdminPayment>>('/admin/payments', idToken);
+  },
+
+  getDeployment(idToken: string): Promise<AdminDeployment> {
+    return apiFetch<AdminDeployment>('/admin/deployment', idToken);
+  },
+
+  adjustCredit(
+    idToken: string,
+    sub: string,
+    amountUsd: number,
+    mode: 'add' | 'set',
+  ): Promise<{ creditUsd: number }> {
+    return apiFetch<{ creditUsd: number }>(`/admin/users/${encodeURIComponent(sub)}/credit`, idToken, {
+      method: 'POST',
+      body: JSON.stringify({ amountUsd, mode }),
+    });
+  },
+
+  deleteSession(idToken: string, sub: string, sessionId: string): Promise<void> {
+    return apiFetch<void>(
+      `/admin/sessions/${encodeURIComponent(sub)}/${encodeURIComponent(sessionId)}`,
+      idToken,
+      { method: 'DELETE' },
+    );
+  },
+
+  listAudit(idToken: string, limit = 50): Promise<AdminAuditEntry[]> {
+    return apiFetch<AdminAuditEntry[]>(`/admin/audit?limit=${limit}`, idToken);
+  },
+};
+
+// Public, unauthenticated live-status ping of the API's /health endpoint.
+// Measures latency and surfaces the deployed version/commit.
+export async function pingHealth(): Promise<HealthStatus> {
+  const start = Date.now();
+  try {
+    const res = await fetch(`${base()}/health`, { cache: 'no-store' });
+    const latencyMs = Date.now() - start;
+    if (!res.ok) return { status: `HTTP ${res.status}`, latencyMs, ok: false };
+    const data = (await res.json()) as Partial<HealthStatus>;
+    return { status: data.status ?? 'ok', version: data.version, commit: data.commit, uptimeSec: data.uptimeSec, latencyMs, ok: true };
+  } catch {
+    return { status: 'unreachable', latencyMs: Date.now() - start, ok: false };
+  }
+}
+
+// Decodes the Cognito `admins` group claim from an id_token (client-side gate;
+// the API is the real boundary).
+export function isAdminToken(idToken?: string): boolean {
+  if (!idToken) return false;
+  try {
+    const payload = JSON.parse(
+      atob(idToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')),
+    );
+    const groups = payload['cognito:groups'];
+    return Array.isArray(groups) && groups.includes('admins');
+  } catch {
+    return false;
+  }
+}

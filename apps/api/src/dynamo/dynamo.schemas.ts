@@ -10,6 +10,21 @@ export const UserMetaSchema = new dynamoose.Schema({
   notionAccessToken: { type: String, required: false },
   hasOnboarded: { type: Boolean, required: false },
   creditUsd: { type: Number, required: false },
+  signupIp: { type: String, required: false },
+  signupCountry: { type: String, required: false },
+  signupCity: { type: String, required: false },
+});
+
+export const AdminAuditSchema = new dynamoose.Schema({
+  PK: { type: String, hashKey: true },
+  SK: { type: String, rangeKey: true },
+  auditId: String,
+  actorSub: String,
+  actorEmail: String,
+  action: String,
+  targetSub: String,
+  detail: String,
+  createdAt: String,
 });
 
 export const UsageEventSchema = new dynamoose.Schema({

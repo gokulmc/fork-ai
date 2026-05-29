@@ -8,6 +8,7 @@ import {
   SHARE_TOKEN_MODEL,
   USAGE_EVENT_MODEL,
   PAYMENT_MODEL,
+  ADMIN_AUDIT_MODEL,
   DYNAMO_TABLE,
 } from './dynamo.constants';
 import type {
@@ -19,6 +20,7 @@ import type {
   ShareTokenItem,
   UsageEventItem,
   PaymentItem,
+  AdminAuditItem,
 } from './dynamo.interfaces';
 
 @Injectable()
@@ -33,6 +35,7 @@ export class DynamoRepository {
     @Inject(SHARE_TOKEN_MODEL) private readonly shareTokenModel: any,
     @Inject(USAGE_EVENT_MODEL) private readonly usageEventModel: any,
     @Inject(PAYMENT_MODEL) private readonly paymentModel: any,
+    @Inject(ADMIN_AUDIT_MODEL) private readonly adminAuditModel: any,
   ) {}
 
   // ── Key helpers ─────────────────────────────────────────────────────────────
@@ -361,6 +364,157 @@ export class DynamoRepository {
       ),
     );
   }
+
+  // Best-effort signup location enrichment (separate from updateUserMeta, which
+  // whitelists only onboarding/credit fields).
+  async setUserLocation(
+    sub: string,
+    loc: { signupIp?: string; signupCountry?: string; signupCity?: string },
+  ): Promise<void> {
+    const updates = this.clean(loc);
+    if (!Object.keys(updates).length) return;
+    await this.userMetaModel.update(
+      { PK: this.userPk(sub), SK: 'METADATA' },
+      { updatedAt: new Date().toISOString(), ...updates },
+    );
+  }
+
+  // ── Admin: audit log ─────────────────────────────────────────────────────────
+
+  async putAuditLog(data: AdminAuditItem): Promise<void> {
+    await this.adminAuditModel.create(this.clean(data), { overwrite: false });
+  }
+
+  async listAuditLog(limit: number): Promise<AdminAuditItem[]> {
+    const items = await this.adminAuditModel
+      .query('PK')
+      .eq('ADMIN_AUDIT')
+      .sort('descending')
+      .limit(limit)
+      .exec();
+    return this.toPlainArray<AdminAuditItem>(items);
+  }
+
+  // ── Admin: cross-user reads ────────────────────────────────────────────────
+  // These use table Scans (no GSI spans all users). Callers MUST paginate and
+  // cache — an unbounded scan competes for read capacity with live traffic.
+
+  async listPayments(sub: string): Promise<PaymentItem[]> {
+    const items = await this.paymentModel
+      .query('PK')
+      .eq(this.userPk(sub))
+      .where('SK')
+      .beginsWith('PAYMENT#')
+      .sort('descending')
+      .exec();
+    return this.toPlainArray<PaymentItem>(items);
+  }
+
+  // Full filtered scan of all user-profile rows (PK=USER#…, SK=METADATA).
+  // NOTE: a Scan FilterExpression with a small Limit returns empty pages until
+  // the scan reaches matching items — so we use .all() and return every match.
+  async scanUsers(): Promise<UserMetaItem[]> {
+    const items = await this.userMetaModel
+      .scan('SK')
+      .eq('METADATA')
+      .and()
+      .where('PK')
+      .beginsWith('USER#')
+      .all()
+      .exec();
+    return this.toPlainArray<UserMetaItem>(items);
+  }
+
+  // Full filtered scan of all payment rows across users.
+  async scanPayments(): Promise<PaymentItem[]> {
+    const items = await this.paymentModel.scan('SK').beginsWith('PAYMENT#').all().exec();
+    return this.toPlainArray<PaymentItem>(items);
+  }
+
+  // One projected full-table scan → totals + a daily time-series for charts.
+  // Auto-paginates via .all(); projects only key/numeric/date fields.
+  async aggregatePlatformMetrics(): Promise<PlatformMetrics> {
+    const rows: Array<{
+      PK?: string;
+      SK?: string;
+      creditUsd?: number;
+      costUsd?: number;
+      amountUsd?: number;
+      createdAt?: string;
+    }> = await this.userMetaModel
+      .scan()
+      .attributes(['PK', 'SK', 'creditUsd', 'costUsd', 'amountUsd', 'createdAt'])
+      .all()
+      .exec();
+
+    const m = {
+      userCount: 0,
+      sessionCount: 0,
+      nodeCount: 0,
+      revenueUsd: 0,
+      llmSpendUsd: 0,
+      outstandingCreditUsd: 0,
+    };
+    const byDay = new Map<string, MetricsDay>();
+    const day = (iso?: string): MetricsDay | null => {
+      if (!iso) return null;
+      const d = iso.slice(0, 10);
+      let entry = byDay.get(d);
+      if (!entry) {
+        entry = { date: d, users: 0, sessions: 0, nodes: 0, revenueUsd: 0, llmSpendUsd: 0 };
+        byDay.set(d, entry);
+      }
+      return entry;
+    };
+
+    for (const r of rows) {
+      const sk = r.SK ?? '';
+      if (sk === 'METADATA' && r.PK?.startsWith('USER#')) {
+        m.userCount += 1;
+        m.outstandingCreditUsd += r.creditUsd ?? 0;
+        const e = day(r.createdAt);
+        if (e) e.users += 1;
+      } else if (sk.startsWith('SESSION#')) {
+        m.sessionCount += 1;
+        const e = day(r.createdAt);
+        if (e) e.sessions += 1;
+      } else if (sk.startsWith('NODE#')) {
+        m.nodeCount += 1;
+        const e = day(r.createdAt);
+        if (e) e.nodes += 1;
+      } else if (sk.startsWith('PAYMENT#')) {
+        m.revenueUsd += r.amountUsd ?? 0;
+        const e = day(r.createdAt);
+        if (e) e.revenueUsd += r.amountUsd ?? 0;
+      } else if (sk.startsWith('USAGE#')) {
+        m.llmSpendUsd += r.costUsd ?? 0;
+        const e = day(r.createdAt);
+        if (e) e.llmSpendUsd += r.costUsd ?? 0;
+      }
+    }
+
+    const series = [...byDay.values()].sort((a, b) => a.date.localeCompare(b.date));
+    return { ...m, series };
+  }
+}
+
+export interface MetricsDay {
+  date: string;
+  users: number;
+  sessions: number;
+  nodes: number;
+  revenueUsd: number;
+  llmSpendUsd: number;
+}
+
+export interface PlatformMetrics {
+  userCount: number;
+  sessionCount: number;
+  nodeCount: number;
+  revenueUsd: number;
+  llmSpendUsd: number;
+  outstandingCreditUsd: number;
+  series: MetricsDay[];
 }
 
 function chunk<T>(arr: T[], size: number): T[][] {
