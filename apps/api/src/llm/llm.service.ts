@@ -196,23 +196,23 @@ You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase 
 
   async getTrendingTopics(): Promise<string[]> {
     const today = new Date().toISOString().slice(0, 10);
-    const prompt = `Today is ${today}. Use web search to find 4 compelling, specific research questions that are trending RIGHT NOW in science, technology, or politics/world affairs.
+    const prompt = `Today is ${today}. Use web search to find 4 trending topics from RIGHT NOW in science, technology, or politics/world affairs.
 
 Return ONLY valid JSON, no prose, no markdown fences:
 {
   "topics": [
-    "Question one?",
-    "Question two?",
-    "Question three?",
-    "Question four?"
+    "Short label one",
+    "Short label two",
+    "Short label three",
+    "Short label four"
   ]
 }
 
 Rules:
-- Each question must be about something newsworthy within the last 2 weeks — not evergreen
-- Phrase as a question a curious reader would type into a research tool (5-12 words)
+- Each label must be 3-5 words max — a noun phrase, not a full question
+- Must be newsworthy within the last 2 weeks, not evergreen
 - Mix: roughly 2 science/technology + 2 politics/world affairs
-- Be specific: name the technology, event, or actor (e.g. "What is OpenAI's new o3 model?" not "How does AI work?")`;
+- Name the specific thing: "OpenAI o3 reasoning", "Iran nuclear deal", "LHC anomaly" — not "AI advances" or "Middle East conflict"`;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const params: any = {

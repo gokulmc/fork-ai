@@ -258,10 +258,11 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 
 .examples {
   margin-top: 28px;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
+  width: 100%;
+  max-width: 560px;
 }
 .examples .chip {
   background: transparent;
@@ -273,6 +274,10 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
   cursor: pointer;
   transition: all .15s;
   font-family: var(--sans);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .examples .chip:hover { background: var(--panel); border-color: var(--ink-3); color: var(--ink); }
 
