@@ -61,6 +61,7 @@ export interface Tweaks {
   fontPair: string;
   maxSections: number;
   webSearch: boolean;
+  branchModel: 'haiku' | 'sonnet' | 'opus';
 }
 
 export interface HlMenuState {

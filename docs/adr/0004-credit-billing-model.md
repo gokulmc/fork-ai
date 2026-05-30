@@ -39,6 +39,20 @@ fork.ai makes Anthropic API calls on behalf of users for every LLM operation (ro
 
 11. **402 surfaces as an inline error at the query origin.** Root query (Landing input): error replaces the loading state with "Out of credit — open Billing to recharge" and a clickable "Billing" link. Branch nodes (DEEPER/ASK): the loading node on the map shows the error state with the same message.
 
+## Addendum (2026-05-30): per-model pricing + user-selectable branch Model
+
+Point 7 originally fixed the raw-cost formula to Sonnet rates (`$3/1M in, $15/1M out`). With the introduction of a user-selectable **Model** for branch calls (Haiku / Sonnet / Opus — see CONTEXT.md → "Model"), a single hardcoded rate is no longer correct: Opus output is ~5× Sonnet, Haiku ~⅓. The decision evolves:
+
+- **Billing is now model-aware.** `billUsage` takes the concrete model id that served the call and looks up its input/output rates in a server-side `MODEL_PRICING` table (`apps/api/src/llm/models.ts`). The Credit Multiplier still applies on top. The serving model is recorded on each Usage Event (`model` field).
+- **Root queries (`QUERY`) remain Sonnet** and are not user-selectable — first-impression quality. Only `DEEPER` and `ASK` honour the Model tweak; default **Haiku** (cost reduction was the motivating goal).
+- **Clients never set the price.** The request carries a short alias (`haiku`/`sonnet`/`opus`); the server validates it against a fixed allowlist and maps to a model id, falling back to Haiku. An unknown/stale model id prices at Sonnet, never zero.
+- **Guests are clamped to Sonnet.** Because guest branches spend the **owner's** Credit (point 5), the `/share/:token/*` surface downgrades any Opus request to Sonnet — a shared link cannot drain the owner's balance at Opus rates.
+
+### Alternatives considered (addendum)
+- **Keep flat Sonnet-rate billing:** simplest, but loses money on every Opus call (~3× under-charge) and over-charges Haiku. Rejected once the spread became real.
+- **Flat per-model multiplier bump (e.g. Opus = ×5):** cheaper to implement than a rate table but disconnects deduction from actual token mix. Rejected — the rate table is ~15 lines and exact.
+- **Let guests pick any model:** simpler, but exposes the owner to Opus-priced guest spend they never opted into. Rejected in favour of the Sonnet clamp.
+
 ## Consequences
 
 - Adding payments later requires only a new endpoint to top up `creditUsd` — the rest of the billing logic is already in place.

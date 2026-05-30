@@ -3,7 +3,9 @@ import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { NodesService } from './nodes.service';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
 import { LlmService } from '@/llm/llm.service';
+import { BRANCH_DEFAULT_MODEL } from '@/llm/models';
 import { SessionsService } from '@/sessions/sessions.service';
+import { UsersService } from '@/users/users.service';
 
 const mockDb = {
   putNode: jest.fn(),
@@ -29,6 +31,11 @@ const mockSessions = {
   incrementNodeCount: jest.fn(),
 };
 
+const mockUsers = {
+  checkCredit: jest.fn(),
+  billUsage: jest.fn(),
+};
+
 const SUB = 'user-sub-123';
 const SESSION_ID = '01HZSESS';
 const PARENT_NODE_ID = '01HZPARENT';
@@ -41,6 +48,7 @@ const llmResult = {
     { heading: 'Part 1', body: 'Part 1 body.' },
     { heading: 'Part 2', body: 'Part 2 body.' },
   ],
+  usage: { inputTokens: 100, outputTokens: 200 },
 };
 
 const parentNode = {
@@ -70,6 +78,7 @@ describe('NodesService', () => {
         { provide: DynamoRepository, useValue: mockDb },
         { provide: LlmService, useValue: mockLlm },
         { provide: SessionsService, useValue: mockSessions },
+        { provide: UsersService, useValue: mockUsers },
       ],
     }).compile();
     service = module.get<NodesService>(NodesService);
@@ -101,6 +110,7 @@ describe('NodesService', () => {
         'The chain rule is...',
         4,
         false,
+        BRANCH_DEFAULT_MODEL,
       );
     });
 
@@ -168,6 +178,7 @@ describe('NodesService', () => {
         'Why does this work?',
         4,
         false,
+        BRANCH_DEFAULT_MODEL,
       );
     });
 

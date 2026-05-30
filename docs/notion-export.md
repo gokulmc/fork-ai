@@ -12,8 +12,8 @@ A session can be pushed to Notion as a structured page via the "Save to Notion" 
 2. If Notion is not connected → redirected to `GET /notion/auth` → Notion OAuth consent screen.
 3. After authorising, Notion redirects to `GET /notion/callback` → access token saved to DynamoDB.
 4. Frontend receives `?notion=connected` → page picker modal opens automatically.
-5. User searches their Notion workspace and picks a parent page.
-6. Session is pushed as a child page of the chosen parent.
+5. The picker always pins **"+ Create a new page"** at the top, followed by the user's existing pages (searchable). The user either picks an existing **parent page** or creates a new **top-level page**.
+6. Session is pushed — as a child of the chosen parent, or as a new page at the workspace top level.
 7. Button changes to **Open in Notion ↗** permanently, linking directly to the created page.
 8. The Notion page URL is persisted to DynamoDB (`notionPageUrl` on the session item) so the button survives page reload and history navigation.
 9. If the user adds a new branch (Go Deeper / Ask AI), `notionPageUrl` is cleared immediately (both UI and DB) and the button reverts to **Save to Notion** — the export is now stale.
@@ -175,9 +175,22 @@ Only new nodes trigger invalidation — highlights, callouts, and renames do not
 
 ---
 
+## Page parents — existing page vs. top-level
+
+`POST /notion/push` takes an **optional** `parentPageId`:
+
+- **Present** → `notion.pages.create({ parent: { page_id: parentPageId } })` — nests the export under an existing page (the original behaviour).
+- **Absent** → `notion.pages.create({ parent: { workspace: true } })` — creates a new private **top-level page**. This is what the picker's "+ Create a new page" uses, so a brand-new Notion user with no shared pages can still export.
+
+Workspace-root creation only succeeds if the integration was granted **workspace-level access** during OAuth. If Notion rejects it (page-scoped grant only), `pushPage` throws `BadGatewayException('NOTION_WORKSPACE_DENIED')`; the frontend detects that sentinel in the `ApiError` message and shows: *"Reconnect Notion and grant workspace access, or pick an existing page."* (Page-parent failures keep their raw Notion message.)
+
+The Notion SDK's `CreatePageParameters.parent` also allows `database_id` / `data_source_id` parents — not used here.
+
+---
+
 ## Future work
 
 - **Disconnect Notion** — UI to revoke the token (call `updateNotionToken(sub, null)` on the backend, which already handles null).
-- **Database parents** — currently only page parents are supported; extend `searchPages` to include Notion databases.
+- **Database parents** — extend `searchPages` to include Notion databases as selectable parents.
 - **Incremental sync** — detect an existing fork.ai page for the session and update blocks rather than creating a new page.
 - **Mermaid preview mode** — Notion's code block API has no `preview_mode` property; the diagram always lands in code view. No workaround exists via the API — users must click **Preview** manually in Notion.

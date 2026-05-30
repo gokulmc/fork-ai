@@ -3,6 +3,7 @@ import { ulid } from 'ulid';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
 import type { NodeItem } from '@/dynamo/dynamo.interfaces';
 import { LlmService } from '@/llm/llm.service';
+import { resolveBranchModel } from '@/llm/models';
 import { SessionsService } from '@/sessions/sessions.service';
 import { UsersService } from '@/users/users.service';
 import { CreateNodeDto } from './dto/create-node.dto';
@@ -17,8 +18,10 @@ export class NodesService {
     private readonly users: UsersService,
   ) {}
 
-  async createNode(sub: string, sessionId: string, dto: CreateNodeDto): Promise<NodeItem> {
+  async createNode(sub: string, sessionId: string, dto: CreateNodeDto, isGuest = false): Promise<NodeItem> {
     await this.users.checkCredit(sub);
+
+    const model = resolveBranchModel(dto.model, isGuest);
 
     const session = await this.sessions.getSession(sub, sessionId);
     const nodeById = new Map(session.nodes.map((n) => [n.nodeId, n]));
@@ -42,11 +45,11 @@ export class NodesService {
 
     if (dto.kind === 'DEEPER') {
       if (!dto.sectionBody) throw new BadRequestException('sectionBody required for DEEPER nodes');
-      llmResult = await this.llm.expandSection(ancestors, dto.query, dto.sectionBody, dto.sectionCount ?? 4, dto.webSearch ?? false);
+      llmResult = await this.llm.expandSection(ancestors, dto.query, dto.sectionBody, dto.sectionCount ?? 4, dto.webSearch ?? false, model);
       fromText = `${dto.query}: ${dto.sectionBody.slice(0, 200)}…`;
     } else {
       if (!dto.highlightText) throw new BadRequestException('highlightText required for ASK nodes');
-      llmResult = await this.llm.followUpFromHighlight(ancestors, dto.highlightText, dto.query, dto.sectionCount ?? 4, dto.webSearch ?? false);
+      llmResult = await this.llm.followUpFromHighlight(ancestors, dto.highlightText, dto.query, dto.sectionCount ?? 4, dto.webSearch ?? false, model);
       fromText = dto.highlightText;
     }
 
@@ -78,7 +81,7 @@ export class NodesService {
       // Invalidate any previous Notion export — the branch tree just changed.
       // Works for both authed and guest writes (guest can't call PATCH /sessions/:id).
       this.db.updateSessionMeta(sub, sessionId, { notionPageUrl: null }),
-      this.users.billUsage(sub, llmResult.usage.inputTokens, llmResult.usage.outputTokens, dto.kind, sessionId, node.nodeId),
+      this.users.billUsage(sub, llmResult.usage.inputTokens, llmResult.usage.outputTokens, dto.kind, sessionId, node.nodeId, model),
     ]);
 
     return node;

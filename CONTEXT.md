@@ -31,11 +31,17 @@ A persistent text selection within a Section, stored with character offsets and 
 ## Annotation
 A user-created note or callout anchored to a Section passage. Kind is `note` or `callout`. Belongs to a Session.
 
+## Parent Page
+An existing Notion page the user selects in the Save-to-Notion picker; the exported Session is created as a child of it. Distinct from a Top-level Page, which is a brand-new page created at the workspace root (`parent: { workspace: true }`) when the user has no pages or chooses "+ Create a new page". The picker always offers Top-level Page creation; it requires workspace-level OAuth access.
+
 ## History
 The list of Sessions accessible to a logged-in User — both Sessions they own and Sessions they have Claimed via a Share Token.
 
 ## Web Search
 An optional mode on any LLM call that attaches the `web_search_20250305` Anthropic tool (max 3 uses per call). When active, the LLM may issue up to 3 search queries and weave live results into sections. Gated behind a toggle in the Tweaks panel. Persisted per-device in `localStorage` under `fork.ai.tweaks`. Disabled by default.
+
+## Model
+The Anthropic model that serves a given LLM call. Three are offered: **Haiku** (cheapest, default), **Sonnet**, and **Opus** (most capable, most expensive — ~15× Haiku output cost). The **root query (`QUERY`) is always Sonnet** and is not user-selectable. **Branch calls (`DEEPER` and `ASK`) honour a single per-device "Model" tweak** in the Tweaks panel, persisted in `localStorage` under `fork.ai.tweaks`, default Haiku. The client sends a short model alias (`haiku`/`sonnet`/`opus`), never a raw model id; the server validates it against a fixed allowlist and maps it to a concrete model id, falling back to Haiku if absent or invalid. A **Guest is clamped to Sonnet max** — the `/share/:token/*` branch surface ignores any Opus request, because Guest branches spend the owner's Credit and the owner never opted into Opus-priced calls. The serving Model is recorded on the Usage Event and determines the rate used by the Credit Multiplier formula.
 
 ## CitationSource
 A `{ title, url }` pair that records one web source actually cited in a Web Search response. Only sources that appear inside a `<cite>` tag in the raw LLM output are included — unused search results are discarded. Stored as `sources[]` on the Node in DynamoDB. Rendered as a numbered footnote list below the last section; each footnote number is a clickable link to the source URL. The inline citation markers are `<sup class="cite-ref"><a …>[N]</a></sup>` injected server-side by `processCitations` in `LlmService`.
@@ -50,10 +56,10 @@ A monetary balance in USD held against a User's account, used to pay for LLM cal
 A modal panel in the Account popover (same interaction pattern as the Change Password overlay) that shows the User's current Credit balance, a chronological list of Usage Events (date and cost per call, newest first, capped at 50), and an "Add Credit" button. Clicking "Add Credit" expands the overlay to show three recharge tiers ($5 / $10 / custom, minimum $1 USD). Selecting a tier creates a Recharge Order and opens the Razorpay payment modal. On payment success, the credit balance updates in real time. When `creditUsd <= 0`, the balance line is replaced with a "Out of credit — recharge to continue" prompt. Accessible only to authenticated Users (Guests have no account panel).
 
 ## Credit Multiplier
-A scalar applied on top of the raw Anthropic API cost to compute how much Credit is deducted per LLM call. Formula: `deduction = (inputTokens × $3/1M + outputTokens × $15/1M) × multiplier`. Configured via the `CREDIT_MULTIPLIER` env var (default `1.5`). Server-side only — not stored per-user or per-call.
+A scalar applied on top of the raw Anthropic API cost to compute how much Credit is deducted per LLM call. Formula: `deduction = (inputTokens × inRate + outputTokens × outRate) × multiplier`, where `inRate`/`outRate` are the **per-model** Anthropic token rates for the model that actually served the call (see Model). Configured via the `CREDIT_MULTIPLIER` env var (default `1.5`). Server-side only — not stored per-user or per-call. The per-model rate table is server-side and is the single source of truth for cost; the client-selected model never sets the price.
 
 ## Usage Event
-A record of a single LLM call made by or on behalf of a User. Stored in DynamoDB at `PK: USER#{sub}, SK: USAGE#{ulid}`. Fields: `inputTokens`, `outputTokens`, `costUsd` (post-multiplier deduction), `kind` (QUERY/DEEPER/ASK), `sessionId`, `nodeId`, `createdAt`. Usage Events are append-only and are never updated or deleted. They power the usage history shown in the Billing overlay.
+A record of a single LLM call made by or on behalf of a User. Stored in DynamoDB at `PK: USER#{sub}, SK: USAGE#{ulid}`. Fields: `inputTokens`, `outputTokens`, `costUsd` (post-multiplier deduction), `kind` (QUERY/DEEPER/ASK), `model` (the Model that served the call — determines the rate used), `sessionId`, `nodeId`, `createdAt`. Usage Events are append-only and are never updated or deleted. They power the usage history shown in the Billing overlay.
 
 ## Recharge Order
 A server-side Razorpay order created when a User initiates a credit top-up. The order amount is always in INR (paise), derived from the chosen USD package via a live exchange rate fetched from `api.exchangerate-api.com`. The USD amount is stored in Razorpay's order `notes` field so the credit amount is unambiguous at verification time. One order per top-up attempt; unconfirmed orders are abandoned if the user closes the Razorpay modal.

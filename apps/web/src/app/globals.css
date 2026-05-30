@@ -905,6 +905,8 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 }
 .notion-picker-list li button:hover { background: var(--hover); }
 .notion-picker-title { font-size: 13px; color: var(--ink); }
+.notion-picker-create { border-bottom: 1px solid var(--line); }
+.notion-picker-create button .notion-picker-title { color: var(--accent); font-weight: 500; }
 .notion-picker-empty { padding: 16px; font-size: 13px; color: var(--ink-2); text-align: center; }
 .mindmap-header .zoom {
   display: inline-flex;
@@ -1330,6 +1332,8 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 .twk-sect:first-child { padding-top: 0; }
 [data-theme="dark"] .twk-lbl { color: rgba(230,230,227,.72); }
 [data-theme="dark"] .twk-sect { color: rgba(230,230,227,.45); }
+.twk-note { margin: -2px 0 0; font-size: 11px; line-height: 1.4; color: rgba(41,38,27,.5); }
+[data-theme="dark"] .twk-note { color: rgba(230,230,227,.5); }
 
 .twk-shortcuts { display: flex; flex-direction: column; gap: 4px; }
 .twk-shortcut-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }

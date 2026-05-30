@@ -316,11 +316,19 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, 
               onChange={v => setTweak('maxSections', Number(v))}
             />
             <TweakRadio
+              label="Model"
+              value={tweaks.branchModel}
+              options={[{ value: 'haiku', label: 'Haiku' }, { value: 'sonnet', label: 'Sonnet' }, { value: 'opus', label: 'Opus' }]}
+              onChange={v => setTweak('branchModel', v as Tweaks['branchModel'])}
+            />
+            <p className="twk-note">Model for Go Deeper &amp; Ask AI. Haiku is fastest &amp; cheapest; Opus is most capable but costs more credit.</p>
+            <TweakRadio
               label="Web search"
               value={tweaks.webSearch ? 'on' : 'off'}
               options={[{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }]}
               onChange={v => setTweak('webSearch', v === 'on')}
             />
+            <p className="twk-note">Web search queries are costlier than normal LLM calls. Keep them off at most times.</p>
             <TweakSection label="Ask AI shortcuts" />
             <div className="twk-shortcuts">
               {([['?', 'what'], ['!?', 'how'], ['/?', 'why'], ['>?', 'explain']] as const).map(([sym, word]) => (
@@ -605,6 +613,7 @@ function HowToContent() {
         <li style={li}><strong>Font pairing</strong> — change the heading and body typeface</li>
         <li style={li}><strong>Mind map layout</strong> — Horizontal (default) or Vertical</li>
         <li style={li}><strong>Max sections</strong> — 4 to 8 sections per answer</li>
+        <li style={li}><strong>Model</strong> — Haiku / Sonnet / Opus for Go Deeper &amp; Ask AI (Haiku is cheapest, Opus most capable)</li>
         <li style={li}><strong>Web search</strong> — On or Off (see above)</li>
       </ul>
 

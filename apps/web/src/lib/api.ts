@@ -317,7 +317,7 @@ export type StreamEvent =
   | { type: 'init'; sessionId: string; nodeId: string; token?: string }
   | { type: 'meta'; title: string; emoji: string; lede: string }
   | { type: 'section'; id: string; heading: string; body: string }
-  | { type: 'done'; sessionId: string; nodeId: string; token?: string }
+  | { type: 'done'; sessionId: string; nodeId: string; token?: string; sections?: Array<{ id: string; heading: string; body: string }>; sources?: CitationSource[] }
   | { type: 'error'; message: string };
 
 export async function createSessionStream(
@@ -409,6 +409,7 @@ export interface CreateNodePayload {
   highlightText?: string;  // for ASK
   sectionCount?: number;
   webSearch?: boolean;
+  model?: 'haiku' | 'sonnet' | 'opus';
 }
 
 export function createNode(
@@ -533,11 +534,11 @@ export function pushToNotion(
   title: string,
   blocks: unknown[],
   childrenMap: unknown[],
-  parentPageId: string,
+  parentPageId?: string,
 ): Promise<{ url: string }> {
   return apiFetch<{ url: string }>('/notion/push', idToken, {
     method: 'POST',
-    body: JSON.stringify({ title, blocks, childrenMap, parentPageId }),
+    body: JSON.stringify({ title, blocks, childrenMap, ...(parentPageId ? { parentPageId } : {}) }),
   });
 }
 
