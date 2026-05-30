@@ -4,6 +4,7 @@ import { ulid } from 'ulid';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
 import type { UserMetaItem, UsageEventItem, CreditEventItem } from '@/dynamo/dynamo.interfaces';
 import { CognitoUser } from '@/auth/jwt.strategy';
+import { priceFor } from '@/llm/models';
 
 @Injectable()
 export class UsersService {
@@ -82,10 +83,11 @@ export class UsersService {
     kind: 'QUERY' | 'DEEPER' | 'ASK',
     sessionId: string,
     nodeId: string,
+    model: string,
   ): Promise<void> {
     const multiplier = this.cfg.get<number>('billing.creditMultiplier') ?? 1.5;
-    // Sonnet pricing: $3/1M input, $15/1M output
-    const rawCost = (inputTokens * 3 / 1_000_000) + (outputTokens * 15 / 1_000_000);
+    const rate = priceFor(model);
+    const rawCost = (inputTokens * rate.input / 1_000_000) + (outputTokens * rate.output / 1_000_000);
     const costUsd = Math.round(rawCost * multiplier * 1_000_000) / 1_000_000;
 
     const usageId = ulid();
@@ -99,6 +101,7 @@ export class UsersService {
       outputTokens,
       costUsd,
       kind,
+      model,
       sessionId,
       nodeId,
       createdAt: now,

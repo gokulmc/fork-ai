@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
 import type { NodeItem, AnnotationItem, HighlightItem, SessionMetaItem } from '@/dynamo/dynamo.interfaces';
 import { LlmService } from '@/llm/llm.service';
+import { ROOT_MODEL } from '@/llm/models';
 import { UsersService } from '@/users/users.service';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { UpdateSessionDto } from './dto/update-session.dto';
@@ -111,12 +112,18 @@ export class SessionsService {
         // Incrementally persist so a refresh shows progress, not an empty node.
         await this.db.putNode({ ...rootNode, title: title || rootNode.title, emoji, lede, sections: [...sections] });
       } else if (event.type === 'done') {
+        // Citation-processed bodies arrive only at done; map them onto the streamed
+        // sections by index to preserve their ids. Sources are persisted on the node.
+        if (event.sections) {
+          event.sections.forEach((s, i) => { if (sections[i]) sections[i].body = s.body; });
+        }
+        const sourcesPatch = event.sources?.length ? { sources: event.sources } : {};
         await Promise.all([
-          this.db.putNode({ ...rootNode, title, emoji, lede, sections }),
+          this.db.putNode({ ...rootNode, title, emoji, lede, sections, ...sourcesPatch }),
           this.db.putSessionMeta({ ...sessionMeta, title, emoji, lede }),
         ]);
-        await this.users.billUsage(sub, event.usage.inputTokens, event.usage.outputTokens, 'QUERY', sessionId, nodeId);
-        emit({ type: 'done', sessionId, nodeId });
+        await this.users.billUsage(sub, event.usage.inputTokens, event.usage.outputTokens, 'QUERY', sessionId, nodeId, ROOT_MODEL);
+        emit({ type: 'done', sessionId, nodeId, sections, sources: event.sources });
       }
     }
   }
@@ -198,12 +205,18 @@ export class SessionsService {
         // Incrementally persist so a refresh shows progress, not an empty node.
         await this.db.putNode({ ...rootNode, title: title || rootNode.title, emoji, lede, sections: [...sections] });
       } else if (event.type === 'done') {
+        // Citation-processed bodies arrive only at done; map them onto the streamed
+        // sections by index to preserve their ids. Sources are persisted on the node.
+        if (event.sections) {
+          event.sections.forEach((s, i) => { if (sections[i]) sections[i].body = s.body; });
+        }
+        const sourcesPatch = event.sources?.length ? { sources: event.sources } : {};
         await Promise.all([
-          this.db.putNode({ ...rootNode, title, emoji, lede, sections }),
+          this.db.putNode({ ...rootNode, title, emoji, lede, sections, ...sourcesPatch }),
           this.db.putSessionMeta({ ...sessionMeta, title, emoji, lede }),
         ]);
-        await this.users.billUsage(houseSub, event.usage.inputTokens, event.usage.outputTokens, 'QUERY', sessionId, nodeId);
-        emit({ type: 'done', sessionId, nodeId, token });
+        await this.users.billUsage(houseSub, event.usage.inputTokens, event.usage.outputTokens, 'QUERY', sessionId, nodeId, ROOT_MODEL);
+        emit({ type: 'done', sessionId, nodeId, token, sections, sources: event.sources });
       }
     }
   }
@@ -251,7 +264,7 @@ export class SessionsService {
     };
 
     await Promise.all([this.db.putNode(rootNode), this.db.putSessionMeta(sessionMeta)]);
-    await this.users.billUsage(sub, llmResult.usage.inputTokens, llmResult.usage.outputTokens, 'QUERY', sessionId, nodeId);
+    await this.users.billUsage(sub, llmResult.usage.inputTokens, llmResult.usage.outputTokens, 'QUERY', sessionId, nodeId, ROOT_MODEL);
 
     return {
       sessionId,

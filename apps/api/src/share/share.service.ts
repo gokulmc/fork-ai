@@ -38,7 +38,7 @@ export class ShareService {
     if (meta?.isTrial && (meta.nodeCount ?? 0) >= 5) {
       throw new HttpException('Trial node limit reached', HttpStatus.PAYMENT_REQUIRED);
     }
-    return this.nodes.createNode(ownerSub, sessionId, dto);
+    return this.nodes.createNode(ownerSub, sessionId, dto, true);
   }
 
   async createHighlight(token: string, dto: CreateHighlightDto): Promise<HighlightItem> {

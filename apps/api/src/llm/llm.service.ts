@@ -2,11 +2,12 @@ import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
 import { LlmResponse, LlmSection, LlmUsage, CitationSource } from './llm.types';
+import { ROOT_MODEL, BRANCH_DEFAULT_MODEL } from './models';
 
 export type StreamEvent =
   | { type: 'meta'; title: string; emoji: string; lede: string }
   | { type: 'section'; heading: string; body: string }
-  | { type: 'done'; usage: LlmUsage };
+  | { type: 'done'; usage: LlmUsage; sections?: LlmSection[]; sources?: CitationSource[] };
 
 function extractMeta(text: string): { title: string; emoji: string; lede: string } | null {
   const title = text.match(/"title"\s*:\s*"((?:[^"\\]|\\.)*)"/)?.[1];
@@ -86,7 +87,7 @@ Each section "body" should be 80-180 words. You MAY use GitHub-flavored markdown
     let emittedCount = 0;
 
     const streamParams: Parameters<typeof this.client.messages.stream>[0] = {
-      model: 'claude-sonnet-4-6',
+      model: ROOT_MODEL,
       max_tokens: 2048,
       messages: [{ role: 'user', content: prompt }],
     };
@@ -129,7 +130,33 @@ Each section "body" should be 80-180 words. You MAY use GitHub-flavored markdown
     }
 
     const finalMsg = await finalMsgPromise;
-    yield { type: 'done', usage: { inputTokens: finalMsg.usage.input_tokens, outputTokens: finalMsg.usage.output_tokens } };
+
+    // Citations can only be resolved once the full message (with web_search_tool_result
+    // blocks) is known. Sections streamed above still carry the raw <cite> tags; emit the
+    // processed bodies + cited sources here so the persist/UI layer can swap them in.
+    let processedSections: LlmSection[] | undefined;
+    let sources: CitationSource[] | undefined;
+    if (webSearch) {
+      const blocks = ((finalMsg as unknown as { content?: unknown[] }).content ?? []) as Array<{ type: string; content?: unknown[] }>;
+      const allSources = this.extractAllSources(blocks);
+      if (allSources.length) {
+        try {
+          const full = this.parseJson(accumulated);
+          const cited = this.processCitations(full.sections, allSources);
+          processedSections = cited.sections;
+          if (cited.sources.length) sources = cited.sources;
+        } catch (err) {
+          this.logger.warn(`Citation post-processing failed: ${(err as Error).message}`);
+        }
+      }
+    }
+
+    yield {
+      type: 'done',
+      usage: { inputTokens: finalMsg.usage.input_tokens, outputTokens: finalMsg.usage.output_tokens },
+      sections: processedSections,
+      sources,
+    };
   }
 
   async answerQuery(query: string, sectionCount = 4, webSearch = false): Promise<LlmResponse> {
@@ -150,6 +177,7 @@ Each section "body" should be 80-180 words. You MAY use GitHub-flavored markdown
     sectionBody: string,
     sectionCount = 4,
     webSearch = false,
+    model: string = BRANCH_DEFAULT_MODEL,
   ): Promise<LlmResponse> {
     const trail = ancestors
       .map((a, i) => `${ i === 0 ? 'Root query' : 'Sub-topic'}: "${a.query}" → "${a.title}"`)
@@ -166,7 +194,7 @@ ${SECTIONS_SCHEMA}
 
 You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase capturing the deep dive. Escape double-quotes inside JSON strings.`;
 
-    return this.callJson(prompt, webSearch);
+    return this.callJson(prompt, webSearch, model);
   }
 
   async followUpFromHighlight(
@@ -175,6 +203,7 @@ You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase 
     question: string,
     sectionCount = 4,
     webSearch = false,
+    model: string = BRANCH_DEFAULT_MODEL,
   ): Promise<LlmResponse> {
     const trail = ancestors
       .map((a, i) => `${i === 0 ? 'Root query' : 'Sub-topic'}: "${a.query}" → "${a.title}"`)
@@ -191,7 +220,7 @@ ${SECTIONS_SCHEMA}
 
 You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase capturing the answer topic. Escape double-quotes inside JSON strings.`;
 
-    return this.callJson(prompt, webSearch);
+    return this.callJson(prompt, webSearch, model);
   }
 
   async getTrendingTopics(): Promise<string[]> {
@@ -240,7 +269,7 @@ Rules:
     return parsed.topics.slice(0, 4);
   }
 
-  private async callJson(prompt: string, webSearch = false, retries = 1): Promise<LlmResponse> {
+  private async callJson(prompt: string, webSearch = false, model: string = ROOT_MODEL, retries = 1): Promise<LlmResponse> {
     const fullPrompt = webSearch ? `${prompt}\n\n${WEB_SEARCH_GUIDANCE}\n\n${CITATION_NOTE}` : prompt;
     let lastError: Error | undefined;
 
@@ -248,7 +277,7 @@ Rules:
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const params: any = {
-          model: 'claude-sonnet-4-6',
+          model,
           max_tokens: 2048,
           messages: [{ role: 'user', content: fullPrompt }],
         };

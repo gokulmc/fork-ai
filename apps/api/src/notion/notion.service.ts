@@ -107,7 +107,7 @@ export class NotionService {
     title: string,
     blocks: unknown[],
     childrenMap: unknown[],
-    parentPageId: string,
+    parentPageId?: string,
   ): Promise<{ url: string }> {
     const token = await this.requireToken(sub);
     const notion = new Client({ auth: token });
@@ -116,10 +116,16 @@ export class NotionService {
     const firstBatch = blocks.slice(0, 100) as any[];
     const rest = blocks.slice(100);
 
+    // No parentPageId → create a private page at the workspace top level. This
+    // only succeeds if the integration was granted workspace-level access.
+    const parent = parentPageId
+      ? { page_id: parentPageId }
+      : { workspace: true as const };
+
     let page: Awaited<ReturnType<typeof notion.pages.create>>;
     try {
       page = await notion.pages.create({
-        parent: { page_id: parentPageId },
+        parent,
         properties: {
           title: { title: [{ type: 'text', text: { content: title } }] },
         },
@@ -128,6 +134,8 @@ export class NotionService {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : JSON.stringify(err);
       console.error('[notion/push] pages.create failed:', msg);
+      // Sentinel the frontend can detect to show grant-workspace-access guidance.
+      if (!parentPageId) throw new BadGatewayException('NOTION_WORKSPACE_DENIED');
       throw new BadGatewayException(`Notion pages.create: ${msg}`);
     }
 

@@ -26,6 +26,7 @@ export function short5(s: string): string {
 export function stripMarkdown(s: string): string {
   if (!s) return '';
   return s
+    .replace(/<[^>]+>/g, '') // strip inline HTML (e.g. web-search <cite>/<sup> citation tags)
     .replace(/```[\s\S]*?```/g, '[code]')
     .replace(/`([^`]+)`/g, '$1')
     .replace(/^#{1,6}\s+/gm, '')

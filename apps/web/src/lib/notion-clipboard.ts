@@ -1,5 +1,5 @@
 import { marked } from 'marked';
-import type { ForkNode, Annotation, PersistentHighlight } from './types';
+import type { ForkNode, Annotation, PersistentHighlight, CitationSource } from './types';
 
 marked.use({ gfm: true, breaks: false });
 
@@ -68,7 +68,7 @@ interface NAnnotations {
 
 interface NRichText {
   type: 'text';
-  text: { content: string; link: null };
+  text: { content: string; link: { url: string } | null };
   annotations: NAnnotations;
 }
 
@@ -95,6 +95,45 @@ function makeRT(content: string, ann: Partial<NAnnotations> = {}): NRichText {
       ...ann,
     },
   };
+}
+
+function makeLink(content: string, url: string, ann: Partial<NAnnotations> = {}): NRichText {
+  return {
+    type: 'text',
+    text: { content, link: { url } },
+    annotations: {
+      bold: false, italic: false, strikethrough: false,
+      underline: false, code: false, color: 'default',
+      ...ann,
+    },
+  };
+}
+
+// The LLM pipeline emits inline citations in two forms that Notion's line-by-line
+// parser would otherwise dump as literal HTML text:
+//   • processed (child nodes): …<sup class="cite-ref"><a …>[N]</a></sup>
+//   • raw (streamed root nodes): <cite index="5-3,5-4">…</cite>
+// Strip the hyperlink wrappers — keep the [N] marker (it lines up with the numbered
+// "Sources" list), and unwrap raw <cite> tags to their plain inner text.
+function stripCiteRefs(body: string): string {
+  return body
+    .replace(/<sup class="cite-ref">(?:<a\b[^>]*>)?(\[\d+\])(?:<\/a>)?<\/sup>/g, '$1')
+    .replace(/<cite\b[^>]*>([\s\S]*?)<\/cite>/g, '$1');
+}
+
+// Numbered references list at the bottom of a node, ordered to match the [N] markers.
+function sourcesNBlocks(sources: CitationSource[] | undefined): NBlock[] {
+  if (!sources?.length) return [];
+  const blocks: NBlock[] = [
+    { type: 'heading_3', heading_3: { rich_text: [makeRT('Sources', { bold: true })], is_toggleable: false, color: 'default' } },
+  ];
+  for (const src of sources) {
+    blocks.push({
+      type: 'numbered_list_item',
+      numbered_list_item: { rich_text: [makeLink(src.title, src.url)], color: 'default' },
+    });
+  }
+  return blocks;
 }
 
 // Apply highlight ranges: split plain text into annotated spans
@@ -300,7 +339,7 @@ function nodeToNBlocks(
       sectionBlocks.push({ type: 'paragraph', paragraph: { rich_text: [makeRT(section.heading, { bold: true })], color: 'default' } });
     }
 
-    sectionBlocks.push(...mdToBlocks(section.body, hls));
+    sectionBlocks.push(...mdToBlocks(stripCiteRefs(section.body), hls));
 
     for (const c of callouts) {
       sectionBlocks.push({
@@ -319,6 +358,9 @@ function nodeToNBlocks(
   for (const child of orphans) {
     sectionBlocks.push(...nodeToNBlocks(child, depth + 1, nodes, childMap, persistentHl, annotations));
   }
+
+  // References for this node's cited sources, at the bottom of its content
+  sectionBlocks.push(...sourcesNBlocks(node.sources));
 
   if (depth === 0) {
     return [

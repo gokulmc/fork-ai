@@ -14,7 +14,8 @@ import { ApiProperty } from '@nestjs/swagger';
 
 class PushDto {
   @ApiProperty() @IsString() title!: string;
-  @ApiProperty() @IsString() parentPageId!: string;
+  // Optional: when absent, the page is created at the workspace top level.
+  @ApiProperty({ required: false }) @IsOptional() @IsString() parentPageId?: string;
   @ApiProperty({ type: [Object] }) @IsArray() blocks!: unknown[];
   @ApiProperty({ type: [Object] }) @IsArray() childrenMap!: unknown[];
 }

@@ -62,6 +62,7 @@ export interface UsageEventItem {
   outputTokens: number;
   costUsd: number;
   kind: 'QUERY' | 'DEEPER' | 'ASK';
+  model: string;
   sessionId: string;
   nodeId: string;
   createdAt: string;

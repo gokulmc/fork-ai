@@ -95,6 +95,7 @@ const TWEAK_DEFAULTS = {
   fontPair: 'newsreader-geist',
   maxSections: 6,
   webSearch: true,
+  branchModel: 'haiku' as const,
 };
 
 const FONT_PAIRS: Record<string, { serif: string; sans: string; label: string }> = {
@@ -611,11 +612,20 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
         } else if (event.type === 'done') {
           realNodeId = event.nodeId;
           setSessionId(event.sessionId);
-          // Swap temp ID for the real node ID
+          // Swap temp ID for the real node ID. Citation-processed bodies + sources
+          // (web search) only arrive at done — apply them over the raw streamed sections.
+          const doneSections = event.sections;
+          const doneSources = event.sources;
           setNodes(prev => {
             const node = prev[tempId];
             if (!node) return prev;
-            const realNode: ForkNode = { ...node, id: realNodeId, loading: false };
+            const realNode: ForkNode = {
+              ...node,
+              id: realNodeId,
+              loading: false,
+              ...(doneSections ? { sections: doneSections } : {}),
+              ...(doneSources?.length ? { sources: doneSources } : {}),
+            };
             const next: Record<string, ForkNode> = {};
             for (const [k, v] of Object.entries(prev)) {
               next[k === tempId ? realNodeId : k] = k === tempId ? realNode : v;
@@ -720,6 +730,7 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
         sectionBody: section.body,
         sectionCount: tweaks.maxSections,
         webSearch: tweaks.webSearch,
+        model: tweaks.branchModel,
       };
       const apiNode = gt && !idToken
         ? await shareApi.createNode(gt, nodePayload)
@@ -784,6 +795,7 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
         highlightText: source.text,
         sectionCount: tweaks.maxSections,
         webSearch: tweaks.webSearch,
+        model: tweaks.branchModel,
       };
       const apiNode = gt && !idToken
         ? await shareApi.createNode(gt, nodePayload)
@@ -1078,7 +1090,8 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
     setNotionPickerOpen(true);
   }, [idToken]);
 
-  const saveToNotionPage = useCallback(async (page: NotionPage) => {
+  // Push the session to Notion. parentPageId omitted → new top-level page.
+  const doNotionPush = useCallback(async (parentPageId?: string) => {
     if (!rootId || !idToken) return;
     setNotionPickerOpen(false);
     setNotionSaving(true);
@@ -1086,17 +1099,24 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
     try {
       const { blocks, childrenMap } = buildNotionClipboard(nodes, rootId, persistentHl, annotations);
       const title = nodes[rootId]?.title ?? 'fork ai research';
-      const { url } = await pushToNotion(idToken, title, blocks, childrenMap, page.id);
+      const { url } = await pushToNotion(idToken, title, blocks, childrenMap, parentPageId);
       setNotionSavedUrl(url);
       if (sessionId) {
         updateSessionNotionUrl(idToken, sessionId, url).catch(err => console.error('Failed to persist Notion URL', err));
       }
-    } catch {
-      setNotionError('Failed to save — try again');
+    } catch (err) {
+      // Workspace-root create denied (integration lacks workspace access) → guide the user.
+      const denied = err instanceof ApiError && err.message.includes('NOTION_WORKSPACE_DENIED');
+      setNotionError(denied
+        ? 'Reconnect Notion and grant workspace access, or pick an existing page'
+        : 'Failed to save — try again');
     } finally {
       setNotionSaving(false);
     }
-  }, [nodes, rootId, persistentHl, annotations, idToken]);
+  }, [nodes, rootId, persistentHl, annotations, idToken, sessionId]);
+
+  const saveToNotionPage = useCallback((page: NotionPage) => doNotionPush(page.id), [doNotionPush]);
+  const createNotionPage = useCallback(() => doNotionPush(), [doNotionPush]);
 
   // ── Derived state ─────────────────────────────────────────────────────────
 
@@ -1333,7 +1353,7 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
                   <Quote size={18} className="ic" />
                   <div className="body">
                     <div className="kicker">{active.kind === 'ASK' ? 'Branched from' : 'Expanded from'}</div>
-                    <em>{active.fromText}</em>
+                    <em>{stripMarkdown(active.fromText)}</em>
                   </div>
                 </div>
               )}
@@ -1448,11 +1468,16 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
               onChange={e => setNotionQuery(e.target.value)}
             />
             <ul className="notion-picker-list">
+              <li className="notion-picker-create">
+                <button onClick={createNotionPage}>
+                  <span className="notion-picker-title">+ Create a new page</span>
+                </button>
+              </li>
               {notionPagesLoading && (
                 <li className="notion-picker-empty">Loading…</li>
               )}
               {!notionPagesLoading && notionPages.length === 0 && (
-                <li className="notion-picker-empty">No pages found</li>
+                <li className="notion-picker-empty">No existing pages — create a new one above</li>
               )}
               {!notionPagesLoading && notionPages.map(page => (
                 <li key={page.id}>
