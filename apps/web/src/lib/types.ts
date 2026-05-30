@@ -24,6 +24,7 @@ export interface ForkNode {
   loading: boolean;
   error?: string;
   sources?: CitationSource[];
+  model?: string; // concrete model id that produced this node
 }
 
 export interface Annotation {
@@ -61,7 +62,7 @@ export interface Tweaks {
   fontPair: string;
   maxSections: number;
   webSearch: boolean;
-  branchModel: 'haiku' | 'sonnet' | 'opus';
+  branchModel: 'haiku' | 'sonnet' | 'opus' | 'gemini-pro' | 'gemini-flash' | 'gemini-flash-lite';
 }
 
 export interface HlMenuState {

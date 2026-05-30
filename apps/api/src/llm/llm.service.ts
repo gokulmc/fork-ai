@@ -2,7 +2,11 @@ import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
 import { LlmResponse, LlmSection, LlmUsage, CitationSource } from './llm.types';
-import { ROOT_MODEL, BRANCH_DEFAULT_MODEL } from './models';
+import { ROOT_MODEL, BRANCH_DEFAULT_MODEL, providerNameFor, ProviderName } from './models';
+import { LlmProvider } from './providers/provider.types';
+import { AnthropicProvider } from './providers/anthropic.provider';
+import { GeminiProvider } from './providers/gemini.provider';
+import { extractAnthropicSources, processCitations } from './citations';
 
 export type StreamEvent =
   | { type: 'meta'; title: string; emoji: string; lede: string }
@@ -67,10 +71,21 @@ const SECTIONS_SCHEMA = `Return ONLY valid JSON, no prose, no markdown fences. S
 @Injectable()
 export class LlmService {
   private readonly client: Anthropic;
+  private readonly providers: Record<ProviderName, LlmProvider>;
   private readonly logger = new Logger(LlmService.name);
 
   constructor(private readonly cfg: ConfigService) {
+    // Direct Anthropic client is used by streamAnswerQuery (root query) and
+    // getTrendingTopics, which stay Anthropic-only. Branch calls go via providers.
     this.client = new Anthropic({ apiKey: cfg.get<string>('anthropic.apiKey') });
+    this.providers = {
+      anthropic: new AnthropicProvider(this.client),
+      gemini: new GeminiProvider(() => cfg.get<string>('gemini.apiKey')),
+    };
+  }
+
+  private providerFor(modelId: string): LlmProvider {
+    return this.providers[providerNameFor(modelId)];
   }
 
   async *streamAnswerQuery(query: string, sectionCount = 5, webSearch = false): AsyncGenerator<StreamEvent> {
@@ -138,11 +153,11 @@ Each section "body" should be 80-180 words. You MAY use GitHub-flavored markdown
     let sources: CitationSource[] | undefined;
     if (webSearch) {
       const blocks = ((finalMsg as unknown as { content?: unknown[] }).content ?? []) as Array<{ type: string; content?: unknown[] }>;
-      const allSources = this.extractAllSources(blocks);
+      const allSources = extractAnthropicSources(blocks);
       if (allSources.length) {
         try {
           const full = this.parseJson(accumulated);
-          const cited = this.processCitations(full.sections, allSources);
+          const cited = processCitations(full.sections, allSources);
           processedSections = cited.sections;
           if (cited.sources.length) sources = cited.sources;
         } catch (err) {
@@ -271,37 +286,22 @@ Rules:
 
   private async callJson(prompt: string, webSearch = false, model: string = ROOT_MODEL, retries = 1): Promise<LlmResponse> {
     const fullPrompt = webSearch ? `${prompt}\n\n${WEB_SEARCH_GUIDANCE}\n\n${CITATION_NOTE}` : prompt;
+    const provider = this.providerFor(model);
     let lastError: Error | undefined;
 
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const params: any = {
+        const { rawText, usage, applyCitations } = await provider.complete(fullPrompt, {
           model,
-          max_tokens: 2048,
-          messages: [{ role: 'user', content: fullPrompt }],
-        };
-        if (webSearch) {
-          params.tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }];
-        }
-        const message = await this.client.messages.create(params);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const blocks: any[] = (message as any).content ?? [];
-
-        const raw: string = blocks
-          .filter((b: { type: string }) => b.type === 'text')
-          .map((b: { text?: string }) => b.text ?? '')
-          .join('');
-
-        const result = this.parseJson(raw);
-        result.usage = { inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens };
-        if (webSearch) {
-          const allSources = this.extractAllSources(blocks);
-          if (allSources.length) {
-            const cited = this.processCitations(result.sections, allSources);
-            result.sections = cited.sections;
-            if (cited.sources.length) result.sources = cited.sources;
-          }
+          maxTokens: 2048,
+          webSearch,
+        });
+        const result = this.parseJson(rawText);
+        result.usage = usage;
+        if (webSearch && applyCitations) {
+          const cited = applyCitations(result.sections);
+          result.sections = cited.sections;
+          if (cited.sources.length) result.sources = cited.sources;
         }
         return result;
       } catch (err) {
@@ -311,57 +311,6 @@ Rules:
     }
 
     throw new InternalServerErrorException(`LLM call failed: ${lastError?.message}`);
-  }
-
-  // Collect all web search results (title + url) in order from all tool result blocks.
-  // The <cite index="N-..."> first number is the 1-based index into this list.
-  private extractAllSources(blocks: Array<{ type: string; content?: unknown[] }>): CitationSource[] {
-    const sources: CitationSource[] = [];
-    for (const block of blocks) {
-      if (block.type !== 'web_search_tool_result') continue;
-      for (const item of (block.content ?? []) as Array<{ type: string; title?: string; url?: string }>) {
-        if (item.type === 'web_search_result' && item.title && item.url) {
-          sources.push({ title: item.title, url: item.url });
-        }
-      }
-    }
-    return sources;
-  }
-
-  // Process all sections in one pass with a shared footnote map so that:
-  // - numbering is sequential across all sections in order of first appearance
-  // - only sources that are actually cited in the text are included in the output
-  private processCitations(
-    sections: LlmSection[],
-    allSources: CitationSource[],
-  ): { sections: LlmSection[]; sources: CitationSource[] } {
-    const docToFootnote = new Map<number, number>();
-    let nextFootnote = 1;
-
-    const processed = sections.map(s => ({
-      ...s,
-      body: s.body.replace(
-        /<cite\s+index="([^"]+)">([^<]*)<\/cite>/g,
-        (_match, indexAttr: string, text: string) => {
-          const docIdx = parseInt(indexAttr.split('-')[0], 10);
-          if (docIdx < 1 || docIdx > allSources.length) return text;
-          if (!docToFootnote.has(docIdx)) {
-            docToFootnote.set(docIdx, nextFootnote++);
-          }
-          const fn = docToFootnote.get(docIdx)!;
-          const url = allSources[docIdx - 1].url;
-          return `${text}<sup class="cite-ref"><a href="${url}" target="_blank" rel="noopener noreferrer">[${fn}]</a></sup>`;
-        },
-      ),
-    }));
-
-    // Build cited-only sources array ordered by footnote number (1-based)
-    const citedSources: CitationSource[] = new Array(docToFootnote.size);
-    docToFootnote.forEach((footnoteNum, docIdx) => {
-      citedSources[footnoteNum - 1] = allSources[docIdx - 1];
-    });
-
-    return { sections: processed, sources: citedSources };
   }
 
   private parseJson(raw: string): LlmResponse {

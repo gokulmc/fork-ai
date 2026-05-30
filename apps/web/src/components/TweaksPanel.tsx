@@ -184,6 +184,18 @@ export function TweakColor({
 
 const PAD = 16;
 
+// Branch-model choices (Claude + Gemini). Shared by the Model dropdown and the
+// status chip so the label stays in sync.
+const MODEL_OPTIONS: { value: Tweaks['branchModel']; label: string }[] = [
+  { value: 'haiku', label: 'Claude Haiku' },
+  { value: 'sonnet', label: 'Claude Sonnet' },
+  { value: 'opus', label: 'Claude Opus' },
+  { value: 'gemini-flash-lite', label: 'Gemini 2.5 Flash-Lite' },
+  { value: 'gemini-flash', label: 'Gemini 2.5 Flash' },
+  { value: 'gemini-pro', label: 'Gemini 2.5 Pro' },
+];
+const modelLabel = (v: string) => MODEL_OPTIONS.find(o => o.value === v)?.label ?? v;
+
 interface TweaksPanelProps {
   tweaks: Tweaks;
   setTweak: SetTweak;
@@ -253,16 +265,24 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, 
 
   return (
     <>
-      {/* Floating trigger */}
+      {/* Floating status chips + trigger (both hidden once the panel is open) */}
       {!open && (
-        <button
-          className="twk-trigger"
-          onClick={() => setOpen(true)}
-          title="Tweaks"
-          aria-label="Open tweaks panel"
-        >
-          ⚙
-        </button>
+        <>
+          <div className="twk-status" aria-hidden="true">
+            <span className="twk-status-pill">🤖 {modelLabel(tweaks.branchModel)}</span>
+            <span className={`twk-status-pill ${tweaks.webSearch ? 'twk-status-on' : 'twk-status-off'}`}>
+              🔍 Web {tweaks.webSearch ? 'on' : 'off'}
+            </span>
+          </div>
+          <button
+            className="twk-trigger"
+            onClick={() => setOpen(true)}
+            title="Tweaks"
+            aria-label="Open tweaks panel"
+          >
+            ⚙
+          </button>
+        </>
       )}
 
       {open && (
@@ -315,13 +335,13 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, 
               options={[4, 5, 6, 7, 8].map(n => ({ value: String(n), label: String(n) }))}
               onChange={v => setTweak('maxSections', Number(v))}
             />
-            <TweakRadio
+            <TweakSelect
               label="Model"
               value={tweaks.branchModel}
-              options={[{ value: 'haiku', label: 'Haiku' }, { value: 'sonnet', label: 'Sonnet' }, { value: 'opus', label: 'Opus' }]}
+              options={MODEL_OPTIONS}
               onChange={v => setTweak('branchModel', v as Tweaks['branchModel'])}
             />
-            <p className="twk-note">Model for Go Deeper &amp; Ask AI. Haiku is fastest &amp; cheapest; Opus is most capable but costs more credit.</p>
+            <p className="twk-note">Model for Go Deeper &amp; Ask AI (Claude or Gemini). Lighter models are faster &amp; cheaper; top-tier models are most capable but cost more credit.</p>
             <TweakRadio
               label="Web search"
               value={tweaks.webSearch ? 'on' : 'off'}
@@ -613,7 +633,7 @@ function HowToContent() {
         <li style={li}><strong>Font pairing</strong> — change the heading and body typeface</li>
         <li style={li}><strong>Mind map layout</strong> — Horizontal (default) or Vertical</li>
         <li style={li}><strong>Max sections</strong> — 4 to 8 sections per answer</li>
-        <li style={li}><strong>Model</strong> — Haiku / Sonnet / Opus for Go Deeper &amp; Ask AI (Haiku is cheapest, Opus most capable)</li>
+        <li style={li}><strong>Model</strong> — Claude (Haiku/Sonnet/Opus) or Gemini (2.5 Flash-Lite/Flash/Pro) for Go Deeper &amp; Ask AI (lighter is cheaper, top-tier most capable)</li>
         <li style={li}><strong>Web search</strong> — On or Off (see above)</li>
       </ul>
 

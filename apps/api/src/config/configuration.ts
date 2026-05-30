@@ -6,6 +6,7 @@ export const validationSchema = Joi.object({
   COGNITO_CLIENT_ID: Joi.string().required(),
   DYNAMO_TABLE_NAME: Joi.string().default('forkai-main'),
   ANTHROPIC_API_KEY: Joi.string().required(),
+  GEMINI_API_KEY: Joi.string().allow('').optional(),
   PORT: Joi.number().default(3000),
   NOTION_CLIENT_ID: Joi.string().optional(),
   NOTION_CLIENT_SECRET: Joi.string().optional(),
@@ -37,6 +38,9 @@ export const configuration = () => ({
   },
   anthropic: {
     apiKey: process.env.ANTHROPIC_API_KEY!,
+  },
+  gemini: {
+    apiKey: process.env.GEMINI_API_KEY ?? '',
   },
   port: parseInt(process.env.PORT ?? '3000', 10),
   notion: {

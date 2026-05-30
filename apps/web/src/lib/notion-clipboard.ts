@@ -364,7 +364,7 @@ function nodeToNBlocks(
 
   if (depth === 0) {
     return [
-      { type: 'paragraph', paragraph: { rich_text: [makeRT(node.lede)], color: 'default' } },
+      { type: 'paragraph', paragraph: { rich_text: [makeRT(stripCiteRefs(node.lede))], color: 'default' } },
       ...sectionBlocks,
     ];
   }
@@ -372,7 +372,7 @@ function nodeToNBlocks(
   // Child: toggle heading — depth 1 = H2 purple, depth 2 = H3 green, depth 3+ = H3 yellow
   const emojiPrefix = node.emoji ? `${node.emoji} ` : '';
   const innerBlocks: NBlock[] = [
-    { type: 'paragraph', paragraph: { rich_text: [makeRT(node.lede, { italic: true })], color: 'default' } },
+    { type: 'paragraph', paragraph: { rich_text: [makeRT(stripCiteRefs(node.lede), { italic: true })], color: 'default' } },
     ...sectionBlocks,
   ];
   if (depth === 1) {
@@ -493,12 +493,12 @@ function renderNodeHtml(
   const orphansHtml = orphans.map(c => renderNodeHtml(c, depth + 1, nodes, childMap, persistentHl, annotations)).join('');
 
   if (depth === 0) {
-    return `<h1>${escHtml(node.title)}</h1>\n<p>${escHtml(node.lede)}</p>\n${sectionsHtml}${orphansHtml}`;
+    return `<h1>${escHtml(node.title)}</h1>\n<p>${escHtml(stripCiteRefs(node.lede))}</p>\n${sectionsHtml}${orphansHtml}`;
   }
 
   const toggleLevel = Math.min(depth, 3);
   const ttag = `h${toggleLevel}`;
-  const inner = `<p><em>${escHtml(node.lede)}</em></p>\n${sectionsHtml}${orphansHtml}`;
+  const inner = `<p><em>${escHtml(stripCiteRefs(node.lede))}</em></p>\n${sectionsHtml}${orphansHtml}`;
   return `<details><summary><${ttag}>${escHtml(node.title)}</${ttag}></summary>\n${inner}</details>\n`;
 }
 
@@ -528,7 +528,7 @@ function renderNodePlain(
   const hLevel = depth === 0 ? 1 : Math.min(depth, 3);
   const hashes = '#'.repeat(hLevel);
   const sHashes = '#'.repeat(Math.min(hLevel + 1, 4));
-  let text = `${hashes} ${node.title}\n\n${node.lede}\n\n`;
+  let text = `${hashes} ${node.title}\n\n${stripCiteRefs(node.lede)}\n\n`;
 
   for (const section of node.sections) {
     text += `${sHashes} ${section.heading}\n\n${section.body}\n\n`;

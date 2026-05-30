@@ -5,6 +5,7 @@ import { LlmService } from './llm.service';
 
 const mockCreate = jest.fn();
 const mockStream = jest.fn();
+const mockGenerate = jest.fn();
 
 // __esModule: true is required so TypeScript's __importDefault interop picks up .default correctly
 jest.mock('@anthropic-ai/sdk', () => ({
@@ -14,7 +15,19 @@ jest.mock('@anthropic-ai/sdk', () => ({
   })),
 }));
 
-const mockCfg = { get: (key: string) => (key === 'anthropic.apiKey' ? 'test-key' : undefined) };
+jest.mock('@google/genai', () => ({
+  __esModule: true,
+  GoogleGenAI: jest.fn().mockImplementation(() => ({
+    models: { generateContent: mockGenerate },
+  })),
+}));
+
+const mockCfg = {
+  get: (key: string) =>
+    key === 'anthropic.apiKey' || key === 'gemini.apiKey' ? 'test-key' : undefined,
+};
+
+const USAGE = { input_tokens: 100, output_tokens: 50 };
 
 const validResponse = {
   title: 'Test Title',
@@ -27,7 +40,16 @@ const validResponse = {
 };
 
 function sdkResponse(json: object) {
-  return { content: [{ type: 'text', text: JSON.stringify(json) }] };
+  return { content: [{ type: 'text', text: JSON.stringify(json) }], usage: USAGE };
+}
+
+// Gemini SDK response: text is a getter, usage in usageMetadata.
+function geminiResponse(json: object, groundingMetadata?: object) {
+  return {
+    text: JSON.stringify(json),
+    usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 50 },
+    candidates: groundingMetadata ? [{ groundingMetadata }] : [{}],
+  };
 }
 
 describe('LlmService', () => {
@@ -35,6 +57,7 @@ describe('LlmService', () => {
 
   beforeEach(async () => {
     mockCreate.mockReset();
+    mockGenerate.mockReset();
     const module: TestingModule = await Test.createTestingModule({
       providers: [LlmService, { provide: ConfigService, useValue: mockCfg }],
     }).compile();
@@ -51,7 +74,7 @@ describe('LlmService', () => {
 
     it('strips markdown code fences', async () => {
       const fenced = '```json\n' + JSON.stringify(validResponse) + '\n```';
-      mockCreate.mockResolvedValue({ content: [{ type: 'text', text: fenced }] });
+      mockCreate.mockResolvedValue({ content: [{ type: 'text', text: fenced }], usage: USAGE });
       const result = await service.answerQuery('test');
       expect(result.emoji).toBe('🧠');
     });
@@ -142,7 +165,7 @@ describe('LlmService', () => {
         },
         { type: 'text', text: JSON.stringify(responseWithCite) },
       ];
-      mockCreate.mockResolvedValue({ content: blocks });
+      mockCreate.mockResolvedValue({ content: blocks, usage: USAGE });
       const result = await service.answerQuery('test', 4, true);
       expect(result.sections[0].body).toContain('cite-ref');
       expect(result.sections[0].body).toContain('[1]');
@@ -167,7 +190,7 @@ describe('LlmService', () => {
         },
         { type: 'text', text: JSON.stringify(responseOneCite) },
       ];
-      mockCreate.mockResolvedValue({ content: blocks });
+      mockCreate.mockResolvedValue({ content: blocks, usage: USAGE });
       const result = await service.answerQuery('test', 4, true);
       expect(result.sources).toHaveLength(1);
       expect(result.sources![0].url).toBe('https://used.com');
@@ -185,21 +208,69 @@ describe('LlmService', () => {
         },
         { type: 'text', text: JSON.stringify(responseWithCite) },
       ];
-      mockCreate.mockResolvedValue({ content: blocks });
+      mockCreate.mockResolvedValue({ content: blocks, usage: USAGE });
       const result = await service.answerQuery('test', 4, true);
       expect(result.sections[0].body).toContain('href="https://ref.example.com"');
     });
   });
 
+  describe('gemini provider (branch calls)', () => {
+    it('routes a gemini-flash model to the Gemini SDK, not Anthropic', async () => {
+      mockGenerate.mockResolvedValue(geminiResponse(validResponse));
+      const result = await service.expandSection(
+        [{ title: 'T', query: 'Q' }], 'Heading', 'Body', 4, false, 'gemini-2.5-flash',
+      );
+      expect(mockGenerate).toHaveBeenCalledTimes(1);
+      expect(mockCreate).not.toHaveBeenCalled();
+      expect(result.title).toBe('Test Title');
+      expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 50 });
+    });
+
+    it('uses JSON mode when webSearch is off (no grounding tool)', async () => {
+      mockGenerate.mockResolvedValue(geminiResponse(validResponse));
+      await service.expandSection([{ title: 'T', query: 'Q' }], 'H', 'B', 4, false, 'gemini-2.5-flash');
+      const { config } = mockGenerate.mock.calls[0][0];
+      expect(config.responseMimeType).toBe('application/json');
+      expect(config.tools).toBeUndefined();
+    });
+
+    it('enables googleSearch grounding and omits JSON mode when webSearch is on', async () => {
+      mockGenerate.mockResolvedValue(geminiResponse(validResponse));
+      await service.expandSection([{ title: 'T', query: 'Q' }], 'H', 'B', 4, true, 'gemini-2.5-flash');
+      const { config } = mockGenerate.mock.calls[0][0];
+      expect(config.tools).toEqual([{ googleSearch: {} }]);
+      expect(config.responseMimeType).toBeUndefined();
+    });
+
+    it('maps grounding metadata to footnotes and cited sources', async () => {
+      const grounded = {
+        ...validResponse,
+        sections: [{ heading: 'S1', body: 'Solar output rose sharply last year.' }],
+      };
+      const groundingMetadata = {
+        groundingChunks: [{ web: { uri: 'https://energy.example', title: 'Energy Report' } }],
+        groundingSupports: [
+          { segment: { text: 'Solar output rose sharply last year.' }, groundingChunkIndices: [0] },
+        ],
+      };
+      mockGenerate.mockResolvedValue(geminiResponse(grounded, groundingMetadata));
+      const result = await service.expandSection([{ title: 'T', query: 'Q' }], 'H', 'B', 4, true, 'gemini-2.5-flash');
+      expect(result.sections[0].body).toContain('cite-ref');
+      expect(result.sections[0].body).toContain('[1]');
+      expect(result.sources).toHaveLength(1);
+      expect(result.sources![0].url).toBe('https://energy.example');
+    });
+  });
+
   describe('parseJson (via answerQuery)', () => {
     it('throws on missing sections array', async () => {
-      mockCreate.mockResolvedValue({ content: [{ type: 'text', text: '{"title":"t","emoji":"e","lede":"l"}' }] });
+      mockCreate.mockResolvedValue({ content: [{ type: 'text', text: '{"title":"t","emoji":"e","lede":"l"}' }], usage: USAGE });
       await expect(service.answerQuery('test')).rejects.toBeInstanceOf(InternalServerErrorException);
     });
 
     it('extracts JSON embedded in surrounding prose', async () => {
       const text = 'Here is the answer: ' + JSON.stringify(validResponse) + ' Hope that helps!';
-      mockCreate.mockResolvedValue({ content: [{ type: 'text', text: text }] });
+      mockCreate.mockResolvedValue({ content: [{ type: 'text', text: text }], usage: USAGE });
       const result = await service.answerQuery('test');
       expect(result.sections).toHaveLength(2);
     });
