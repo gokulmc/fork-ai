@@ -3,20 +3,6 @@ export function uid(): string {
   return `n${Date.now().toString(36)}_${_idCounter++}`;
 }
 
-// Friendly label for a concrete model id stored on a node.
-const MODEL_NAMES: Record<string, string> = {
-  'claude-haiku-4-5-20251001': 'Claude Haiku',
-  'claude-sonnet-4-6': 'Claude Sonnet',
-  'claude-opus-4-8': 'Claude Opus',
-  'gemini-2.5-pro': 'Gemini 2.5 Pro',
-  'gemini-2.5-flash': 'Gemini 2.5 Flash',
-  'gemini-2.5-flash-lite': 'Gemini 2.5 Flash-Lite',
-};
-export function modelDisplayName(modelId: string | undefined | null): string | null {
-  if (!modelId) return null;
-  return MODEL_NAMES[modelId] ?? modelId;
-}
-
 export function pickEmoji(s: string | null | undefined): string | null {
   if (!s || typeof s !== 'string') return null;
   const trimmed = s.trim();
@@ -55,17 +41,6 @@ export function stripMarkdown(s: string): string {
     .replace(/^\d+\.\s+/gm, '')
     .replace(/\|/g, ' ')
     .replace(/[\s ]+/g, ' ')
-    .trim();
-}
-
-// Remove web-search citation markup for plain-text descriptions/ledes where
-// footnotes aren't rendered: drop <sup> footnote markers, unwrap <cite> tags
-// (keeping the cited text).
-export function stripCite(s: string): string {
-  if (!s) return '';
-  return s
-    .replace(/<sup\b[^>]*>[\s\S]*?<\/sup>/gi, '')
-    .replace(/<cite\b[^>]*>([\s\S]*?)<\/cite>/gi, '$1')
     .trim();
 }
 

@@ -1,10 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { SessionsService } from './sessions.service';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
 import { LlmService } from '@/llm/llm.service';
-import { UsersService } from '@/users/users.service';
 
 const mockDb = {
   putNode: jest.fn(),
@@ -27,13 +25,6 @@ const mockLlm = {
   answerQuery: jest.fn(),
 };
 
-const mockUsers = {
-  checkCredit: jest.fn(),
-  billUsage: jest.fn(),
-};
-
-const mockCfg = { get: jest.fn() };
-
 const SUB = 'user-sub-123';
 const SESSION_ID = '01HZEXAMPLE';
 const NOW = '2026-05-17T10:00:00.000Z';
@@ -46,7 +37,6 @@ const llmResult = {
     { heading: 'Intro', body: 'Introduction text.' },
     { heading: 'Layers', body: 'Layer text.' },
   ],
-  usage: { inputTokens: 100, outputTokens: 50 },
 };
 
 const sessionMeta = {
@@ -74,8 +64,6 @@ describe('SessionsService', () => {
         SessionsService,
         { provide: DynamoRepository, useValue: mockDb },
         { provide: LlmService, useValue: mockLlm },
-        { provide: UsersService, useValue: mockUsers },
-        { provide: ConfigService, useValue: mockCfg },
       ],
     }).compile();
     service = module.get<SessionsService>(SessionsService);

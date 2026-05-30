@@ -251,13 +251,6 @@ The **Forgot Password** flow (see `CONTEXT.md`) is offered only after a wrong-pa
 
 ## Deployment
 
-> ⛔ **NEVER make changes to production without an explicit, in-the-moment instruction from the user.** This is a hard rule. Do **not**, on your own initiative or as an implied follow-on to a coding task:
-> - push to the `prod` branch (it auto-triggers the API CodeBuild webhook **and** the Amplify `prod` build),
-> - run `aws codebuild start-build`, `aws elasticbeanstalk update-environment`, `aws amplify start-job`, or any AWS mutation against prod resources,
-> - create/modify Secrets Manager entries, EB env vars, or any prod infra.
->
-> A request to merge, implement, or fix something is **not** permission to deploy. Only deploy when the user says so for that specific change — approval to deploy once never carries over to the next change. When unsure, stop and ask.
-
 ### API — CodeBuild → Docker → Elastic Beanstalk
 
 | Resource | Value |

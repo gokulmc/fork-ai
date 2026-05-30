@@ -72,7 +72,6 @@ export class SessionsService {
       fromSection: null,
       fromText: null,
       createdAt: now,
-      model: ROOT_MODEL,
     };
     const sessionMeta: SessionMetaItem = {
       PK: this.userPk(sub),
@@ -161,7 +160,6 @@ export class SessionsService {
       fromSection: null,
       fromText: null,
       createdAt: now,
-      model: ROOT_MODEL,
     };
     const sessionMeta: SessionMetaItem = {
       PK: this.userPk(houseSub),
@@ -247,7 +245,6 @@ export class SessionsService {
       fromSection: null,
       fromText: null,
       createdAt: now,
-      model: ROOT_MODEL,
       ...(llmResult.sources?.length ? { sources: llmResult.sources } : {}),
     };
 

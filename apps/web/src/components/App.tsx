@@ -2,7 +2,7 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import type { ForkNode, Annotation, HlMenuState, FollowUpState, ContextMenuState, PersistentHighlight, HighlightRecord } from '@/lib/types';
-import { uid, short5, stripMarkdown, stripCite, getRangeOffsets, modelDisplayName } from '@/lib/utils';
+import { uid, short5, stripMarkdown, getRangeOffsets } from '@/lib/utils';
 
 const CSS_HL_SUPPORTED = typeof window !== 'undefined' && typeof CSS !== 'undefined' && 'highlights' in CSS;
 
@@ -136,7 +136,7 @@ function ResearchingScreen({ sessions }: { sessions: SessionSummary[] }) {
             <span className="session-card-emoji">{s.emoji}</span>
             <div className="session-card-body">
               <div className="session-card-title">{s.title}</div>
-              <div className="session-card-lede">{stripCite(s.lede)}</div>
+              <div className="session-card-lede">{s.lede}</div>
             </div>
           </div>
         )}
@@ -1334,7 +1334,6 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
                       : <><Search size={12} className="ic" /> Query</>}
                 </span>
                 <span className="pill"><Hash size={12} className="ic" /> {active.sections.length || '—'} sections</span>
-                {active.model ? <span className="pill">✳ {modelDisplayName(active.model)}</span> : null}
                 {active.sources?.length ? <span className="pill pill-search">🔍 Web search</span> : null}
                 {active.loading && (
                   <span className="thinking">
@@ -1348,7 +1347,7 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
                   <span className="ws-query-label">{active.query}</span>
                 )}
               </div>
-              {active.lede && <p className="ws-lede">{stripCite(active.lede)}</p>}
+              {active.lede && <p className="ws-lede">{active.lede}</p>}
               {active.fromText && (
                 <div className="inline-callout" style={{ marginBottom: 24 }}>
                   <Quote size={18} className="ic" />
