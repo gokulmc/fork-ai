@@ -11,6 +11,8 @@ import {
   USAGE_EVENT_MODEL,
   PAYMENT_MODEL,
   ADMIN_AUDIT_MODEL,
+  REFERRAL_MODEL,
+  CREDIT_EVENT_MODEL,
 } from './dynamo.constants';
 
 // Factory for a Dynamoose-model-shaped mock with chainable query builder
@@ -50,6 +52,8 @@ describe('DynamoRepository', () => {
   let usageEvent: ReturnType<typeof makeModelMock>;
   let payment: ReturnType<typeof makeModelMock>;
   let adminAudit: ReturnType<typeof makeModelMock>;
+  let referral: ReturnType<typeof makeModelMock>;
+  let creditEvent: ReturnType<typeof makeModelMock>;
 
   beforeEach(async () => {
     userMeta = makeModelMock();
@@ -61,6 +65,8 @@ describe('DynamoRepository', () => {
     usageEvent = makeModelMock();
     payment = makeModelMock();
     adminAudit = makeModelMock();
+    referral = makeModelMock();
+    creditEvent = makeModelMock();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -75,6 +81,8 @@ describe('DynamoRepository', () => {
         { provide: USAGE_EVENT_MODEL, useValue: usageEvent.mock },
         { provide: PAYMENT_MODEL, useValue: payment.mock },
         { provide: ADMIN_AUDIT_MODEL, useValue: adminAudit.mock },
+        { provide: REFERRAL_MODEL, useValue: referral.mock },
+        { provide: CREDIT_EVENT_MODEL, useValue: creditEvent.mock },
       ],
     }).compile();
     repo = module.get<DynamoRepository>(DynamoRepository);

@@ -71,6 +71,7 @@ export class NodesService {
       fromSection: dto.fromSection,
       fromText,
       createdAt: now,
+      model,
       ...(llmResult.sources?.length ? { sources: llmResult.sources } : {}),
     };
 

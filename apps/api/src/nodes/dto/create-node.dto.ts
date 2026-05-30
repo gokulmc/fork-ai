@@ -43,8 +43,11 @@ export class CreateNodeDto {
   @IsBoolean()
   webSearch?: boolean;
 
-  @ApiPropertyOptional({ enum: ['haiku', 'sonnet', 'opus'], description: 'Branch model alias (default haiku; guests clamped to sonnet)' })
+  @ApiPropertyOptional({
+    enum: ['haiku', 'sonnet', 'opus', 'gemini-pro', 'gemini-flash', 'gemini-flash-lite'],
+    description: 'Branch model alias (default haiku; top tier clamped to mid for guests: opus→sonnet, gemini-pro→gemini-flash)',
+  })
   @IsOptional()
-  @IsIn(['haiku', 'sonnet', 'opus'])
-  model?: 'haiku' | 'sonnet' | 'opus';
+  @IsIn(['haiku', 'sonnet', 'opus', 'gemini-pro', 'gemini-flash', 'gemini-flash-lite'])
+  model?: 'haiku' | 'sonnet' | 'opus' | 'gemini-pro' | 'gemini-flash' | 'gemini-flash-lite';
 }

@@ -116,6 +116,7 @@ export interface NodeItem {
   fromText?: string | null;
   createdAt: string;
   sources?: CitationSource[];
+  model?: string; // concrete model id that produced this node
 }
 
 export interface AnnotationItem {

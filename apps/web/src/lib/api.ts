@@ -19,6 +19,7 @@ export interface ApiNode {
   fromText: string | null;
   createdAt: string;
   sources?: CitationSource[];
+  model?: string;
 }
 
 export interface ApiAnnotation {
@@ -83,6 +84,7 @@ export function toForkNode(n: ApiNode): ForkNode {
     createdAt: typeof n.createdAt === 'string' ? new Date(n.createdAt).getTime() : (n.createdAt as number),
     loading: false,
     sources: n.sources,
+    model: n.model,
   };
 }
 
@@ -409,7 +411,7 @@ export interface CreateNodePayload {
   highlightText?: string;  // for ASK
   sectionCount?: number;
   webSearch?: boolean;
-  model?: 'haiku' | 'sonnet' | 'opus';
+  model?: 'haiku' | 'sonnet' | 'opus' | 'gemini-pro' | 'gemini-flash' | 'gemini-flash-lite';
 }
 
 export function createNode(

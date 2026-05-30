@@ -3,6 +3,7 @@ import { ArrowLeft, Highlighter, GitBranch, Link as LinkIcon, ArrowUpRight } fro
 import { HistoryBubbles } from './HistoryBubbles';
 import { ForkTraceGame } from './ForkTraceGame';
 import type { SessionSummary } from '@/lib/api';
+import { stripCite } from '@/lib/utils';
 
 interface HistoryPageProps {
   sessions: SessionSummary[];
@@ -90,7 +91,7 @@ export function HistoryPage({ sessions, loading, onLoadSession, onBack }: Histor
                           <span className="session-card-emoji">{s.emoji}</span>
                           <div className="session-card-body">
                             <div className="session-card-title">{s.title}</div>
-                            <div className="session-card-lede">{s.lede}</div>
+                            <div className="session-card-lede">{stripCite(s.lede)}</div>
                             <div className="session-card-meta">
                               <span className="meta-chip" title={`${s.nodeCount} node${s.nodeCount !== 1 ? 's' : ''}`}>
                                 <GitBranch size={11} /> {s.nodeCount}
