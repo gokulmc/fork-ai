@@ -368,6 +368,13 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
       setNotionSavedUrl(session.notionPageUrl ?? null);
     } catch (err) {
       console.error('Failed to load session', err);
+      // A stale stored session id that no longer loads (deleted / not ours) would
+      // otherwise re-fail on every visit and strand the loader — clear the pointer
+      // so we self-heal to Landing. Only on a definitive 404/403, not a network blip.
+      if (err instanceof ApiError && (err.status === 404 || err.status === 403)) {
+        localStorage.removeItem('fork.ai.session');
+        localStorage.removeItem('fork.ai.node');
+      }
     } finally {
       setLoadingRoot(false);
     }
@@ -425,6 +432,13 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
     loadSession(savedSession, savedNode);
   }, [status, idToken, loadSession]);
 
+  // Safety net: loadingRoot is initialised true whenever a stored key/hash exists,
+  // but no restore effect runs once auth settles to logged-out — without this the
+  // ResearchingScreen would hang forever (the "stuck loading until I clear storage" bug).
+  useEffect(() => {
+    if (status === 'unauthenticated' && !guestToken) setLoadingRoot(false);
+  }, [status, guestToken]);
+
   // ── Guest mode: load shared session via ?sk= token ───────────────────────
   // The ?sk= token stays in the URL so refresh keeps the guest in the session.
   // The token is the share link by design — anyone with the URL already has
@@ -469,6 +483,8 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
         })
         .catch(err => {
           console.error('Failed to load shared session', err);
+          // Stale/invalid trial token — drop it so the invalid-link → login bounce can't recur.
+          localStorage.removeItem('fork.ai.trial');
           setInvalidLink(true);
           setInvalidLinkCountdown(3);
         })
