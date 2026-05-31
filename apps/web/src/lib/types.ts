@@ -62,7 +62,7 @@ export interface Tweaks {
   fontPair: string;
   maxSections: number;
   webSearch: boolean;
-  branchModel: 'haiku' | 'sonnet' | 'opus' | 'gemini-pro' | 'gemini-flash' | 'gemini-flash-lite';
+  branchModel: 'haiku' | 'sonnet' | 'opus' | 'gemini-pro' | 'gemini-flash' | 'gemini-flash-lite' | 'deepseek-pro' | 'deepseek-flash';
 }
 
 export interface HlMenuState {

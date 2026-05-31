@@ -2,10 +2,11 @@ import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
 import { LlmResponse, LlmSection, LlmUsage, CitationSource } from './llm.types';
-import { ROOT_MODEL, BRANCH_DEFAULT_MODEL, providerNameFor, ProviderName } from './models';
+import { ROOT_MODEL, BRANCH_DEFAULT_MODEL, providerNameFor, ProviderName, supportsWebSearch } from './models';
 import { LlmProvider } from './providers/provider.types';
 import { AnthropicProvider } from './providers/anthropic.provider';
 import { GeminiProvider } from './providers/gemini.provider';
+import { DeepSeekProvider } from './providers/deepseek.provider';
 import { extractAnthropicSources, processCitations } from './citations';
 
 export type StreamEvent =
@@ -81,6 +82,7 @@ export class LlmService {
     this.providers = {
       anthropic: new AnthropicProvider(this.client),
       gemini: new GeminiProvider(() => cfg.get<string>('gemini.apiKey')),
+      deepseek: new DeepSeekProvider(() => cfg.get<string>('deepseek.apiKey')),
     };
   }
 
@@ -285,7 +287,10 @@ Rules:
   }
 
   private async callJson(prompt: string, webSearch = false, model: string = ROOT_MODEL, retries = 1): Promise<LlmResponse> {
-    const fullPrompt = webSearch ? `${prompt}\n\n${WEB_SEARCH_GUIDANCE}\n\n${CITATION_NOTE}` : prompt;
+    // Drop web search for providers that don't support it (DeepSeek) — no
+    // grounding tool, so don't append the web-search guidance/citation prompt.
+    const ws = webSearch && supportsWebSearch(model);
+    const fullPrompt = ws ? `${prompt}\n\n${WEB_SEARCH_GUIDANCE}\n\n${CITATION_NOTE}` : prompt;
     const provider = this.providerFor(model);
     let lastError: Error | undefined;
 
@@ -294,11 +299,11 @@ Rules:
         const { rawText, usage, applyCitations } = await provider.complete(fullPrompt, {
           model,
           maxTokens: 2048,
-          webSearch,
+          webSearch: ws,
         });
         const result = this.parseJson(rawText);
         result.usage = usage;
-        if (webSearch && applyCitations) {
+        if (ws && applyCitations) {
           const cited = applyCitations(result.sections);
           result.sections = cited.sections;
           if (cited.sources.length) result.sources = cited.sources;

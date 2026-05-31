@@ -411,7 +411,7 @@ export interface CreateNodePayload {
   highlightText?: string;  // for ASK
   sectionCount?: number;
   webSearch?: boolean;
-  model?: 'haiku' | 'sonnet' | 'opus' | 'gemini-pro' | 'gemini-flash' | 'gemini-flash-lite';
+  model?: 'haiku' | 'sonnet' | 'opus' | 'gemini-pro' | 'gemini-flash' | 'gemini-flash-lite' | 'deepseek-pro' | 'deepseek-flash';
 }
 
 export function createNode(

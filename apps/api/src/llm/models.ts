@@ -3,12 +3,13 @@
 // which provider serves each. The client only ever sends an alias — never a raw
 // model id — and the server validates it here. See CONTEXT.md → "Model" and ADR-0004.
 
-// Claude tiers keep their real names; Gemini tiers use Gemini's real names.
+// Claude tiers keep their real names; Gemini/DeepSeek tiers use the provider's real names.
 export type ModelAlias =
   | 'haiku' | 'sonnet' | 'opus'
-  | 'gemini-pro' | 'gemini-flash' | 'gemini-flash-lite';
+  | 'gemini-pro' | 'gemini-flash' | 'gemini-flash-lite'
+  | 'deepseek-pro' | 'deepseek-flash';
 
-export type ProviderName = 'anthropic' | 'gemini';
+export type ProviderName = 'anthropic' | 'gemini' | 'deepseek';
 
 // Root queries (kind QUERY) are always Claude Sonnet and not user-selectable.
 export const ROOT_MODEL = 'claude-sonnet-4-6';
@@ -20,6 +21,8 @@ const ALIAS_TO_ID: Record<ModelAlias, string> = {
   'gemini-pro': 'gemini-2.5-pro',
   'gemini-flash': 'gemini-2.5-flash',
   'gemini-flash-lite': 'gemini-2.5-flash-lite',
+  'deepseek-pro': 'deepseek-v4-pro',
+  'deepseek-flash': 'deepseek-v4-flash',
 };
 
 // Default branch model when the client sends nothing / something invalid (cheapest Claude tier).
@@ -35,6 +38,9 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   'gemini-2.5-pro': { input: 1.25, output: 10 },
   'gemini-2.5-flash': { input: 0.30, output: 2.50 },
   'gemini-2.5-flash-lite': { input: 0.10, output: 0.40 },
+  // DeepSeek V4, standard cache-miss rates (conservative; re-verify after the v4-pro promo window).
+  'deepseek-v4-pro': { input: 1.74, output: 3.48 },
+  'deepseek-v4-flash': { input: 0.14, output: 0.28 },
 };
 
 // Guest cost-ceiling clamp: top tier downgrades to mid tier, within the same
@@ -42,9 +48,14 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
 const GUEST_CLAMP: Partial<Record<ModelAlias, ModelAlias>> = {
   opus: 'sonnet',
   'gemini-pro': 'gemini-flash',
+  'deepseek-pro': 'deepseek-flash',
 };
 
-const ALL_ALIASES: ModelAlias[] = ['haiku', 'sonnet', 'opus', 'gemini-pro', 'gemini-flash', 'gemini-flash-lite'];
+const ALL_ALIASES: ModelAlias[] = [
+  'haiku', 'sonnet', 'opus',
+  'gemini-pro', 'gemini-flash', 'gemini-flash-lite',
+  'deepseek-pro', 'deepseek-flash',
+];
 
 function isAlias(v: string | undefined): v is ModelAlias {
   return !!v && (ALL_ALIASES as string[]).includes(v);
@@ -52,7 +63,15 @@ function isAlias(v: string | undefined): v is ModelAlias {
 
 // Which provider serves a concrete model id (callJson dispatches on this).
 export function providerNameFor(modelId: string): ProviderName {
-  return modelId.startsWith('gemini') ? 'gemini' : 'anthropic';
+  if (modelId.startsWith('gemini')) return 'gemini';
+  if (modelId.startsWith('deepseek')) return 'deepseek';
+  return 'anthropic';
+}
+
+// Whether a model's provider supports the web-search tool/grounding. DeepSeek has
+// no native web search, so its branch calls never get the web-search prompt/citations.
+export function supportsWebSearch(modelId: string): boolean {
+  return providerNameFor(modelId) !== 'deepseek';
 }
 
 // Resolve a client-supplied branch-model alias to a concrete model id, applying
