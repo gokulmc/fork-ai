@@ -24,6 +24,10 @@ const RADIAL_K = 0.03; // stiffness of the spring pulling each bubble to its rin
 const RING_REACH = 0.82; // fraction of the stage half-extent the smallest bubble orbits at
 const FILL_FRAC = 0.46; // bubbles are scaled so their combined area ≤ this share of the stage
 const SEP_GAP = 6; // hard minimum gap between two bubble edges (no overlap, ever)
+const MAX_BUBBLES = 20; // cap the cluster; the long tail folds into a single "Other" bubble
+const OTHER_KEY = '_misc'; // key of the catch-all "Other" bubble
+const CORNER_PAD = 10; // gap from the stage edge for the pinned "Other" bubble
+const OTHER_D = 70; // fixed diameter for the "Others" bubble — it does NOT grow with node count
 const SEP_ITERS = 3; // relaxation passes per frame for the non-overlap constraint
 const MOUSE_R = 160; // cursor influence radius
 const MOUSE_K = 1.4; // cursor repulsion strength
@@ -94,17 +98,42 @@ function clusterSessions(sessions: SessionSummary[]): TopicBubble[] {
   const raw = [...buckets.entries()]
     .map(([key, items]) => ({
       key,
-      label: key === '_misc' ? 'Other' : key[0].toUpperCase() + key.slice(1),
+      label: key === '_misc' ? 'Others' : key[0].toUpperCase() + key.slice(1),
       emoji: pickEmoji(items),
       sessions: items,
       nodeTotal: items.reduce((sum, s) => sum + s.nodeCount, 0),
     }))
     .sort((a, b) => b.nodeTotal - a.nodeTotal);
 
-  const totals = raw.map(b => b.nodeTotal);
-  const min = Math.min(...totals);
-  const max = Math.max(...totals);
-  return raw.map(b => ({ ...b, r: diameter(b.nodeTotal, min, max) / 2 }));
+  // Cap the cluster at MAX_BUBBLES by folding the long tail into a single "Other"
+  // bubble (merged with any existing "Other") so every session stays represented.
+  const capped = (() => {
+    if (raw.length <= MAX_BUBBLES) return raw;
+    const kept = raw.slice(0, MAX_BUBBLES - 1).map(b => ({ ...b }));
+    const tail = raw.slice(MAX_BUBBLES - 1);
+    const tailSessions = tail.flatMap(b => b.sessions);
+    const tailNodes = tail.reduce((sum, b) => sum + b.nodeTotal, 0);
+    const other = kept.find(b => b.key === '_misc');
+    if (other) {
+      other.sessions = [...other.sessions, ...tailSessions];
+      other.nodeTotal += tailNodes;
+      other.emoji = pickEmoji(other.sessions);
+    } else {
+      kept.push({ key: '_misc', label: 'Others', emoji: pickEmoji(tailSessions), sessions: tailSessions, nodeTotal: tailNodes });
+    }
+    return kept.sort((a, b) => b.nodeTotal - a.nodeTotal);
+  })();
+
+  // Size the real topics from their node counts; "Others" gets a fixed size so it
+  // never grows with how many sessions are folded in. Its huge total is also kept
+  // out of the min/max so it can't shrink the real bubbles.
+  const realTotals = capped.filter(b => b.key !== OTHER_KEY).map(b => b.nodeTotal);
+  const min = realTotals.length ? Math.min(...realTotals) : 0;
+  const max = realTotals.length ? Math.max(...realTotals) : 0;
+  return capped.map(b => ({
+    ...b,
+    r: b.key === OTHER_KEY ? OTHER_D / 2 : diameter(b.nodeTotal, min, max) / 2,
+  }));
 }
 
 function shortDate(iso: string): string {
@@ -148,10 +177,12 @@ export function HistoryBubbles({ sessions, onLoadSession }: HistoryBubblesProps)
     let w = stage.clientWidth || 600;
     let h = stage.clientHeight || 300;
 
-    // Orbit rank: 0 for the biggest bubble, 1 for the smallest. When all bubbles
-    // are the same size, fall back to spreading them evenly by index.
-    const maxBaseR = bubbles[0].r;
-    const minBaseR = bubbles[bubbles.length - 1].r;
+    // Orbit rank: 0 for the biggest bubble, 1 for the smallest. Ranked over the
+    // real topic bubbles only — "Other" is excluded so the largest *topic* claims
+    // the centre (Other is pinned to the corner below instead).
+    const ranked = bubbles.filter(b => b.key !== OTHER_KEY);
+    const maxBaseR = (ranked[0] ?? bubbles[0]).r;
+    const minBaseR = (ranked[ranked.length - 1] ?? bubbles[bubbles.length - 1]).r;
     const span = maxBaseR - minBaseR;
 
     // Seed positions on a golden-angle spiral so nothing starts stacked.
@@ -161,14 +192,15 @@ export function HistoryBubbles({ sessions, onLoadSession }: HistoryBubblesProps)
       const t = span > 0
         ? (maxBaseR - b.r) / span
         : (bubbles.length > 1 ? i / (bubbles.length - 1) : 0);
+      const isOther = b.key === OTHER_KEY;
       return {
         key: b.key,
         baseR: b.r,
         r: b.r,
         mass: b.r * b.r,
         t,
-        x: w / 2 + Math.cos(ang) * rad,
-        y: h / 2 + Math.sin(ang) * rad,
+        x: isOther ? b.r + CORNER_PAD : w / 2 + Math.cos(ang) * rad,
+        y: isOther ? h - b.r - CORNER_PAD : h / 2 + Math.sin(ang) * rad,
         vx: 0,
         vy: 0,
       };
@@ -178,10 +210,11 @@ export function HistoryBubbles({ sessions, onLoadSession }: HistoryBubblesProps)
     // for the radial ordering to actually place the biggest in the centre.
     const applyFit = () => {
       let sumArea = 0;
-      for (const n of nodes) sumArea += Math.PI * n.baseR * n.baseR;
-      const scale = Math.min(1, Math.sqrt((FILL_FRAC * w * h) / sumArea));
+      for (const n of nodes) if (n.key !== OTHER_KEY) sumArea += Math.PI * n.baseR * n.baseR;
+      const scale = sumArea > 0 ? Math.min(1, Math.sqrt((FILL_FRAC * w * h) / sumArea)) : 1;
       for (const n of nodes) {
-        n.r = n.baseR * scale;
+        // "Others" keeps its fixed size; only the real topics scale to fit the stage.
+        n.r = n.key === OTHER_KEY ? n.baseR : n.baseR * scale;
         n.mass = n.r * n.r;
         const el = elRefs.current.get(n.key);
         if (el) { el.style.width = `${n.r * 2}px`; el.style.height = `${n.r * 2}px`; }
@@ -217,18 +250,25 @@ export function HistoryBubbles({ sessions, onLoadSession }: HistoryBubblesProps)
       // (wide) stage so small bubbles spread across the width instead of piling
       // onto one cramped central ring. They still drift freely *around* the ring.
       for (const n of nodes) {
-        const dx = n.x - cx;
-        const dy = n.y - cy;
-        const ang = Math.atan2(dy, dx);
-        const ax = (w / 2 - n.r) * RING_REACH;
-        const ay = (h / 2 - n.r) * RING_REACH;
-        const tx = cx + Math.cos(ang) * ax * n.t;
-        const ty = cy + Math.sin(ang) * ay * n.t;
+        let tx: number, ty: number;
+        if (n.key === OTHER_KEY) {
+          // "Other" is pinned to the bottom-left corner, outside the radial cluster.
+          tx = n.r + CORNER_PAD;
+          ty = h - n.r - CORNER_PAD;
+        } else {
+          const dx = n.x - cx;
+          const dy = n.y - cy;
+          const ang = Math.atan2(dy, dx);
+          const ax = (w / 2 - n.r) * RING_REACH;
+          const ay = (h / 2 - n.r) * RING_REACH;
+          tx = cx + Math.cos(ang) * ax * n.t;
+          ty = cy + Math.sin(ang) * ay * n.t;
+        }
         n.vx += RADIAL_K * (tx - n.x);
         n.vy += RADIAL_K * (ty - n.y);
 
-        // Cursor repulsion.
-        if (mouse.active) {
+        // Cursor repulsion (skip the pinned "Other" bubble).
+        if (mouse.active && n.key !== OTHER_KEY) {
           const dx = n.x - mouse.x;
           const dy = n.y - mouse.y;
           const d = Math.hypot(dx, dy) || 0.001;
@@ -264,8 +304,11 @@ export function HistoryBubbles({ sessions, onLoadSession }: HistoryBubblesProps)
             const ux = dx / d;
             const uy = dy / d;
             const total = a.mass + b.mass;
-            const aShare = b.mass / total; // lighter bubble (small mass) moves more
-            const bShare = a.mass / total;
+            let aShare = b.mass / total; // lighter bubble (small mass) moves more
+            let bShare = a.mass / total;
+            // The pinned "Other" bubble is never shoved — the other bubble moves fully.
+            if (a.key === OTHER_KEY) { aShare = 0; bShare = 1; }
+            else if (b.key === OTHER_KEY) { aShare = 1; bShare = 0; }
             a.x -= ux * overlap * aShare;
             a.y -= uy * overlap * aShare;
             b.x += ux * overlap * bShare;
