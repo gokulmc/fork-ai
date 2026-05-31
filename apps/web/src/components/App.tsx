@@ -256,6 +256,12 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
   const guestTokenRef = useRef(guestToken);
   useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
   useEffect(() => { guestTokenRef.current = guestToken; }, [guestToken]);
+  // The branch/root-query callbacks intentionally omit `tweaks` from their deps
+  // (so they aren't recreated on every tweak change). Read the live values through
+  // a ref to avoid a stale closure that would send the previously-selected
+  // model / sectionCount / webSearch.
+  const tweaksRef = useRef(tweaks);
+  useEffect(() => { tweaksRef.current = tweaks; }, [tweaks]);
 
   // Read once — stable across renders.
   const initSplitRef = useRef(
@@ -593,8 +599,8 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
 
       const isTrialQuery = !idToken && !guestToken;
       const streamFn = isTrialQuery
-        ? (cb: Parameters<typeof createSessionStream>[4]) => createTrialSessionStream(query, tweaks.maxSections, tweaks.webSearch, cb)
-        : (cb: Parameters<typeof createSessionStream>[4]) => createSessionStream(idToken, query, tweaks.maxSections, tweaks.webSearch, cb);
+        ? (cb: Parameters<typeof createSessionStream>[4]) => createTrialSessionStream(query, tweaksRef.current.maxSections, tweaksRef.current.webSearch, cb)
+        : (cb: Parameters<typeof createSessionStream>[4]) => createSessionStream(idToken, query, tweaksRef.current.maxSections, tweaksRef.current.webSearch, cb);
 
       await streamFn((event) => {
         if (event.type === 'init') {
@@ -744,9 +750,9 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
         fromSection: section.id,
         query: section.heading,
         sectionBody: section.body,
-        sectionCount: tweaks.maxSections,
-        webSearch: tweaks.webSearch,
-        model: tweaks.branchModel,
+        sectionCount: tweaksRef.current.maxSections,
+        webSearch: tweaksRef.current.webSearch,
+        model: tweaksRef.current.branchModel,
       };
       const apiNode = gt && !idToken
         ? await shareApi.createNode(gt, nodePayload)
@@ -809,9 +815,9 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
         fromSection: source.sectionId,
         query: question,
         highlightText: source.text,
-        sectionCount: tweaks.maxSections,
-        webSearch: tweaks.webSearch,
-        model: tweaks.branchModel,
+        sectionCount: tweaksRef.current.maxSections,
+        webSearch: tweaksRef.current.webSearch,
+        model: tweaksRef.current.branchModel,
       };
       const apiNode = gt && !idToken
         ? await shareApi.createNode(gt, nodePayload)
