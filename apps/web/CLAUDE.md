@@ -59,7 +59,7 @@ frontend/
 │   │   ├── HighlightMenu.tsx   # Floating menu on text selection
 │   │   ├── FollowUpPop.tsx     # Follow-up question popup
 │   │   ├── NotesDrawer.tsx     # Slide-out notes & callouts drawer
-│   │   ├── TweaksPanel.tsx     # Draggable tweaks panel (theme, font, density, layout, maxSections)
+│   │   ├── TweaksPanel.tsx     # Draggable tweaks panel (theme, font, density, layout, maxSections, branchModel, webSearch) + status chips above the gear
 │   │   └── Icons.tsx           # Lucide-style SVG icons via make() factory
 │   ├── hooks/
 │   │   └── useTweaks.ts        # useTweaks(defaults) → [values, setTweak]; persists to localStorage under fork.ai.tweaks
@@ -202,11 +202,32 @@ The tree is reconstructed by grouping nodes by `parentId` — never stored as a 
 
 `HistoryBubbles.tsx` renders a force-directed cluster in the top ~25 % of the History page (`max-height: 25vh` stage), above the unchanged chronological card list.
 
-- **Clustering is client-side, keyword-based.** Sessions are grouped by the most globally-frequent significant word in their title (stopwords stripped; longer word breaks ties). One bubble can hold many sessions; leftovers fall into "Other". There is **no** topic field on the backend — if grouping ever needs to be sharper, that's the change to make.
-- **Size encodes node count.** Bubble area ∝ total `nodeCount` across its sessions (sqrt scale so *area*, not radius, tracks count). The badge shows node count with the `GitBranch` icon, matching the session cards.
-- **Layout is a radial-rank model, not emergent packing.** Each bubble gets an orbit rank `t ∈ [0,1]` by size (`0` = biggest, `1` = smallest) and is spring-pulled toward an **elliptical** ring at that rank — biggest dead-centre, smaller ones on wider rings. The ellipse uses the full (wide) stage so small bubbles spread horizontally instead of piling onto one cramped central ring. A hard positional non-overlap pass (mass-weighted, `mass ∝ r²`) guarantees no overlap and keeps the heavy centre bubble anchored. Cursor repulsion + damping give the elastic feel.
-- **Auto-fit:** bubble radii are scaled so their combined area ≤ `FILL_FRAC` of the stage, so a crowded set shrinks rather than overlaps.
+- **Clustering is client-side, keyword-based.** Sessions are grouped by the most globally-frequent significant word in their title (stopwords stripped; longer word breaks ties). One bubble can hold many sessions; leftovers fall into "Others". There is **no** topic field on the backend — if grouping ever needs to be sharper, that's the change to make.
+- **Capped at `MAX_BUBBLES` (20).** When there are more keyword buckets than the cap, the long tail folds into the single **"Others"** bubble (merged with any existing one) so no session is dropped — clicking "Others" lists them all in the drawer.
+- **The "Others" bubble is special** (`key === OTHER_KEY`): pinned to the **bottom-left corner** (not the radial cluster), **fixed diameter** `OTHER_D` (does NOT grow with node count), excluded from the size ranking and the auto-fit area, immovable in the non-overlap pass, and ignores the cursor. This stops a large catch-all from grabbing centre stage.
+- **Size encodes node count** (real topics only). Bubble area ∝ total `nodeCount` (sqrt scale so *area*, not radius, tracks count). "Others"' large total is kept out of the min/max so it can't shrink the real bubbles. The badge shows node count with the `GitBranch` icon, matching the session cards.
+- **Layout is a radial-rank model, not emergent packing.** Each *real* bubble gets an orbit rank `t ∈ [0,1]` by size (`0` = biggest, `1` = smallest) and is spring-pulled toward an **elliptical** ring at that rank — biggest dead-centre, smaller ones on wider rings. The ellipse uses the full (wide) stage so small bubbles spread horizontally instead of piling onto one cramped central ring. A hard positional non-overlap pass (mass-weighted, `mass ∝ r²`) guarantees no overlap and keeps the heavy centre bubble anchored. Cursor repulsion + damping give the elastic feel.
+- **Auto-fit:** real bubble radii are scaled so their combined area ≤ `FILL_FRAC` of the stage, so a crowded set shrinks rather than overlaps.
 - **Perf:** the rAF loop writes `transform`/size **straight to the DOM via refs** — no per-frame React re-render (same discipline as `MindMap`). All physics constants are tunables at the top of the file.
+
+---
+
+## Model selector (branch model)
+
+`tweaks.branchModel` (persisted in `fork.ai.tweaks`) chooses the model for **branch** calls (Go Deeper / Ask AI); it's sent as `model` on the create-node payload (authed and guest). Six options: Claude `haiku`/`sonnet`/`opus` + Gemini `gemini-flash-lite`/`gemini-flash`/`gemini-pro` (rendered as a `TweakSelect`, default `haiku`). The root query is always Sonnet (not selectable).
+
+- **Status chips** float above the ⚙ trigger (`.twk-status`) when the panel is closed and hide when it opens: a **🤖 model** chip and a **🔍 Web on/off** chip — a quick at-a-glance status. The chips reuse the trigger's theme tokens (auto dark-mode).
+- **Node header pill** shows which model produced the active node (**✳ <model name>**), next to the sections count, via `modelDisplayName(node.model)` (`lib/utils.ts`). Only renders for nodes that have a stored `model` (older nodes won't).
+- Citation markup is stripped from **ledes** for plain-text display via `stripCite()` (workspace, history cards, Notion export).
+
+---
+
+## Session-restore resilience (no "clear cache to fix")
+
+Restore reads `fork.ai.session` / `fork.ai.node` / `fork.ai.trial` at mount. These **self-heal** so a stale/deleted id can't strand the user (was a real prod bug fixed only by manually clearing site data):
+- `loadSession` catch removes `fork.ai.session`/`fork.ai.node` on a definitive **404/403** (kept on network blips, still retryable).
+- The guest share-load catch removes a stale `fork.ai.trial` so the invalid-link → login bounce can't recur.
+- A safety-net effect forces `loadingRoot = false` once auth settles **unauthenticated with no guest token**, so the `ResearchingScreen` can never hang (covers a logged-out former-guest with a persisted session id — the case the login gate skips).
 
 ---
 

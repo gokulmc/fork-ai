@@ -81,6 +81,7 @@ interface ForkNode {
   createdAt: number;
   loading: boolean;
   error?: string;
+  model?: string;                // concrete model id that produced this node (shown as the ✳ header pill)
 }
 
 interface Section {
@@ -147,6 +148,10 @@ Key constraints to keep in mind:
 | `followUpFromHighlight(ancestors, highlight, question, sectionCount)` | "Ask AI" (`POST /sessions/:id/nodes` with `kind: ASK`) | up to `sectionCount` (default 4) |
 
 All three return: `{ title, emoji, lede, sections: [{ heading, body }] }`.
+
+### Model selection & providers (Claude + Gemini)
+
+The backend supports **two LLM providers** behind a thin abstraction (`apps/api/src/llm/providers/`): Anthropic Claude and Google Gemini. **Branch calls** (`expandSection`, `followUpFromHighlight`) take a `model` param and run on the user-selected model; the **root query is always Claude Sonnet**. Six aliases — `haiku` / `sonnet` / `opus` and `gemini-flash-lite` / `gemini-flash` / `gemini-pro` — resolved server-side in `models.ts` (`resolveBranchModel`, allowlist + guest clamp; `priceFor` for per-model billing; `providerNameFor` dispatches `callJson` to a provider). Gemini web search uses Google Search grounding (grounding + JSON mode are mutually exclusive on Gemini 2.5, so grounded calls rely on prompt + `parseJson`). The serving model id is persisted on the node and the Usage Event. See `CONTEXT.md → Model` and `ADR-0004`.
 
 ---
 
@@ -276,6 +281,8 @@ The **Forgot Password** flow (see `CONTEXT.md`) is offered only after a wrong-pa
 3. Image pushed to ECR with tag `$CODEBUILD_RESOLVED_SOURCE_VERSION` (commit SHA) + `latest`
 4. `Dockerrun.aws.json` uploaded to `s3://forkai-eb-artifacts/<sha>/`
 5. Single `elasticbeanstalk update-environment` call deploys version AND injects secrets
+
+**Secrets** are read from AWS Secrets Manager in `apps/api/buildspec.yml` (`secrets-manager:` block) and injected onto the EB env via the single `update-environment` `--option-settings` call. Current secrets: `forkai/anthropic-api-key`, `forkai/notion-client-secret`, `forkai/gemini-api-key`. To add a new secret: create it in Secrets Manager (the build role has `secretsmanager:GetSecretValue` on `forkai/*`), add a `secrets-manager:` line, and append a matching `OptionName=…,Value=$…` to the same `update-environment` call (never a second call). `GEMINI_API_KEY` config is **optional** with lazy validation in `GeminiProvider`, so a missing key never crashes boot — it only errors on an actual Gemini call.
 
 **Critical constraints (hard-won):**
 - **Docker base image**: use `public.ecr.aws/docker/library/node:22-alpine` — NOT `node:22-alpine`. Docker Hub has unauthenticated pull rate limits (429) in CodeBuild. ECR Public mirror has none.
