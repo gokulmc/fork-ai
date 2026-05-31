@@ -24,7 +24,7 @@ jest.mock('@google/genai', () => ({
 
 const mockCfg = {
   get: (key: string) =>
-    key === 'anthropic.apiKey' || key === 'gemini.apiKey' ? 'test-key' : undefined,
+    key === 'anthropic.apiKey' || key === 'gemini.apiKey' || key === 'deepseek.apiKey' ? 'test-key' : undefined,
 };
 
 const USAGE = { input_tokens: 100, output_tokens: 50 };
@@ -259,6 +259,25 @@ describe('LlmService', () => {
       expect(result.sections[0].body).toContain('[1]');
       expect(result.sources).toHaveLength(1);
       expect(result.sources![0].url).toBe('https://energy.example');
+    });
+  });
+
+  describe('deepseek provider (branch calls)', () => {
+    it('routes via the Anthropic-compat client, disables thinking, and drops web search', async () => {
+      // DeepSeek uses @anthropic-ai/sdk pointed at its /anthropic endpoint, so it
+      // shares the mocked Anthropic client (mockCreate).
+      mockCreate.mockResolvedValue(sdkResponse(validResponse));
+      const result = await service.expandSection(
+        [{ title: 'T', query: 'Q' }], 'H', 'B', 4, true, 'deepseek-v4-flash',
+      );
+      expect(mockCreate).toHaveBeenCalledTimes(1);
+      const params = mockCreate.mock.calls[0][0];
+      expect(params.model).toBe('deepseek-v4-flash');
+      expect(params.thinking).toEqual({ type: 'disabled' });
+      expect(params.tools).toBeUndefined(); // web search dropped for DeepSeek
+      expect(params.messages[0].content).not.toContain('web search tool'); // guidance not appended
+      expect(result.title).toBe('Test Title');
+      expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 50 });
     });
   });
 
