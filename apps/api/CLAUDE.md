@@ -9,7 +9,7 @@
 | Framework | NestJS 11, TypeScript strict |
 | Database | AWS DynamoDB — single-table design |
 | Auth | AWS Cognito User Pool — JWT validated via `jwks-rsa` (no Cognito API call per request) |
-| LLM | Anthropic Claude (`@anthropic-ai/sdk`) + Google Gemini (`@google/genai`) behind a provider abstraction |
+| LLM | Anthropic Claude (`@anthropic-ai/sdk`) + Google Gemini (`@google/genai`) + DeepSeek (via Anthropic-compat endpoint, reuses `@anthropic-ai/sdk`) behind a provider abstraction |
 | ID generation | `ulid` (lexicographically sortable — used as DynamoDB sort key) |
 | API style | REST + OpenAPI (Swagger at `/api`) |
 | Port | **3000** (default) |
@@ -47,7 +47,8 @@ backend/src/
     └── providers/                  # LlmProvider abstraction
         ├── provider.types.ts       # complete() interface
         ├── anthropic.provider.ts   # @anthropic-ai/sdk
-        └── gemini.provider.ts      # @google/genai (lazy client; branch calls only)
+        ├── gemini.provider.ts      # @google/genai (lazy client; branch calls only)
+        └── deepseek.provider.ts    # DeepSeek V4 via api.deepseek.com/anthropic (reuses @anthropic-ai/sdk; no web search)
 ```
 
 ---
@@ -159,6 +160,7 @@ COGNITO_CLIENT_ID=XXXXXXXXXXXXX
 DYNAMO_TABLE_NAME=forkai-main
 ANTHROPIC_API_KEY=sk-ant-...
 GEMINI_API_KEY=AIza...              # optional — only needed for Gemini branch models
+DEEPSEEK_API_KEY=sk-...             # optional — only needed for DeepSeek branch models
 PORT=3000                           # optional, defaults to 3000
 CORS_ORIGIN=http://localhost:3001   # Next.js dev server
 FRONTEND_URL=http://localhost:3001  # used for Notion OAuth redirect
