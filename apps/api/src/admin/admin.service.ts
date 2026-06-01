@@ -31,9 +31,10 @@ export class AdminService {
   ) {}
 
   // Cached so a dashboard refresh doesn't re-scan the whole table each time.
-  async getMetrics() {
+  // `fresh` bypasses the cache (the dashboard's Refresh button) for an up-to-date read.
+  async getMetrics(fresh = false) {
     const now = Date.now();
-    if (this.metricsCache && now - this.metricsCache.at < METRICS_TTL_MS) {
+    if (!fresh && this.metricsCache && now - this.metricsCache.at < METRICS_TTL_MS) {
       return this.metricsCache.data;
     }
     const data = await this.db.aggregatePlatformMetrics();

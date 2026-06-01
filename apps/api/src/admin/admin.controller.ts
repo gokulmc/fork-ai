@@ -56,9 +56,9 @@ export class AdminController {
   }
 
   @Get('metrics')
-  @ApiOperation({ summary: 'Platform-wide totals (cached 60s)' })
-  getMetrics() {
-    return this.admin.getMetrics();
+  @ApiOperation({ summary: 'Platform-wide totals (cached 60s; pass ?fresh=1 to bypass)' })
+  getMetrics(@Query('fresh') fresh?: string) {
+    return this.admin.getMetrics(fresh === '1' || fresh === 'true');
   }
 
   @Get('users')

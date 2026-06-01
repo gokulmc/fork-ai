@@ -700,8 +700,8 @@ export const adminApi = {
     return apiFetch<{ signupCreditUsd: number; referralCreditUsd: number; creditMultiplier: number }>('/admin/config', idToken);
   },
 
-  getMetrics(idToken: string): Promise<AdminMetrics> {
-    return apiFetch<AdminMetrics>('/admin/metrics', idToken);
+  getMetrics(idToken: string, fresh = false): Promise<AdminMetrics> {
+    return apiFetch<AdminMetrics>(`/admin/metrics${fresh ? '?fresh=1' : ''}`, idToken);
   },
 
   listUsers(idToken: string): Promise<AdminPage<AdminUser>> {

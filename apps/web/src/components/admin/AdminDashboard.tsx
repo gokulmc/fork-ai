@@ -164,12 +164,21 @@ function Overview({ idToken }: { idToken: string }) {
   const [m, setM] = useState<AdminMetrics | null>(null);
   const [cfg, setCfg] = useState<{ signupCreditUsd: number; referralCreditUsd: number; creditMultiplier: number } | null>(null);
   const [rangeKey, setRangeKey] = useState('30d');
+  const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
-  useEffect(() => {
-    adminApi.getMetrics(idToken).then(setM).catch((e) => setErr(String(e)));
-    adminApi.getConfig(idToken).then(setCfg).catch(() => {});
+  const load = useCallback((fresh = false) => {
+    if (fresh) setBusy(true);
+    return adminApi.getMetrics(idToken, fresh)
+      .then(setM)
+      .catch((e) => setErr(String(e)))
+      .finally(() => setBusy(false));
   }, [idToken]);
+
+  useEffect(() => {
+    load();
+    adminApi.getConfig(idToken).then(setCfg).catch(() => {});
+  }, [idToken, load]);
 
   if (err) return <div className="ad-card ad-err">{err}</div>;
   if (!m) return <div className="ad-empty">Loading metrics…</div>;
@@ -210,10 +219,15 @@ function Overview({ idToken }: { idToken: string }) {
       <div className="ad-card">
         <div className="ad-card-head">
           <h3>LLM spend</h3>
-          <div className="ad-seg">
-            {RANGES.map((r) => (
-              <button key={r.key} className={`ad-seg-btn ${r.key === rangeKey ? 'on' : ''}`} onClick={() => setRangeKey(r.key)}>{r.label}</button>
-            ))}
+          <div className="ad-spend-controls">
+            <button className="ad-refresh" onClick={() => load(true)} disabled={busy} title="Refresh — bypasses the 60s cache">
+              <span className={busy ? 'ad-spin' : ''}>↻</span> Refresh
+            </button>
+            <div className="ad-seg">
+              {RANGES.map((r) => (
+                <button key={r.key} className={`ad-seg-btn ${r.key === rangeKey ? 'on' : ''}`} onClick={() => setRangeKey(r.key)}>{r.label}</button>
+              ))}
+            </div>
           </div>
         </div>
         <div className="ad-spend-total">{usd(winTotal)}</div>
@@ -633,6 +647,13 @@ const STYLE = `
 .ad-subtable { font-size: 12.5px; }
 .ad-subtable th { padding: 6px 8px; }
 .ad-subtable td { padding: 7px 8px; }
+.ad-spend-controls { display: flex; gap: 10px; align-items: center; }
+.ad-refresh { display: inline-flex; align-items: center; gap: 5px; padding: 5px 11px; border-radius: 8px;
+  border: 1px solid var(--admin-border); background: transparent; color: var(--admin-muted); cursor: pointer; font-size: 12.5px; font-weight: 500; transition: all .15s; }
+.ad-refresh:hover:not(:disabled) { color: var(--admin-text); border-color: var(--admin-accent); }
+.ad-refresh:disabled { opacity: 0.6; cursor: default; }
+.ad-spin { display: inline-block; animation: ad-rotate 0.7s linear infinite; }
+@keyframes ad-rotate { to { transform: rotate(360deg); } }
 .ad-seg { display: flex; gap: 4px; background: rgba(255,255,255,0.04); padding: 3px; border-radius: 9px; }
 .ad-seg-btn { padding: 5px 11px; border-radius: 7px; border: none; background: transparent; color: var(--admin-muted);
   cursor: pointer; font-size: 12.5px; font-weight: 500; transition: all .15s; }

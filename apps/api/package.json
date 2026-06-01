@@ -5,8 +5,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/main",
-    "dev": "ts-node -r tsconfig-paths/register src/main.ts",
-    "start:dev": "ts-node -r tsconfig-paths/register src/main.ts",
+    "dev": "nodemon --watch src --ext ts --exec \"ts-node -r tsconfig-paths/register src/main.ts\"",
+    "start:dev": "nodemon --watch src --ext ts --exec \"ts-node -r tsconfig-paths/register src/main.ts\"",
     "test": "jest --config jest.config.js --passWithNoTests",
     "test:watch": "jest --config jest.config.js --watch",
     "test:cov": "jest --config jest.config.js --coverage",
@@ -55,6 +55,7 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.5",
     "jest": "^30.4.2",
+    "nodemon": "^3.1.14",
     "prettier": "^3.8.3",
     "supertest": "^7.2.2",
     "ts-jest": "^29.4.9",
