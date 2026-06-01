@@ -394,6 +394,13 @@ This footgun has bitten the codebase twice:
 
 Any new repository method that uses an update operator must use uppercase. There is no runtime warning from Dynamoose if you get this wrong.
 
+### Dynamoose `saveUnknown` is off — schemas strip foreign fields on BOTH write and read
+
+Every schema defaults to `saveUnknown: false`. A model only ever persists or returns the attributes its own schema declares; anything else is silently dropped. In this single-table design (`new dynamoose.Table('forkai-main', [all models])`) that has two non-obvious consequences, both of which have caused production bugs:
+
+1. **Write:** if an item object carries a field the schema doesn't declare, the field is dropped on `create`/`put` with no error. The Usage Event `model` field was lost this way for months — `billUsage` set `model` and `UsageEventItem` typed it, but `UsageEventSchema` didn't list it, so every usage row landed model-less and all spend was mis-attributed to the default provider (Claude). Fix: declare the field on the schema (`model: { type: String, required: false }`).
+2. **Read / cross-entity scan:** scanning one model returns ALL table items but shapes each to *that* model's schema, stripping foreign fields. `aggregatePlatformMetrics` scanned the whole table via `userMetaModel` and read `costUsd`/`amountUsd` off the rows — but `UserMetaSchema` declares neither, so both came back `undefined` and LLM spend + revenue always computed to `$0` (while `creditUsd`, which IS in the schema, worked — masking the bug). Fix: read each field through the model that declares it — `aggregatePlatformMetrics` now runs three parallel scans (`userMetaModel` for users/sessions/nodes/credit, `usageEventModel` for cost, `paymentModel` for revenue). Never read an entity's numeric fields off a scan of a different entity's model.
+
 ### Frontend — guest mode mechanics
 
 | State | Set when | Cleared when |

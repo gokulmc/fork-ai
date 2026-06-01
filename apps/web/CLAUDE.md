@@ -9,8 +9,9 @@
 | Framework | Next.js 16, App Router, TypeScript strict |
 | Auth | `next-auth` v5 (Auth.js) with Cognito as OAuth2 provider |
 | State | React 19 hooks — local state, synced to NestJS REST API |
-| Markdown | `marked` v15 (GFM, synchronous parse) |
+| Markdown | `marked` v15 (GFM, synchronous parse) + `marked-katex-extension` (KaTeX math) |
 | Syntax highlight | `highlight.js` v11 |
+| Math | `katex` via `marked-katex-extension` (`output: 'html'`) — `$…$` inline, `$$…$$` block |
 | Icons | Custom `make()` factory in `src/components/Icons.tsx` |
 | Port | **3001** (run with `npm run dev -- -p 3001`) |
 
@@ -185,7 +186,7 @@ The tree is reconstructed by grouping nodes by `parentId` — never stored as a 
 |---|---|
 | `App.tsx` | `'use client'` — all session state lives here |
 | `MindMap.tsx` | `'use client'` — SVG pan/zoom, `ResizeObserver`, `requestAnimationFrame` easing |
-| `Section.tsx` | `'use client'` — clean marked HTML via `dangerouslySetInnerHTML`; hljs + CSS Highlight API in `useEffect` |
+| `Section.tsx` | `'use client'` — clean marked HTML via `dangerouslySetInnerHTML`; hljs + CSS Highlight API in `useEffect`; KaTeX math (see "Math rendering" below) |
 | `HighlightMenu.tsx` | `'use client'` — positions itself relative to `getBoundingClientRect()` |
 | `FollowUpPop.tsx` | `'use client'` — positions below/above selection rect; Escape or X button (beside Branch) closes it |
 | `TweaksPanel.tsx` | `'use client'` — draggable via `mousemove` listeners; rendered on ALL pages (Landing, History, Workspace) so the settings icon is always accessible |
@@ -195,6 +196,12 @@ The tree is reconstructed by grouping nodes by `parentId` — never stored as a 
 | `NotesDrawer.tsx` | `'use client'` — tab state |
 | `SkeletonSections.tsx` | Pure presentational — no `'use client'` needed |
 | `Icons.tsx` | Pure presentational — no `'use client'` needed |
+
+## Math rendering (`Section.tsx`)
+
+Section bodies are GitHub-flavoured markdown that may contain LaTeX. `marked.use(markedKatex({ throwOnError: false, output: 'html' }))` renders `$…$` (inline) and `$$…$$` (block). `output: 'html'` (not the default `htmlAndMathml`) is deliberate: it skips KaTeX's duplicate MathML so the rendered `textContent` stays aligned with the character offsets the CSS Custom Highlight API and triple-click sentence selection depend on. `katex/dist/katex.min.css` is imported at the top of `Section.tsx`.
+
+**Why `unwrapCodeMath()` exists:** Gemini is inconsistent about math notation — it usually emits valid `$…$`, but sometimes wraps the same LaTeX in an inline-code span (`` `\cos(\theta_j)` ``), which would render as monospace text. Before parsing, `unwrapCodeMath` rewrites code spans whose content is unambiguously LaTeX (a curated command whitelist — `\theta`, `\frac`, `\mathbf`, … — NOT a bare backslash, so `` `\d+` `` regexes and `` `C:\Users` `` paths are left alone) into `$…$`. It skips fenced code blocks and uses a `(?![A-Za-z])` boundary so subscripts like `\theta_j` match. The ad-hoc bold-letter style (`**x**_i`) is intentionally NOT auto-converted — too ambiguous against real emphasis.
 
 ---
 

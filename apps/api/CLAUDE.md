@@ -204,6 +204,6 @@ Both `SessionsService.createStreaming` (`POST /sessions/stream`) and `createTria
 
 ```bash
 # From repo root:
-npm run dev:api      # ts-node, port 3000
+npm run dev:api      # nodemon + ts-node (hot-reloads on src/**/*.ts changes), port 3000
 npm run test         # unit specs (Nx-cached)
 ```
