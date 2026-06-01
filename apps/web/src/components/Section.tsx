@@ -1,20 +1,50 @@
 'use client';
 import { useMemo, useEffect, useRef, memo } from 'react';
 import { marked } from 'marked';
+import markedKatex from 'marked-katex-extension';
+import 'katex/dist/katex.min.css';
 import hljs from 'highlight.js';
 import type { Section as SectionData, ForkNode, Annotation } from '@/lib/types';
 import { CornerDownRight, Branch, ChevronRight, Lightbulb, X } from './Icons';
 
 marked.use({ gfm: true, breaks: false });
+// LLMs (esp. Gemini) emit LaTeX like $cos(\theta_{y_i})$ — render it instead of showing raw $…$.
+// output:'html' skips KaTeX's duplicate MathML so the rendered text matches what highlight offsets are measured against.
+marked.use(markedKatex({ throwOnError: false, output: 'html' }));
 
 function escapeHTML(s: string) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+// Known LaTeX math commands. Used to tell math apart from real inline code: a
+// whitelist (not a bare `\` test) so regexes like `\d+` or paths like `C:\Users`
+// are never mistaken for math.
+const LATEX_CMD =
+  /\\(?:frac|sqrt|sum|prod|int|oint|partial|nabla|cdot|times|div|pm|mp|leq?|geq?|neq|approx|equiv|propto|infty|alpha|beta|gamma|delta|epsilon|varepsilon|zeta|eta|theta|vartheta|iota|kappa|lambda|mu|nu|xi|rho|sigma|tau|upsilon|phi|varphi|chi|psi|omega|Gamma|Delta|Theta|Lambda|Xi|Pi|Sigma|Phi|Psi|Omega|hat|bar|vec|tilde|dot|mathbf|mathbb|mathcal|mathrm|boldsymbol|cos|sin|tan|sec|csc|cot|log|ln|exp|lim|sup|inf|arg|max|min)(?![A-Za-z])/;
+
+// Gemini is inconsistent about math notation: it usually emits valid $…$ LaTeX
+// (rendered by the katex extension above), but sometimes wraps the SAME LaTeX in
+// an inline-code span (`\cos(\theta_j)`), which would render as monospace text.
+// Unwrap code spans whose content is unambiguously LaTeX into $…$ so KaTeX renders
+// them — skipping fenced code blocks and anything that isn't clearly math.
+function unwrapCodeMath(src: string): string {
+  let inFence = false;
+  return src
+    .split('\n')
+    .map(line => {
+      if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return line; }
+      if (inFence) return line;
+      return line.replace(/`([^`\n]+)`/g, (m, code) =>
+        !code.includes('$') && LATEX_CMD.test(code) ? `$${code}$` : m,
+      );
+    })
+    .join('\n');
+}
+
 function renderMd(src: string): string {
   if (!src) return '';
   try {
-    return marked.parse(src) as string;
+    return marked.parse(unwrapCodeMath(src)) as string;
   } catch {
     return src.split(/\n\n+/).map(p => `<p>${escapeHTML(p)}</p>`).join('');
   }
