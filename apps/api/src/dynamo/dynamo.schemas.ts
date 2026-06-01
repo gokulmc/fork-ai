@@ -61,6 +61,9 @@ export const UsageEventSchema = new dynamoose.Schema({
   sessionId: String,
   nodeId: String,
   createdAt: String,
+  // Without this, Dynamoose (saveUnknown:false) silently drops `model` on write,
+  // so every usage event lands model-less and gets attributed to the default provider.
+  model: { type: String, required: false },
 });
 
 export const PaymentSchema = new dynamoose.Schema({
