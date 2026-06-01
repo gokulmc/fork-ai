@@ -214,9 +214,11 @@ The tree is reconstructed by grouping nodes by `parentId` — never stored as a 
 
 ## Model selector (branch model)
 
-`tweaks.branchModel` (persisted in `fork.ai.tweaks`) chooses the model for **branch** calls (Go Deeper / Ask AI); it's sent as `model` on the create-node payload (authed and guest). Six options: Claude `haiku`/`sonnet`/`opus` + Gemini `gemini-flash-lite`/`gemini-flash`/`gemini-pro` (rendered as a `TweakSelect`, default `haiku`). The root query is always Sonnet (not selectable).
+`tweaks.branchModel` (persisted in `fork.ai.tweaks`) chooses the model for **branch** calls (Go Deeper / Ask AI); it's sent as `model` on the create-node payload (authed and guest). Eight options in `MODEL_OPTIONS` (`TweaksPanel.tsx`, default `haiku`), rendered as a `TweakSelect`: Claude `haiku`/`sonnet`/`opus` + Gemini `gemini-flash-lite`/`gemini-flash`/`gemini-pro` + DeepSeek `deepseek-flash`/`deepseek-pro`. The root query is always Sonnet (not selectable).
 
-- **Status chips** float above the ⚙ trigger (`.twk-status`) when the panel is closed and hide when it opens: a **🤖 model** chip and a **🔍 Web on/off** chip — a quick at-a-glance status. The chips reuse the trigger's theme tokens (auto dark-mode).
+- **Cost ×N in the dropdown.** Each option label carries an approximate cost multiplier relative to Claude Haiku (1×), blended input+output (`cost` field in `MODEL_OPTIONS`; static — update if backend `MODEL_PRICING` changes). The clean name (no ×N) is what `modelLabel()` returns for the chip.
+- **DeepSeek has no web search:** when a DeepSeek model is selected, the Web Search `TweakRadio` is `disabled` (greyed, `.twk-seg-disabled`) with a hint note, and the web status chip shows **🔍 Web n/a**. The backend also drops the flag (`supportsWebSearch`), so it's belt-and-suspenders.
+- **Status chips** float above the ⚙ trigger (`.twk-status`) when the panel is closed and hide when it opens: a **🤖 model** chip and a **🔍 Web on/off/n-a** chip — a quick at-a-glance status. The chips reuse the trigger's theme tokens (auto dark-mode).
 - **Node header pill** shows which model produced the active node (**✳ <model name>**), next to the sections count, via `modelDisplayName(node.model)` (`lib/utils.ts`). Only renders for nodes that have a stored `model` (older nodes won't).
 - Citation markup is stripped from **ledes** for plain-text display via `stripCite()` (workspace, history cards, Notion export).
 
