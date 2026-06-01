@@ -470,19 +470,19 @@ export class DynamoRepository {
   // One projected full-table scan → totals + a daily time-series for charts.
   // Auto-paginates via .all(); projects only key/numeric/date fields.
   async aggregatePlatformMetrics(): Promise<PlatformMetrics> {
-    const rows: Array<{
-      PK?: string;
-      SK?: string;
-      creditUsd?: number;
-      costUsd?: number;
-      amountUsd?: number;
-      createdAt?: string;
-      model?: string;
-    }> = await this.userMetaModel
-      .scan()
-      .attributes(['PK', 'SK', 'creditUsd', 'costUsd', 'amountUsd', 'createdAt', 'model'])
-      .all()
-      .exec();
+    // Each money field must be read through the model that declares it. A scan via
+    // userMetaModel returns documents shaped by UserMetaSchema, which (saveUnknown:false)
+    // strips costUsd/amountUsd/model — so usage cost and payment revenue need their own
+    // scans against the models whose schemas actually define those fields.
+    const [metaRows, usageRows, paymentRows] = (await Promise.all([
+      this.userMetaModel.scan().attributes(['PK', 'SK', 'creditUsd', 'createdAt']).all().exec(),
+      this.usageEventModel.scan('SK').beginsWith('USAGE#').attributes(['costUsd', 'createdAt', 'model']).all().exec(),
+      this.paymentModel.scan('SK').beginsWith('PAYMENT#').attributes(['amountUsd', 'createdAt']).all().exec(),
+    ])) as [
+      Array<{ PK?: string; SK?: string; creditUsd?: number; createdAt?: string }>,
+      Array<{ costUsd?: number; createdAt?: string; model?: string }>,
+      Array<{ amountUsd?: number; createdAt?: string }>,
+    ];
 
     const m = {
       userCount: 0,
@@ -505,7 +505,7 @@ export class DynamoRepository {
       return entry;
     };
 
-    for (const r of rows) {
+    for (const r of metaRows) {
       const sk = r.SK ?? '';
       if (sk === 'METADATA' && r.PK?.startsWith('USER#')) {
         m.userCount += 1;
@@ -520,19 +520,23 @@ export class DynamoRepository {
         m.nodeCount += 1;
         const e = day(r.createdAt);
         if (e) e.nodes += 1;
-      } else if (sk.startsWith('PAYMENT#')) {
-        m.revenueUsd += r.amountUsd ?? 0;
-        const e = day(r.createdAt);
-        if (e) e.revenueUsd += r.amountUsd ?? 0;
-      } else if (sk.startsWith('USAGE#')) {
-        const cost = r.costUsd ?? 0;
-        // Provider is derived from the stored model id (legacy events without one were Claude).
-        const prov = providerNameFor(r.model ?? '');
-        m.llmSpendUsd += cost;
-        m.llmSpendByProvider[prov] += cost;
-        const e = day(r.createdAt);
-        if (e) { e.llmSpendUsd += cost; e.spendByProvider[prov] += cost; }
       }
+    }
+
+    for (const r of usageRows) {
+      const cost = r.costUsd ?? 0;
+      // Provider is derived from the stored model id (legacy events without one were Claude).
+      const prov = providerNameFor(r.model ?? '');
+      m.llmSpendUsd += cost;
+      m.llmSpendByProvider[prov] += cost;
+      const e = day(r.createdAt);
+      if (e) { e.llmSpendUsd += cost; e.spendByProvider[prov] += cost; }
+    }
+
+    for (const r of paymentRows) {
+      m.revenueUsd += r.amountUsd ?? 0;
+      const e = day(r.createdAt);
+      if (e) e.revenueUsd += r.amountUsd ?? 0;
     }
 
     const series = [...byDay.values()].sort((a, b) => a.date.localeCompare(b.date));
