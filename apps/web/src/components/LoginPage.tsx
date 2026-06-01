@@ -946,7 +946,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
           }}
         >
           <img
-            src="/icon.svg" alt="Fork"
+            src="/mark-168.png" alt="Fork"
             style={{ width: 56, height: 56, animation: 'lp-rise 1.4s 0.3s cubic-bezier(.2,.8,.2,1) both' }}
           />
           <div style={{

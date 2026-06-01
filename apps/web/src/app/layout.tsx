@@ -11,9 +11,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <head>
-        {/* Theme-aware favicon: follows the OS/browser colour scheme. */}
-        <link rel="icon" type="image/svg+xml" media="(prefers-color-scheme: light)" href="/icon.svg" />
-        <link rel="icon" type="image/svg+xml" media="(prefers-color-scheme: dark)" href="/icon_b.svg" />
+        {/* Transparent marks. The dark mark (for light tabs) is the non-media DEFAULT,
+            incl. the .ico that Safari requests by default and uses regardless of theme
+            (Safari ignores prefers-color-scheme on favicons). The white mark is a
+            dark-scheme version for browsers that honor it (Chrome/Firefox). */}
+        <link rel="icon" href="/favicon.ico?v=3" sizes="any" />
+        <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png?v=3" />
+        <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=3" />
+        <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png?v=3" />
+        <link rel="icon" type="image/png" sizes="48x48" media="(prefers-color-scheme: dark)" href="/favicon-dark-48.png?v=3" />
+        <link rel="icon" type="image/png" sizes="32x32" media="(prefers-color-scheme: dark)" href="/favicon-dark-32.png?v=3" />
+        <link rel="icon" type="image/png" sizes="16x16" media="(prefers-color-scheme: dark)" href="/favicon-dark-16.png?v=3" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/favicon-180.png?v=3" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
