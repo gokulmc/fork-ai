@@ -2,6 +2,8 @@
 
 // Lightweight hand-rolled SVG charts — no chart library dependency.
 
+import { useState } from 'react';
+
 interface Series {
   label: string;
   color: string;
@@ -16,6 +18,35 @@ function niceMax(v: number): number {
   return step * mag;
 }
 
+const mmdd = (label?: string) => label?.slice(5) ?? '';
+
+// SVG tooltip drawn in chart coordinates so it scales with the responsive viewBox.
+function Tooltip({ x, top, W, title, rows }: {
+  x: number; top: number; W: number; title: string; rows: { label: string; color: string }[];
+}) {
+  const lh = 16;
+  const padX = 10;
+  const padY = 8;
+  const charW = 6.2;
+  const longest = Math.max(title.length, ...rows.map((r) => r.label.length));
+  const w = Math.max(72, longest * charW + padX * 2 + (rows.length ? 14 : 0));
+  const h = padY * 2 + (rows.length + 1) * lh;
+  const tx = x + 12 + w > W ? x - 12 - w : x + 12;
+  const ty = Math.max(2, top - h - 8);
+  return (
+    <g pointerEvents="none">
+      <rect x={tx} y={ty} width={w} height={h} rx="7" fill="rgba(13,15,21,0.96)" stroke="var(--admin-border)" strokeWidth="1" />
+      <text x={tx + padX} y={ty + padY + 11} fontSize="11" fontWeight="600" fill="var(--admin-text)">{title}</text>
+      {rows.map((r, i) => (
+        <g key={i}>
+          <circle cx={tx + padX + 4} cy={ty + padY + lh * (i + 1) + 7} r="4" fill={r.color} />
+          <text x={tx + padX + 14} y={ty + padY + lh * (i + 1) + 11} fontSize="11.5" fill="var(--admin-muted)">{r.label}</text>
+        </g>
+      ))}
+    </g>
+  );
+}
+
 export function LineChart({
   series,
   labels,
@@ -27,6 +58,7 @@ export function LineChart({
   height?: number;
   fmt?: (n: number) => string;
 }) {
+  const [hover, setHover] = useState<number | null>(null);
   const W = 760;
   const H = height;
   const padL = 44;
@@ -43,6 +75,7 @@ export function LineChart({
 
   const grid = [0, 0.25, 0.5, 0.75, 1];
   const tickIdx = n <= 6 ? labels.map((_, i) => i) : [0, Math.floor(n / 3), Math.floor((2 * n) / 3), n - 1];
+  const slot = n === 1 ? innerW : innerW / (n - 1);
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} style={{ display: 'block' }}>
@@ -69,9 +102,13 @@ export function LineChart({
 
       {tickIdx.map((i) => (
         <text key={i} x={x(i)} y={H - 8} textAnchor="middle" fontSize="10" fill="var(--admin-muted)">
-          {labels[i]?.slice(5)}
+          {mmdd(labels[i])}
         </text>
       ))}
+
+      {hover !== null && (
+        <line x1={x(hover)} y1={padT} x2={x(hover)} y2={padT + innerH} stroke="var(--admin-muted)" strokeWidth="1" strokeDasharray="3 3" opacity="0.5" />
+      )}
 
       {series.map((s, si) => {
         const line = s.points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(i)} ${y(p)}`).join(' ');
@@ -82,9 +119,36 @@ export function LineChart({
             <path d={line} fill="none" stroke={s.color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
             {n <= 14 &&
               s.points.map((p, i) => <circle key={i} cx={x(i)} cy={y(p)} r="2.5" fill={s.color} />)}
+            {hover !== null && s.points[hover] !== undefined && (
+              <circle cx={x(hover)} cy={y(s.points[hover])} r="4.5" fill={s.color} stroke="var(--admin-card)" strokeWidth="1.5" />
+            )}
           </g>
         );
       })}
+
+      {/* Hover slices — one transparent column per data point. */}
+      {labels.map((_, i) => (
+        <rect
+          key={i}
+          x={x(i) - slot / 2}
+          y={padT}
+          width={slot}
+          height={innerH}
+          fill="transparent"
+          onMouseEnter={() => setHover(i)}
+          onMouseLeave={() => setHover(null)}
+        />
+      ))}
+
+      {hover !== null && (
+        <Tooltip
+          x={x(hover)}
+          top={Math.min(...series.map((s) => y(s.points[hover] ?? 0)))}
+          W={W}
+          title={labels[hover] ?? ''}
+          rows={series.map((s) => ({ label: `${s.label}: ${fmt(s.points[hover] ?? 0)}`, color: s.color }))}
+        />
+      )}
     </svg>
   );
 }
@@ -102,6 +166,7 @@ export function BarChart({
   height?: number;
   fmt?: (n: number) => string;
 }) {
+  const [hover, setHover] = useState<number | null>(null);
   const W = 760;
   const H = height;
   const padL = 44;
@@ -112,8 +177,9 @@ export function BarChart({
   const innerW = W - padL - padR;
   const innerH = H - padT - padB;
   const max = niceMax(Math.max(1, ...points));
-  const bw = (innerW / n) * 0.62;
-  const x = (i: number) => padL + (i + 0.5) * (innerW / n);
+  const slot = innerW / n;
+  const bw = slot * 0.62;
+  const x = (i: number) => padL + (i + 0.5) * slot;
   const tickIdx = n <= 6 ? points.map((_, i) => i) : [0, Math.floor(n / 3), Math.floor((2 * n) / 3), n - 1];
 
   return (
@@ -131,13 +197,35 @@ export function BarChart({
       })}
       {points.map((p, i) => {
         const h = (p / max) * innerH;
-        return <rect key={i} x={x(i) - bw / 2} y={padT + innerH - h} width={bw} height={h} rx="3" fill={color} opacity="0.85" />;
+        return (
+          <g key={i}>
+            <rect x={x(i) - bw / 2} y={padT + innerH - h} width={bw} height={Math.max(0, h)} rx="3" fill={color} opacity={hover === null || hover === i ? 0.9 : 0.38} />
+            <rect
+              x={x(i) - slot / 2}
+              y={padT}
+              width={slot}
+              height={innerH}
+              fill="transparent"
+              onMouseEnter={() => setHover(i)}
+              onMouseLeave={() => setHover(null)}
+            />
+          </g>
+        );
       })}
       {tickIdx.map((i) => (
         <text key={i} x={x(i)} y={H - 8} textAnchor="middle" fontSize="10" fill="var(--admin-muted)">
-          {labels[i]?.slice(5)}
+          {mmdd(labels[i])}
         </text>
       ))}
+      {hover !== null && (
+        <Tooltip
+          x={x(hover)}
+          top={padT + innerH - (points[hover] / max) * innerH}
+          W={W}
+          title={labels[hover] ?? ''}
+          rows={[{ label: fmt(points[hover] ?? 0), color }]}
+        />
+      )}
     </svg>
   );
 }

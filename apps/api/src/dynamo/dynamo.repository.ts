@@ -1,4 +1,5 @@
 import { Injectable, Inject } from '@nestjs/common';
+import { providerNameFor } from '../llm/models';
 import {
   USER_META_MODEL,
   SESSION_META_MODEL,
@@ -476,9 +477,10 @@ export class DynamoRepository {
       costUsd?: number;
       amountUsd?: number;
       createdAt?: string;
+      model?: string;
     }> = await this.userMetaModel
       .scan()
-      .attributes(['PK', 'SK', 'creditUsd', 'costUsd', 'amountUsd', 'createdAt'])
+      .attributes(['PK', 'SK', 'creditUsd', 'costUsd', 'amountUsd', 'createdAt', 'model'])
       .all()
       .exec();
 
@@ -489,6 +491,7 @@ export class DynamoRepository {
       revenueUsd: 0,
       llmSpendUsd: 0,
       outstandingCreditUsd: 0,
+      llmSpendByProvider: { anthropic: 0, gemini: 0, deepseek: 0 } as ProviderSpend,
     };
     const byDay = new Map<string, MetricsDay>();
     const day = (iso?: string): MetricsDay | null => {
@@ -496,7 +499,7 @@ export class DynamoRepository {
       const d = iso.slice(0, 10);
       let entry = byDay.get(d);
       if (!entry) {
-        entry = { date: d, users: 0, sessions: 0, nodes: 0, revenueUsd: 0, llmSpendUsd: 0 };
+        entry = { date: d, users: 0, sessions: 0, nodes: 0, revenueUsd: 0, llmSpendUsd: 0, spendByProvider: { anthropic: 0, gemini: 0, deepseek: 0 } };
         byDay.set(d, entry);
       }
       return entry;
@@ -522,15 +525,25 @@ export class DynamoRepository {
         const e = day(r.createdAt);
         if (e) e.revenueUsd += r.amountUsd ?? 0;
       } else if (sk.startsWith('USAGE#')) {
-        m.llmSpendUsd += r.costUsd ?? 0;
+        const cost = r.costUsd ?? 0;
+        // Provider is derived from the stored model id (legacy events without one were Claude).
+        const prov = providerNameFor(r.model ?? '');
+        m.llmSpendUsd += cost;
+        m.llmSpendByProvider[prov] += cost;
         const e = day(r.createdAt);
-        if (e) e.llmSpendUsd += r.costUsd ?? 0;
+        if (e) { e.llmSpendUsd += cost; e.spendByProvider[prov] += cost; }
       }
     }
 
     const series = [...byDay.values()].sort((a, b) => a.date.localeCompare(b.date));
     return { ...m, series };
   }
+}
+
+export interface ProviderSpend {
+  anthropic: number;
+  gemini: number;
+  deepseek: number;
 }
 
 export interface MetricsDay {
@@ -540,6 +553,7 @@ export interface MetricsDay {
   nodes: number;
   revenueUsd: number;
   llmSpendUsd: number;
+  spendByProvider: ProviderSpend;
 }
 
 export interface PlatformMetrics {
@@ -549,6 +563,7 @@ export interface PlatformMetrics {
   revenueUsd: number;
   llmSpendUsd: number;
   outstandingCreditUsd: number;
+  llmSpendByProvider: ProviderSpend;
   series: MetricsDay[];
 }
 

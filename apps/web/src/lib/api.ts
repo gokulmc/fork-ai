@@ -609,6 +609,12 @@ export const shareApi = {
 
 // ── Admin API (Cognito `admins` group only — backend enforces via AdminGuard) ─
 
+export interface ProviderSpend {
+  anthropic: number;
+  gemini: number;
+  deepseek: number;
+}
+
 export interface MetricsDay {
   date: string;
   users: number;
@@ -616,6 +622,7 @@ export interface MetricsDay {
   nodes: number;
   revenueUsd: number;
   llmSpendUsd: number;
+  spendByProvider: ProviderSpend;
 }
 
 export interface AdminMetrics {
@@ -625,6 +632,7 @@ export interface AdminMetrics {
   revenueUsd: number;
   llmSpendUsd: number;
   outstandingCreditUsd: number;
+  llmSpendByProvider: ProviderSpend;
   series: MetricsDay[];
 }
 

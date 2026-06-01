@@ -13,12 +13,32 @@ import {
   type AdminAuditEntry,
   type AdminDeployment,
   type HealthStatus,
+  type ProviderSpend,
 } from '@/lib/api';
 import { LineChart, BarChart, Sparkline } from './charts';
 
 type Tab = 'overview' | 'users' | 'payments' | 'audit';
 
 const C = { accent: '#6366f1', green: '#22c55e', sky: '#38bdf8', amber: '#f59e0b', pink: '#ec4899', violet: '#8b5cf6' };
+
+const PROVIDERS: { key: keyof ProviderSpend; label: string; color: string }[] = [
+  { key: 'anthropic', label: 'Claude', color: C.amber },
+  { key: 'gemini', label: 'Gemini', color: C.sky },
+  { key: 'deepseek', label: 'DeepSeek', color: C.green },
+];
+const RANGES: { key: string; label: string; days: number }[] = [
+  { key: 'today', label: 'Today', days: 1 },
+  { key: '7d', label: '7 days', days: 7 },
+  { key: '30d', label: '30 days', days: 30 },
+  { key: 'all', label: 'All time', days: Infinity },
+];
+// UTC date cutoff (inclusive) for a rolling window of N days; '' means all-time.
+const cutoffDate = (days: number): string => {
+  if (!isFinite(days)) return '';
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - (days - 1));
+  return d.toISOString().slice(0, 10);
+};
 
 const usd = (n: number) => `$${(n ?? 0).toFixed(2)}`;
 const num = (n: number) => (n ?? 0).toLocaleString();
@@ -143,6 +163,7 @@ function StatusPill({ health }: { health: HealthStatus | null }) {
 function Overview({ idToken }: { idToken: string }) {
   const [m, setM] = useState<AdminMetrics | null>(null);
   const [cfg, setCfg] = useState<{ signupCreditUsd: number; referralCreditUsd: number; creditMultiplier: number } | null>(null);
+  const [rangeKey, setRangeKey] = useState('30d');
   const [err, setErr] = useState('');
 
   useEffect(() => {
@@ -155,6 +176,16 @@ function Overview({ idToken }: { idToken: string }) {
 
   const s = m.series;
   const labels = s.map((d) => d.date);
+
+  // Spend within the selected window — total + per-provider, derived from the daily series.
+  const range = RANGES.find((r) => r.key === rangeKey) ?? RANGES[2];
+  const from = cutoffDate(range.days);
+  const win = s.filter((d) => d.date >= from);
+  const winTotal = win.reduce((a, d) => a + d.llmSpendUsd, 0);
+  const winProviders = PROVIDERS.map((p) => ({
+    ...p,
+    cost: win.reduce((a, d) => a + (d.spendByProvider?.[p.key] ?? 0), 0),
+  }));
   const cards = [
     { label: 'Users', value: num(m.userCount), spark: s.map((d) => d.users), color: C.sky },
     { label: 'Sessions', value: num(m.sessionCount), spark: s.map((d) => d.sessions), color: C.accent },
@@ -174,6 +205,30 @@ function Overview({ idToken }: { idToken: string }) {
             {c.spark.length > 1 && <div className="ad-stat-spark"><Sparkline points={c.spark} color={c.color} width={120} height={30} /></div>}
           </div>
         ))}
+      </div>
+
+      <div className="ad-card">
+        <div className="ad-card-head">
+          <h3>LLM spend</h3>
+          <div className="ad-seg">
+            {RANGES.map((r) => (
+              <button key={r.key} className={`ad-seg-btn ${r.key === rangeKey ? 'on' : ''}`} onClick={() => setRangeKey(r.key)}>{r.label}</button>
+            ))}
+          </div>
+        </div>
+        <div className="ad-spend-total">{usd(winTotal)}</div>
+        <div className="ad-prov-list">
+          {winProviders.map((p) => {
+            const pct = winTotal > 0 ? (p.cost / winTotal) * 100 : 0;
+            return (
+              <div key={p.key} className="ad-prov-row">
+                <span className="ad-prov-name"><span className="ad-legend-dot" style={{ background: p.color }} />{p.label}</span>
+                <span className="ad-prov-track"><span className="ad-prov-fill" style={{ width: `${pct}%`, background: p.color }} /></span>
+                <span className="ad-prov-cost">{usd(p.cost)}<span className="ad-prov-pct">{pct.toFixed(0)}%</span></span>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       <div className="ad-card">
@@ -495,7 +550,9 @@ const STYLE = `
 .ad-root {
   --admin-bg: #0b0d12; --admin-card: #14171f; --admin-border: #232733;
   --admin-text: #e7e9ee; --admin-muted: #8b93a7; --admin-grid: #1e2230; --admin-accent: ${C.accent};
-  min-height: 100vh; background:
+  /* Own scroll container: the app sets a global body{overflow:hidden} for the workspace,
+     so the admin page must scroll itself rather than relying on the (locked) page scroll. */
+  height: 100vh; overflow-y: auto; background:
     radial-gradient(1200px 500px at 80% -10%, rgba(99,102,241,0.12), transparent),
     radial-gradient(900px 500px at -10% 10%, rgba(139,92,246,0.10), transparent),
     var(--admin-bg);
@@ -576,5 +633,18 @@ const STYLE = `
 .ad-subtable { font-size: 12.5px; }
 .ad-subtable th { padding: 6px 8px; }
 .ad-subtable td { padding: 7px 8px; }
-@media (max-width: 600px) { .ad-whoami { display: none; } }
+.ad-seg { display: flex; gap: 4px; background: rgba(255,255,255,0.04); padding: 3px; border-radius: 9px; }
+.ad-seg-btn { padding: 5px 11px; border-radius: 7px; border: none; background: transparent; color: var(--admin-muted);
+  cursor: pointer; font-size: 12.5px; font-weight: 500; transition: all .15s; }
+.ad-seg-btn:hover { color: var(--admin-text); }
+.ad-seg-btn.on { background: linear-gradient(135deg, ${C.accent}, ${C.violet}); color: #fff; }
+.ad-spend-total { font-size: 30px; font-weight: 700; margin: 2px 0 16px; }
+.ad-prov-list { display: flex; flex-direction: column; gap: 12px; }
+.ad-prov-row { display: grid; grid-template-columns: 110px 1fr 120px; align-items: center; gap: 12px; font-size: 13.5px; }
+.ad-prov-name { display: inline-flex; align-items: center; gap: 7px; }
+.ad-prov-track { height: 8px; border-radius: 999px; background: rgba(255,255,255,0.06); overflow: hidden; }
+.ad-prov-fill { display: block; height: 100%; border-radius: 999px; transition: width .3s ease; }
+.ad-prov-cost { text-align: right; font-weight: 600; white-space: nowrap; }
+.ad-prov-pct { color: var(--admin-muted); font-weight: 500; margin-left: 8px; }
+@media (max-width: 600px) { .ad-whoami { display: none; } .ad-prov-row { grid-template-columns: 80px 1fr 96px; } }
 `;
