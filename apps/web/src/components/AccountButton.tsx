@@ -540,7 +540,7 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
                   rows.push({ isoDate: ev.createdAt, label, amount: ev.amountUsd, positive: true, key: ev.creditEventId });
                 }
                 for (const day of groupByDay(usageEvents ?? [])) {
-                  rows.push({ isoDate: day.isoDate, label: 'Usage', amount: day.totalCost, positive: false, key: `usage-${day.date}` });
+                  rows.push({ isoDate: day.isoDate, label: 'Usage', amount: day.totalCost, positive: false, key: `usage-${day.isoDate.slice(0, 10)}` });
                 }
                 rows.sort((a, b) => b.isoDate.localeCompare(a.isoDate));
                 if (rows.length === 0) return <div style={{ fontSize: 11, color: 'rgba(10,10,10,0.4)' }}>No activity yet.</div>;
