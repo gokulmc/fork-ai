@@ -67,7 +67,7 @@ export function Landing({ onSubmit, loading, onShowHistory, outOfCredit, initial
         )}
         <div className="examples">
           {initialTopics.map(ex => (
-            <button key={ex} className="chip" onClick={() => setQ(ex)}>{ex}</button>
+            <button key={ex} className="chip" title={ex} onClick={() => setQ(ex)}>{ex}</button>
           ))}
         </div>
       </div>
