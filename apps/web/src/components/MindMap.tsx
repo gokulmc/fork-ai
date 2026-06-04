@@ -9,6 +9,14 @@ const NODE_H = 58;
 const DEPTH_GAP = 64;
 const SIBLING_GAP = 18;
 const PAD = 48;
+const RX = 8;
+
+// A bracket tracing only the top-right rounded-corner (chamfer) arc of the
+// pill — drawn bold/accent on nodes that have been read (see globals.css).
+function topRightBracket(w: number, r: number, ext: number): string {
+  return `M ${w - r - ext} 0 L ${w - r} 0 A ${r} ${r} 0 0 1 ${w} ${r} L ${w} ${r + ext}`;
+}
+const READ_CORNERS = topRightBracket(NODE_W, RX, 1);
 
 interface LayoutResult {
   pos: Record<string, { x: number; y: number }>;
@@ -92,6 +100,7 @@ interface MindMapProps {
   onContextMenu?: (id: string, x: number, y: number) => void;
   layout?: 'vertical' | 'horizontal';
   loadingIds?: Set<string>;
+  readIds?: Set<string>;
   onSaveToNotion?: () => void;
   notionSaving?: boolean;
   notionSavedUrl?: string | null;
@@ -107,6 +116,7 @@ export function MindMap({
   onContextMenu,
   layout = 'vertical',
   loadingIds = new Set(),
+  readIds = new Set(),
   onSaveToNotion,
   notionSaving = false,
   notionSavedUrl = null,
@@ -333,6 +343,7 @@ export function MindMap({
             const depth = depthMap[n.id] ?? 0;
             const isRoot = depth === 0;
             const loading = loadingIds.has(n.id);
+            const isRead = readIds.has(n.id);
             const NodeIcon = pickIcon(n.kind, isRoot);
             const kicker = isRoot
               ? 'Root'
@@ -344,7 +355,7 @@ export function MindMap({
             return (
               <g
                 key={n.id}
-                className={`mm-node${isActive ? ' active' : ''}${isRoot ? ' root' : ''}${loading ? ' loading' : ''}`}
+                className={`mm-node${isActive ? ' active' : ''}${isRoot ? ' root' : ''}${loading ? ' loading' : ''}${isRead ? ' read' : ''}`}
                 data-depth={Math.min(depth, 6)}
                 transform={`translate(${p.x} ${p.y})`}
                 onClick={e => { e.stopPropagation(); onSelect(n.id); }}
@@ -354,7 +365,8 @@ export function MindMap({
                   onContextMenu?.(n.id, e.clientX, e.clientY);
                 }}
               >
-                <rect className="pill" x="0" y="0" width={NODE_W} height={NODE_H} rx="8" />
+                <rect className="pill" x="0" y="0" width={NODE_W} height={NODE_H} rx={RX} />
+                {isRead && <path className="pill-read" d={READ_CORNERS} />}
                 <foreignObject x="0" y="0" width={NODE_W} height={NODE_H} className="mm-fo">
                   <div className="mm-card">
                     <div className="mm-card-ic">
