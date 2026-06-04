@@ -1,10 +1,25 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { Providers } from '@/components/Providers';
+import { InstallPrompt } from '@/components/InstallPrompt';
 
 export const metadata: Metadata = {
   title: 'fork ai',
   description: 'A branching research workspace — ask once, branch forever.',
+  // Standalone PWA on iOS (no Safari chrome once added to the Home Screen).
+  appleWebApp: { capable: true, statusBarStyle: 'default', title: 'fork ai' },
+};
+
+// viewport-fit=cover lets the Capacitor/iOS safe-area insets (notch, home bar)
+// reach the CSS env() values the mobile layout relies on.
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
+    { media: '(prefers-color-scheme: dark)', color: '#191919' },
+  ],
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -22,7 +37,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="icon" type="image/png" sizes="48x48" media="(prefers-color-scheme: dark)" href="/favicon-dark-48.png?v=3" />
         <link rel="icon" type="image/png" sizes="32x32" media="(prefers-color-scheme: dark)" href="/favicon-dark-32.png?v=3" />
         <link rel="icon" type="image/png" sizes="16x16" media="(prefers-color-scheme: dark)" href="/favicon-dark-16.png?v=3" />
-        <link rel="apple-touch-icon" sizes="180x180" href="/favicon-180.png?v=3" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/apple-icon-180.png?v=4" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
@@ -32,6 +47,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <Providers>{children}</Providers>
+        <InstallPrompt />
       </body>
     </html>
   );
