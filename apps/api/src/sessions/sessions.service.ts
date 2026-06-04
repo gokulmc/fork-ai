@@ -43,6 +43,10 @@ export class SessionsService {
   private userPk(sub: string) { return `USER#${sub}`; }
   private sessionSk(sessionId: string) { return `SESSION#${sessionId}`; }
 
+  // Placeholder title shown until the LLM streams the real one. The query is now
+  // unbounded, so cap the display copy and mark the truncation with an ellipsis.
+  private tempTitle(query: string) { return query.length > 60 ? query.slice(0, 60) + '…' : query; }
+
   async createStreaming(
     sub: string,
     dto: CreateSessionDto,
@@ -64,7 +68,7 @@ export class SessionsService {
       nodeId,
       parentId: null,
       kind: 'QUERY',
-      title: dto.query.slice(0, 60),
+      title: this.tempTitle(dto.query),
       emoji: null,
       query: dto.query,
       lede: '',
@@ -78,7 +82,7 @@ export class SessionsService {
       PK: this.userPk(sub),
       SK: this.sessionSk(sessionId),
       sessionId,
-      title: dto.query.slice(0, 60),
+      title: this.tempTitle(dto.query),
       emoji: '',
       lede: '',
       rootNodeId: nodeId,
@@ -153,7 +157,7 @@ export class SessionsService {
       nodeId,
       parentId: null,
       kind: 'QUERY',
-      title: dto.query.slice(0, 60),
+      title: this.tempTitle(dto.query),
       emoji: null,
       query: dto.query,
       lede: '',
@@ -167,7 +171,7 @@ export class SessionsService {
       PK: this.userPk(houseSub),
       SK: this.sessionSk(sessionId),
       sessionId,
-      title: dto.query.slice(0, 60),
+      title: this.tempTitle(dto.query),
       emoji: '',
       lede: '',
       rootNodeId: nodeId,
