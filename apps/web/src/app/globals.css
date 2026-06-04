@@ -1247,6 +1247,10 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
    Follow-up popup
    ============================================================ */
 .followup-pop { position: fixed; z-index: 70; background: var(--paper); border: 1px solid var(--line-strong); border-radius: 8px; padding: 12px; box-shadow: var(--shadow-3); width: min(440px, 90vw); animation: hlIn .18s cubic-bezier(.2,.7,.2,1) both; }
+/* Exit: slide out to the left + fade. Starts from translateX(-50%) — the resting
+   transform left by the hlIn animation (fill: both) — so it continues from rest. */
+.followup-pop--closing { animation: popOutLeft .2s cubic-bezier(.4, 0, 1, 1) forwards; pointer-events: none; }
+@keyframes popOutLeft { from { opacity: 1; transform: translateX(-50%); } to { opacity: 0; transform: translateX(-180%); } }
 .followup-pop .src { font-family: var(--sans); font-size: 13px; color: var(--ink-2); border-left: 3px solid var(--ink-3); background: var(--panel); padding: 8px 10px; margin-bottom: 10px; max-height: 80px; overflow: hidden; border-radius: 0 4px 4px 0; line-height: 1.5; }
 .followup-pop textarea { width: 100%; min-height: 60px; resize: none; background: var(--bg); border: 1px solid var(--line-strong); border-radius: 5px; padding: 10px 12px; font-family: var(--sans); font-size: 14px; color: var(--ink); outline: 0; line-height: 1.5; }
 .followup-pop textarea::placeholder { color: var(--ink-3); }

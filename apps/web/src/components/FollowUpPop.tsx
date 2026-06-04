@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Sparkles, X } from './Icons';
 import { truncate } from '@/lib/utils';
 
@@ -31,6 +31,16 @@ export function FollowUpPop({ rect, sourceText, loading, onSubmit, onClose }: Fo
   const taRef = useRef<HTMLTextAreaElement>(null);
   const [q, setQ] = useState('');
   const [pos, setPos] = useState({ left: 0, top: 0 });
+  const [closing, setClosing] = useState(false);
+
+  // Play the slide-left exit, then unmount. closingRef guards against double-fire.
+  const closingRef = useRef(false);
+  const requestClose = useCallback(() => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    setClosing(true);
+    setTimeout(onClose, 200); // keep in sync with popOutLeft duration in globals.css
+  }, [onClose]);
 
   useEffect(() => {
     const place = () => {
@@ -80,23 +90,23 @@ export function FollowUpPop({ rect, sourceText, loading, onSubmit, onClose }: Fo
     const expanded = SHORTHANDS[trimmed] ?? trimmed;
     setQ(expanded);
     onSubmit(expanded);
-    // Mobile: close immediately on branch — the loading node already shows on the
-    // map and the popup covers the whole small screen. Desktop keeps it open so a
+    // Mobile: close on branch (slide-left exit) — the loading node already shows on
+    // the map and the popup covers the whole small screen. Desktop keeps it open so a
     // follow-up question can be asked while the first one loads.
-    if (window.innerWidth <= 768) onClose();
+    if (window.innerWidth <= 768) requestClose();
   };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') requestClose();
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && q.trim()) handleSubmit();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [q, onSubmit, onClose]);
+  }, [q, onSubmit, requestClose]);
 
   return (
-    <div ref={ref} className="followup-pop" style={{ left: pos.left, top: pos.top }}>
+    <div ref={ref} className={`followup-pop${closing ? ' followup-pop--closing' : ''}`} style={{ left: pos.left, top: pos.top }}>
       <div className="src">{truncate(sourceText, 180)}</div>
       <textarea
         ref={taRef}
@@ -108,7 +118,7 @@ export function FollowUpPop({ rect, sourceText, loading, onSubmit, onClose }: Fo
       <div className="actions">
         <span className="hint">⌘ + ⏎ to send · Esc to close</span>
         <div className="actions-right">
-          <button className="btn-close" onClick={onClose} title="Close" aria-label="Close">
+          <button className="btn-close" onClick={requestClose} title="Close" aria-label="Close">
             <X size={14} />
           </button>
           <button
