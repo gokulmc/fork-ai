@@ -211,17 +211,54 @@ export function MindMap({
     animateTo(size.w / 2 - cx * s, size.h / 2 - cy * s, s, 420);
   }, [activeId, activePos?.x, activePos?.y, size.w, size.h, animateTo]);
 
+  // Active touch points + the in-flight pinch, tracked in refs so two-finger zoom
+  // works without per-move re-renders. touch-action:none on the svg (globals.css)
+  // routes the gesture here instead of letting the browser zoom the whole page.
+  // globalThis.Map: the `Map` name is shadowed by the Map icon imported above.
+  const pointers = useRef(new globalThis.Map<number, { x: number; y: number }>());
+  const pinchRef = useRef<{ dist: number; cx: number; cy: number; scale: number; tx: number; ty: number } | null>(null);
+
   const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     if ((e.target as Element).closest('.mm-node')) return;
-    cancelAnimationFrame(animFrame.current);
-    setDrag({ x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty });
     e.currentTarget.setPointerCapture(e.pointerId);
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    cancelAnimationFrame(animFrame.current);
+    if (pointers.current.size >= 2) {
+      // Two fingers → pinch-zoom the map (anchored to the midpoint), never the page.
+      const [a, b] = [...pointers.current.values()];
+      const rect = svgRef.current!.getBoundingClientRect();
+      pinchRef.current = {
+        dist: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+        cx: (a.x + b.x) / 2 - rect.left,
+        cy: (a.y + b.y) / 2 - rect.top,
+        scale: viewRef.current.scale, tx: viewRef.current.tx, ty: viewRef.current.ty,
+      };
+      setDrag(null);
+      return;
+    }
+    setDrag({ x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty });
   };
   const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (!drag) return;
-    setView(v => ({ ...v, tx: drag.tx + (e.clientX - drag.x), ty: drag.ty + (e.clientY - drag.y) }));
+    if (!pointers.current.has(e.pointerId) && !drag) return;
+    if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const pinch = pinchRef.current;
+    if (pinch && pointers.current.size >= 2) {
+      const [a, b] = [...pointers.current.values()];
+      const newScale = clamp(pinch.scale * (Math.hypot(a.x - b.x, a.y - b.y) / pinch.dist), 0.3, 2.5);
+      const k = newScale / pinch.scale;
+      setView({ scale: newScale, tx: pinch.cx - (pinch.cx - pinch.tx) * k, ty: pinch.cy - (pinch.cy - pinch.ty) * k });
+      return;
+    }
+    if (drag) setView(v => ({ ...v, tx: drag.tx + (e.clientX - drag.x), ty: drag.ty + (e.clientY - drag.y) }));
   };
-  const onPointerUp = () => setDrag(null);
+  const onPointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
+    pointers.current.delete(e.pointerId);
+    if (pointers.current.size < 2) pinchRef.current = null;
+    if (pointers.current.size === 0) { setDrag(null); return; }
+    // One finger left after a pinch → resume panning from where it is.
+    const [p] = [...pointers.current.values()];
+    setDrag({ x: p.x, y: p.y, tx: viewRef.current.tx, ty: viewRef.current.ty });
+  };
 
   // Native, non-passive listener (attached below) so preventDefault is honoured —
   // React's onWheel is registered passive and would warn + still scroll the page.
@@ -339,6 +376,7 @@ export function MindMap({
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
         onPointerLeave={onPointerUp}
       >
         <g transform={`translate(${view.tx} ${view.ty}) scale(${view.scale})`}>
