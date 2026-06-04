@@ -205,9 +205,8 @@ export function MindMap({
     if (!activeId || !activePos || size.w <= 0 || !fitDone.current) return;
     const cx = activePos.x + NODE_W / 2;
     const cy = activePos.y + NODE_H / 2;
-    // Pan to centre the selected node WITHOUT changing zoom — forcing a scale
-    // here jerked the map (e.g. snapping to 0.85 when zoomed out).
-    const s = viewRef.current.scale;
+    // Centre the selected node at a default 80% zoom (web + mobile).
+    const s = 0.8;
     animateTo(size.w / 2 - cx * s, size.h / 2 - cy * s, s, 420);
   }, [activeId, activePos?.x, activePos?.y, size.w, size.h, animateTo]);
 
