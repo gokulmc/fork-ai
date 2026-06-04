@@ -211,6 +211,9 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
   const [nodes, setNodes] = useState<Record<string, ForkNode>>({});
   const [rootId, setRootId] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
+  // Nodes the user has read — active for ≥2s (debounced). Drives the bold
+  // corner-bracket marker on the mind map. Persisted per session in localStorage.
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());
   // Start in loading state if hash, localStorage, or ?sk= share token present — prevents landing flash on refresh
   const [loadingRoot, setLoadingRoot] = useState(() => {
     if (typeof window === 'undefined') return false;
@@ -420,6 +423,30 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
       localStorage.removeItem('fork.ai.node');
     }
   }, [sessionId, activeId, rootId]);
+
+  // Restore "read" markers for the active session (reset on session switch).
+  useEffect(() => {
+    if (!sessionId) { setReadIds(new Set()); return; }
+    try {
+      const raw = localStorage.getItem(`fork.ai.read::${sessionId}`);
+      setReadIds(new Set(raw ? (JSON.parse(raw) as string[]) : []));
+    } catch { setReadIds(new Set()); }
+  }, [sessionId]);
+
+  // Mark a node "read" once it has stayed the active node for ≥5s (debounced).
+  useEffect(() => {
+    if (!activeId || !sessionId) return;
+    const id = activeId;
+    const t = setTimeout(() => {
+      setReadIds(prev => {
+        if (prev.has(id)) return prev;
+        const next = new Set(prev).add(id);
+        try { localStorage.setItem(`fork.ai.read::${sessionId}`, JSON.stringify([...next])); } catch { /* quota */ }
+        return next;
+      });
+    }, 5000);
+    return () => clearTimeout(t);
+  }, [activeId, sessionId]);
 
   // Restore on first load — prefer URL hash, fall back to localStorage
   const hasRestoredRef = useRef(false);
@@ -1325,6 +1352,7 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
             onContextMenu={onMapContext}
             layout={tweaks.mapLayout}
             loadingIds={loadingNodes}
+            readIds={readIds}
             onSaveToNotion={openNotionPicker}
             notionSaving={notionSaving}
             notionSavedUrl={notionSavedUrl}
