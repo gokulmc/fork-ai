@@ -84,6 +84,14 @@ body {
 
 button { font: inherit; color: inherit; }
 ::selection { background: var(--highlight-strong); color: var(--ink); }
+
+/* Mobile: suppress the OS long-press callout (Copy / Look Up / Share) over
+   selectable content — the in-app HighlightMenu replaces it. Text inputs keep
+   the native callout so long-press-to-paste still works in the query/login
+   fields. (iOS honours this; Android's selection bar is OS-level and not
+   suppressible from web code — see ADR-0008 notes.) */
+body { -webkit-touch-callout: none; }
+input, textarea, [contenteditable] { -webkit-touch-callout: default; }
 svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; fill: none; stroke: currentColor; }
 
 /* ============================================================
@@ -1223,6 +1231,18 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 [data-theme="dark"] ::highlight(fork-hl-fbcfe8),
 [data-theme="dark"] ::highlight(fork-hl-e5e5e5) { color: #0a0a0a; }
 
+/* Text that spawned an Ask-AI branch — a violet glow/lift instead of a flat fill, so
+   it reads as "this led somewhere" rather than "this is highlighted". A faint violet
+   wash plus a prominent violet halo; the text keeps its own colour in both themes. The
+   ::highlight() API supports background-color + text-shadow (no borders/box-shadow). */
+::highlight(fork-hl-branch) {
+  background-color: color-mix(in srgb, #a78bfa 50%, transparent);
+  /* text-shadow:
+    0 0 6px color-mix(in srgb, #7c3aed 100%, transparent),
+    0 0 16px color-mix(in srgb, #7c3aed 90%, transparent),
+    0 0 28px color-mix(in srgb, #8b5cf6 70%, transparent); */
+}
+
 /* ============================================================
    Follow-up popup
    ============================================================ */
@@ -1573,7 +1593,7 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
   .mm-pill:active { transform: translateX(-50%) scale(0.97); }
 
   /* Selection popup +20% on mobile (intrinsic sizes — a transform scale would be
-     overridden by the hlIn animation's `to { scale(1) }`). */
+     overridden by the hlIn animation's `to { scale(1) }`). Centred horizontally by JS. */
   .hl-menu button { height: 36px; font-size: 16px; padding: 0 12px; gap: 7px; }
   .hl-menu button svg { width: 17px; height: 17px; }
   .hl-menu .sep { height: 22px; }
@@ -1589,8 +1609,9 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
 
   /* Inputs ≥16px so iOS Safari doesn't auto-zoom the page on focus (the login
      bar and query box use smaller type on desktop). !important beats the login
-     bar's inline font-size. */
-  .auth-input, .query-box input { font-size: 16px !important; }
+     bar's inline font-size. The Ask AI popup textarea autofocuses on open, so it
+     needs the same ≥16px floor or the page zooms in the moment it appears. */
+  .auth-input, .query-box input, .followup-pop textarea { font-size: 16px !important; }
 
   /* Tweaks panel: cap to the *visible* viewport (100dvh, minus safe areas + the
      nav bar) — plain 100vh includes the area behind the browser/status bars, so

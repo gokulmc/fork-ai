@@ -41,8 +41,12 @@ export function HighlightMenu({ visible, rect, lastColors, onAction, onClose }: 
 
   // Pure-math positioning: left = center of selection (CSS transform handles -50% offset)
   const pos = useMemo(() => {
-    const cx = rect.left + rect.width / 2;
-    const left = Math.max(12 + HALF_W, Math.min((typeof window !== 'undefined' ? window.innerWidth : 1200) - 12 - HALF_W, cx));
+    const vw = typeof window !== 'undefined' ? window.innerWidth : 1200;
+    // On mobile the +20% toolbar can be wider than the HALF_W estimate, so the
+    // viewport-margin clamp leaves a button clipped off-frame. Pin it horizontally
+    // centred instead (CSS caps its width + wraps), keeping it fully in-frame.
+    const cx = vw <= 768 ? vw / 2 : rect.left + rect.width / 2;
+    const left = vw <= 768 ? cx : Math.max(12 + HALF_W, Math.min(vw - 12 - HALF_W, cx));
     const top = rect.top - MENU_H - 10 >= 12 ? rect.top - MENU_H - 10 : rect.bottom + 10;
     return { left, top };
   }, [rect.left, rect.top, rect.width, rect.height, rect.bottom]);

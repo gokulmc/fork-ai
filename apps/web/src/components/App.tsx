@@ -10,13 +10,19 @@ const CSS_HL_SUPPORTED = typeof window !== 'undefined' && typeof CSS !== 'undefi
 const HL_BG = ['#fef08a', '#bbf7d0', '#bae6fd', '#fbcfe8', '#e5e5e5'];
 const HL_FG = [null, '#b91c1c', '#1d4ed8', '#047857'];
 
+// Reserved style for text that spawned an Ask-AI branch — a glow/lift rather than a
+// flat fill (see ::highlight(fork-hl-branch) in globals.css). Stored as the highlight's
+// bg so it renders consistently regardless of the last picked colour; never offered in
+// the colour picker.
+const BRANCH_HL = 'branch';
+
 function hlName(bg: string | null, fg: string | null | undefined): string {
   const b = (bg ?? '#fef08a').replace('#', '');
   const f = (fg ?? null)?.replace('#', '') ?? null;
   return f ? `fork-hl-${b}-${f}` : `fork-hl-${b}`;
 }
 
-const ALL_HL_NAMES = HL_BG.flatMap(bg => HL_FG.map(fg => hlName(bg, fg)));
+const ALL_HL_NAMES = [...HL_BG.flatMap(bg => HL_FG.map(fg => hlName(bg, fg))), hlName(BRANCH_HL, null)];
 
 function rangeFromOffsets(root: Element, start: number, end: number): Range | null {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
@@ -379,6 +385,36 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
       scroller.removeEventListener('touchcancel', onEnd);
     };
   }, [isNarrow]);
+
+  // Safety net for the Ask-AI popup: if focusing it still shifted the reading pane's
+  // zoom or scroll (iOS sometimes ignores preventScroll), snapshot the view when the
+  // popup opens and put it back when it closes — but ONLY the axis that actually moved.
+  const readViewBeforeAsk = useRef<{ scrollTop: number; zoom: string } | null>(null);
+  useEffect(() => {
+    if (!isNarrow) return;
+    const scroller = wsRef.current;
+    const inner = wsInnerRef.current;
+    if (!scroller || !inner) return;
+    if (followUp) {
+      if (!readViewBeforeAsk.current) {
+        readViewBeforeAsk.current = { scrollTop: scroller.scrollTop, zoom: inner.style.getPropertyValue('--read-zoom') };
+      }
+      return;
+    }
+    const snap = readViewBeforeAsk.current;
+    if (!snap) return;
+    readViewBeforeAsk.current = null;
+    const restore = () => {
+      if (inner.style.getPropertyValue('--read-zoom') !== snap.zoom) {
+        if (snap.zoom) inner.style.setProperty('--read-zoom', snap.zoom);
+        else inner.style.removeProperty('--read-zoom');
+      }
+      if (Math.abs(scroller.scrollTop - snap.scrollTop) > 1) scroller.scrollTop = snap.scrollTop;
+    };
+    requestAnimationFrame(restore);
+    const t = setTimeout(restore, 250); // also after the keyboard's viewport animation settles
+    return () => clearTimeout(t);
+  }, [followUp, isNarrow]);
 
   const onDividerPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -958,8 +994,9 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
         next[realNode.id] = realNode;
         return next;
       });
-      // Stay on current node — user navigates via mind map chip
-      persistHighlight(source.nodeId, source.sectionId, source.text, lastHlColors.bg, lastHlColors.fg, source.start, source.end);
+      // Stay on current node — user navigates via mind map chip.
+      // Branch source gets the reserved glow style, not the last picked highlighter colour.
+      persistHighlight(source.nodeId, source.sectionId, source.text, BRANCH_HL, null, source.start, source.end);
     } catch (err) {
       const msg = err instanceof ApiError && err.status === 402
         ? 'Out of credit — open Billing to recharge'
@@ -974,7 +1011,7 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
         return prev;
       });
     }
-  }, [nodes, idToken, lastHlColors, scrollWsTop, persistHighlight, notionSavedUrl]);
+  }, [nodes, idToken, scrollWsTop, persistHighlight, notionSavedUrl]);
 
   // ── Text selection → highlight menu ──────────────────────────────────────
 
@@ -1030,6 +1067,22 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
     const onPointerStart = (e: Event) => {
       const target = e.target as Element;
       if (target.closest?.('.hl-menu') || target.closest?.('.followup-pop')) return;
+      // Empty temp-hl synchronously, here in the pointer-down handler, rather than
+      // leaving it to the reactive layout effect: on mobile that React commit can
+      // land after the gesture has already repainted, and a highlight mutated after
+      // a painted frame won't repaint away — so the grey overlay would linger.
+      if (CSS_HL_SUPPORTED) {
+        CSS.highlights.set('temp-hl', new Highlight());
+        // Safari/WebKit keeps the stale ::highlight() layer painted even after the
+        // registry is emptied (Chrome repaints fine). Nudge the content subtree so
+        // WebKit actually repaints and drops the grey. The opacity change is
+        // imperceptible and reverted next frame.
+        const content = document.querySelector('.workspace-inner') as HTMLElement | null;
+        if (content) {
+          content.style.opacity = '0.9999';
+          requestAnimationFrame(() => { content.style.opacity = ''; });
+        }
+      }
       setHlMenu(null);
     };
     document.addEventListener('mousedown', onPointerStart);
