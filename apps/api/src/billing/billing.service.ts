@@ -4,6 +4,7 @@ import * as crypto from 'crypto';
 import Razorpay from 'razorpay';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
 import type { PaymentItem, CreditEventItem } from '@/dynamo/dynamo.interfaces';
+import { EmailService } from '@/email/email.service';
 import { ulid } from 'ulid';
 
 @Injectable()
@@ -14,6 +15,7 @@ export class BillingService {
   constructor(
     private readonly db: DynamoRepository,
     private readonly cfg: ConfigService,
+    private readonly email: EmailService,
   ) {}
 
   private get razorpay(): Razorpay {
@@ -159,7 +161,20 @@ export class BillingService {
       this.db.putCreditEvent(creditEvent),
     ]);
 
+    // Fire-and-forget receipt — must never block or fail crediting. Only on a
+    // fresh credit (the existing-payment early-return above guarantees no dupes).
+    void this.sendReceipt(sub, amountUsd, paymentId);
+
     return { credited: amountUsd };
+  }
+
+  private async sendReceipt(sub: string, amountUsd: number, paymentId: string): Promise<void> {
+    try {
+      const user = await this.db.getUserMeta(sub);
+      if (user?.email) await this.email.sendPaymentReceipt(user.email, amountUsd, paymentId);
+    } catch (err) {
+      this.logger.error(`Receipt lookup/send failed for ${sub}`, err);
+    }
   }
 
   private async fetchUsdToInrRate(): Promise<number> {
