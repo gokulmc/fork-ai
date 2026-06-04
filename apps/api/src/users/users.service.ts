@@ -5,6 +5,7 @@ import { DynamoRepository } from '@/dynamo/dynamo.repository';
 import type { UserMetaItem, UsageEventItem, CreditEventItem } from '@/dynamo/dynamo.interfaces';
 import { CognitoUser } from '@/auth/jwt.strategy';
 import { priceFor } from '@/llm/models';
+import { EmailService } from '@/email/email.service';
 
 @Injectable()
 export class UsersService {
@@ -13,6 +14,7 @@ export class UsersService {
   constructor(
     private readonly db: DynamoRepository,
     private readonly cfg: ConfigService,
+    private readonly email: EmailService,
   ) {}
 
   async upsert(user: CognitoUser, ip?: string): Promise<UserMetaItem> {
@@ -38,8 +40,9 @@ export class UsersService {
       creditUsd: signupCredit,
     };
     await this.db.putUserMeta(record);
-    // Fire-and-forget — enrichment must never block or fail user creation.
+    // Fire-and-forget — enrichment and welcome email must never block or fail user creation.
     void this.enrichLocation(user.sub, ip);
+    if (user.email) void this.email.sendWelcome(user.email, signupCredit);
     return record;
   }
 

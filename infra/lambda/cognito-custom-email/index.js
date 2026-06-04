@@ -32,7 +32,7 @@ function htmlEmail(code) {
               <table cellpadding="0" cellspacing="0" role="presentation">
                 <tr>
                   <td style="vertical-align:middle;padding-right:11px">
-                    <img src="https://forkai.in/logo.png" width="34" height="34" alt="fork ai" style="display:block;border-radius:8px">
+                    <img src="https://forkai.in/mark-72.png" width="34" height="34" alt="fork ai" style="display:block;border-radius:8px">
                   </td>
                   <td style="vertical-align:middle">
                     <span style="font-size:18px;font-weight:700;color:#1c1917;letter-spacing:-0.4px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">fork ai</span>

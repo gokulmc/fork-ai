@@ -14,8 +14,8 @@ set -euo pipefail
 
 REGION="ap-south-1"
 DOMAIN="forkai.in"
-FROM_EMAIL="noreply@forkai.in"
-FROM_DISPLAY="fork.ai <${FROM_EMAIL}>"
+FROM_EMAIL="verify@forkai.in"
+FROM_DISPLAY="fork ai <${FROM_EMAIL}>"
 FUNCTION_NAME="forkai-cognito-custom-email"
 ROLE_NAME="forkai-cognito-custom-email-role"
 

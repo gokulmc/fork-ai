@@ -460,13 +460,14 @@ The `webSearch` param is optional everywhere and defaults to `false`, so all exi
 
 ## Email — OTP verification
 
-Cognito sends OTP verification emails via **Amazon SES** (`ap-south-1`) from `fork.ai <verify@forkai.in>`.
+Cognito sends OTP verification emails via **Amazon SES** (`ap-south-1`, `EmailSendingAccount: DEVELOPER`) from `fork ai <verify@forkai.in>`.
 
 - SES domain: `forkai.in` — DKIM verified, DNS records in Route 53
-- A `CustomMessage` Lambda trigger (`forkai-cognito-custom-email`) intercepts `CustomMessage_SignUp`, `CustomMessage_ResendCode`, and `CustomMessage_ForgotPassword` events and returns a branded HTML email body
-- Lambda + email config are always updated in **one `update-user-pool` call** — updating them separately resets whichever field is omitted
-- Source: `infra/lambda/cognito-custom-email/` — `index.js` (template) + `setup.sh` (full one-shot deploy)
-- SES sandbox: still active — recipients must be verified until AWS approves production access
+- A `CustomMessage` Lambda trigger (`forkai-cognito-custom-email`) intercepts `CustomMessage_SignUp`, `CustomMessage_ResendCode`, and `CustomMessage_ForgotPassword` events and returns a branded HTML email body (logo is `https://forkai.in/mark-72.png` — `logo.png` does NOT exist)
+- `update-user-pool` is a **full replace** — any top-level field omitted is reset to its default (password policy, `DeletionProtection`, account recovery, MFA, Lambda triggers). Never send a minimal call. To change one thing, **describe → merge → update**: `switch-email-to-ses.sh` does exactly this (dry-run by default, `--apply` to commit) and is the safe way to touch the pool's email config.
+- Source: `infra/lambda/cognito-custom-email/` — `index.js` (template), `setup.sh` (full one-shot: SES+DKIM+Lambda+email config), `switch-email-to-ses.sh` (email-config-only, safe merge)
+- SES sandbox: **production access granted** — can send to any recipient (no longer limited to verified addresses)
+- **The Cognito pool (`ap-south-1_EO3siwwEY`) is shared by local dev and prod** — there is no separate dev pool. Editing the Lambda or pool email config affects all environments immediately; a signup from localhost sends the same email as prod.
 
 ---
 
