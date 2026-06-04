@@ -41,7 +41,7 @@ export function FollowUpPop({ rect, sourceText, loading, onSubmit, onClose }: Fo
     if (window.innerWidth > 768) { onClose(); return; }
     closingRef.current = true;
     setClosing(true);
-    setTimeout(onClose, 300); // keep in sync with popOutLeft duration in globals.css
+    setTimeout(onClose, 500); // keep in sync with popOutLeft duration in globals.css
   }, [onClose]);
 
   useEffect(() => {
