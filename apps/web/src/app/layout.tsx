@@ -1,10 +1,18 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { Providers } from '@/components/Providers';
 
 export const metadata: Metadata = {
   title: 'fork ai',
   description: 'A branching research workspace — ask once, branch forever.',
+};
+
+// viewport-fit=cover lets the Capacitor/iOS safe-area insets (notch, home bar)
+// reach the CSS env() values the mobile layout relies on.
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

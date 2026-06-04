@@ -205,8 +205,10 @@ export function MindMap({
     if (!activeId || !activePos || size.w <= 0 || !fitDone.current) return;
     const cx = activePos.x + NODE_W / 2;
     const cy = activePos.y + NODE_H / 2;
-    const targetScale = Math.max(viewRef.current.scale, 0.85);
-    animateTo(size.w / 2 - cx * targetScale, size.h / 2 - cy * targetScale, targetScale, 420);
+    // Pan to centre the selected node WITHOUT changing zoom — forcing a scale
+    // here jerked the map (e.g. snapping to 0.85 when zoomed out).
+    const s = viewRef.current.scale;
+    animateTo(size.w / 2 - cx * s, size.h / 2 - cy * s, s, 420);
   }, [activeId, activePos?.x, activePos?.y, size.w, size.h, animateTo]);
 
   const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
@@ -221,7 +223,9 @@ export function MindMap({
   };
   const onPointerUp = () => setDrag(null);
 
-  const onWheel = (e: React.WheelEvent<SVGSVGElement>) => {
+  // Native, non-passive listener (attached below) so preventDefault is honoured —
+  // React's onWheel is registered passive and would warn + still scroll the page.
+  const onWheel = useCallback((e: WheelEvent) => {
     e.preventDefault();
     cancelAnimationFrame(animFrame.current);
     const rect = svgRef.current!.getBoundingClientRect();
@@ -233,7 +237,13 @@ export function MindMap({
       const k = newScale / v.scale;
       return { scale: newScale, tx: mx - (mx - v.tx) * k, ty: my - (my - v.ty) * k };
     });
-  };
+  }, []);
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [onWheel]);
 
   const zoomBy = (mul: number) => {
     setView(v => {
@@ -330,7 +340,6 @@ export function MindMap({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerLeave={onPointerUp}
-        onWheel={onWheel}
       >
         <g transform={`translate(${view.tx} ${view.ty}) scale(${view.scale})`}>
           {edges.map((e, i) => (

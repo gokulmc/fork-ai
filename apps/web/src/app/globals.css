@@ -596,15 +596,15 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
   /* Exact-resolution raster (rendered from the SVG with its filters applied).
      The raster-in-SVG was downscaled ~45× live and went blurry in Safari; serving
      1x/2x/3x lets each display use its native size with no in-browser scaling. */
-  background-image: url('/mark-48.png'); /* fallback for engines without image-set */
-  background-image: -webkit-image-set(url('/mark-24.png') 1x, url('/mark-48.png') 2x, url('/mark-72.png') 3x);
-  background-image: image-set(url('/mark-24.png') 1x, url('/mark-48.png') 2x, url('/mark-72.png') 3x);
+  /* Transparent glyph (white chip knocked out) so it sits cleanly on any
+     surface; dark mode just inverts the black glyph to white below. */
+  background-image: url('/mark-t-48.png'); /* fallback for engines without image-set */
+  background-image: -webkit-image-set(url('/mark-t-24.png') 1x, url('/mark-t-48.png') 2x, url('/mark-t-72.png') 3x);
+  background-image: image-set(url('/mark-t-24.png') 1x, url('/mark-t-48.png') 2x, url('/mark-t-72.png') 3x);
 }
 /* Match the in-app theme toggle (data-theme), not the OS colour scheme. */
 [data-theme="dark"] .app-brand .brand-logo {
-  background-image: url('/mark-dark-48.png');
-  background-image: -webkit-image-set(url('/mark-dark-24.png') 1x, url('/mark-dark-48.png') 2x, url('/mark-dark-72.png') 3x);
-  background-image: image-set(url('/mark-dark-24.png') 1x, url('/mark-dark-48.png') 2x, url('/mark-dark-72.png') 3x);
+  filter: invert(1);
 }
 
 /* ============================================================
@@ -766,6 +766,7 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 .topbar .crumbs .crumb.current { color: var(--ink); cursor: default; }
 .topbar .crumbs .crumb.current:hover { background: transparent; }
 .topbar .crumbs .sep { color: var(--ink-3); opacity: .6; }
+.topbar .crumbs .crumb-emoji { font-size: 16px; line-height: 1; flex: none; }
 .topbar .crumbs .page-ic { width: 14px; height: 14px; color: var(--ink-3); }
 .topbar .tools { display: flex; gap: 2px; align-items: center; }
 
@@ -1025,7 +1026,7 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 
 .ws-title-row { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
 .ws-title { font-family: var(--sans); font-weight: 600; font-size: clamp(28px, 3.4vw, 38px); line-height: 1.15; letter-spacing: -0.025em; margin: 0; text-wrap: balance; color: var(--ink); flex: 1; min-width: 0; }
-.ws-query-label { font-family: var(--sans); font-size: 12px; color: var(--ink-3); flex-shrink: 0; max-width: 260px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; border: 1px solid var(--line); border-radius: 4px; padding: 3px 8px; align-self: center; }
+.ws-query-label { font-family: var(--sans); font-size: 12px; color: var(--ink-3); flex-shrink: 0; max-width: 30%; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; border: 1px solid var(--line); border-radius: 4px; padding: 3px 8px; align-self: center; }
 .ws-lede { color: var(--ink-2); font-size: 15px; margin: 0 0 24px; max-width: 60ch; line-height: 1.55; font-family: var(--sans); }
 .ws-rule { border: 0; border-top: 1px solid var(--line); margin: 0 0 24px; }
 
@@ -1460,3 +1461,142 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
 .tour-skip:hover { color: var(--ink); }
 .tour-next { appearance: none; background: var(--ink); color: var(--bg); border: 0; border-radius: 6px; padding: 6px 14px; font-size: 13px; font-weight: 500; font-family: var(--sans); cursor: pointer; }
 .tour-next:hover { opacity: .85; }
+
+/* ============================================================
+   Mobile / narrow viewports (phone + Capacitor app)
+   Desktop layout is untouched above this breakpoint. The mind-map pane is
+   hidden behind the floating .mm-pill, which swaps it full-screen; topbar
+   actions collapse to icons. See App.tsx (useIsNarrow, mapOpen, MindMapPill).
+   ============================================================ */
+@media (max-width: 768px) {
+  /* Lock the page to the viewport: only the workspace scrolls (internally), so the
+     whole page can't scroll past its content or rubber-band, and there is never a
+     horizontal scroll. */
+  html, body { overflow: hidden; max-width: 100%; height: 100dvh; overscroll-behavior: none; }
+
+  /* Single column; the map and workspace share row 2 and are swapped by display.
+     100dvh (not 100vh) keeps the topbar + bottom pill inside the visible area as
+     the mobile browser / Capacitor toolbars expand and collapse. */
+  .app {
+    grid-template-columns: 1fr;
+    /* Taller nav bar on mobile. */
+    grid-template-rows: calc(60px + env(safe-area-inset-top)) 1fr;
+    height: 100dvh;
+  }
+  .mindmap-pane,
+  .workspace { grid-row: 2; grid-column: 1; }
+  /* overflow-y:auto silently promotes overflow-x to auto — clamp it so a slightly
+     wide element can't create a horizontal scrollbar inside the content pane.
+     touch-action: pan-y suppresses the browser's native pinch-zoom here so our
+     own pinch handler (App.tsx) can drive the in-app content zoom instead; only
+     vertical scroll remains native. */
+  .workspace { overflow-x: hidden; touch-action: pan-y; }
+
+  /* Pinch-to-zoom drives --read-zoom (1–1.3). `zoom` reflows the prose at the
+     larger size; the counter-scaled width keeps it inside the viewport (no
+     horizontal overflow) and margin-inline:0 drops the auto-centering so the
+     magnified margins can't push content off-screen. */
+  .workspace-inner {
+    zoom: var(--read-zoom, 1);
+    width: calc(100% / var(--read-zoom, 1));
+    margin-inline: 0;
+  }
+  .pane-divider { display: none; }
+
+  /* Mind map is a drawer that slides in over the content from the left. The
+     transform is driven inline by JS (finger-tracking during the swipe; settles
+     on release / pill toggle) — this CSS sets the resting closed position and the
+     settle transition. The workspace stays put underneath; the opaque map covers
+     it when fully open. */
+  .mindmap-pane {
+    position: fixed; left: 0; right: 0;
+    top: calc(60px + env(safe-area-inset-top)); bottom: 0;
+    z-index: 5;
+    transform: translateX(-100%);
+    transition: transform .32s cubic-bezier(.4, 0, .2, 1);
+    will-change: transform;
+    pointer-events: none;
+  }
+  .app[data-map-open="1"] .mindmap-pane { pointer-events: auto; }
+
+  /* No brand logo on the session/workspace page only (frees the topbar width) —
+     it still shows on Landing/History, which don't render .app. */
+  body:has(.app) .app-brand { display: none; }
+  .topbar { padding: 0 8px; padding-top: env(safe-area-inset-top); gap: 6px; }
+
+  /* Root title only: the title's wrapper span (and the crumb inside it) must be
+     able to shrink so it ellipsizes instead of shoving the action buttons off-screen. */
+  .topbar .crumbs { min-width: 0; flex: 1; overflow: hidden; }
+  .topbar .crumbs > span:last-child { flex: 1 1 auto; min-width: 0; overflow: hidden; }
+  .topbar .crumbs .crumb { max-width: none; flex: 1; min-width: 0; font-size: 16px; padding: 3px 4px; }
+  .topbar .crumbs .crumb-emoji { font-size: 20px; }  /* +20% on mobile */
+
+  /* Icon-only actions — font-size:0 hides bare-text labels; SVGs keep their size.
+     Bigger glyphs + larger tap targets for touch. */
+  .topbar .tools { gap: 4px; flex: none; }
+  .topbar .tools .icon-btn { font-size: 0; gap: 0; height: 36px; min-width: 34px; padding: 0 7px; }
+  .topbar .tools .icon-btn svg { width: 17px; height: 17px; }
+  .topbar .tools .icon-btn .badge { font-size: 10px; }
+
+  /* Text uses the full phone width — desktop --content-pad-x (80px) left a ~230px
+     column. Tighten padding; extra bottom space clears the floating pill + home bar. */
+  .workspace-inner { padding: 24px 18px calc(96px + env(safe-area-inset-bottom)); }
+  .section-body { padding-left: 20px; overflow-wrap: break-word; }
+  .workspace-inner :is(img, table, pre) { max-width: 100%; }
+
+  /* Landing query box: the input defaults to min-width:auto and won't shrink below
+     its placeholder, shoving "Begin" off-screen. Let it shrink. */
+  .query-box { padding-left: 14px; }
+  .query-box input { min-width: 0; }
+  .query-box .submit { padding: 0 16px; }
+
+  /* Floating liquid-glass "Mindmap" pill (thumb-reachable, above the map):
+     translucent, heavy backdrop blur + saturation, with a top sheen highlight. */
+  .mm-pill {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: calc(env(safe-area-inset-bottom) + 16px);
+    z-index: 2147483646;
+    display: inline-flex; align-items: center; gap: 8px;
+    height: 44px; padding: 0 22px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+    background: transparent;
+    -webkit-backdrop-filter: blur(2px) saturate(180%);
+    backdrop-filter: blur(2px) saturate(180%);
+    color: var(--ink); font-family: var(--sans); font-size: 14px; font-weight: 500;
+    box-shadow: var(--shadow-2), inset 0 1px 0 color-mix(in srgb, #fff 45%, transparent);
+    cursor: pointer;
+  }
+  .mm-pill:active { transform: translateX(-50%) scale(0.97); }
+
+  /* Selection popup +20% on mobile (intrinsic sizes — a transform scale would be
+     overridden by the hlIn animation's `to { scale(1) }`). */
+  .hl-menu button { height: 36px; font-size: 16px; padding: 0 12px; gap: 7px; }
+  .hl-menu button svg { width: 17px; height: 17px; }
+  .hl-menu .sep { height: 22px; }
+
+  /* Invisible left-edge gesture zone: starts the swipe on a non-text element so
+     text selection can't hijack it. touch-action:none lets our pointer handler
+     own the drag. Sits below the nav bar. */
+  .mm-swipe-zone {
+    position: fixed; left: 0; width: 24px;
+    top: calc(60px + env(safe-area-inset-top)); bottom: 0;
+    z-index: 6; touch-action: none;
+  }
+}
+
+/* Small phones only (≤400px: SE 320, mini 360, X/11/12 375–390). The desktop hero
+   clamp floors at 40px and never shrinks here. Re-base it so vw drives the size; 10vw
+   hits exactly 40px at the 400px edge, so it joins the original size seamlessly and
+   larger phones (Plus/Max, 414px+) stay untouched. */
+@media (max-width: 400px) {
+  .landing-inner { padding: 60px 10px 16px; }
+  .landing-mark { margin-bottom: 22px; }
+  .landing h1 { font-size: clamp(28px, 10vw, 40px); margin-bottom: 14px; }
+  .landing-sub { font-size: 14px; margin-bottom: 28px; line-height: 1.5; }
+
+  /* Slimmer search bar + suggestion chips on small phones. */
+  .query-box input { padding: 5px 3px; font-size: 14px; }
+  .query-box .submit { height: 30px; }
+  .examples .chip { padding: 6px 10px; font-size: 11px; }
+}

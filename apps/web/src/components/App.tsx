@@ -2,7 +2,7 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import type { ForkNode, Annotation, HlMenuState, FollowUpState, ContextMenuState, PersistentHighlight, HighlightRecord } from '@/lib/types';
-import { uid, short5, stripMarkdown, stripCite, getRangeOffsets, modelDisplayName } from '@/lib/utils';
+import { uid, short5, stripMarkdown, stripCite, getRangeOffsets, modelDisplayName, clamp } from '@/lib/utils';
 
 const CSS_HL_SUPPORTED = typeof window !== 'undefined' && typeof CSS !== 'undefined' && 'highlights' in CSS;
 
@@ -82,9 +82,10 @@ import { HistoryPage } from './HistoryPage';
 import { TweaksPanel } from './TweaksPanel';
 import { AccountButton } from './AccountButton';
 import { ShareButton } from './ShareButton';
+import { MindMapPill } from './MindMapPill';
 import {
   Search, Bookmark, ChevronRight, Sparkles, CornerDownRight, Hash,
-  Quote, AlertCircle, ArrowUpRight, Pencil, Trash, Clock,
+  Quote, AlertCircle, ArrowUpRight, Pencil, Trash, Clock, LogIn,
 } from './Icons';
 
 const TWEAK_DEFAULTS = {
@@ -143,6 +144,20 @@ function ResearchingScreen({ sessions }: { sessions: SessionSummary[] }) {
       </div>
     </div>
   );
+}
+
+// True when the viewport is phone-sized (matches the globals.css @media breakpoint).
+// Starts false so server render and desktop agree; flips after mount on a phone.
+function useIsNarrow() {
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 768px)');
+    const update = () => setNarrow(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+  return narrow;
 }
 
 export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
@@ -251,6 +266,7 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
   const [rootQueryOutOfCredit, setRootQueryOutOfCredit] = useState(false);
 
   const wsRef = useRef<HTMLElement>(null);
+  const wsInnerRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<HTMLDivElement>(null);
 
   // Always-current refs so branch callbacks never close over stale sessionId / guestToken.
@@ -277,6 +293,92 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
   useLayoutEffect(() => {
     appRef.current?.style.setProperty('--map-width', `${initSplitRef.current}%`);
   }, [rootId]);
+
+  // ── Mobile / narrow-viewport: hide the mind map behind a toggle ─────────────
+  // The mind-map pane is hidden by default on narrow screens (CSS @media); the
+  // floating pill swaps to a full-screen map. Init false so SSR/desktop match.
+  const isNarrow = useIsNarrow();
+  const [mapOpen, setMapOpen] = useState(false);
+  // Reset the swap whenever we leave narrow mode or the session empties.
+  useEffect(() => { if (!isNarrow || Object.keys(nodes).length === 0) setMapOpen(false); }, [isNarrow, nodes]);
+
+  // Left-edge swipe-right slides the mind map in, tracking the finger (drawer
+  // reveal), then settles open/closed on release. The gesture starts on an
+  // invisible edge zone (.mm-swipe-zone) so text selection can't hijack it.
+  // Closing stays on the pill so we don't fight the map's own pan gesture.
+  const mapPaneRef = useRef<HTMLElement | null>(null);
+  const swipeStart = useRef<{ x: number; y: number } | null>(null);
+  const swipeDx = useRef(0);
+
+  const onSwipeDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    swipeStart.current = { x: e.clientX, y: e.clientY };
+    swipeDx.current = 0;
+    if (mapPaneRef.current) mapPaneRef.current.style.transition = 'none'; // follow finger 1:1
+  }, []);
+  const onSwipeMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const s = swipeStart.current, pane = mapPaneRef.current;
+    if (!s || !pane) return;
+    const dx = e.clientX - s.x, dy = e.clientY - s.y;
+    if (swipeDx.current === 0 && Math.abs(dy) > Math.abs(dx)) return; // mostly vertical → let it scroll
+    const w = window.innerWidth;
+    const clamped = Math.max(0, Math.min(dx, w));
+    swipeDx.current = clamped;
+    pane.style.transform = `translateX(${(clamped / w - 1) * 100}%)`;
+  }, []);
+  const onSwipeEnd = useCallback(() => {
+    const pane = mapPaneRef.current;
+    const w = typeof window !== 'undefined' ? window.innerWidth : 1;
+    const open = swipeDx.current > w * 0.3; // past ~⅓ → settle open
+    if (pane) { pane.style.transition = ''; pane.style.transform = open ? 'translateX(0)' : 'translateX(-100%)'; }
+    swipeStart.current = null; swipeDx.current = 0;
+    setMapOpen(open);
+  }, []);
+
+  // Keep the pane's slide position in sync with mapOpen for pill-driven toggles,
+  // and clear the inline transform on desktop so the normal grid pane is restored.
+  useEffect(() => {
+    const pane = mapPaneRef.current;
+    if (!pane) return;
+    if (!isNarrow) { pane.style.transform = ''; pane.style.transition = ''; return; }
+    pane.style.transform = mapOpen ? 'translateX(0)' : 'translateX(-100%)';
+  }, [mapOpen, isNarrow]);
+
+  // Pinch-to-zoom the reading content (100%–130%) instead of the webview's native
+  // page zoom — so the app chrome stays put and only the prose scales, like a native
+  // app. The reading pane sets `touch-action: pan-y` (globals.css) to suppress the
+  // browser's own pinch on this surface; the map keeps its existing zoom untouched.
+  useEffect(() => {
+    if (!isNarrow) return;
+    const scroller = wsRef.current;
+    const inner = wsInnerRef.current;
+    if (!scroller || !inner) return;
+    const dist = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    let startDist = 0, startZoom = 1, pinching = false;
+    const onStart = (e: TouchEvent) => {
+      if (e.touches.length !== 2) return;
+      pinching = true;
+      startDist = dist(e.touches);
+      startZoom = parseFloat(inner.style.getPropertyValue('--read-zoom')) || 1;
+    };
+    const onMove = (e: TouchEvent) => {
+      if (!pinching || e.touches.length !== 2) return;
+      e.preventDefault(); // stop the two-finger pan-scroll while pinching
+      const z = clamp(startZoom * (dist(e.touches) / startDist), 1, 1.3);
+      inner.style.setProperty('--read-zoom', String(z));
+    };
+    const onEnd = (e: TouchEvent) => { if (e.touches.length < 2) pinching = false; };
+    scroller.addEventListener('touchstart', onStart, { passive: true });
+    scroller.addEventListener('touchmove', onMove, { passive: false });
+    scroller.addEventListener('touchend', onEnd, { passive: true });
+    scroller.addEventListener('touchcancel', onEnd, { passive: true });
+    return () => {
+      scroller.removeEventListener('touchstart', onStart);
+      scroller.removeEventListener('touchmove', onMove);
+      scroller.removeEventListener('touchend', onEnd);
+      scroller.removeEventListener('touchcancel', onEnd);
+    };
+  }, [isNarrow]);
 
   const onDividerPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -877,7 +979,9 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
   // ── Text selection → highlight menu ──────────────────────────────────────
 
   useEffect(() => {
-    const onMouseUp = (e: MouseEvent) => {
+    // Fires on both mouseup (pointer) and touchend (touch long-press selection) —
+    // without the touch path the highlight menu never appears on phones.
+    const onSelectEnd = (e: Event) => {
       if ((e.target as Element).closest?.('.hl-menu') || (e.target as Element).closest?.('.followup-pop')) return;
       setTimeout(() => {
         const sel = window.getSelection();
@@ -910,8 +1014,12 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
         });
       }, 10);
     };
-    document.addEventListener('mouseup', onMouseUp);
-    return () => document.removeEventListener('mouseup', onMouseUp);
+    document.addEventListener('mouseup', onSelectEnd);
+    document.addEventListener('touchend', onSelectEnd);
+    return () => {
+      document.removeEventListener('mouseup', onSelectEnd);
+      document.removeEventListener('touchend', onSelectEnd);
+    };
   }, [activeId]);
 
   // Clear hlMenu on mousedown so useLayoutEffect runs before paint — Safari won't
@@ -919,13 +1027,17 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
   // clear temp-hl before the browser draws the frame that follows the click.
   useEffect(() => {
     if (!hlMenu) return;
-    const onMouseDown = (e: MouseEvent) => {
+    const onPointerStart = (e: Event) => {
       const target = e.target as Element;
       if (target.closest?.('.hl-menu') || target.closest?.('.followup-pop')) return;
       setHlMenu(null);
     };
-    document.addEventListener('mousedown', onMouseDown);
-    return () => document.removeEventListener('mousedown', onMouseDown);
+    document.addEventListener('mousedown', onPointerStart);
+    document.addEventListener('touchstart', onPointerStart);
+    return () => {
+      document.removeEventListener('mousedown', onPointerStart);
+      document.removeEventListener('touchstart', onPointerStart);
+    };
   }, [hlMenu]);
 
   // Single effect owns all named highlights so they are always re-registered together.
@@ -1293,14 +1405,16 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
     <>
       {persistentBrand}
       <AccountButton creditBalance={creditBalance} onCreditUpdated={setCreditBalance} />
-    <div className="app" ref={appRef}>
+    <div className="app" ref={appRef} data-map-open={mapOpen ? '1' : undefined}>
       <header className="topbar">
         <div className="crumbs">
           {rootId && nodes[rootId]?.emoji && (
-            <span style={{ fontSize: 16, lineHeight: 1 }}>{nodes[rootId].emoji}</span>
+            <span className="crumb-emoji" style={{ lineHeight: 1 }}>{nodes[rootId].emoji}</span>
           )}
-          {breadcrumbs.map((n, i) => {
-            const isLast = i === breadcrumbs.length - 1;
+          {/* On phones show only the root title (ellipsized in CSS) to avoid a long,
+              overflowing trail; desktop keeps the full breadcrumb path. */}
+          {(isNarrow ? breadcrumbs.slice(0, 1) : breadcrumbs).map((n, i, arr) => {
+            const isLast = i === arr.length - 1;
             return (
               <span key={n.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                 {i > 0 && <span className="sep"><ChevronRight size={11} /></span>}
@@ -1327,7 +1441,7 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
               onClick={() => setForceLogin(true)}
               title="Sign in to save this session to your account"
             >
-              <Bookmark size={14} /> Login to Save
+              <LogIn size={14} /> Login to Save
             </button>
           )}
           {sessionId && idToken && (
@@ -1335,14 +1449,17 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
               <ShareButton sessionId={sessionId} idToken={idToken} />
             </span>
           )}
-          <button className="icon-btn has-badge" onClick={() => setDrawerOpen(true)} title="Highlights & Callouts">
-            <Bookmark size={14} /> Notes
-            {(annotations.length + highlightsList.length) > 0 && <span className="badge">{annotations.length + highlightsList.length}</span>}
-          </button>
+          {/* Notes is hidden on phones (mobile nav stays minimal) — desktop keeps it. */}
+          {!isNarrow && (
+            <button className="icon-btn has-badge" onClick={() => setDrawerOpen(true)} title="Highlights & Callouts">
+              <Bookmark size={14} /> Notes
+              {(annotations.length + highlightsList.length) > 0 && <span className="badge">{annotations.length + highlightsList.length}</span>}
+            </button>
+          )}
         </div>
       </header>
 
-      <section className="mindmap-pane">
+      <section className="mindmap-pane" ref={mapPaneRef}>
         {Object.keys(nodes).length > 0 ? (
           <MindMap
             nodes={nodes}
@@ -1372,7 +1489,7 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
       />
 
       <section className="workspace" ref={wsRef}>
-        <div className="workspace-inner">
+        <div className="workspace-inner" ref={wsInnerRef}>
           {active && (
             <>
               <div className="ws-meta">
@@ -1448,6 +1565,19 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
           )}
         </div>
       </section>
+
+      {isNarrow && Object.keys(nodes).length > 0 && (
+        <MindMapPill open={mapOpen} onToggle={() => setMapOpen(o => !o)} />
+      )}
+      {isNarrow && !mapOpen && Object.keys(nodes).length > 0 && (
+        <div
+          className="mm-swipe-zone"
+          onPointerDown={onSwipeDown}
+          onPointerMove={onSwipeMove}
+          onPointerUp={onSwipeEnd}
+          onPointerCancel={onSwipeEnd}
+        />
+      )}
 
       <HighlightMenu
         visible={!!hlMenu}
