@@ -10,58 +10,91 @@ const CONTACT = 'support@forkai.in';
 
 export default function PrivacyPolicyPage() {
   return (
-    <main className="legal">
+    <div className="legal-overlay">
       <style>{`
+        /* Own scroll container — the app sets body{overflow:hidden} globally,
+           so this page must scroll itself. */
+        .legal-overlay {
+          position: fixed;
+          inset: 0;
+          overflow-y: auto;
+          -webkit-overflow-scrolling: touch;
+          background: #f4f4f2;
+          padding: 32px 16px;
+          display: flex;
+          justify-content: center;
+          align-items: flex-start;
+        }
         .legal {
-          max-width: 720px;
-          margin: 0 auto;
-          padding: 72px 24px 120px;
-          font-family: 'Newsreader', Georgia, serif;
-          font-size: 17px;
-          line-height: 1.7;
-          color: #1a1a1a;
+          width: 100%;
+          max-width: 680px;
+          margin: auto;
+          padding: 40px 44px 56px;
           background: #ffffff;
+          border: 1px solid rgba(10,10,10,0.10);
+          border-radius: 12px;
+          box-shadow: 0 12px 40px rgba(10,10,10,0.10);
+          font-family: var(--sans);
+          font-size: 15px;
+          line-height: 1.6;
+          color: #1a1a1a;
         }
         .legal h1 {
-          font-size: 32px;
+          font-size: 27px;
           line-height: 1.2;
           margin: 0 0 6px;
           letter-spacing: -0.01em;
         }
         .legal .updated {
           font-family: ui-monospace, 'JetBrains Mono', Menlo, monospace;
-          font-size: 12px;
+          font-size: 11px;
           letter-spacing: 0.06em;
           text-transform: uppercase;
           color: #8a8a8a;
-          margin: 0 0 40px;
+          margin: 0 0 32px;
         }
         .legal h2 {
-          font-size: 21px;
-          margin: 40px 0 10px;
+          font-size: 19px;
+          margin: 32px 0 8px;
           letter-spacing: -0.005em;
         }
-        .legal p, .legal li { margin: 0 0 12px; }
-        .legal ul { padding-left: 22px; }
+        .legal p, .legal li { margin: 0 0 11px; }
+        .legal ul { padding-left: 20px; }
         .legal a { color: #1a1a1a; text-decoration: underline; }
         .legal strong { font-weight: 600; }
         .legal .back {
           display: inline-block;
-          margin-bottom: 40px;
+          margin-bottom: 28px;
           font-family: ui-monospace, 'JetBrains Mono', Menlo, monospace;
-          font-size: 12px;
+          font-size: 11px;
           letter-spacing: 0.08em;
           text-transform: uppercase;
           text-decoration: none;
           color: #8a8a8a;
         }
+        @media (max-width: 768px) {
+          .legal-overlay { padding: 0; background: #ffffff; }
+          .legal {
+            border: 0; border-radius: 0; box-shadow: none;
+            padding: 28px 20px 64px; max-width: none;
+          }
+        }
         @media (prefers-color-scheme: dark) {
-          .legal { background: #191919; color: #e8e8e8; }
+          .legal-overlay { background: #0e0e0e; }
+          .legal {
+            background: #191919; color: #e8e8e8;
+            border-color: rgba(255,255,255,0.10);
+            box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+          }
           .legal a { color: #e8e8e8; }
           .legal .updated, .legal .back { color: #888; }
+          @media (max-width: 768px) {
+            .legal-overlay, .legal { background: #191919; }
+          }
         }
       `}</style>
 
+      <main className="legal">
       <a className="back" href="/">← fork ai</a>
 
       <h1>Privacy Policy</h1>
@@ -174,6 +207,7 @@ export default function PrivacyPolicyPage() {
         Questions about this policy or your data? Email us at{' '}
         <a href={`mailto:${CONTACT}`}>{CONTACT}</a>.
       </p>
-    </main>
+      </main>
+    </div>
   );
 }
