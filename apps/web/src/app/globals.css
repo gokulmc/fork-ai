@@ -1045,23 +1045,28 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 .section-num { font-family: var(--sans); font-size: 12px; color: var(--ink-3); font-weight: 500; margin-top: 4px; min-width: 22px; }
 .section h2 { font-family: var(--sans); font-weight: 600; font-size: clamp(20px, 2.1vw, 24px); line-height: 1.25; letter-spacing: -0.015em; margin: 0; flex: 1; text-wrap: balance; color: var(--ink); }
 
+/* Anchored to the RIGHT EDGE OF THE READING COLUMN (not floated out into the margin):
+   the column is centred and resizes with the middle divider, so the button moves with
+   it and can never spill past the pane to make the workspace horizontally scrollable.
+   It's an opaque chip with a shadow, so overlapping the end of a heading on hover reads
+   fine. */
 .deeper-btn {
-  position: absolute; right: -8px; top: 50%;
-  transform: translate(100%, -50%);
+  position: absolute; right: 0; top: 50%;
+  transform: translateY(-50%) translateX(8px);
   background: var(--paper); border: 1px solid var(--line-strong); color: var(--ink-2);
   height: 28px; padding: 0 10px; border-radius: 5px;
   font-size: 12px; font-family: var(--sans); font-weight: 500;
   display: inline-flex; align-items: center; gap: 6px;
   cursor: pointer; opacity: 0;
-  transform-origin: left center;
+  transform-origin: right center;
   transition: opacity .15s, transform .15s, background .12s, color .12s, border-color .12s;
   white-space: nowrap; box-shadow: var(--shadow-1);
 }
 .section:hover .deeper-btn, .section-head:focus-within .deeper-btn {
-  opacity: 1; transform: translate(calc(100% + 6px), -50%);
+  opacity: 1; transform: translateY(-50%) translateX(0);
 }
 .deeper-btn:hover { background: var(--hover); color: var(--ink); border-color: var(--ink-3); }
-.deeper-btn.loading { opacity: 1; transform: translate(calc(100% + 6px), -50%); pointer-events: none; }
+.deeper-btn.loading { opacity: 1; transform: translateY(-50%) translateX(0); pointer-events: none; }
 .deeper-btn .spinner { width: 10px; height: 10px; }
 
 /* Generic spinner */
