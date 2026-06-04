@@ -1065,7 +1065,7 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 .section:hover .deeper-btn, .section-head:focus-within .deeper-btn {
   opacity: 1; transform: translateY(-50%) translateX(0);
 }
-.deeper-btn:hover { background: var(--hover); color: var(--ink); border-color: var(--ink-3); }
+.deeper-btn:hover { background: var(--panel); color: var(--ink); border-color: var(--ink-3); }
 .deeper-btn.loading { opacity: 1; transform: translateY(-50%) translateX(0); pointer-events: none; }
 .deeper-btn .spinner { width: 10px; height: 10px; }
 
