@@ -33,10 +33,12 @@ export function FollowUpPop({ rect, sourceText, loading, onSubmit, onClose }: Fo
   const [pos, setPos] = useState({ left: 0, top: 0 });
   const [closing, setClosing] = useState(false);
 
-  // Play the slide-left exit, then unmount. closingRef guards against double-fire.
+  // Mobile only: play the slide-left exit, then unmount. Desktop closes instantly
+  // (X / Esc) as before. closingRef guards against double-fire.
   const closingRef = useRef(false);
   const requestClose = useCallback(() => {
     if (closingRef.current) return;
+    if (window.innerWidth > 768) { onClose(); return; }
     closingRef.current = true;
     setClosing(true);
     setTimeout(onClose, 200); // keep in sync with popOutLeft duration in globals.css
