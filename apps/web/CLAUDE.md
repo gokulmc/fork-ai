@@ -11,7 +11,7 @@
 | State | React 19 hooks — local state, synced to NestJS REST API |
 | Markdown | `marked` v15 (GFM, synchronous parse) + `marked-katex-extension` (KaTeX math) |
 | Syntax highlight | `highlight.js` v11 |
-| Math | `katex` via `marked-katex-extension` (`output: 'html'`) — `$…$` inline, `$$…$$` block |
+| Math | `katex` via `marked-katex-extension` (`output: 'html'`) — `$…$` inline, `$$…$$` block; LaTeX `\(…\)` / `\[…\]` pre-rendered (see "Math rendering") |
 | Icons | Custom `make()` factory in `src/components/Icons.tsx` |
 | Port | **3001** (run with `npm run dev -- -p 3001`) |
 
@@ -200,6 +200,8 @@ The tree is reconstructed by grouping nodes by `parentId` — never stored as a 
 ## Math rendering (`Section.tsx`)
 
 Section bodies are GitHub-flavoured markdown that may contain LaTeX. `marked.use(markedKatex({ throwOnError: false, output: 'html' }))` renders `$…$` (inline) and `$$…$$` (block). `output: 'html'` (not the default `htmlAndMathml`) is deliberate: it skips KaTeX's duplicate MathML so the rendered `textContent` stays aligned with the character offsets the CSS Custom Highlight API and triple-click sentence selection depend on. `katex/dist/katex.min.css` is imported at the top of `Section.tsx`.
+
+**Why `extractBracketMath()` exists:** DeepSeek and GPT routinely emit math with the LaTeX `\(…\)` (inline) / `\[…\]` (display) delimiters instead of `$…$`. marked doesn't recognise those — it treats the bracket as escaped punctuation and strips the backslash (`\(`→`(`, `\[`→`[`), so the bare LaTeX leaks into the prose and subscript underscores even render as `<em>`. Before `marked.parse`, `extractBracketMath` pre-renders each `\(…\)` / `\[…\]` span to KaTeX HTML (`output: 'html'`, `displayMode` for the square-bracket form) and substitutes an `@@MATH-n@@` sentinel; the rendered HTML is spliced back into marked's output afterwards. Doing it as a pre-render (rather than rewriting to `$…$`) is deliberate: it sidesteps marked-katex's `$`-delimiter quirks — a closing `$` adjacent to `)` (e.g. `(e.g. \(10^{-5}\))`) won't match, and `nonStandard` would falsely match dollar amounts like `$5 … $10` — and leaves the existing `$…$` + currency behaviour completely untouched. It skips fenced code blocks so delimiters there stay literal.
 
 **Why `unwrapCodeMath()` exists:** Gemini is inconsistent about math notation — it usually emits valid `$…$`, but sometimes wraps the same LaTeX in an inline-code span (`` `\cos(\theta_j)` ``), which would render as monospace text. Before parsing, `unwrapCodeMath` rewrites code spans whose content is unambiguously LaTeX (a curated command whitelist — `\theta`, `\frac`, `\mathbf`, … — NOT a bare backslash, so `` `\d+` `` regexes and `` `C:\Users` `` paths are left alone) into `$…$`. It skips fenced code blocks and uses a `(?![A-Za-z])` boundary so subscripts like `\theta_j` match. The ad-hoc bold-letter style (`**x**_i`) is intentionally NOT auto-converted — too ambiguous against real emphasis.
 

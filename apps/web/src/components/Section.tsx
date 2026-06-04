@@ -2,6 +2,7 @@
 import { useMemo, useEffect, useRef, memo } from 'react';
 import { marked } from 'marked';
 import markedKatex from 'marked-katex-extension';
+import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import hljs from 'highlight.js';
 import type { Section as SectionData, ForkNode, Annotation } from '@/lib/types';
@@ -41,10 +42,41 @@ function unwrapCodeMath(src: string): string {
     .join('\n');
 }
 
+// DeepSeek/GPT often emit math with LaTeX \(…\) / \[…\] delimiters instead of $…$.
+// marked doesn't recognise those: it strips the escaping backslash off the bracket
+// (\(→(, \[→[), so the bare LaTeX leaks into the prose (subscripts even become <em>).
+// Pre-render these to KaTeX HTML behind an @@MATH-n@@ sentinel so marked never touches
+// the math — this also sidesteps marked-katex's $-delimiter quirks (a closing $ adjacent
+// to ")" doesn't match, and "$5 … $10" WOULD falsely match) without changing the $…$ path.
+const BRACKET_MATH = /\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)/g;
+function extractBracketMath(src: string): { text: string; math: string[] } {
+  const math: string[] = [];
+  const text = src
+    .split(/(```[\s\S]*?```|~~~[\s\S]*?~~~)/g)
+    .map((seg, i) =>
+      i % 2 === 1
+        ? seg // fenced code block — leave the delimiters literal
+        : seg.replace(BRACKET_MATH, (_m, block, inline) => {
+            math.push(
+              katex.renderToString((block ?? inline).trim(), {
+                throwOnError: false,
+                output: 'html',
+                displayMode: block != null,
+              }),
+            );
+            return `@@MATH${math.length - 1}@@`;
+          }),
+    )
+    .join('');
+  return { text, math };
+}
+
 function renderMd(src: string): string {
   if (!src) return '';
   try {
-    return marked.parse(unwrapCodeMath(src)) as string;
+    const { text, math } = extractBracketMath(unwrapCodeMath(src));
+    const html = marked.parse(text) as string;
+    return math.length ? html.replace(/@@MATH(\d+)@@/g, (_m, i) => math[+i]) : html;
   } catch {
     return src.split(/\n\n+/).map(p => `<p>${escapeHTML(p)}</p>`).join('');
   }
