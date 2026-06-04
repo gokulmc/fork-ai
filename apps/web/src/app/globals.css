@@ -596,15 +596,15 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
   /* Exact-resolution raster (rendered from the SVG with its filters applied).
      The raster-in-SVG was downscaled ~45× live and went blurry in Safari; serving
      1x/2x/3x lets each display use its native size with no in-browser scaling. */
-  background-image: url('/mark-48.png'); /* fallback for engines without image-set */
-  background-image: -webkit-image-set(url('/mark-24.png') 1x, url('/mark-48.png') 2x, url('/mark-72.png') 3x);
-  background-image: image-set(url('/mark-24.png') 1x, url('/mark-48.png') 2x, url('/mark-72.png') 3x);
+  /* Transparent glyph (white chip knocked out) so it sits cleanly on any
+     surface; dark mode just inverts the black glyph to white below. */
+  background-image: url('/mark-t-48.png'); /* fallback for engines without image-set */
+  background-image: -webkit-image-set(url('/mark-t-24.png') 1x, url('/mark-t-48.png') 2x, url('/mark-t-72.png') 3x);
+  background-image: image-set(url('/mark-t-24.png') 1x, url('/mark-t-48.png') 2x, url('/mark-t-72.png') 3x);
 }
 /* Match the in-app theme toggle (data-theme), not the OS colour scheme. */
 [data-theme="dark"] .app-brand .brand-logo {
-  background-image: url('/mark-dark-48.png');
-  background-image: -webkit-image-set(url('/mark-dark-24.png') 1x, url('/mark-dark-48.png') 2x, url('/mark-dark-72.png') 3x);
-  background-image: image-set(url('/mark-dark-24.png') 1x, url('/mark-dark-48.png') 2x, url('/mark-dark-72.png') 3x);
+  filter: invert(1);
 }
 
 /* ============================================================
