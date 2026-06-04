@@ -853,6 +853,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
           >
             <input
               ref={r.ref}
+              className="auth-input"
               type={r.type}
               value={r.value}
               onChange={e => { setError(null); r.set(e.target.value); }}

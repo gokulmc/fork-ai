@@ -1478,13 +1478,16 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
      100dvh (not 100vh) keeps the topbar + bottom pill inside the visible area as
      the mobile browser / Capacitor toolbars expand and collapse. */
   .app {
-    grid-template-columns: 1fr;
+    /* minmax(0,1fr) — a plain 1fr track has min-width:auto = its content's
+       min-content, so wide content (tables, long tokens) floored the column and
+       bled past a narrow viewport. minmax(0,…) lets it shrink to the viewport. */
+    grid-template-columns: minmax(0, 1fr);
     /* Taller nav bar on mobile. */
     grid-template-rows: calc(60px + env(safe-area-inset-top)) 1fr;
     height: 100dvh;
   }
   .mindmap-pane,
-  .workspace { grid-row: 2; grid-column: 1; }
+  .workspace { grid-row: 2; grid-column: 1; min-width: 0; }
   /* overflow-y:auto silently promotes overflow-x to auto — clamp it so a slightly
      wide element can't create a horizontal scrollbar inside the content pane.
      touch-action: pan-y suppresses the browser's native pinch-zoom here so our
@@ -1583,6 +1586,42 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
     top: calc(60px + env(safe-area-inset-top)); bottom: 0;
     z-index: 6; touch-action: none;
   }
+
+  /* Inputs ≥16px so iOS Safari doesn't auto-zoom the page on focus (the login
+     bar and query box use smaller type on desktop). !important beats the login
+     bar's inline font-size. */
+  .auth-input, .query-box input { font-size: 16px !important; }
+
+  /* Tweaks panel: cap to the *visible* viewport (100dvh, minus safe areas + the
+     nav bar) — plain 100vh includes the area behind the browser/status bars, so
+     the bottom-anchored panel grew upward and pushed its header (close button)
+     off the top of the screen. Header must never shrink so it stays in view. */
+  .twk-panel { max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 80px); }
+  .twk-hd { flex: 0 0 auto; }
+
+  /* Keep long-form content inside the viewport — inline code (which is nowrap on
+     desktop), block math, wide tables and long URLs are the usual width-bleed
+     culprits on a narrow phone. */
+  .section-body.md :not(pre) > code { white-space: normal; overflow-wrap: anywhere; }
+  .section-body.md .katex-display { overflow-x: auto; overflow-y: hidden; }
+  /* A markdown table's cells size to their content (max-content) and propagate
+     that width up the ancestor chain, bleeding past a narrow viewport — and with
+     no wrapper element, overflow-x:auto can't contain it. table-layout:fixed +
+     width:100% pins the table to the column and wraps cell text instead. */
+  .section-body.md table { table-layout: fixed; width: 100%; }
+  .section-body.md th, .section-body.md td { overflow-wrap: anywhere; }
+  .section-body.md a, .ws-sources-list a { overflow-wrap: anywhere; }
+
+  /* The node's meta pill row ("Query · N sections · ✳ model") is a nowrap flex
+     row whose min-width forced the content column past a narrow viewport — let
+     it wrap onto multiple lines. */
+  .ws-meta { flex-wrap: wrap; }
+
+  /* "Go deeper" is hover-revealed off the right margin on desktop (position:
+     absolute + translate past the edge). On a narrow phone that parks it ~72px
+     beyond the viewport — the width bleed — and touch has no hover so it can't be
+     reached anyway. Remove it on mobile. */
+  .deeper-btn { display: none; }
 }
 
 /* Small phones only (≤400px: SE 320, mini 360, X/11/12 375–390). The desktop hero
@@ -1600,3 +1639,42 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
   .query-box .submit { height: 30px; }
   .examples .chip { padding: 6px 10px; font-size: 11px; }
 }
+
+/* ============================================================
+   PWA "Add to Home Screen" prompt (InstallPrompt.tsx)
+   Liquid-glass bottom sheet; shown on Android (native install) and iOS Safari
+   (manual Share → Add to Home Screen). Not scoped to mobile — desktop Chrome
+   can install too — but anchored bottom-centre for thumb reach.
+   ============================================================ */
+.install-sheet {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(env(safe-area-inset-bottom) + 16px);
+  z-index: 2147483647;
+  width: min(420px, calc(100vw - 24px));
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  backdrop-filter: blur(18px) saturate(180%);
+  box-shadow: var(--shadow-2), inset 0 1px 0 color-mix(in srgb, #fff 45%, transparent);
+  animation: installIn .28s cubic-bezier(.2,.8,.2,1);
+}
+@keyframes installIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(12px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+.install-icon { border-radius: 10px; flex: none; }
+.install-body { flex: 1; min-width: 0; }
+.install-title { font-family: var(--sans); font-weight: 600; font-size: 14px; color: var(--ink); }
+.install-sub { font-family: var(--sans); font-size: 12px; color: var(--ink-3); margin-top: 2px; line-height: 1.35; }
+.install-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+.install-x, .install-go {
+  font-family: var(--sans); font-size: 13px; font-weight: 500;
+  height: 34px; padding: 0 12px; border-radius: 999px;
+  cursor: pointer; border: 1px solid transparent;
+}
+.install-x { background: transparent; color: var(--ink-3); }
+.install-go { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.install-go:active { transform: scale(.97); }
