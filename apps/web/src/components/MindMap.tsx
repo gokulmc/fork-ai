@@ -205,23 +205,82 @@ export function MindMap({
     if (!activeId || !activePos || size.w <= 0 || !fitDone.current) return;
     const cx = activePos.x + NODE_W / 2;
     const cy = activePos.y + NODE_H / 2;
-    // Pan to centre the selected node WITHOUT changing zoom — forcing a scale
-    // here jerked the map (e.g. snapping to 0.85 when zoomed out).
-    const s = viewRef.current.scale;
+    // Centre the selected node at a default 80% zoom (web + mobile).
+    const s = 0.8;
     animateTo(size.w / 2 - cx * s, size.h / 2 - cy * s, s, 420);
   }, [activeId, activePos?.x, activePos?.y, size.w, size.h, animateTo]);
 
+  // Pointer events drive mouse pan only. Touch (pan + pinch) is handled by the native
+  // listeners below — iOS Safari ignores touch-action for page pinch-zoom, so the only
+  // way to stop the whole page zooming is preventDefault on a non-passive touchmove,
+  // which React's synthetic (passive) pointer events can't do.
   const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (e.pointerType === 'touch') return;
     if ((e.target as Element).closest('.mm-node')) return;
     cancelAnimationFrame(animFrame.current);
     setDrag({ x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty });
     e.currentTarget.setPointerCapture(e.pointerId);
   };
   const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (!drag) return;
+    if (e.pointerType === 'touch' || !drag) return;
     setView(v => ({ ...v, tx: drag.tx + (e.clientX - drag.x), ty: drag.ty + (e.clientY - drag.y) }));
   };
   const onPointerUp = () => setDrag(null);
+
+  // Native touch pan + pinch-zoom (mirrors the reading-pane pinch handler). passive:false
+  // touchmove + preventDefault is what actually stops Safari from zooming the page.
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const distOf = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    let mode: 'none' | 'pan' | 'pinch' = 'none';
+    let pan = { x: 0, y: 0, tx: 0, ty: 0 };
+    let pinch = { dist: 1, cx: 0, cy: 0, scale: 1, tx: 0, ty: 0 };
+    const onStart = (e: TouchEvent) => {
+      if ((e.target as Element).closest('.mm-node')) { mode = 'none'; return; }
+      cancelAnimationFrame(animFrame.current);
+      const r = el.getBoundingClientRect();
+      if (e.touches.length >= 2) {
+        mode = 'pinch';
+        pinch = {
+          dist: distOf(e.touches) || 1,
+          cx: (e.touches[0].clientX + e.touches[1].clientX) / 2 - r.left,
+          cy: (e.touches[0].clientY + e.touches[1].clientY) / 2 - r.top,
+          scale: viewRef.current.scale, tx: viewRef.current.tx, ty: viewRef.current.ty,
+        };
+      } else {
+        mode = 'pan';
+        pan = { x: e.touches[0].clientX, y: e.touches[0].clientY, tx: viewRef.current.tx, ty: viewRef.current.ty };
+      }
+    };
+    const onMove = (e: TouchEvent) => {
+      if (mode === 'pinch' && e.touches.length >= 2) {
+        e.preventDefault();
+        const newScale = clamp(pinch.scale * (distOf(e.touches) / pinch.dist), 0.3, 2.5);
+        const k = newScale / pinch.scale;
+        setView({ scale: newScale, tx: pinch.cx - (pinch.cx - pinch.tx) * k, ty: pinch.cy - (pinch.cy - pinch.ty) * k });
+      } else if (mode === 'pan' && e.touches.length === 1) {
+        e.preventDefault();
+        setView(v => ({ ...v, tx: pan.tx + (e.touches[0].clientX - pan.x), ty: pan.ty + (e.touches[0].clientY - pan.y) }));
+      }
+    };
+    const onEnd = (e: TouchEvent) => {
+      if (e.touches.length === 0) { mode = 'none'; return; }
+      // dropped to one finger after a pinch → resume panning from it
+      mode = 'pan';
+      pan = { x: e.touches[0].clientX, y: e.touches[0].clientY, tx: viewRef.current.tx, ty: viewRef.current.ty };
+    };
+    el.addEventListener('touchstart', onStart, { passive: true });
+    el.addEventListener('touchmove', onMove, { passive: false });
+    el.addEventListener('touchend', onEnd, { passive: true });
+    el.addEventListener('touchcancel', onEnd, { passive: true });
+    return () => {
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchmove', onMove);
+      el.removeEventListener('touchend', onEnd);
+      el.removeEventListener('touchcancel', onEnd);
+    };
+  }, []);
 
   // Native, non-passive listener (attached below) so preventDefault is honoured —
   // React's onWheel is registered passive and would warn + still scroll the page.
@@ -339,6 +398,7 @@ export function MindMap({
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
         onPointerLeave={onPointerUp}
       >
         <g transform={`translate(${view.tx} ${view.ty}) scale(${view.scale})`}>

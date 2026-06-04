@@ -83,15 +83,15 @@ function renderMd(src: string): string {
 }
 
 
-function selectSentenceAtPoint(blockEl: Element, e: MouseEvent) {
+function selectSentenceAtPoint(blockEl: Element, clientX: number, clientY: number) {
   const text = blockEl.textContent ?? '';
   if (!text.trim()) return;
 
-  // Find where the user clicked within the flattened text
+  // Find where the user clicked/tapped within the flattened text
   const caretRange =
-    (document.caretRangeFromPoint?.(e.clientX, e.clientY)) ??
+    (document.caretRangeFromPoint?.(clientX, clientY)) ??
     (() => {
-      const pos = (document as Document & { caretPositionFromPoint?(x: number, y: number): { offsetNode: Node; offset: number } | null }).caretPositionFromPoint?.(e.clientX, e.clientY);
+      const pos = (document as Document & { caretPositionFromPoint?(x: number, y: number): { offsetNode: Node; offset: number } | null }).caretPositionFromPoint?.(clientX, clientY);
       if (!pos) return null;
       const r = document.createRange();
       r.setStart(pos.offsetNode, pos.offset);
@@ -165,8 +165,47 @@ function handleBodyClick(e: React.MouseEvent<HTMLDivElement>) {
     sel?.addRange(range);
   } else {
     // Triple-click → select sentence
-    selectSentenceAtPoint(block, e.nativeEvent);
+    selectSentenceAtPoint(block, e.nativeEvent.clientX, e.nativeEvent.clientY);
   }
+}
+
+// Mobile has no triple-click — a single tap selects the sentence under the finger
+// (the touch analog of handleBodyClick's sentence selection). The App-level touchend
+// listener then reads the selection and pops the highlight menu. Long-presses (native
+// selection) and drags/scrolls are excluded by the duration + movement guards.
+const TAP_MOVE_PX = 10;
+const TAP_MAX_MS = 350;
+
+function tapSelectHandlers() {
+  let start: { x: number; y: number; t: number; hadSelection: boolean } | null = null;
+  return {
+    onTouchStart: (e: React.TouchEvent) => {
+      if (e.touches.length !== 1) { start = null; return; }
+      const t = e.touches[0];
+      // Read the selection NOW — React's onTouchStart fires before the browser
+      // collapses it on tap (and before App's document touchstart clears the menu).
+      const sel = window.getSelection();
+      const hadSelection = !!sel && !sel.isCollapsed && sel.toString().trim().length >= 3;
+      start = { x: t.clientX, y: t.clientY, t: e.timeStamp, hadSelection };
+    },
+    onTouchEnd: (e: React.TouchEvent) => {
+      const s = start;
+      start = null;
+      if (!s || e.changedTouches.length !== 1) return;
+      const t = e.changedTouches[0];
+      if (Math.hypot(t.clientX - s.x, t.clientY - s.y) > TAP_MOVE_PX) return; // drag / scroll
+      if (e.timeStamp - s.t > TAP_MAX_MS) return;                            // long-press → native selection
+      // A tap while a sentence is already selected just dismisses it — the next tap
+      // selects fresh. Collapse it so the menu doesn't immediately re-open.
+      if (s.hadSelection) { window.getSelection()?.removeAllRanges(); return; }
+      const target = e.target as Element;
+      if (target.closest?.('a, button, pre, code')) return;                  // don't hijack links / code / controls
+      const block = target.closest?.('p, li, blockquote, td, th, h1, h2, h3, h4');
+      if (!block) return;
+      e.preventDefault(); // stop the synthetic tap from collapsing the selection we set
+      selectSentenceAtPoint(block, t.clientX, t.clientY);
+    },
+  };
 }
 
 // Isolated so its DOM is never touched when sectionChildren or callouts change.
@@ -184,6 +223,7 @@ const SectionBody = memo(function SectionBody({
 }) {
   const bodyRef = useRef<HTMLDivElement>(null);
   const html = useMemo(() => renderMd(body), [body]);
+  const tap = useMemo(tapSelectHandlers, []);
 
   useEffect(() => {
     if (!bodyRef.current) return;
@@ -205,6 +245,8 @@ const SectionBody = memo(function SectionBody({
       {...(isFirst ? { 'data-tour': 'tour-highlight' } : {})}
       ref={bodyRef}
       onClick={handleBodyClick}
+      onTouchStart={tap.onTouchStart}
+      onTouchEnd={tap.onTouchEnd}
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );

@@ -428,7 +428,10 @@ function applyHlsToHtml(html: string, highlights: PersistentHighlight[]): string
   let result = html;
   for (const hl of highlights) {
     if (!hl.text) continue;
-    const style = [`background-color: ${hl.bg ?? '#fef08a'}`, hl.fg ? `color: ${hl.fg}` : null]
+    // hl.bg may be a non-hex sentinel (e.g. 'branch' for Ask-AI source text) — fall
+    // back to a real colour so the inline style is valid CSS.
+    const bgCss = hl.bg?.startsWith('#') ? hl.bg : '#e5e5e5';
+    const style = [`background-color: ${bgCss}`, hl.fg ? `color: ${hl.fg}` : null]
       .filter(Boolean).join('; ');
     const esc = hl.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     result = result.replace(new RegExp(esc), `<mark style="${style}">${hl.text}</mark>`);
