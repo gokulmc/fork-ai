@@ -6,6 +6,7 @@
     "apps/*"
   ],
   "scripts": {
+    "prepare": "git config core.hooksPath .githooks || true",
     "dev": "nx run-many --target=dev --parallel",
     "dev:web": "nx run @fork-ai/web:dev",
     "dev:api": "nx run @fork-ai/api:dev",

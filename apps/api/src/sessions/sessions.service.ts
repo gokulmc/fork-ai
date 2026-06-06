@@ -123,9 +123,13 @@ export class SessionsService {
           event.sections.forEach((s, i) => { if (sections[i]) sections[i].body = s.body; });
         }
         const sourcesPatch = event.sources?.length ? { sources: event.sources } : {};
+        // The SessionMeta row already exists (written up-front so the session is
+        // accessible if the client closes mid-stream). Patch only the title/emoji/lede
+        // here — an UPDATE, not a full replace — so the History card shows the real
+        // values once the stream finishes server-side.
         await Promise.all([
           this.db.putNode({ ...rootNode, title, emoji, lede, sections, ...sourcesPatch }),
-          this.db.putSessionMeta({ ...sessionMeta, title, emoji, lede }),
+          this.db.updateSessionMeta(sub, sessionId, { title, emoji, lede }),
         ]);
         await this.users.billUsage(sub, event.usage.inputTokens, event.usage.outputTokens, 'QUERY', sessionId, nodeId, ROOT_MODEL);
         emit({ type: 'done', sessionId, nodeId, sections, sources: event.sources });
@@ -217,9 +221,13 @@ export class SessionsService {
           event.sections.forEach((s, i) => { if (sections[i]) sections[i].body = s.body; });
         }
         const sourcesPatch = event.sources?.length ? { sources: event.sources } : {};
+        // The SessionMeta row already exists (written up-front so the session is
+        // accessible if the client closes mid-stream). Patch only the title/emoji/lede
+        // here — an UPDATE, not a full replace — so the History card shows the real
+        // values once the stream finishes server-side.
         await Promise.all([
           this.db.putNode({ ...rootNode, title, emoji, lede, sections, ...sourcesPatch }),
-          this.db.putSessionMeta({ ...sessionMeta, title, emoji, lede }),
+          this.db.updateSessionMeta(houseSub, sessionId, { title, emoji, lede }),
         ]);
         await this.users.billUsage(houseSub, event.usage.inputTokens, event.usage.outputTokens, 'QUERY', sessionId, nodeId, ROOT_MODEL);
         emit({ type: 'done', sessionId, nodeId, token, sections, sources: event.sources });

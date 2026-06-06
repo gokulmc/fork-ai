@@ -176,7 +176,9 @@ NOTION_REDIRECT_URI=http://localhost:3000/notion/callback
 
 ## Root-query streaming — persist-first / `init` event (IMPORTANT)
 
-Both `SessionsService.createStreaming` (`POST /sessions/stream`) and `createTrialSessionStreaming` (`POST /share`) persist the session + root node to DynamoDB **before** the LLM stream and emit an **`init`** SSE event (`{ type: 'init', sessionId, nodeId, token? }`) up-front, re-`putNode` incrementally per section, and finalise at `done`. `send` is wrapped in a swallow-errors `emit()` so a client disconnect (refresh) doesn't abort the loop — the full result still persists. This is what lets a refresh *during* the root stream restore the real session instead of dropping the user to Landing. See root `CLAUDE.md` → "Root-query streaming". **Do not move session persistence back to the `done` block only.**
+Both `SessionsService.createStreaming` (`POST /sessions/stream`) and `createTrialSessionStreaming` (`POST /share`) persist the session + root node to DynamoDB **before** the LLM stream and emit an **`init`** SSE event (`{ type: 'init', sessionId, nodeId, token? }`) up-front, re-`putNode` incrementally per section, and finalise at `done` (final `putNode` + `updateSessionMeta`). `send` is wrapped in a swallow-errors `emit()` so a client disconnect (refresh) doesn't abort the loop — the full result still persists. This is what lets a refresh *during* the root stream restore the real session instead of dropping the user to Landing. See root `CLAUDE.md` → "Root-query streaming". **Do not move session persistence back to the `done` block only.**
+
+The History list reads `SessionMetaItem` (not the node). The up-front write makes the session *accessible* with a placeholder `title` (`query.slice(0,60)`) and empty `emoji`; the real values are applied at `done` via **`updateSessionMeta(sub, sessionId, { title, emoji, lede })`** — a partial **update**, not a `putSessionMeta` full replace. Because the loop runs to completion server-side after a disconnect, a tab closed mid-stream still gets the correct title/emoji once `done` lands. `updateSessionMeta`'s allowlisted fields include `emoji`/`lede` for this.
 
 ---
 

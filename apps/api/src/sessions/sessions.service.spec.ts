@@ -25,7 +25,16 @@ const mockDb = {
 
 const mockLlm = {
   answerQuery: jest.fn(),
+  streamAnswerQuery: jest.fn(),
 };
+
+// Mimics LlmService.streamAnswerQuery: meta first, then sections, then done.
+async function* fakeStream() {
+  yield { type: 'meta', title: 'Neural Nets', emoji: '🧠', lede: 'How neural networks work.' };
+  yield { type: 'section', heading: 'Intro', body: 'Introduction text.' };
+  yield { type: 'section', heading: 'Layers', body: 'Layer text.' };
+  yield { type: 'done', usage: { inputTokens: 100, outputTokens: 50 } };
+}
 
 const mockUsers = {
   checkCredit: jest.fn(),
@@ -119,6 +128,58 @@ describe('SessionsService', () => {
       mockLlm.answerQuery.mockResolvedValue(llmResult);
       const result = await service.create(SUB, { query: 'test' });
       expect((result.nodes[0]['sections'] as Array<{ id: string }>)[0].id).toBeDefined();
+    });
+  });
+
+  describe('createStreaming', () => {
+    beforeEach(() => {
+      mockUsers.checkCredit.mockResolvedValue(undefined);
+      mockUsers.billUsage.mockResolvedValue(undefined);
+      mockDb.putNode.mockResolvedValue(undefined);
+      mockDb.putSessionMeta.mockResolvedValue(undefined);
+      mockDb.updateSessionMeta.mockResolvedValue(undefined);
+      mockLlm.streamAnswerQuery.mockReturnValue(fakeStream());
+    });
+
+    it('writes the placeholder SessionMeta up-front, before any stream event', async () => {
+      const order: string[] = [];
+      mockDb.putSessionMeta.mockImplementation(() => { order.push('putMeta'); return Promise.resolve(); });
+      const send = (data: object) => { order.push(`send:${(data as { type: string }).type}`); };
+
+      await service.createStreaming(SUB, { query: 'What is ML?' }, send);
+
+      // The up-front putSessionMeta must land before the `init` event is sent.
+      expect(order[0]).toBe('putMeta');
+      expect(order[1]).toBe('send:init');
+      const [meta] = mockDb.putSessionMeta.mock.calls[0];
+      expect(meta.title).toBe('What is ML?'); // placeholder = query slice
+      expect(meta.emoji).toBe('');
+    });
+
+    it('patches title/emoji/lede via updateSessionMeta at done (not a full putSessionMeta)', async () => {
+      await service.createStreaming(SUB, { query: 'What is ML?' }, jest.fn());
+
+      // Exactly one putSessionMeta (the up-front placeholder); the real values come
+      // through a partial update, not a second replace.
+      expect(mockDb.putSessionMeta).toHaveBeenCalledTimes(1);
+      expect(mockDb.updateSessionMeta).toHaveBeenCalledTimes(1);
+      const [sub, , updates] = mockDb.updateSessionMeta.mock.calls[0];
+      expect(sub).toBe(SUB);
+      expect(updates).toEqual({ title: 'Neural Nets', emoji: '🧠', lede: 'How neural networks work.' });
+    });
+
+    it('still persists correct title/emoji at done when the client disconnects mid-stream', async () => {
+      // Simulate a closed socket: every send throws after `init`.
+      const send = jest.fn((data: object) => {
+        if ((data as { type: string }).type !== 'init') throw new Error('write after end');
+      });
+
+      await expect(service.createStreaming(SUB, { query: 'What is ML?' }, send)).resolves.toBeUndefined();
+
+      // Loop ran to completion despite the throwing send.
+      const [, , updates] = mockDb.updateSessionMeta.mock.calls[0];
+      expect(updates).toEqual({ title: 'Neural Nets', emoji: '🧠', lede: 'How neural networks work.' });
+      expect(mockUsers.billUsage).toHaveBeenCalledTimes(1);
     });
   });
 

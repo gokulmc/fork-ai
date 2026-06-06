@@ -1,0 +1,22 @@
+#!/bin/sh
+# Enforce the issues.md log rule (see CLAUDE.md → "Issue log").
+# A bug-fix commit must also stage issues.md, so the bug-fix log never drifts.
+#
+# Trips on Conventional-Commit `fix` type (fix:, fix(scope):) and a leading
+# "Fix:" subject. Bypass for a genuine non-bug exception with: git commit --no-verify
+
+msg_file="$1"
+subject=$(head -n1 "$msg_file")
+
+case "$subject" in
+  fix:*|fix\(*\):*|Fix:*|FIX:*)
+    if git diff --cached --name-only | grep -qx "issues.md"; then
+      exit 0
+    fi
+    echo "✖ commit blocked: this looks like a bug fix but issues.md is not staged." >&2
+    echo "  Add a Symptom/Cause/Fix entry to issues.md and 'git add issues.md'," >&2
+    echo "  or bypass for a non-bug change with: git commit --no-verify" >&2
+    exit 1
+    ;;
+esac
+exit 0
