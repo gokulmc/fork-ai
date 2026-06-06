@@ -159,12 +159,14 @@ export function BarChart({
   color,
   height = 200,
   fmt = (n: number) => String(Math.round(n)),
+  onBarClick,
 }: {
   points: number[];
   labels: string[];
   color: string;
   height?: number;
   fmt?: (n: number) => string;
+  onBarClick?: (index: number) => void;
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const W = 760;
@@ -206,8 +208,10 @@ export function BarChart({
               width={slot}
               height={innerH}
               fill="transparent"
+              style={{ cursor: onBarClick ? 'pointer' : 'default' }}
               onMouseEnter={() => setHover(i)}
               onMouseLeave={() => setHover(null)}
+              onClick={() => onBarClick?.(i)}
             />
           </g>
         );
@@ -228,6 +232,66 @@ export function BarChart({
       )}
     </svg>
   );
+}
+
+export interface PieSlice { label: string; value: number; color: string }
+
+// Donut pie + legend. Single-slice case is drawn as a ring (an SVG arc can't
+// span a full 360°). Slices with value 0 are dropped. `fmt` formats legend values.
+export function PieChart({ slices, size = 132, fmt = (n: number) => n.toLocaleString() }: { slices: PieSlice[]; size?: number; fmt?: (n: number) => string }) {
+  const live = slices.filter((s) => s.value > 0);
+  const total = live.reduce((a, s) => a + s.value, 0);
+  if (total <= 0) return <div className="ad-empty">No data</div>;
+  const r = size / 2;
+  const inner = r * 0.6;
+
+  let acc = 0;
+  const arcs = live.map((s) => {
+    const f0 = acc / total;
+    acc += s.value;
+    const f1 = acc / total;
+    return { ...s, f0, f1 };
+  });
+
+  return (
+    <div className="ad-pie">
+      <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size} style={{ flexShrink: 0 }}>
+        <g transform={`translate(${r},${r})`}>
+          {arcs.length === 1 ? (
+            <>
+              <circle r={r} fill={arcs[0].color} />
+              <circle r={inner} fill="var(--admin-card)" />
+            </>
+          ) : (
+            arcs.map((a, i) => <path key={i} d={donutArc(r, inner, a.f0, a.f1)} fill={a.color} />)
+          )}
+        </g>
+      </svg>
+      <div className="ad-pie-legend">
+        {arcs.map((a, i) => (
+          <div key={i} className="ad-pie-li">
+            <span className="ad-legend-dot" style={{ background: a.color }} />
+            <span className="ad-pie-label">{a.label}</span>
+            <span className="ad-pie-val">{fmt(a.value)}<span className="ad-pie-pct">{Math.round((a.value / total) * 100)}%</span></span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function donutArc(rO: number, rI: number, f0: number, f1: number): string {
+  const a0 = 2 * Math.PI * f0 - Math.PI / 2;
+  const a1 = 2 * Math.PI * f1 - Math.PI / 2;
+  const large = f1 - f0 > 0.5 ? 1 : 0;
+  const pt = (rad: number, ang: number) => `${(rad * Math.cos(ang)).toFixed(3)} ${(rad * Math.sin(ang)).toFixed(3)}`;
+  return [
+    `M ${pt(rO, a0)}`,
+    `A ${rO} ${rO} 0 ${large} 1 ${pt(rO, a1)}`,
+    `L ${pt(rI, a1)}`,
+    `A ${rI} ${rI} 0 ${large} 0 ${pt(rI, a0)}`,
+    'Z',
+  ].join(' ');
 }
 
 export function Sparkline({ points, color, width = 96, height = 32 }: { points: number[]; color: string; width?: number; height?: number }) {

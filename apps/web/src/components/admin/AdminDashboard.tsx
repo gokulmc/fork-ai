@@ -14,12 +14,19 @@ import {
   type AdminDeployment,
   type HealthStatus,
   type ProviderSpend,
+  type DayMetrics,
 } from '@/lib/api';
-import { LineChart, BarChart, Sparkline } from './charts';
+import { LineChart, BarChart, Sparkline, PieChart, type PieSlice } from './charts';
 
 type Tab = 'overview' | 'users' | 'payments' | 'audit';
 
 const C = { accent: '#6366f1', green: '#22c55e', sky: '#38bdf8', amber: '#f59e0b', pink: '#ec4899', violet: '#8b5cf6' };
+const PIE_COLORS = [C.violet, C.sky, C.amber, C.green, C.pink, C.accent, '#14b8a6', '#f97316'];
+// Map a {label: count} record to pie slices (sorted desc), cycling the palette.
+const toSlices = (counts: Record<string, number>): PieSlice[] =>
+  Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([label, value], i) => ({ label, value, color: PIE_COLORS[i % PIE_COLORS.length] }));
 
 const PROVIDERS: { key: keyof ProviderSpend; label: string; color: string }[] = [
   { key: 'anthropic', label: 'Claude', color: C.amber },
@@ -166,6 +173,7 @@ function Overview({ idToken }: { idToken: string }) {
   const [rangeKey, setRangeKey] = useState('30d');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [day, setDay] = useState<string | null>(null);
 
   const load = useCallback((fresh = false) => {
     if (fresh) setBusy(true);
@@ -231,17 +239,20 @@ function Overview({ idToken }: { idToken: string }) {
           </div>
         </div>
         <div className="ad-spend-total">{usd(winTotal)}</div>
-        <div className="ad-prov-list">
-          {winProviders.map((p) => {
-            const pct = winTotal > 0 ? (p.cost / winTotal) * 100 : 0;
-            return (
-              <div key={p.key} className="ad-prov-row">
-                <span className="ad-prov-name"><span className="ad-legend-dot" style={{ background: p.color }} />{p.label}</span>
-                <span className="ad-prov-track"><span className="ad-prov-fill" style={{ width: `${pct}%`, background: p.color }} /></span>
-                <span className="ad-prov-cost">{usd(p.cost)}<span className="ad-prov-pct">{pct.toFixed(0)}%</span></span>
-              </div>
-            );
-          })}
+        <div className="ad-spend-body">
+          <PieChart slices={winProviders.map((p) => ({ label: p.label, value: p.cost, color: p.color }))} fmt={usd} />
+          <div className="ad-prov-list">
+            {winProviders.map((p) => {
+              const pct = winTotal > 0 ? (p.cost / winTotal) * 100 : 0;
+              return (
+                <div key={p.key} className="ad-prov-row">
+                  <span className="ad-prov-name"><span className="ad-legend-dot" style={{ background: p.color }} />{p.label}</span>
+                  <span className="ad-prov-track"><span className="ad-prov-fill" style={{ width: `${pct}%`, background: p.color }} /></span>
+                  <span className="ad-prov-cost">{usd(p.cost)}<span className="ad-prov-pct">{pct.toFixed(0)}%</span></span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -264,13 +275,15 @@ function Overview({ idToken }: { idToken: string }) {
       <div className="ad-two">
         <div className="ad-card">
           <div className="ad-card-head"><h3>Nodes created / day</h3></div>
-          {s.length ? <BarChart labels={labels} points={s.map((d) => d.nodes)} color={C.violet} /> : <div className="ad-empty">No data</div>}
+          {s.length ? <BarChart labels={labels} points={s.map((d) => d.nodes)} color={C.violet} onBarClick={(i) => setDay(s[i].date)} /> : <div className="ad-empty">No data</div>}
         </div>
         <div className="ad-card">
           <div className="ad-card-head"><h3>LLM spend / day</h3></div>
-          {s.length ? <BarChart labels={labels} points={s.map((d) => d.llmSpendUsd)} color={C.amber} fmt={(n) => `$${n.toFixed(1)}`} /> : <div className="ad-empty">No data</div>}
+          {s.length ? <BarChart labels={labels} points={s.map((d) => d.llmSpendUsd)} color={C.amber} fmt={(n) => `$${n.toFixed(1)}`} onBarClick={(i) => setDay(s[i].date)} /> : <div className="ad-empty">No data</div>}
         </div>
       </div>
+
+      {day && <DayDetail idToken={idToken} date={day} onClose={() => setDay(null)} />}
 
       {cfg && (
         <div className="ad-card">
@@ -287,6 +300,79 @@ function Overview({ idToken }: { idToken: string }) {
 
       <DeploymentPanel idToken={idToken} />
     </div>
+  );
+}
+
+// ── Day drill-down ─────────────────────────────────────────────────────────────
+
+// Reached by clicking a bar on the Nodes/day or LLM-spend/day histograms — shows
+// who drove that day's usage and what they asked. Both histograms open this same drawer.
+function DayDetail({ idToken, date: day, onClose }: { idToken: string; date: string; onClose: () => void }) {
+  const [data, setData] = useState<DayMetrics | null>(null);
+  const [err, setErr] = useState('');
+  const [userSub, setUserSub] = useState<string | null>(null);
+
+  useEffect(() => { adminApi.getDayMetrics(idToken, day).then(setData).catch((e) => setErr(String(e))); }, [idToken, day]);
+
+  return (
+    <>
+    <div className="ad-overlay" onClick={onClose}>
+      <div className="ad-drawer" onClick={(e) => e.stopPropagation()}>
+        <div className="ad-card-head">
+          <h3>{shortDate(day)}</h3>
+          <button className="ad-link" onClick={onClose}>✕</button>
+        </div>
+        {err && <div className="ad-err">{err}</div>}
+        {!data ? <div className="ad-empty">Loading…</div> : (
+          <>
+            <p className="ad-muted">
+              {num(data.totals.eventCount)} LLM calls · spent {usd(data.totals.costUsd)} · {num(data.totals.inputTokens)} / {num(data.totals.outputTokens)} tokens (in/out)
+            </p>
+
+            <section className="ad-section">
+              <h4>By type</h4>
+              <PieChart slices={toSlices(data.totals.byKind)} />
+            </section>
+
+            <section className="ad-section">
+              <h4>By model</h4>
+              <PieChart slices={toSlices(data.totals.byModel)} />
+            </section>
+
+            <section className="ad-section">
+              <h4>Users <span className="ad-count">{data.users.length}</span></h4>
+              {data.users.length ? (
+                <table className="ad-table ad-subtable">
+                  <thead><tr><th>Email</th><th>Calls</th><th>Tokens (in/out)</th><th>Cost</th></tr></thead>
+                  <tbody>
+                    {data.users.map((u) => (
+                      <tr key={u.sub} onClick={() => setUserSub(u.sub)} title="Open user">
+                        <td>{u.email || u.sub.slice(0, 12) + '…'}</td>
+                        <td className="ad-mono">{num(u.eventCount)}</td>
+                        <td className="ad-mono">{num(u.inputTokens)} / {num(u.outputTokens)}</td>
+                        <td>{usd(u.costUsd)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : <p className="ad-muted">No usage this day.</p>}
+            </section>
+
+            <section className="ad-section">
+              <h4>Queries <span className="ad-count">{data.topics.length}</span></h4>
+              {data.topics.length ? data.topics.map((t, i) => (
+                <div key={i} className="ad-listrow">
+                  <span className="ad-listrow-main"><span className="ad-tag">{t.kind}</span> {t.query || t.title || '(untitled)'}</span>
+                  <span className="ad-muted ad-listrow-meta">{t.model} · {t.email || t.sub.slice(0, 8) + '…'}</span>
+                </div>
+              )) : <p className="ad-muted">No queries this day.</p>}
+            </section>
+          </>
+        )}
+      </div>
+    </div>
+    {userSub && <UserDetail idToken={idToken} sub={userSub} onClose={() => setUserSub(null)} onChanged={() => {}} />}
+    </>
   );
 }
 
@@ -637,9 +723,20 @@ const STYLE = `
 .ad-btn-primary { background: linear-gradient(135deg, ${C.accent}, ${C.violet}); border: none; color: #fff; font-weight: 600; }
 .ad-btn-primary:disabled { opacity: 0.5; }
 .ad-btn-danger { color: #fca5a5; border-color: rgba(239,68,68,0.3); font-size: 12px; padding: 5px 10px; }
-.ad-listrow { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--admin-grid); font-size: 14px; }
+.ad-listrow { display: flex; justify-content: space-between; align-items: baseline; gap: 14px; padding: 9px 0; border-bottom: 1px solid var(--admin-grid); font-size: 14px; }
+.ad-listrow-main { min-width: 0; overflow-wrap: anywhere; }
+.ad-listrow-meta { flex-shrink: 0; white-space: nowrap; font-size: 12px; }
 .ad-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: flex; justify-content: flex-end; z-index: 50; backdrop-filter: blur(2px); }
-.ad-drawer { width: min(540px, 94vw); height: 100%; overflow-y: auto; padding: 22px; background: var(--admin-card); border-left: 1px solid var(--admin-border); }
+.ad-drawer { width: min(540px, 94vw); height: 100%; overflow-y: auto; overflow-x: hidden; padding: 22px; background: var(--admin-card); border-left: 1px solid var(--admin-border); }
+.ad-drawer .ad-subtable td { overflow-wrap: anywhere; }
+.ad-pie { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.ad-pie-legend { display: flex; flex-direction: column; gap: 7px; min-width: 0; flex: 1; }
+.ad-pie-li { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.ad-pie-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ad-pie-val { margin-left: auto; padding-left: 10px; color: var(--admin-muted); font-weight: 600; white-space: nowrap; }
+.ad-pie-pct { color: var(--admin-muted); font-weight: 500; margin-left: 8px; }
+.ad-spend-body { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+.ad-spend-body .ad-prov-list { flex: 1; min-width: 220px; }
 .ad-whoami { font-size: 13px; }
 .ad-btn-logout { padding: 5px 12px; font-size: 13px; border-color: rgba(239,68,68,0.3); color: #fca5a5; }
 .ad-btn-logout:hover { background: rgba(239,68,68,0.1); }

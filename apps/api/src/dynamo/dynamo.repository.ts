@@ -542,6 +542,85 @@ export class DynamoRepository {
     const series = [...byDay.values()].sort((a, b) => a.date.localeCompare(b.date));
     return { ...m, series };
   }
+
+  // Per-day drill-down for the admin histograms: usage grouped by user, plus the
+  // actual queries asked that day. Same full-table-scan approach as
+  // aggregatePlatformMetrics, filtered to a single day. `date` is YYYY-MM-DD.
+  async aggregateDayMetrics(date: string): Promise<DayMetrics> {
+    const [usageRows, nodeRows, userRows] = (await Promise.all([
+      this.usageEventModel
+        .scan('SK').beginsWith('USAGE#')
+        .and().where('createdAt').beginsWith(date)
+        .attributes(['sub', 'nodeId', 'kind', 'model', 'costUsd', 'inputTokens', 'outputTokens', 'createdAt'])
+        .all().exec(),
+      this.nodeModel
+        .scan('SK').beginsWith('NODE#')
+        .and().where('createdAt').beginsWith(date)
+        .attributes(['nodeId', 'query', 'title'])
+        .all().exec(),
+      this.userMetaModel
+        .scan('SK').eq('METADATA').and().where('PK').beginsWith('USER#')
+        .attributes(['sub', 'email'])
+        .all().exec(),
+    ])) as [
+      Array<{ sub?: string; nodeId?: string; kind?: string; model?: string; costUsd?: number; inputTokens?: number; outputTokens?: number; createdAt?: string }>,
+      Array<{ nodeId?: string; query?: string; title?: string }>,
+      Array<{ sub?: string; email?: string }>,
+    ];
+
+    const nodeById = new Map<string, { query?: string; title?: string }>();
+    for (const n of nodeRows) if (n.nodeId) nodeById.set(n.nodeId, n);
+    const emailBySub = new Map<string, string>();
+    for (const u of userRows) if (u.sub) emailBySub.set(u.sub, u.email ?? '');
+
+    const totals: DayTotals = { costUsd: 0, inputTokens: 0, outputTokens: 0, eventCount: 0, byKind: {}, byModel: {} };
+    const usersBySub = new Map<string, DayUser>();
+    const topics: DayTopic[] = [];
+
+    for (const r of usageRows) {
+      const sub = r.sub ?? '';
+      const kind = r.kind ?? 'QUERY';
+      const model = r.model || 'unknown';
+      const cost = r.costUsd ?? 0;
+      const inTok = r.inputTokens ?? 0;
+      const outTok = r.outputTokens ?? 0;
+
+      totals.costUsd += cost;
+      totals.inputTokens += inTok;
+      totals.outputTokens += outTok;
+      totals.eventCount += 1;
+      totals.byKind[kind] = (totals.byKind[kind] ?? 0) + 1;
+      totals.byModel[model] = (totals.byModel[model] ?? 0) + 1;
+
+      let u = usersBySub.get(sub);
+      if (!u) {
+        u = { sub, email: emailBySub.get(sub) ?? '', costUsd: 0, inputTokens: 0, outputTokens: 0, eventCount: 0, byKind: {}, byModel: {} };
+        usersBySub.set(sub, u);
+      }
+      u.costUsd += cost;
+      u.inputTokens += inTok;
+      u.outputTokens += outTok;
+      u.eventCount += 1;
+      u.byKind[kind] = (u.byKind[kind] ?? 0) + 1;
+      u.byModel[model] = (u.byModel[model] ?? 0) + 1;
+
+      const node = r.nodeId ? nodeById.get(r.nodeId) : undefined;
+      topics.push({
+        query: node?.query ?? node?.title ?? '',
+        title: node?.title ?? '',
+        kind,
+        model,
+        email: emailBySub.get(sub) ?? '',
+        sub,
+        costUsd: cost,
+        createdAt: r.createdAt ?? '',
+      });
+    }
+
+    const users = [...usersBySub.values()].sort((a, b) => b.costUsd - a.costUsd);
+    topics.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return { date, totals, users, topics };
+  }
 }
 
 export interface ProviderSpend {
@@ -569,6 +648,44 @@ export interface PlatformMetrics {
   outstandingCreditUsd: number;
   llmSpendByProvider: ProviderSpend;
   series: MetricsDay[];
+}
+
+export interface DayTotals {
+  costUsd: number;
+  inputTokens: number;
+  outputTokens: number;
+  eventCount: number;
+  byKind: Record<string, number>;
+  byModel: Record<string, number>;
+}
+
+export interface DayUser {
+  sub: string;
+  email: string;
+  costUsd: number;
+  inputTokens: number;
+  outputTokens: number;
+  eventCount: number;
+  byKind: Record<string, number>;
+  byModel: Record<string, number>;
+}
+
+export interface DayTopic {
+  query: string;
+  title: string;
+  kind: string;
+  model: string;
+  email: string;
+  sub: string;
+  costUsd: number;
+  createdAt: string;
+}
+
+export interface DayMetrics {
+  date: string;
+  totals: DayTotals;
+  users: DayUser[];
+  topics: DayTopic[];
 }
 
 function chunk<T>(arr: T[], size: number): T[][] {
