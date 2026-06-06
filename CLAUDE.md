@@ -161,9 +161,11 @@ The backend supports **three LLM providers** behind a thin abstraction (`apps/ap
 
 Both streaming entry points — `SessionsService.createStreaming` (authed, `POST /sessions/stream`) and `createTrialSessionStreaming` (trial/guest, `POST /share`) — follow the same **persist-first** shape:
 
-1. **Before** consuming the LLM stream: generate `sessionId` + `nodeId` (+ a share token for trial), write an initial loading `NodeItem` (empty `sections`, `title = query.slice(0,60)`) and `SessionMetaItem` to DynamoDB, then emit an **`init`** SSE event: `{ type: 'init', sessionId, nodeId, token? }`.
+1. **Before** consuming the LLM stream: generate `sessionId` + `nodeId` (+ a share token for trial), write an initial loading `NodeItem` (empty `sections`, `title = query.slice(0,60)`) and `SessionMetaItem` (placeholder `title`, empty `emoji`) to DynamoDB, then emit an **`init`** SSE event: `{ type: 'init', sessionId, nodeId, token? }`. This up-front write is what makes the session **accessible** (it shows in History and restores on refresh) even if the client closes the tab mid-stream.
 2. **Per section:** re-`putNode` with the accumulated sections so far — incremental persistence means a mid-stream refresh shows progress, not an empty node.
-3. **At `done`:** final `putNode` + `putSessionMeta` with the real `title`/`emoji`/`lede`, then bill usage.
+3. **At `done`:** final `putNode` + **`updateSessionMeta(sub, sessionId, { title, emoji, lede })`** — a partial **update**, NOT a `putSessionMeta` full replace. The History list reads `SessionMetaItem`, so this is what swaps the placeholder for the real title/emoji. Because the `for await` loop runs to completion server-side even after the client disconnects (see `emit` below), a tab closed mid-stream still gets its correct title/emoji once `done` lands. Then bill usage.
+
+> Why `updateSessionMeta` (patch) and not `putSessionMeta` (replace) at `done`: the row already exists from step 1 and may have accumulated other fields; patch only `title`/`emoji`/`lede` rather than overwriting the whole item. `updateSessionMeta`'s allowlist includes `emoji`/`lede` for this.
 
 `send` is wrapped in a swallow-errors `emit(...)` so that if the client disconnects (navigates/refreshes), writes to the dead socket don't throw — the `for await` loop runs to completion and the **full** result still lands in the DB.
 
@@ -179,6 +181,16 @@ Both streaming entry points — `SessionsService.createStreaming` (authed, `POST
 - **No over-engineering** — if a helper is only used once, inline it
 - **Comments only for non-obvious WHY** — never what the code does
 - **No trailing summaries** in responses — the user can read the diff
+
+---
+
+## Issue log (`issues.md`)
+
+[`issues.md`](issues.md) at the repo root is the running bug-fix log (Symptom / Cause / Fix, newest first).
+
+**Required step:** whenever a commit fixes a bug, add or update its entry in `issues.md` **in that same commit**. Before committing a fix, append the entry; after committing, fill in the commit SHA. This applies only to bug fixes — pure features, refactors, and docs don't need an entry (though a feature that also fixes a bug does). Keep entries short and focused on what makes a regression recognisable later; don't log trivial style tweaks.
+
+**Enforced by a git hook.** [`.githooks/commit-msg`](.githooks/commit-msg) blocks any commit whose subject is a `fix:` / `fix(scope):` / `Fix:` unless `issues.md` is also staged. It's wired via `core.hooksPath=.githooks`, set automatically by the `prepare` script on `npm install` (run `git config core.hooksPath .githooks` manually if you skipped install). Bypass for a genuine non-bug exception with `git commit --no-verify`.
 
 ---
 

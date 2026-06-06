@@ -165,7 +165,7 @@ export class DynamoRepository {
   async updateSessionMeta(
     sub: string,
     sessionId: string,
-    updates: Partial<Pick<SessionMetaItem, 'title' | 'nodeCount' | 'notionPageUrl' | 'shareToken' | 'updatedAt' | 'gsi1sk'>>,
+    updates: Partial<Pick<SessionMetaItem, 'title' | 'emoji' | 'lede' | 'nodeCount' | 'notionPageUrl' | 'shareToken' | 'updatedAt' | 'gsi1sk'>>,
   ): Promise<void> {
     // Dynamoose v4 rejects null for typed fields. Translate null → $REMOVE so
     // callers can clear optional fields (shareToken, notionPageUrl) by passing null.
