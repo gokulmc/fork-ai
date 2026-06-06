@@ -284,23 +284,28 @@ export function Section({
       style={{ animationDelay: `${idx * 70}ms` }}
       {...(idx === 0 ? { 'data-tour': 'tour-sections' } : {})}
     >
-      <div className="section-head">
-        <span className="section-num">{num}</span>
-        <h2 data-section-heading>{section.heading}</h2>
-        <button
-          className={`deeper-btn${deeperLoading ? ' loading' : ''}`}
-          onClick={() => onDeeper(section)}
-          disabled={deeperLoading}
-          aria-label="Go deeper on this section"
-          title="Go deeper — creates a child node"
-        >
-          {deeperLoading ? (
-            <><span className="spinner" /> Thinking…</>
-          ) : (
-            <><CornerDownRight size={13} /> Go deeper</>
-          )}
-        </button>
-      </div>
+      {/* Verbose branch answers (Go Deeper / Ask AI) carry one section with an
+          empty heading — render them as flowing prose: no number, no heading,
+          no per-section Go-deeper button. Branching there is highlight-driven. */}
+      {section.heading && (
+        <div className="section-head">
+          <span className="section-num">{num}</span>
+          <h2 data-section-heading>{section.heading}</h2>
+          <button
+            className={`deeper-btn${deeperLoading ? ' loading' : ''}`}
+            onClick={() => onDeeper(section)}
+            disabled={deeperLoading}
+            aria-label="Go deeper on this section"
+            title="Go deeper — creates a child node"
+          >
+            {deeperLoading ? (
+              <><span className="spinner" /> Thinking…</>
+            ) : (
+              <><CornerDownRight size={13} /> Go deeper</>
+            )}
+          </button>
+        </div>
+      )}
       <SectionBody
         body={section.body}
         sectionId={section.id}

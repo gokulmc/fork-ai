@@ -111,6 +111,20 @@ describe('NodesService', () => {
         4,
         false,
         BRANCH_DEFAULT_MODEL,
+        false,
+      );
+    });
+
+    it('forwards verbose=true to expandSection', async () => {
+      await service.createNode(SUB, SESSION_ID, { ...dto, verbose: true });
+      expect(mockLlm.expandSection).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        true,
       );
     });
 
@@ -179,6 +193,7 @@ describe('NodesService', () => {
         4,
         false,
         BRANCH_DEFAULT_MODEL,
+        false,
       );
     });
 

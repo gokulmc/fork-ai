@@ -60,6 +60,7 @@ export interface Tweaks {
   density: 'comfortable' | 'compact';
   mapLayout: 'vertical' | 'horizontal';
   fontPair: string;
+  answerStyle: 'sectioned' | 'verbose';
   maxSections: number;
   webSearch: boolean;
   branchModel: 'haiku' | 'sonnet' | 'opus' | 'gemini-pro' | 'gemini-flash' | 'gemini-flash-lite' | 'deepseek-pro' | 'deepseek-flash';
