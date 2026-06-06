@@ -6,6 +6,11 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
+### Mobile single-tap selected two sentences when web search was ON
+- **Symptom:** On mobile, a single tap (which selects the sentence under the finger) selected two sentences fused together — but only with web search ON.
+- **Cause:** Web-search citations render as a `[N]` superscript glued onto the prose with no separating space (`…one.<sup>[1]</sup> two`). `selectSentenceAtPoint` flattens the block with `textContent`, pulling `[1]` into the string (`"one.[1] two"`). The sentence-boundary regex `/[.!?]['"'’”]?\s+/` requires whitespace immediately after the punctuation, so `.[1]` never matched — the boundary was skipped and the tap ran on to the next real boundary. With web search OFF there are no markers, so the period is followed by a space and it worked.
+- **Fix:** Boundary regex now captures punctuation separately from the citation+whitespace tail (`/([.!?]['"'’”]?)((?:\[\d+\])*\s+)/`); the sentence end is `m.index + m[1].length`, so the `[N]` marker is detected as a boundary and excluded from the selected text. No-citation behaviour is unchanged. `apps/web/src/components/Section.tsx`.
+
 ### History card stuck on placeholder title/emoji when tab closed mid-stream
 - **Symptom:** Sessions closed before the root stream finished showed a truncated query and no emoji on the History page, even though opening the session looked correct.
 - **Cause:** The History list reads `SessionMetaItem`. During streaming, `title`/`emoji`/`lede` were written to `SessionMeta` via a full-replace `putSessionMeta` **only at `done`**; the in-loop incremental persistence touched the `NodeItem` only. The placeholder (`title = query.slice(0,60)`, empty emoji) from the up-front write was the last thing the History row reliably saw.

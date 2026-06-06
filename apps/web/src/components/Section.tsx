@@ -109,15 +109,18 @@ function selectSentenceAtPoint(blockEl: Element, clientX: number, clientY: numbe
     abs += (node.nodeValue ?? '').length;
   }
 
-  // Find sentence boundaries (end = ". " / "! " / "? " patterns)
+  // Find sentence boundaries (end = ". " / "! " / "? " patterns). Web-search
+  // citations render as a "[N]" superscript glued onto the prose with no space
+  // (e.g. "one.[1] two"), so the boundary tolerates citation markers between the
+  // punctuation and the whitespace — and excludes them from the selected text.
   let start = 0;
   let end = text.length;
-  const bound = /[.!?]['"'’”]?\s+/g;
+  const bound = /([.!?]['"'’”]?)((?:\[\d+\])*\s+)/g;
   let m: RegExpExecArray | null;
   while ((m = bound.exec(text)) !== null) {
-    const b = m.index + m[0].length;
-    if (b <= clickedAbs) start = b;
-    else { end = b - 1; break; }
+    const after = m.index + m[0].length; // start of next sentence
+    if (after <= clickedAbs) start = after;
+    else { end = m.index + m[1].length; break; } // end of this sentence (excl. [N] + space)
   }
   // trim leading whitespace
   while (start < end && /\s/.test(text[start])) start++;
