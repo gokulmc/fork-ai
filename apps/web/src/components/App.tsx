@@ -2,7 +2,7 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import type { ForkNode, Annotation, HlMenuState, FollowUpState, ContextMenuState, PersistentHighlight, HighlightRecord } from '@/lib/types';
-import { uid, short5, stripMarkdown, stripCite, getRangeOffsets, modelDisplayName, clamp } from '@/lib/utils';
+import { uid, short5, stripMarkdown, stripCite, getRangeOffsets, modelDisplayName } from '@/lib/utils';
 
 const CSS_HL_SUPPORTED = typeof window !== 'undefined' && typeof CSS !== 'undefined' && 'highlights' in CSS;
 
@@ -349,72 +349,6 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
     if (!isNarrow) { pane.style.transform = ''; pane.style.transition = ''; return; }
     pane.style.transform = mapOpen ? 'translateX(0)' : 'translateX(-100%)';
   }, [mapOpen, isNarrow]);
-
-  // Pinch-to-zoom the reading content (100%–130%) instead of the webview's native
-  // page zoom — so the app chrome stays put and only the prose scales, like a native
-  // app. The reading pane sets `touch-action: pan-y` (globals.css) to suppress the
-  // browser's own pinch on this surface; the map keeps its existing zoom untouched.
-  useEffect(() => {
-    if (!isNarrow) return;
-    const scroller = wsRef.current;
-    const inner = wsInnerRef.current;
-    if (!scroller || !inner) return;
-    const dist = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
-    let startDist = 0, startZoom = 1, pinching = false;
-    const onStart = (e: TouchEvent) => {
-      if (e.touches.length !== 2) return;
-      pinching = true;
-      startDist = dist(e.touches);
-      startZoom = parseFloat(inner.style.getPropertyValue('--read-zoom')) || 1;
-    };
-    const onMove = (e: TouchEvent) => {
-      if (!pinching || e.touches.length !== 2) return;
-      e.preventDefault(); // stop the two-finger pan-scroll while pinching
-      const z = clamp(startZoom * (dist(e.touches) / startDist), 1, 1.3);
-      inner.style.setProperty('--read-zoom', String(z));
-    };
-    const onEnd = (e: TouchEvent) => { if (e.touches.length < 2) pinching = false; };
-    scroller.addEventListener('touchstart', onStart, { passive: true });
-    scroller.addEventListener('touchmove', onMove, { passive: false });
-    scroller.addEventListener('touchend', onEnd, { passive: true });
-    scroller.addEventListener('touchcancel', onEnd, { passive: true });
-    return () => {
-      scroller.removeEventListener('touchstart', onStart);
-      scroller.removeEventListener('touchmove', onMove);
-      scroller.removeEventListener('touchend', onEnd);
-      scroller.removeEventListener('touchcancel', onEnd);
-    };
-  }, [isNarrow]);
-
-  // Safety net for the Ask-AI popup: if focusing it still shifted the reading pane's
-  // zoom or scroll (iOS sometimes ignores preventScroll), snapshot the view when the
-  // popup opens and put it back when it closes — but ONLY the axis that actually moved.
-  const readViewBeforeAsk = useRef<{ scrollTop: number; zoom: string } | null>(null);
-  useEffect(() => {
-    if (!isNarrow) return;
-    const scroller = wsRef.current;
-    const inner = wsInnerRef.current;
-    if (!scroller || !inner) return;
-    if (followUp) {
-      if (!readViewBeforeAsk.current) {
-        readViewBeforeAsk.current = { scrollTop: scroller.scrollTop, zoom: inner.style.getPropertyValue('--read-zoom') };
-      }
-      return;
-    }
-    const snap = readViewBeforeAsk.current;
-    if (!snap) return;
-    readViewBeforeAsk.current = null;
-    const restore = () => {
-      if (inner.style.getPropertyValue('--read-zoom') !== snap.zoom) {
-        if (snap.zoom) inner.style.setProperty('--read-zoom', snap.zoom);
-        else inner.style.removeProperty('--read-zoom');
-      }
-      if (Math.abs(scroller.scrollTop - snap.scrollTop) > 1) scroller.scrollTop = snap.scrollTop;
-    };
-    requestAnimationFrame(restore);
-    const t = setTimeout(restore, 250); // also after the keyboard's viewport animation settles
-    return () => clearTimeout(t);
-  }, [followUp, isNarrow]);
 
   const onDividerPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     e.currentTarget.setPointerCapture(e.pointerId);

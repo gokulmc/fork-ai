@@ -695,6 +695,44 @@ export interface AdminAuditEntry {
   createdAt: string;
 }
 
+export interface DayTotals {
+  costUsd: number;
+  inputTokens: number;
+  outputTokens: number;
+  eventCount: number;
+  byKind: Record<string, number>;
+  byModel: Record<string, number>;
+}
+
+export interface DayUser {
+  sub: string;
+  email: string;
+  costUsd: number;
+  inputTokens: number;
+  outputTokens: number;
+  eventCount: number;
+  byKind: Record<string, number>;
+  byModel: Record<string, number>;
+}
+
+export interface DayTopic {
+  query: string;
+  title: string;
+  kind: string;
+  model: string;
+  email: string;
+  sub: string;
+  costUsd: number;
+  createdAt: string;
+}
+
+export interface DayMetrics {
+  date: string;
+  totals: DayTotals;
+  users: DayUser[];
+  topics: DayTopic[];
+}
+
 export const adminApi = {
   getConfig(idToken: string): Promise<{ signupCreditUsd: number; referralCreditUsd: number; creditMultiplier: number }> {
     return apiFetch<{ signupCreditUsd: number; referralCreditUsd: number; creditMultiplier: number }>('/admin/config', idToken);
@@ -702,6 +740,10 @@ export const adminApi = {
 
   getMetrics(idToken: string, fresh = false): Promise<AdminMetrics> {
     return apiFetch<AdminMetrics>(`/admin/metrics${fresh ? '?fresh=1' : ''}`, idToken);
+  },
+
+  getDayMetrics(idToken: string, date: string): Promise<DayMetrics> {
+    return apiFetch<DayMetrics>(`/admin/metrics/day/${encodeURIComponent(date)}`, idToken);
   },
 
   listUsers(idToken: string): Promise<AdminPage<AdminUser>> {

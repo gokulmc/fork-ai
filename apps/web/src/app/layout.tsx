@@ -12,9 +12,15 @@ export const metadata: Metadata = {
 
 // viewport-fit=cover lets the Capacitor/iOS safe-area insets (notch, home bar)
 // reach the CSS env() values the mobile layout relies on.
+// maximumScale:1 + userScalable:false disable the webview's native pinch- and
+// focus-zoom on every page/popup (Landing, Login, Tweaks, History, Account, …).
+// The mind map keeps its own JS-driven zoom (touch/wheel handlers, not native),
+// so it is unaffected.
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
   viewportFit: 'cover',
   themeColor: [
     { media: '(prefers-color-scheme: light)', color: '#ffffff' },

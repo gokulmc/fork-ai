@@ -9,6 +9,7 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  BadRequestException,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
@@ -59,6 +60,15 @@ export class AdminController {
   @ApiOperation({ summary: 'Platform-wide totals (cached 60s; pass ?fresh=1 to bypass)' })
   getMetrics(@Query('fresh') fresh?: string) {
     return this.admin.getMetrics(fresh === '1' || fresh === 'true');
+  }
+
+  @Get('metrics/day/:date')
+  @ApiOperation({ summary: 'One day drill-down: user-level usage + queries asked (date = YYYY-MM-DD)' })
+  getDayMetrics(@Param('date') date: string) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      throw new BadRequestException('date must be YYYY-MM-DD');
+    }
+    return this.admin.getDayMetrics(date);
   }
 
   @Get('users')

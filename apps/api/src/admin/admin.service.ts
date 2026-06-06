@@ -42,6 +42,12 @@ export class AdminService {
     return data;
   }
 
+  // Per-day drill-down for the admin histograms — user-level usage + the day's
+  // queries. Not cached: it's an explicit bar-click, not a polled dashboard.
+  async getDayMetrics(date: string) {
+    return this.db.aggregateDayMetrics(date);
+  }
+
   // Full filtered scan (table is small); pagination params kept for API
   // compatibility but every match is returned with a null cursor.
   async listUsers(): Promise<Page<UserMetaItem>> {
