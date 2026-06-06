@@ -277,6 +277,9 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, 
       {!open && (
         <>
           <div className="twk-status" aria-hidden="true">
+            <span className="twk-status-pill">
+              {tweaks.answerStyle === 'verbose' ? '📝 Verbose' : '📑 Sectioned'}
+            </span>
             <span className="twk-status-pill">🤖 {modelLabel(tweaks.branchModel)}</span>
             <span className={`twk-status-pill ${tweaks.branchModel.startsWith('deepseek') ? 'twk-status-off' : (tweaks.webSearch ? 'twk-status-on' : 'twk-status-off')}`}>
               🔍 Web {tweaks.branchModel.startsWith('deepseek') ? 'n/a' : (tweaks.webSearch ? 'on' : 'off')}
@@ -338,10 +341,18 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, 
             />
             <TweakSection label="Content" />
             <TweakRadio
+              label="Answer style"
+              value={tweaks.answerStyle}
+              options={[{ value: 'sectioned', label: 'Sectioned' }, { value: 'verbose', label: 'Verbose' }]}
+              onChange={v => setTweak('answerStyle', v as Tweaks['answerStyle'])}
+            />
+            <p className="twk-note">Go Deeper &amp; Ask AI answers — sectioned study notes, or one flowing essay. The root query is always sectioned.</p>
+            <TweakRadio
               label="Max sections"
               value={String(tweaks.maxSections)}
               options={[4, 5, 6, 7, 8].map(n => ({ value: String(n), label: String(n) }))}
               onChange={v => setTweak('maxSections', Number(v))}
+              disabled={tweaks.answerStyle === 'verbose'}
             />
             <TweakSelect
               label="Model"

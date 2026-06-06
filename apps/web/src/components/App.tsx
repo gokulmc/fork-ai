@@ -100,6 +100,7 @@ const TWEAK_DEFAULTS = {
   density: 'compact' as const,
   mapLayout: 'vertical' as const,
   fontPair: 'newsreader-geist',
+  answerStyle: 'verbose' as const,
   maxSections: 6,
   webSearch: true,
   branchModel: 'haiku' as const,
@@ -851,6 +852,7 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
         sectionBody: section.body,
         sectionCount: tweaksRef.current.maxSections,
         webSearch: tweaksRef.current.webSearch,
+        verbose: tweaksRef.current.answerStyle === 'verbose',
         model: tweaksRef.current.branchModel,
       };
       const apiNode = gt && !idToken
@@ -916,6 +918,7 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
         highlightText: source.text,
         sectionCount: tweaksRef.current.maxSections,
         webSearch: tweaksRef.current.webSearch,
+        verbose: tweaksRef.current.answerStyle === 'verbose',
         model: tweaksRef.current.branchModel,
       };
       const apiNode = gt && !idToken
@@ -1487,7 +1490,9 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
                       ? <><CornerDownRight size={12} className="ic" /> Deep dive</>
                       : <><Search size={12} className="ic" /> Query</>}
                 </span>
-                <span className="pill"><Hash size={12} className="ic" /> {active.sections.length || '—'} sections</span>
+                {active.kind === 'QUERY' && (
+                  <span className="pill"><Hash size={12} className="ic" /> {active.sections.length || '—'} sections</span>
+                )}
                 {active.model ? <span className="pill">✳ {modelDisplayName(active.model)}</span> : null}
                 {active.sources?.length ? <span className="pill pill-search">🔍 Web search</span> : null}
                 {active.loading && (

@@ -22,8 +22,13 @@ async function bootstrap() {
   );
   app.use(urlencoded({ limit: '10mb', extended: true }));
 
+  // CORS_ORIGIN may be a comma-separated list (e.g. localhost + LAN IP in dev).
+  // The cors middleware echoes the request origin when it matches the array.
+  const corsOrigin = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())
+    : '*';
   app.enableCors({
-    origin: process.env.CORS_ORIGIN ?? '*',
+    origin: corsOrigin,
     credentials: true,
   });
 

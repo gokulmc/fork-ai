@@ -69,6 +69,21 @@ const SECTIONS_SCHEMA = `Return ONLY valid JSON, no prose, no markdown fences. S
   ]
 }`;
 
+// Branch answers (Go Deeper / Ask AI) are NOT sectioned — they read as one
+// flowing essay. We still return the section array shape so the rest of the
+// pipeline (parseJson, citations, persistence, highlights keyed by sectionId)
+// is unchanged: exactly one section, empty heading, the whole answer in body.
+const VERBOSE_SCHEMA = `Return ONLY valid JSON, no prose, no markdown fences. Shape:
+{
+  "title": "<=5 words capturing topic",
+  "emoji": "single emoji that best represents this topic",
+  "lede": "one sentence framing the answer (max 25 words)",
+  "sections": [
+    { "heading": "", "body": "the entire answer as rich GitHub-flavored markdown" }
+  ]
+}
+Return EXACTLY ONE item in the "sections" array, with an empty "heading". Put the WHOLE answer in that single "body", formatted as rich GitHub-flavored markdown exactly like a chat assistant replies: use markdown headings (## / ###), **bold**, *italic*, bullet and numbered lists, tables, > blockquotes, and fenced code blocks wherever they aid clarity. Do NOT add more than one entry to the "sections" array — the markdown structure lives entirely inside the one body. The double-quotes and newlines inside the body must be valid JSON-escaped (\\" and \\n).`;
+
 @Injectable()
 export class LlmService {
   private readonly client: Anthropic;
@@ -195,15 +210,26 @@ Each section "body" should be 80-180 words. You MAY use GitHub-flavored markdown
     sectionCount = 4,
     webSearch = false,
     model: string = BRANCH_DEFAULT_MODEL,
+    verbose = false,
   ): Promise<LlmResponse> {
     const trail = ancestors
       .map((a, i) => `${ i === 0 ? 'Root query' : 'Sub-topic'}: "${a.query}" → "${a.title}"`)
       .join('\n');
-    const prompt = `You are continuing a branching research session. Research trail (root → current):
+    const intro = `You are continuing a branching research session. Research trail (root → current):
 ${trail}
 
 Go DEEPER on the section titled "${sectionHeading}" within this context.
-Section content for reference: "${sectionBody.slice(0, 400)}"
+Section content for reference: "${sectionBody.slice(0, 400)}"`;
+
+    const prompt = verbose
+      ? `${intro}
+
+Write a thorough, well-structured deep-dive — like a chat assistant answering in depth. Use rich markdown (headings, lists, bold, code, tables) inside one continuous answer, NOT the app's section cards. Stay relevant to the full research trail.
+
+${VERBOSE_SCHEMA}
+
+The "title" should be a 5-word-max phrase capturing the deep dive.`
+      : `${intro}
 
 Produce a focused deep-dive with as many sections as the topic warrants — no more than ${sectionCount}. Do not pad; fewer sections is better when the scope is narrow. Each section should be 80-180 words. Stay relevant to the full research trail.
 
@@ -221,15 +247,26 @@ You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase 
     sectionCount = 4,
     webSearch = false,
     model: string = BRANCH_DEFAULT_MODEL,
+    verbose = false,
   ): Promise<LlmResponse> {
     const trail = ancestors
       .map((a, i) => `${i === 0 ? 'Root query' : 'Sub-topic'}: "${a.query}" → "${a.title}"`)
       .join('\n');
-    const prompt = `You are continuing a branching research session. Research trail (root → current):
+    const intro = `You are continuing a branching research session. Research trail (root → current):
 ${trail}
 
 The user highlighted this passage: "${highlight.slice(0, 800)}"
-They asked: "${question}"
+They asked: "${question}"`;
+
+    const prompt = verbose
+      ? `${intro}
+
+Answer thoroughly — like a chat assistant replying in depth. Use rich markdown (headings, lists, bold, code, tables) inside one continuous answer, NOT the app's section cards. Keep the answer grounded in the research trail context.
+
+${VERBOSE_SCHEMA}
+
+The "title" should be a 5-word-max phrase capturing the answer topic.`
+      : `${intro}
 
 Answer with as many sections as the question warrants — no more than ${sectionCount}. Do not pad; fewer sections is better when the answer is focused. Each section should be 80-180 words. Keep the answer grounded in the research trail context.
 

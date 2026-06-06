@@ -330,13 +330,17 @@ function nodeToNBlocks(
     const hls = persistentHl[`${node.id}::${section.id}`] ?? [];
     const callouts = annotations.filter(a => a.nodeId === node.id && a.sectionId === section.id);
 
-    // depth 0 → H1 blue; depth 1 → H3 default; depth 2+ → bold paragraph
-    if (depth === 0) {
-      sectionBlocks.push({ type: 'heading_1', heading_1: { rich_text: [makeRT(section.heading, { color: 'blue' })], is_toggleable: false, color: 'default' } });
-    } else if (depth === 1) {
-      sectionBlocks.push({ type: 'heading_3', heading_3: { rich_text: [makeRT(section.heading)], is_toggleable: false, color: 'default' } });
-    } else {
-      sectionBlocks.push({ type: 'paragraph', paragraph: { rich_text: [makeRT(section.heading, { bold: true })], color: 'default' } });
+    // depth 0 → H1 blue; depth 1 → H3 default; depth 2+ → bold paragraph.
+    // Verbose branch answers carry one section with an empty heading — skip the
+    // heading block entirely so the body reads as flowing prose.
+    if (section.heading) {
+      if (depth === 0) {
+        sectionBlocks.push({ type: 'heading_1', heading_1: { rich_text: [makeRT(section.heading, { color: 'blue' })], is_toggleable: false, color: 'default' } });
+      } else if (depth === 1) {
+        sectionBlocks.push({ type: 'heading_3', heading_3: { rich_text: [makeRT(section.heading)], is_toggleable: false, color: 'default' } });
+      } else {
+        sectionBlocks.push({ type: 'paragraph', paragraph: { rich_text: [makeRT(section.heading, { bold: true })], color: 'default' } });
+      }
     }
 
     sectionBlocks.push(...mdToBlocks(stripCiteRefs(section.body), hls));
@@ -452,8 +456,10 @@ function sectionsToHtml(
   let html = '';
   node.sections.forEach((section, i) => {
     if (i > 0) html += '<hr>\n';
-    const htag = `h${sectionHeadingLevel}`;
-    html += `<${htag}>${escHtml(section.heading)}</${htag}>\n`;
+    if (section.heading) {
+      const htag = `h${sectionHeadingLevel}`;
+      html += `<${htag}>${escHtml(section.heading)}</${htag}>\n`;
+    }
     const hls = persistentHl[`${node.id}::${section.id}`] ?? [];
     let bodyHtml: string;
     try { bodyHtml = marked.parse(section.body) as string; }
@@ -534,7 +540,7 @@ function renderNodePlain(
   let text = `${hashes} ${node.title}\n\n${stripCiteRefs(node.lede)}\n\n`;
 
   for (const section of node.sections) {
-    text += `${sHashes} ${section.heading}\n\n${section.body}\n\n`;
+    text += section.heading ? `${sHashes} ${section.heading}\n\n${section.body}\n\n` : `${section.body}\n\n`;
     for (const c of annotations.filter(a => a.nodeId === node.id && a.sectionId === section.id)) {
       text += `> 💡 ${c.text}\n\n`;
     }
