@@ -931,7 +931,9 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
         next[realNode.id] = realNode;
         return next;
       });
-      // Stay on current node — user navigates via mind map chip.
+      // Stay on current node — but if the user already opened the loading
+      // node, follow the id swap so its panel doesn't blank out (tempId is gone).
+      setActiveId(prev => (prev === tempId ? realNode.id : prev));
       // Branch source gets the reserved glow style, not the last picked highlighter colour.
       persistHighlight(source.nodeId, source.sectionId, source.text, BRANCH_HL, null, source.start, source.end);
     } catch (err) {

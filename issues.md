@@ -6,6 +6,11 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
+### Ask AI panel went blank when the loading node was opened mid-request
+- **Symptom:** After "Ask AI", clicking the new node chip *while it was still loading* left the right-side section panel white once the LLM response landed — only a second click on the node filled it in.
+- **Cause:** `askFromHighlight` adds an optimistic node under a temp id (`tempId`) and, on response, swaps it for the real backend node (`delete next[tempId]; next[realNode.id] = realNode`). Unlike "Go deeper" it deliberately doesn't auto-select the new node, so it never repointed `activeId`. If the user had manually opened the loading node, `activeId` was still `tempId`; after the swap `active = nodes[activeId]` became `undefined` → the `{active && (…)}` panel rendered nothing.
+- **Fix:** After the id swap, follow it only when the user was on the loading node: `setActiveId(prev => (prev === tempId ? realNode.id : prev))`. Preserves the intended "stay on the current node" behaviour otherwise. `apps/web/src/components/App.tsx`.
+
 ### Mobile single-tap selected two sentences when web search was ON
 - **Symptom:** On mobile, a single tap (which selects the sentence under the finger) selected two sentences fused together — but only with web search ON.
 - **Cause:** Web-search citations render as a `[N]` superscript glued onto the prose with no separating space (`…one.<sup>[1]</sup> two`). `selectSentenceAtPoint` flattens the block with `textContent`, pulling `[1]` into the string (`"one.[1] two"`). The sentence-boundary regex `/[.!?]['"'’”]?\s+/` requires whitespace immediately after the punctuation, so `.[1]` never matched — the boundary was skipped and the tap ran on to the next real boundary. With web search OFF there are no markers, so the period is followed by a space and it worked.
