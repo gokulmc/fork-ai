@@ -570,6 +570,25 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
   font-family: var(--mono);
   letter-spacing: 0.1em;
 }
+.landing-foot-links {
+  margin-top: 9px;
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+}
+.landing-foot-links a,
+.landing-foot-links button {
+  color: var(--ink-3);
+  text-decoration: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+}
+.landing-foot-links a:hover,
+.landing-foot-links button:hover { color: var(--ink); text-decoration: underline; }
 
 /* ============================================================
    Landing nav button (top-right)

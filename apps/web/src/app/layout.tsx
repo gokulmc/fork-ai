@@ -2,10 +2,40 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { Providers } from '@/components/Providers';
 import { InstallPrompt } from '@/components/InstallPrompt';
+import { JsonLd } from '@/components/JsonLd';
+import { CookieConsent } from '@/components/CookieConsent';
+
+const DESCRIPTION = 'A branching research workspace — ask once, branch forever. Get a structured AI answer split into sections, dive deeper into any of them, and watch every branch become a node on a live mind map.';
 
 export const metadata: Metadata = {
-  title: 'fork ai',
-  description: 'A branching research workspace — ask once, branch forever.',
+  metadataBase: new URL('https://forkai.in'),
+  title: {
+    default: 'fork ai — a branching AI research workspace',
+    template: '%s · fork ai',
+  },
+  description: DESCRIPTION,
+  applicationName: 'fork ai',
+  keywords: [
+    'ai research', 'research ai', 'llm research', 'mind map research',
+    'mind map llm', 'ai mind map', 'memory map', 'knowledge map',
+    'ai research assistant', 'branching ai chat', 'ai study tool', 'second brain ai',
+  ],
+  alternates: { canonical: '/' },
+  robots: { index: true, follow: true },
+  formatDetection: { telephone: false },
+  openGraph: {
+    type: 'website',
+    siteName: 'fork ai',
+    title: 'fork ai — a branching AI research workspace',
+    description: DESCRIPTION,
+    url: 'https://forkai.in',
+    locale: 'en_US',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'fork ai — a branching AI research workspace',
+    description: DESCRIPTION,
+  },
   // Standalone PWA on iOS (no Safari chrome once added to the Home Screen).
   appleWebApp: { capable: true, statusBarStyle: 'default', title: 'fork ai' },
 };
@@ -30,7 +60,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         {/* Transparent marks. The dark mark (for light tabs) is the non-media DEFAULT,
             incl. the .ico that Safari requests by default and uses regardless of theme
@@ -52,8 +82,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body>
+        <JsonLd />
         <Providers>{children}</Providers>
         <InstallPrompt />
+        <CookieConsent />
       </body>
     </html>
   );

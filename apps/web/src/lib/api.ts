@@ -786,7 +786,34 @@ export const adminApi = {
   listAudit(idToken: string, limit = 50): Promise<AdminAuditEntry[]> {
     return apiFetch<AdminAuditEntry[]>(`/admin/audit?limit=${limit}`, idToken);
   },
+
+  listBlogSubmissions(idToken: string): Promise<BlogSubmission[]> {
+    return apiFetch<BlogSubmission[]>('/blog-submissions', idToken);
+  },
+
+  updateBlogSubmissionStatus(
+    idToken: string,
+    id: string,
+    status: 'approved' | 'rejected' | 'pending',
+  ): Promise<{ id: string; status: string }> {
+    return apiFetch<{ id: string; status: string }>(`/blog-submissions/${encodeURIComponent(id)}`, idToken, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    });
+  },
 };
+
+export interface BlogSubmission {
+  id: string;
+  emoji: string;
+  title: string;
+  summary: string;
+  body: string;
+  authorEmail: string;
+  authorSub: string;
+  status: string;
+  createdAt: string;
+}
 
 // Public, unauthenticated live-status ping of the API's /health endpoint.
 // Measures latency and surfaces the deployed version/commit.
@@ -831,5 +858,81 @@ export function isAdminToken(idToken?: string): boolean {
     return Array.isArray(groups) && groups.includes('admins');
   } catch {
     return false;
+  }
+}
+
+// ── Blog submissions ──────────────────────────────────────────────────────────
+
+export interface BlogSubmissionInput {
+  title: string;
+  summary?: string;
+  body: string;
+}
+
+export function submitBlogPost(input: BlogSubmissionInput, idToken: string): Promise<{ id: string }> {
+  return apiFetch('/blog-submissions', idToken, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export function listMyBlogSubmissions(idToken: string): Promise<BlogSubmission[]> {
+  return apiFetch<BlogSubmission[]>('/blog-submissions/mine', idToken);
+}
+
+// ── Published community posts + view counts (public, no auth) ──────────────────
+
+export interface PublishedPost {
+  id: string;
+  slug: string;
+  emoji: string;
+  title: string;
+  summary: string;
+  body: string;
+  createdAt: string;
+}
+
+export async function listPublishedPosts(): Promise<PublishedPost[]> {
+  try {
+    const res = await fetch(`${base()}/blog-submissions/published`, { cache: 'no-store' });
+    return res.ok ? ((await res.json()) as PublishedPost[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function getPublishedPost(slug: string): Promise<PublishedPost | null> {
+  try {
+    const res = await fetch(`${base()}/blog-submissions/by-slug/${encodeURIComponent(slug)}`, { cache: 'no-store' });
+    return res.ok ? ((await res.json()) as PublishedPost) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function listBlogViews(): Promise<Record<string, number>> {
+  try {
+    const res = await fetch(`${base()}/blog-views`, { cache: 'no-store' });
+    return res.ok ? ((await res.json()) as Record<string, number>) : {};
+  } catch {
+    return {};
+  }
+}
+
+export async function getBlogViewCount(slug: string): Promise<number> {
+  try {
+    const res = await fetch(`${base()}/blog-views/${encodeURIComponent(slug)}`, { cache: 'no-store' });
+    return res.ok ? (((await res.json()) as { views: number }).views ?? 0) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export async function incrementBlogView(slug: string): Promise<number> {
+  try {
+    const res = await fetch(`${base()}/blog-views/${encodeURIComponent(slug)}`, { method: 'POST' });
+    return res.ok ? (((await res.json()) as { views: number }).views ?? 0) : 0;
+  } catch {
+    return 0;
   }
 }

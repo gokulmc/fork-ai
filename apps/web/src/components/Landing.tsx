@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { Search, ArrowRight, ArrowUpRight, Clock } from './Icons';
+import { CookiePreferencesLink } from './CookiePreferencesLink';
 
 interface LandingProps {
   onSubmit: (query: string) => void;
@@ -71,7 +72,15 @@ export function Landing({ onSubmit, loading, onShowHistory, outOfCredit, initial
           ))}
         </div>
       </div>
-      <div className="landing-foot">FORK AI · V0.1 · BRANCHING RESEARCH, BY YOU</div>
+      <div className="landing-foot">
+        FORK AI · V0.1 · BRANCHING RESEARCH, BY YOU
+        <span className="landing-foot-links">
+          <a href="/blog">Blog</a>
+          <a href="/privacy-policy">Privacy</a>
+          <a href="/terms">Terms</a>
+          <CookiePreferencesLink />
+        </span>
+      </div>
     </div>
   );
 }

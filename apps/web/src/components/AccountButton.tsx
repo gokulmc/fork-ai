@@ -65,7 +65,6 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
   const [open, setOpen] = useState(false);
   const [changePwOpen, setChangePwOpen] = useState(false);
   const [billingOpen, setBillingOpen] = useState(false);
-  const [termsOpen, setTermsOpen] = useState(false);
   const [currentPw, setCurrentPw] = useState('');
   const [newPw, setNewPw] = useState('');
   const [confirmPw, setConfirmPw] = useState('');
@@ -323,9 +322,6 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
                 Change password
               </button>
             )}
-            <button onClick={() => { setOpen(false); setTermsOpen(true); }} style={menuBtnStyle}>
-              Terms &amp; conditions
-            </button>
             <button onClick={() => void signOut()} style={{ ...menuBtnStyle, color: '#c0392b' }}>
               Sign out
             </button>
@@ -623,116 +619,7 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
         </div>
       )}
 
-      {/* Terms & Conditions overlay */}
-      {termsOpen && (
-        <div
-          onClick={e => { if (e.currentTarget === e.target) setTermsOpen(false); }}
-          style={{
-            position: 'fixed', inset: 0, zIndex: 70,
-            background: 'rgba(255,255,255,0.88)', backdropFilter: 'blur(4px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          <div style={{
-            background: '#ffffff', border: '1px solid rgba(10,10,10,0.15)',
-            borderRadius: 8, padding: '28px',
-            width: 'min(580px, 92vw)',
-            maxHeight: '82vh',
-            display: 'flex', flexDirection: 'column',
-            fontFamily: "ui-monospace,'JetBrains Mono','SF Mono',Menlo,monospace",
-            boxShadow: '0 8px 32px rgba(10,10,10,0.10)',
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexShrink: 0 }}>
-              <div style={{ fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'rgba(10,10,10,0.4)' }}>
-                Terms &amp; Conditions
-              </div>
-              <button onClick={() => setTermsOpen(false)} style={{ background: 'none', border: 0, cursor: 'pointer', fontSize: 14, color: 'rgba(10,10,10,0.4)', lineHeight: 1 }}>✕</button>
-            </div>
-            <div style={{ overflowY: 'auto', flex: 1, fontSize: 11, lineHeight: 1.7, color: 'rgba(10,10,10,0.8)', letterSpacing: '0.02em' }}>
-              <TermsContent />
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20, flexShrink: 0 }}>
-              <button onClick={() => setTermsOpen(false)} style={cancelBtnStyle}>Close</button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
-  );
-}
-
-function TermsContent() {
-  const h2: React.CSSProperties = { fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#0a0a0a', marginTop: 20, marginBottom: 6 };
-  const p: React.CSSProperties = { margin: '0 0 10px' };
-  const li: React.CSSProperties = { marginBottom: 4 };
-  return (
-    <div>
-      <p style={{ ...p, color: 'rgba(10,10,10,0.5)', fontSize: 10 }}>Last updated: May 2026</p>
-
-      <div style={h2}>1. Agreement</div>
-      <p style={p}>By accessing or using fork ai, you agree to be bound by these Terms and Conditions. If you disagree with any part, please do not use the service.</p>
-
-      <div style={h2}>2. About fork ai</div>
-      <p style={p}>fork ai is an AI-powered branching research workspace operated by <strong>CURIOSTEM LEARNING PRIVATE LIMITED</strong> — RSF No 34/3, Door No 155/1, Sakthi Nagar, Thindal, Erode – 638012, Tamil Nadu, India. GST: 33AAMCC6984A1ZM.</p>
-
-      <div style={h2}>3. Accounts &amp; Eligibility</div>
-      <ul style={{ paddingLeft: 16, margin: '0 0 10px' }}>
-        <li style={li}>You must be at least 13 years old to use fork ai.</li>
-        <li style={li}>You are responsible for maintaining the security of your account credentials.</li>
-        <li style={li}>One account per person. We reserve the right to terminate duplicate accounts.</li>
-        <li style={li}>You agree to provide accurate information when creating your account.</li>
-      </ul>
-
-      <div style={h2}>4. Credits &amp; Billing</div>
-      <ul style={{ paddingLeft: 16, margin: '0 0 10px' }}>
-        <li style={li}>fork ai operates on a prepaid credit model. Credits are denominated in USD.</li>
-        <li style={li}>New accounts receive a one-time complimentary signup credit. The amount is subject to change without notice.</li>
-        <li style={li}>Credits are non-refundable once purchased, except as required by applicable law.</li>
-        <li style={li}>Payments are processed by Razorpay in INR at the prevailing exchange rate at the time of purchase. Exchange rate fluctuations may affect the effective USD value of your credit.</li>
-        <li style={li}>LLM calls consume credits based on token usage (input + output tokens), multiplied by a usage multiplier. The effective rate is visible in your account billing panel.</li>
-        <li style={li}>Guest sessions (via share links) consume credits from the session owner's account.</li>
-        <li style={li}>We reserve the right to adjust pricing and the credit multiplier. Changes take effect for new calls and will be communicated in advance where practicable.</li>
-        <li style={li}>Unused credits do not expire, but we reserve the right to expire credits with at least 90 days' notice.</li>
-      </ul>
-
-      <div style={h2}>5. Acceptable Use</div>
-      <p style={p}>You agree not to:</p>
-      <ul style={{ paddingLeft: 16, margin: '0 0 10px' }}>
-        <li style={li}>Reverse-engineer, scrape, or exploit the service beyond its intended purpose.</li>
-        <li style={li}>Use fork ai to generate harmful, illegal, deceptive, or abusive content.</li>
-        <li style={li}>Attempt to circumvent usage limits, billing, or authentication.</li>
-        <li style={li}>Resell, sublicense, or redistribute access to the service.</li>
-        <li style={li}>Use automated scripts to generate content at scale without prior written consent.</li>
-      </ul>
-
-      <div style={h2}>6. Guest Access &amp; Sharing</div>
-      <p style={p}>Share links grant read and LLM-branch access to a specific research session. Session owners are responsible for all LLM costs incurred by guests via their share link. Revoke share links at any time to remove guest access. We are not liable for content created by guests.</p>
-
-      <div style={h2}>7. Content &amp; Intellectual Property</div>
-      <ul style={{ paddingLeft: 16, margin: '0 0 10px' }}>
-        <li style={li}>Research content generated by the LLM is provided for informational purposes only. We make no representations as to its accuracy, completeness, or fitness for any particular purpose.</li>
-        <li style={li}>You retain ownership of your input queries. You grant CURIOSTEM LEARNING PRIVATE LIMITED a limited, non-exclusive licence to process them solely to provide the service.</li>
-        <li style={li}>The fork ai platform, brand, design, and codebase are owned by CURIOSTEM LEARNING PRIVATE LIMITED. All rights reserved.</li>
-      </ul>
-
-      <div style={h2}>8. Limitation of Liability</div>
-      <p style={p}>To the maximum extent permitted by applicable law, CURIOSTEM LEARNING PRIVATE LIMITED shall not be liable for any indirect, incidental, special, or consequential damages arising from your use of fork ai. Our total aggregate liability for any claim shall not exceed the credit balance held in your account at the time of the claim.</p>
-
-      <div style={h2}>9. Privacy &amp; Data</div>
-      <p style={p}>Your research sessions are stored in AWS infrastructure (ap-south-1). Queries are processed through the Anthropic API. We do not sell your personal data. By using fork ai you consent to this processing.</p>
-
-      <div style={h2}>10. Termination</div>
-      <p style={p}>We reserve the right to suspend or terminate accounts that violate these Terms, with or without notice. Unused credits at termination are non-refundable unless required by law.</p>
-
-      <div style={h2}>11. Governing Law</div>
-      <p style={p}>These Terms are governed by the laws of India. Any disputes shall be subject to the exclusive jurisdiction of the courts of Erode, Tamil Nadu, India.</p>
-
-      <div style={h2}>12. Changes to These Terms</div>
-      <p style={p}>We may update these Terms at any time. Continued use of fork ai after changes are published constitutes your acceptance of the revised Terms. Material changes will be communicated via email where practicable.</p>
-
-      <div style={h2}>13. Contact</div>
-      <p style={p}>For questions about these Terms, contact us at <strong>info@stemlabs.co.in</strong>.</p>
-    </div>
   );
 }
 

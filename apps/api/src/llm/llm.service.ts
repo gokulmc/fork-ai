@@ -323,6 +323,21 @@ Rules:
     return parsed.topics.slice(0, 4);
   }
 
+  // Pick a single emoji for a user-submitted blog post. Cheap, best-effort —
+  // falls back to a default so a submission never fails on this.
+  async pickEmoji(title: string, body: string): Promise<string> {
+    const prompt = `Pick the single emoji that best represents this blog post. Reply with ONLY the emoji and nothing else.\n\nTitle: ${title}\n\n${body.slice(0, 600)}`;
+    try {
+      const provider = this.providerFor(ROOT_MODEL);
+      const { rawText } = await provider.complete(prompt, { model: ROOT_MODEL, maxTokens: 16, webSearch: false });
+      const match = rawText.trim().match(new RegExp('\\p{Extended_Pictographic}(\\uFE0F|\\u200D\\p{Extended_Pictographic})*', 'u'));
+      return match ? match[0] : '📝';
+    } catch (err) {
+      this.logger.warn(`pickEmoji failed: ${(err as Error).message}`);
+      return '📝';
+    }
+  }
+
   private async callJson(prompt: string, webSearch = false, model: string = ROOT_MODEL, retries = 1): Promise<LlmResponse> {
     // Drop web search for providers that don't support it (DeepSeek) — no
     // grounding tool, so don't append the web-search guidance/citation prompt.

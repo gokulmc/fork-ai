@@ -12,6 +12,8 @@ import {
   ADMIN_AUDIT_MODEL,
   REFERRAL_MODEL,
   CREDIT_EVENT_MODEL,
+  BLOG_SUBMISSION_MODEL,
+  BLOG_VIEW_MODEL,
   DYNAMO_TABLE,
 } from './dynamo.constants';
 import type {
@@ -26,6 +28,8 @@ import type {
   AdminAuditItem,
   ReferralItem,
   CreditEventItem,
+  BlogSubmissionItem,
+  BlogViewItem,
 } from './dynamo.interfaces';
 
 @Injectable()
@@ -43,6 +47,8 @@ export class DynamoRepository {
     @Inject(ADMIN_AUDIT_MODEL) private readonly adminAuditModel: any,
     @Inject(REFERRAL_MODEL) private readonly referralModel: any,
     @Inject(CREDIT_EVENT_MODEL) private readonly creditEventModel: any,
+    @Inject(BLOG_SUBMISSION_MODEL) private readonly blogSubmissionModel: any,
+    @Inject(BLOG_VIEW_MODEL) private readonly blogViewModel: any,
   ) {}
 
   // ── Key helpers ─────────────────────────────────────────────────────────────
@@ -429,6 +435,83 @@ export class DynamoRepository {
       .limit(limit)
       .exec();
     return this.toPlainArray<AdminAuditItem>(items);
+  }
+
+  // ── Blog submissions ─────────────────────────────────────────────────────────
+
+  async putBlogSubmission(data: BlogSubmissionItem): Promise<void> {
+    await this.blogSubmissionModel.create(this.clean(data), { overwrite: false });
+  }
+
+  async listBlogSubmissions(limit: number): Promise<BlogSubmissionItem[]> {
+    const items = await this.blogSubmissionModel
+      .query('PK')
+      .eq('BLOGSUB')
+      .sort('descending')
+      .limit(limit)
+      .exec();
+    return this.toPlainArray<BlogSubmissionItem>(items);
+  }
+
+  // One author's submissions (the BLOGSUB partition is small, so a filtered
+  // query reads it and returns only this author's rows).
+  async listBlogSubmissionsByAuthor(sub: string): Promise<BlogSubmissionItem[]> {
+    const items = await this.blogSubmissionModel
+      .query('PK')
+      .eq('BLOGSUB')
+      .filter('authorSub')
+      .eq(sub)
+      .sort('descending')
+      .exec();
+    return this.toPlainArray<BlogSubmissionItem>(items);
+  }
+
+  async updateBlogSubmissionStatus(id: string, status: string): Promise<void> {
+    await this.blogSubmissionModel.update({ PK: 'BLOGSUB', SK: id }, { status });
+  }
+
+  async listApprovedBlogSubmissions(): Promise<BlogSubmissionItem[]> {
+    const items = await this.blogSubmissionModel
+      .query('PK')
+      .eq('BLOGSUB')
+      .filter('status')
+      .eq('approved')
+      .sort('descending')
+      .exec();
+    return this.toPlainArray<BlogSubmissionItem>(items);
+  }
+
+  async getApprovedBlogSubmissionBySlug(slug: string): Promise<BlogSubmissionItem | null> {
+    const items = await this.blogSubmissionModel
+      .query('PK')
+      .eq('BLOGSUB')
+      .filter('slug')
+      .eq(slug)
+      .filter('status')
+      .eq('approved')
+      .exec();
+    const arr = this.toPlainArray<BlogSubmissionItem>(items);
+    return arr[0] ?? null;
+  }
+
+  // ── Blog views ───────────────────────────────────────────────────────────────
+
+  async incrementBlogView(slug: string): Promise<number> {
+    const updated = await this.blogViewModel.update(
+      { PK: 'BLOGVIEW', SK: slug },
+      { $ADD: { views: 1 } },
+    );
+    return this.toPlain<BlogViewItem>(updated).views ?? 0;
+  }
+
+  async listBlogViews(): Promise<BlogViewItem[]> {
+    const items = await this.blogViewModel.query('PK').eq('BLOGVIEW').exec();
+    return this.toPlainArray<BlogViewItem>(items);
+  }
+
+  async getBlogView(slug: string): Promise<BlogViewItem | null> {
+    const item = await this.blogViewModel.get({ PK: 'BLOGVIEW', SK: slug });
+    return item ? this.toPlain<BlogViewItem>(item) : null;
   }
 
   // ── Admin: cross-user reads ────────────────────────────────────────────────
