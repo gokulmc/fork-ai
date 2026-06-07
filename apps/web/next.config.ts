@@ -7,6 +7,19 @@ import { withSentryConfig } from '@sentry/nextjs';
 const nextConfig: NextConfig = {
   // Let .md/.mdx files under app/ and imported MDX content compile as pages.
   pageExtensions: ['js', 'jsx', 'ts', 'tsx', 'md', 'mdx'],
+  // Canonicalise the apex: 301 any www.forkai.in request to https://forkai.in.
+  // Both hosts point at the same Amplify distribution, but the API's CORS only
+  // allows the apex — so without this, History/login/etc. break on www.
+  async redirects() {
+    return [
+      {
+        source: '/:path*',
+        has: [{ type: 'host', value: 'www.forkai.in' }],
+        destination: 'https://forkai.in/:path*',
+        permanent: true,
+      },
+    ];
+  },
   env: {
     COGNITO_CLIENT_SECRET: process.env.COGNITO_CLIENT_SECRET,
     COGNITO_CLIENT_ID: process.env.COGNITO_CLIENT_ID,

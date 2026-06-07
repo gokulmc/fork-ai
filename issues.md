@@ -6,6 +6,11 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
+### History (and login/research) broken on www.forkai.in
+- **Symptom:** On `www.forkai.in` the History page showed nothing and login/research/blog actions silently failed, while `forkai.in` worked fine.
+- **Cause:** Both the apex (`forkai.in`) and `www.forkai.in` resolve to the same Amplify CloudFront distribution and serve the app, but the API's `CORS_ORIGIN` on Elastic Beanstalk only allows `https://forkai.in`. From a www page the browser sends `Origin: https://www.forkai.in`; the API returns no matching `Access-Control-Allow-Origin`, so every client-side call (`GET /sessions`, etc.) is blocked. Static pages still render (server-side fetch, no CORS), so the site looked "up".
+- **Fix:** Canonicalise to the apex — a host-based 308 redirect in `next.config.ts` (`redirects()` with `has: host == www.forkai.in` → `https://forkai.in/:path*`). www requests bounce to the apex where CORS is satisfied; also removes the duplicate-URL/SEO concern. `apps/web/next.config.ts`.
+
 ### Ask AI panel went blank when the loading node was opened mid-request
 - **Symptom:** After "Ask AI", clicking the new node chip *while it was still loading* left the right-side section panel white once the LLM response landed — only a second click on the node filled it in.
 - **Cause:** `askFromHighlight` adds an optimistic node under a temp id (`tempId`) and, on response, swaps it for the real backend node (`delete next[tempId]; next[realNode.id] = realNode`). Unlike "Go deeper" it deliberately doesn't auto-select the new node, so it never repointed `activeId`. If the user had manually opened the loading node, `activeId` was still `tempId`; after the swap `active = nodes[activeId]` became `undefined` → the `{active && (…)}` panel rendered nothing.
