@@ -9,7 +9,7 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 ### Ask AI panel went blank when the loading node was opened mid-request
 - **Symptom:** After "Ask AI", clicking the new node chip *while it was still loading* left the right-side section panel white once the LLM response landed — only a second click on the node filled it in.
 - **Cause:** `askFromHighlight` adds an optimistic node under a temp id (`tempId`) and, on response, swaps it for the real backend node (`delete next[tempId]; next[realNode.id] = realNode`). Unlike "Go deeper" it deliberately doesn't auto-select the new node, so it never repointed `activeId`. If the user had manually opened the loading node, `activeId` was still `tempId`; after the swap `active = nodes[activeId]` became `undefined` → the `{active && (…)}` panel rendered nothing.
-- **Fix:** After the id swap, follow it only when the user was on the loading node: `setActiveId(prev => (prev === tempId ? realNode.id : prev))`. Preserves the intended "stay on the current node" behaviour otherwise. `apps/web/src/components/App.tsx`.
+- **Fix:** After the id swap, follow it only when the user was on the loading node: `setActiveId(prev => (prev === tempId ? realNode.id : prev))`. Preserves the intended "stay on the current node" behaviour otherwise. `apps/web/src/components/App.tsx`. Commit `1c647ae`.
 
 ### Mobile single-tap selected two sentences when web search was ON
 - **Symptom:** On mobile, a single tap (which selects the sentence under the finger) selected two sentences fused together — but only with web search ON.
