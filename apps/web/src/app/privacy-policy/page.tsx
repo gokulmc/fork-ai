@@ -1,105 +1,19 @@
 import type { Metadata } from 'next';
+import { LegalShell } from '@/components/LegalShell';
+import { CookiePreferencesLink } from '@/components/CookiePreferencesLink';
 
 export const metadata: Metadata = {
-  title: 'Privacy Policy · fork ai',
+  title: 'Privacy Policy',
   description: 'How fork ai collects, uses, and protects your data.',
 };
 
-const LAST_UPDATED = '4 June 2026';
+const LAST_UPDATED = '7 June 2026';
 const CONTACT = 'support@forkai.in';
+const GA_ID = process.env.NEXT_PUBLIC_GA_ID;
 
 export default function PrivacyPolicyPage() {
   return (
-    <div className="legal-overlay">
-      <style>{`
-        /* Own scroll container — the app sets body{overflow:hidden} globally,
-           so this page must scroll itself. */
-        .legal-overlay {
-          position: fixed;
-          inset: 0;
-          overflow-y: auto;
-          -webkit-overflow-scrolling: touch;
-          background: #f4f4f2;
-          padding: 32px 16px;
-          display: flex;
-          justify-content: center;
-          align-items: flex-start;
-        }
-        .legal {
-          width: 100%;
-          max-width: 680px;
-          margin: auto;
-          padding: 40px 44px 56px;
-          background: #ffffff;
-          border: 1px solid rgba(10,10,10,0.10);
-          border-radius: 12px;
-          box-shadow: 0 12px 40px rgba(10,10,10,0.10);
-          font-family: var(--sans);
-          font-size: 15px;
-          line-height: 1.6;
-          color: #1a1a1a;
-        }
-        .legal h1 {
-          font-size: 27px;
-          line-height: 1.2;
-          margin: 0 0 6px;
-          letter-spacing: -0.01em;
-        }
-        .legal .updated {
-          font-family: ui-monospace, 'JetBrains Mono', Menlo, monospace;
-          font-size: 11px;
-          letter-spacing: 0.06em;
-          text-transform: uppercase;
-          color: #8a8a8a;
-          margin: 0 0 32px;
-        }
-        .legal h2 {
-          font-size: 19px;
-          margin: 32px 0 8px;
-          letter-spacing: -0.005em;
-        }
-        .legal p, .legal li { margin: 0 0 11px; }
-        .legal ul { padding-left: 20px; }
-        .legal a { color: #1a1a1a; text-decoration: underline; }
-        .legal strong { font-weight: 600; }
-        .legal .back {
-          display: inline-block;
-          margin-bottom: 28px;
-          font-family: ui-monospace, 'JetBrains Mono', Menlo, monospace;
-          font-size: 11px;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
-          text-decoration: none;
-          color: #8a8a8a;
-        }
-        @media (max-width: 768px) {
-          .legal-overlay { padding: 0; background: #ffffff; }
-          .legal {
-            border: 0; border-radius: 0; box-shadow: none;
-            padding: 28px 20px 64px; max-width: none;
-          }
-        }
-        @media (prefers-color-scheme: dark) {
-          .legal-overlay { background: #0e0e0e; }
-          .legal {
-            background: #191919; color: #e8e8e8;
-            border-color: rgba(255,255,255,0.10);
-            box-shadow: 0 12px 40px rgba(0,0,0,0.4);
-          }
-          .legal a { color: #e8e8e8; }
-          .legal .updated, .legal .back { color: #888; }
-          @media (max-width: 768px) {
-            .legal-overlay, .legal { background: #191919; }
-          }
-        }
-      `}</style>
-
-      <main className="legal">
-      <a className="back" href="/">← fork ai</a>
-
-      <h1>Privacy Policy</h1>
-      <p className="updated">Last updated: {LAST_UPDATED}</p>
-
+    <LegalShell title="Privacy Policy" updated={LAST_UPDATED}>
       <p>
         This policy explains what information fork ai (&ldquo;we&rdquo;, &ldquo;us&rdquo;) collects when you
         use the fork ai website and mobile apps (the &ldquo;Service&rdquo;), how we use it, and the choices
@@ -159,13 +73,33 @@ export default function PrivacyPolicyPage() {
           <strong>Razorpay.</strong> If you purchase credit, payment is processed by Razorpay. Card and
           payment details are handled by Razorpay, not by us.
         </li>
+        <li>
+          <strong>Google Analytics.</strong> Only with your consent. We use Google Analytics to understand
+          aggregate, anonymous usage (such as which pages are visited) so we can improve the Service. No
+          analytics cookies are set until you accept the cookie banner, and you can decline.
+        </li>
+        <li>
+          <strong>Sentry.</strong> We use Sentry for error monitoring. When the app encounters an error,
+          technical diagnostic data (such as the error and basic device/browser information) is sent to
+          Sentry so we can find and fix problems.
+        </li>
       </ul>
 
       <h2>Cookies and local storage</h2>
       <p>
         We use a session cookie to keep you signed in, and your browser&rsquo;s local storage to remember
-        preferences (such as theme and your current session). We do not use third-party advertising or
-        cross-site tracking cookies.
+        preferences (such as theme and your current session). With your consent, we also use Google
+        Analytics, which sets cookies to measure aggregate, anonymous usage; we set no analytics cookies
+        until you accept the cookie banner, and you can decline at any time. We do not use third-party
+        advertising or cross-site tracking cookies.
+        {GA_ID ? (
+          <>
+            {' '}You can review or change your cookie choice at any time via{' '}
+            <CookiePreferencesLink
+              style={{ textDecoration: 'underline', color: 'var(--ink)', cursor: 'pointer', font: 'inherit', background: 'none', border: 0, padding: 0 }}
+            />.
+          </>
+        ) : null}
       </p>
 
       <h2>Data retention</h2>
@@ -207,7 +141,6 @@ export default function PrivacyPolicyPage() {
         Questions about this policy or your data? Email us at{' '}
         <a href={`mailto:${CONTACT}`}>{CONTACT}</a>.
       </p>
-      </main>
-    </div>
+    </LegalShell>
   );
 }

@@ -175,3 +175,28 @@ export const HighlightSchema = new dynamoose.Schema({
   fg: { type: String, required: false },
   createdAt: String,
 });
+
+// User-submitted blog post awaiting admin review. PK is a fixed partition so
+// the admin can list all submissions newest-first; SK is the ULID id.
+export const BlogSubmissionSchema = new dynamoose.Schema({
+  PK: { type: String, hashKey: true },
+  SK: { type: String, rangeKey: true },
+  id: String,
+  emoji: { type: String, required: false },
+  slug: { type: String, required: false },
+  authorSub: String,
+  authorEmail: { type: String, required: false },
+  title: String,
+  summary: { type: String, required: false },
+  body: String,
+  status: String,
+  createdAt: String,
+});
+
+// Per-post view counter. SK is the post slug (curated or community); `views`
+// is incremented atomically with $ADD.
+export const BlogViewSchema = new dynamoose.Schema({
+  PK: { type: String, hashKey: true },
+  SK: { type: String, rangeKey: true },
+  views: { type: Number, required: false },
+});

@@ -1,4 +1,5 @@
 import { App } from '@/components/App';
+import { auth } from '@/auth';
 
 const FALLBACK_TOPICS = [
   'How do neural networks actually learn?',
@@ -22,6 +23,9 @@ async function fetchTopics(): Promise<string[]> {
 }
 
 export default async function Page() {
-  const topics = await fetchTopics();
-  return <App initialTopics={topics} />;
+  // auth() reads the Cognito session cookie server-side (JWT verify, no DB call).
+  // initiallyAuthed lets App render the SSR-crawlable hero for logged-out
+  // visitors while keeping the neutral loading spinner for returning users.
+  const [topics, session] = await Promise.all([fetchTopics(), auth()]);
+  return <App initialTopics={topics} initiallyAuthed={!!session} />;
 }

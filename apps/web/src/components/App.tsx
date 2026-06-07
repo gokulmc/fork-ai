@@ -83,6 +83,7 @@ import { HighlightMenu } from './HighlightMenu';
 import { FollowUpPop } from './FollowUpPop';
 import { NotesDrawer } from './NotesDrawer';
 import { Landing } from './Landing';
+import { LandingHero } from './LandingHero';
 import { LoginPage } from './LoginPage';
 import { HistoryPage } from './HistoryPage';
 import { TweaksPanel } from './TweaksPanel';
@@ -167,7 +168,7 @@ function useIsNarrow() {
   return narrow;
 }
 
-export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
+export function App({ initialTopics = [], initiallyAuthed = false }: { initialTopics?: string[]; initiallyAuthed?: boolean }) {
   const { data: authSession, status } = useSession();
   const idToken = authSession?.idToken ?? '';
 
@@ -931,7 +932,9 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
         next[realNode.id] = realNode;
         return next;
       });
-      // Stay on current node — user navigates via mind map chip.
+      // Stay on current node — but if the user already opened the loading
+      // node, follow the id swap so its panel doesn't blank out (tempId is gone).
+      setActiveId(prev => (prev === tempId ? realNode.id : prev));
       // Branch source gets the reserved glow style, not the last picked highlighter colour.
       persistHighlight(source.nodeId, source.sectionId, source.text, BRANCH_HL, null, source.start, source.end);
     } catch (err) {
@@ -1302,6 +1305,12 @@ export function App({ initialTopics = [] }: { initialTopics?: string[] }) {
   // ── Auth loading ──────────────────────────────────────────────────────────
 
   if (status === 'loading') {
+    // SSR + first client paint: logged-out visitors (and crawlers) get the
+    // static hero so the landing copy is in the initial HTML. `initiallyAuthed`
+    // comes from the server-read session cookie, so it matches on hydration and
+    // returning users keep the neutral spinner — no landing flash while their
+    // session loads (preserves the loadingRoot no-flash behaviour).
+    if (!initiallyAuthed) return <LandingHero />;
     return (
       <div className="auth-screen">
         <span className="spinner-lg" />

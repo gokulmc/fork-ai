@@ -17,6 +17,8 @@ import { BillingModule } from '@/billing/billing.module';
 import { AdminModule } from '@/admin/admin.module';
 import { SupportModule } from '@/support/support.module';
 import { TopicsModule } from '@/topics/topics.module';
+import { BlogSubmissionsModule } from '@/blog-submissions/blog-submissions.module';
+import { BlogViewsModule } from '@/blog-views/blog-views.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -40,6 +42,8 @@ import { HealthController } from './health.controller';
     AdminModule,
     SupportModule,
     TopicsModule,
+    BlogSubmissionsModule,
+    BlogViewsModule,
   ],
   controllers: [HealthController],
   providers: [

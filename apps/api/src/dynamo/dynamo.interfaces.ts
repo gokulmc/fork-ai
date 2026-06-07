@@ -4,6 +4,27 @@ export interface SectionItem {
   body: string;
 }
 
+export interface BlogSubmissionItem {
+  PK: string; // 'BLOGSUB'
+  SK: string; // ULID id
+  id: string;
+  emoji: string;
+  slug: string;
+  authorSub: string;
+  authorEmail: string;
+  title: string;
+  summary: string;
+  body: string;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+}
+
+export interface BlogViewItem {
+  PK: string; // 'BLOGVIEW'
+  SK: string; // post slug
+  views: number;
+}
+
 export interface UserMetaItem {
   PK: string;
   SK: string;

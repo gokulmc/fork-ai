@@ -1,7 +1,7 @@
 'use client';
 
 import { useSession, signOut } from 'next-auth/react';
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import {
   adminApi,
   isAdminToken,
@@ -15,10 +15,11 @@ import {
   type HealthStatus,
   type ProviderSpend,
   type DayMetrics,
+  type BlogSubmission,
 } from '@/lib/api';
 import { LineChart, BarChart, Sparkline, PieChart, type PieSlice } from './charts';
 
-type Tab = 'overview' | 'users' | 'payments' | 'audit';
+type Tab = 'overview' | 'users' | 'payments' | 'audit' | 'submissions';
 
 const C = { accent: '#6366f1', green: '#22c55e', sky: '#38bdf8', amber: '#f59e0b', pink: '#ec4899', violet: '#8b5cf6' };
 const PIE_COLORS = [C.violet, C.sky, C.amber, C.green, C.pink, C.accent, '#14b8a6', '#f97316'];
@@ -99,6 +100,7 @@ export function AdminDashboard() {
       {tab === 'users' && <Users idToken={idToken} />}
       {tab === 'payments' && <Payments idToken={idToken} />}
       {tab === 'audit' && <Audit idToken={idToken} />}
+      {tab === 'submissions' && <Submissions idToken={idToken} />}
     </ShellLive>
   );
 }
@@ -120,7 +122,7 @@ function ShellLive({ idToken, tab, setTab, children }: { idToken: string; tab: T
   return (
     <Shell health={health} authed email={email}>
       <nav className="ad-tabs">
-        {(['overview', 'users', 'payments', 'audit'] as Tab[]).map((t) => (
+        {(['overview', 'users', 'payments', 'audit', 'submissions'] as Tab[]).map((t) => (
           <button key={t} className={`ad-tab ${tab === t ? 'on' : ''}`} onClick={() => setTab(t)}>
             {t[0].toUpperCase() + t.slice(1)}
           </button>
@@ -610,6 +612,65 @@ function Payments({ idToken }: { idToken: string }) {
 }
 
 // ── Audit ─────────────────────────────────────────────────────────────────────
+
+function Submissions({ idToken }: { idToken: string }) {
+  const [subs, setSubs] = useState<BlogSubmission[] | null>(null);
+  const [err, setErr] = useState('');
+  const [openId, setOpenId] = useState<string | null>(null);
+  useEffect(() => { adminApi.listBlogSubmissions(idToken).then(setSubs).catch((e) => setErr(String(e))); }, [idToken]);
+
+  const act = (id: string, status: 'approved' | 'rejected') => {
+    adminApi.updateBlogSubmissionStatus(idToken, id, status)
+      .then(() => setSubs((prev) => (prev ? prev.map((x) => (x.id === id ? { ...x, status } : x)) : prev)))
+      .catch((e) => setErr(String(e)));
+  };
+
+  if (err) return <div className="ad-card ad-err">{err}</div>;
+  if (!subs) return <div className="ad-empty">Loading…</div>;
+
+  return (
+    <div className="ad-card ad-tablecard">
+      <div className="ad-card-head"><h3>Blog submissions <span className="ad-count">{subs.length}</span></h3></div>
+      {subs.length === 0 ? (
+        <div className="ad-empty">No submissions yet.</div>
+      ) : (
+        <table className="ad-table">
+          <thead><tr><th></th><th>Title</th><th>Author</th><th>Status</th><th>When</th><th></th></tr></thead>
+          <tbody>
+            {subs.map((s) => (
+              <Fragment key={s.id}>
+                <tr>
+                  <td style={{ fontSize: 18 }}>{s.emoji}</td>
+                  <td>{s.title}</td>
+                  <td>{s.authorEmail}</td>
+                  <td><span className="ad-tag">{s.status}</span></td>
+                  <td>{date(s.createdAt)}</td>
+                  <td>
+                    <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                      {s.status !== 'approved' && <button className="ad-link" style={{ color: '#15803d' }} onClick={() => act(s.id, 'approved')}>Approve</button>}
+                      {s.status !== 'rejected' && <button className="ad-link" style={{ color: '#c0392b' }} onClick={() => act(s.id, 'rejected')}>Reject</button>}
+                      <button className="ad-link" onClick={() => setOpenId(openId === s.id ? null : s.id)}>{openId === s.id ? 'Hide' : 'Read'}</button>
+                    </div>
+                  </td>
+                </tr>
+                {openId === s.id && (
+                  <tr>
+                    <td colSpan={6}>
+                      <div style={{ padding: '10px 6px', whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.6, maxWidth: 760 }}>
+                        {s.summary && <p style={{ fontStyle: 'italic', opacity: 0.75, margin: '0 0 12px' }}>{s.summary}</p>}
+                        {s.body}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
 
 function Audit({ idToken }: { idToken: string }) {
   const [entries, setEntries] = useState<AdminAuditEntry[] | null>(null);

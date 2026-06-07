@@ -1,0 +1,31 @@
+Large language models are extraordinary research engines and mediocre research tools. The difference matters. As an *engine*, an LLM can explain almost anything, in any depth, on demand. As a *tool*, the default chat interface wastes most of that power by pouring it into a single scrolling column. LLM research done right is mostly about fixing the container.
+
+## What "LLM research" actually is
+
+Doing research with LLMs isn't prompt engineering and it isn't fact-retrieval. It's using a model to move quickly through a space of questions — asking, getting a structured answer, and using that answer to decide what to ask next. The model's job is to generate; your job is to direct. The quality of the session depends on how well you can steer, and steering is hard when every answer lands at the bottom of the same chat.
+
+## The one-question-to-many-answers move
+
+Here's the core technique. Start with a single substantive question and ask the model to break its answer into distinct sections rather than one block of prose. Now you have not one answer but several entry points. Each section is a candidate for a follow-up. Pick the ones that matter and branch them into their own answers — and branch again from there.
+
+What you're building is a tree of answers grown from one question. This is the same idea as the broader [AI research workflow](/blog/ai-research-workflow): breadth first, then depth, with the structure preserved as you go.
+
+## Why context is the whole game
+
+LLMs are stateless between calls in the ways that matter for research. Each response is shaped by whatever context you hand it. In a flat chat, that context is "the entire conversation so far" — which sounds good but isn't, because most of the conversation is irrelevant to your current question, and the genuinely relevant part (the specific passage you're reacting to) is buried.
+
+A better approach scopes context deliberately. When you branch from a section, the new answer inherits *that section's* lineage — the chain of questions that led here — not the whole undifferentiated transcript. When you highlight a sentence and ask about it, the model gets the sentence as the subject. Tighter context means sharper answers. This is why a [branching conversation](/blog/branching-ai-chat) consistently outperforms a linear one for anything non-trivial: each branch carries exactly the context it needs and nothing it doesn't.
+
+## Use more than one model
+
+Different models have different strengths — some reason more carefully, some write more clearly, some are faster and cheaper for routine expansion. Treating "the LLM" as a single fixed thing leaves value on the table. A good research setup lets you pick the model per branch: a strong model for the hard conceptual node, a fast one for filling in the surrounding detail. The structure of your research stays the same; only the engine behind each node changes.
+
+## Verify, don't trust
+
+LLMs are confident regardless of correctness, so research with them has to bake in verification. Two habits help. First, prefer models and modes that can cite or search the web when the question is factual, so claims come with somewhere to check them. Second, use structure to your advantage: when an answer makes a claim you care about, branch a node specifically to interrogate it — "what's the evidence for this?" A branch dedicated to a single claim is far easier to fact-check than a sentence floating in a transcript.
+
+## What you're left with
+
+The output of good LLM research isn't a chat history you'll never reopen. It's a map: a set of connected answers, each tied to the question that prompted it. That artifact has properties a transcript doesn't. You can navigate it by structure instead of scrolling it by time. You can see which threads you pursued and which you skipped. And you can [keep it](/blog/second-brain-ai) — export it, revisit it, build on it next week.
+
+The model supplied the intelligence. The map is what let you hold onto it. If you've ever finished a long AI session feeling like you learned a lot but couldn't say what, the missing piece wasn't a better prompt — it was a place for the answers to live. Give the engine a structure to fill, and LLM research stops being disposable.
