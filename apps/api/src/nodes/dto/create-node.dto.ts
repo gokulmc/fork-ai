@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsIn, IsOptional, IsInt, IsBoolean, Min, Max, MinLength, MaxLength } from 'class-validator';
+import { IsString, IsIn, IsOptional, IsInt, IsBoolean, Min, Max, MinLength } from 'class-validator';
 import { NodeKind } from '@/llm/llm.types';
 
 export class CreateNodeDto {
@@ -18,7 +18,6 @@ export class CreateNodeDto {
   @ApiProperty({ description: 'For DEEPER: the section heading. For ASK: the user question.' })
   @IsString()
   @MinLength(1)
-  @MaxLength(500)
   query!: string;
 
   @ApiPropertyOptional({ description: 'For DEEPER: the section body text' })
