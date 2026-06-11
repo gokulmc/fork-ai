@@ -54,6 +54,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     strategy: 'jwt',
     maxAge: 30 * 24 * 60 * 60, // 30 days — matches Cognito refresh token lifetime
   },
+  // Dev only: localhost cookies are shared across ports, so another next-auth
+  // app (e.g. p2p-lending-tracker on :3001) writing the default
+  // `authjs.session-token` cookie makes this app throw "no matching decryption
+  // secret" on every request. Namespace ours in dev; prod keeps the default so
+  // existing forkai.in sessions aren't invalidated.
+  ...(process.env.NODE_ENV !== 'production' && {
+    cookies: { sessionToken: { name: 'forkai.session-token' } },
+  }),
   providers: [
     Credentials({
       id: 'cognito-token',

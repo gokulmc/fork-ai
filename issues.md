@@ -6,6 +6,11 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
+### Dev: JWTSessionError "no matching decryption secret" on every page load
+- **Symptom:** In local dev, the console spammed `[auth][error] JWTSessionError … no matching decryption secret` on each request and the user appeared logged out, even with a valid fork.ai login.
+- **Cause:** Cookies on `localhost` are shared across **ports**. Another next-auth v5 app (`p2p-lending-tracker` on `:3001`) writes the default `authjs.session-token` cookie with its own secret; fork.ai (any port) then tries to decrypt that foreign cookie with `NEXTAUTH_SECRET` and fails. Whichever app was logged into last breaks the other.
+- **Fix:** Namespace fork.ai's session cookie in dev only — `cookies: { sessionToken: { name: 'forkai.session-token' } }` spread into the NextAuth config under `NODE_ENV !== 'production'`. Prod keeps the default name so live forkai.in sessions aren't invalidated. `apps/web/src/auth.ts`.
+
 ### Ask AI node creation failed for long questions (> 500 chars)
 - **Symptom:** Asking a question longer than 500 characters in the Ask AI popup left the branch node stuck in an error state ("Failed to load. Try again.").
 - **Cause:** `CreateNodeDto.query` carried `@MaxLength(500)` — the same constraint that was removed from the root-query DTO in commit `6d50b05`. NestJS returned a 400 and the frontend error handler could only show a generic message.

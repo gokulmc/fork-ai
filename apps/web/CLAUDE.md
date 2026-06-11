@@ -116,6 +116,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 });
 ```
 
+### Dev-only session cookie name (`forkai.session-token`)
+
+`localhost` cookies are shared across **ports**, so any other next-auth app running locally (e.g. `p2p-lending-tracker` on `:3001`) writes the default `authjs.session-token` cookie with *its* secret — fork.ai then fails every request with `JWTSessionError: no matching decryption secret` and the user looks logged out. `src/auth.ts` therefore namespaces the session cookie in dev:
+
+```ts
+...(process.env.NODE_ENV !== 'production' && {
+  cookies: { sessionToken: { name: 'forkai.session-token' } },
+}),
+```
+
+**Prod must keep the default name** — renaming it there would log out every live forkai.in session at once. If a sibling local app ever shows the same error, it needs its own namespaced cookie name on its side.
+
 ---
 
 ## API client: `src/lib/api.ts`
