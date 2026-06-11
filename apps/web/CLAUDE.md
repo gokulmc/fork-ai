@@ -236,9 +236,40 @@ Section bodies are GitHub-flavoured markdown that may contain LaTeX. `marked.use
 ## Session-restore resilience (no "clear cache to fix")
 
 Restore reads `fork.ai.session` / `fork.ai.node` / `fork.ai.trial` at mount. These **self-heal** so a stale/deleted id can't strand the user (was a real prod bug fixed only by manually clearing site data):
-- `loadSession` catch removes `fork.ai.session`/`fork.ai.node` on a definitive **404/403** (kept on network blips, still retryable).
+- `loadSession` catch removes `fork.ai.session`/`fork.ai.node` on a definitive **404/403** (kept on network blips, still retryable). It also deletes the IndexedDB snapshot and, if one was already painted, clears the in-memory session state so a deleted session can't ghost-restore.
 - The guest share-load catch removes a stale `fork.ai.trial` so the invalid-link → login bounce can't recur.
 - A safety-net effect forces `loadingRoot = false` once auth settles **unauthenticated with no guest token**, so the `ResearchingScreen` can never hang (covers a logged-out former-guest with a persisted session id — the case the login gate skips).
+
+---
+
+## Performance — app shell & session cache
+
+Four mechanisms keep "time to usable" low; each has an invariant that must not be regressed.
+
+### 1. Service worker caches the app shell (`public/sw.js`)
+
+No longer a no-op. Caching is scoped to what can never go stale, preserving the ADR-0008 freshness contract (every deploy ships instantly):
+- **`/_next/static/*` → cache-first.** Content-hashed, immutable; a deploy mints new URLs referenced by freshly-fetched HTML, so staleness is impossible.
+- **Navigations (HTML) → network-first**, cached copy used only when the network fails — this is what lets the installed PWA launch on bad/no internet instead of white-screening.
+- **Public assets (icons/fonts/images) → stale-while-revalidate.**
+- **Everything else — API calls (cross-origin to NestJS), `/api/auth`, RSC payloads, SSE streams — is never intercepted.** Do not add caching for these.
+
+Bump `CACHE_VERSION` in `sw.js` when changing the caching strategy (the `activate` handler purges old caches by name).
+
+### 2. `Section` and `MindMap` are code-split (`App.tsx`)
+
+Loaded via `next/dynamic` (`ssr: false`), NOT static imports — `Section` drags in `marked` + `katex` + `highlight.js` (~1MB+ uncompressed) which Landing/History never need. **Do not convert these back to static imports**; the chunks load on first session render, in parallel with the LLM call. Anything else that imports `Section.tsx`/`MindMap.tsx` statically would silently pull the libraries back into the shared bundle.
+
+### 3. IndexedDB session cache (`src/lib/sessionCache.ts`)
+
+`loadSession` is **cache-first / network-authoritative**: it paints the last local snapshot from IndexedDB immediately (clearing `loadingRoot`), then lets `GET /sessions/:id` overwrite it when it lands. A write-through effect in `App.tsx` snapshots `{ nodes, annotations, persistentHl, highlightsList, notionPageUrl }` to IndexedDB (debounced 400ms) on every change, so the snapshot stays current as sections stream and branches are added.
+- **Loading/optimistic nodes are stripped before writing** — their temp ids don't exist server-side and a restored spinner would hang forever.
+- **The network result is always authoritative**; the cache only accelerates first paint. On the network apply, the current `activeId` is kept if it still exists (so the refresh doesn't yank a user off a node they navigated to while the cached copy was showing).
+- The store is capped at 10 sessions (oldest-by-`savedAt` evicted on write). All cache calls are best-effort — failures must behave as a cache miss, never block the network path.
+
+### 4. Landing exit delay
+
+`Landing.tsx`'s `setTimeout(…, 100)` before `onSubmit` must stay in sync with the `.landing` transition in `globals.css` (80ms). It sits on the critical path to the first LLM byte — keep it at ~animation + one paint, and don't raise either without the other.
 
 ---
 

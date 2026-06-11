@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import { useSession, signOut } from 'next-auth/react';
 import type { ForkNode, Annotation, HlMenuState, FollowUpState, ContextMenuState, PersistentHighlight, HighlightRecord } from '@/lib/types';
 import { uid, short5, stripMarkdown, stripCite, getRangeOffsets, modelDisplayName } from '@/lib/utils';
@@ -44,6 +45,7 @@ function rangeFromOffsets(root: Element, start: number, end: number): Range | nu
   return r;
 }
 import { useTweaks } from '@/hooks/useTweaks';
+import { getCachedSession, putCachedSession, deleteCachedSession } from '@/lib/sessionCache';
 import { buildNotionClipboard } from '@/lib/notion-clipboard';
 import {
   listSessions,
@@ -76,8 +78,6 @@ import {
   type NotionPage,
 } from '@/lib/api';
 import { OnboardingTour } from './OnboardingTour';
-import { MindMap } from './MindMap';
-import { Section } from './Section';
 import { SkeletonSections } from './SkeletonSections';
 import { HighlightMenu } from './HighlightMenu';
 import { FollowUpPop } from './FollowUpPop';
@@ -94,6 +94,15 @@ import {
   Search, Bookmark, ChevronRight, Sparkles, CornerDownRight, Hash,
   Quote, AlertCircle, ArrowUpRight, Pencil, Trash, Clock, LogIn,
 } from './Icons';
+
+// Code-split the session-only heavyweights out of the initial bundle: Section
+// drags in marked + katex + highlight.js (~300KB) and MindMap the SVG engine —
+// none of it is needed to paint Landing/History. Loaded on first session render.
+const Section = dynamic(() => import('./Section').then(m => m.Section), { ssr: false });
+const MindMap = dynamic(() => import('./MindMap').then(m => m.MindMap), {
+  ssr: false,
+  loading: () => <div className="mm-empty">Loading map…</div>,
+});
 
 const TWEAK_DEFAULTS = {
   theme: 'light' as const,
@@ -434,6 +443,25 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
 
   const loadSession = useCallback(async (sid: string, targetNodeId?: string) => {
     setLoadingRoot(true);
+    // Cache-first: paint the last local snapshot instantly (IndexedDB), then let
+    // the network result below — always authoritative — replace it when it lands.
+    let paintedFromCache = false;
+    try {
+      const cached = await getCachedSession(sid);
+      if (cached && Object.keys(cached.nodes).length) {
+        const activeTarget = (targetNodeId && cached.nodes[targetNodeId]) ? targetNodeId : cached.rootId;
+        setSessionId(cached.sessionId);
+        setNodes(cached.nodes);
+        setRootId(cached.rootId);
+        setActiveId(activeTarget);
+        setAnnotations(cached.annotations);
+        setPersistentHl(cached.persistentHl);
+        setHighlightsList(cached.highlightsList);
+        setNotionSavedUrl(cached.notionPageUrl);
+        setLoadingRoot(false);
+        paintedFromCache = true;
+      }
+    } catch { /* cache is best-effort — fall through to the network */ }
     try {
       const session = await getSession(idToken, sid);
       const forkNodes = session.nodes.map(toForkNode);
@@ -444,7 +472,9 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       setSessionId(session.sessionId);
       setNodes(nodeMap);
       setRootId(root?.id ?? null);
-      setActiveId(activeTarget);
+      // Don't yank the user off a node they navigated to while the cache copy
+      // was showing — keep the current node if it still exists server-side.
+      setActiveId(prev => (prev && nodeMap[prev]) ? prev : activeTarget);
       setAnnotations(session.annotations.map(toAnnotation));
       setPersistentHl(toHlMap(session.highlights));
       setHighlightsList(toHighlightRecords(session.highlights, nodeMap));
@@ -457,6 +487,11 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       if (err instanceof ApiError && (err.status === 404 || err.status === 403)) {
         localStorage.removeItem('fork.ai.session');
         localStorage.removeItem('fork.ai.node');
+        deleteCachedSession(sid).catch(() => {});
+        // The session is gone server-side — drop the ghost we painted from cache.
+        if (paintedFromCache) {
+          setSessionId(null); setNodes({}); setRootId(null); setActiveId(null);
+        }
       }
     } finally {
       setLoadingRoot(false);
@@ -497,6 +532,26 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       localStorage.removeItem('fork.ai.node');
     }
   }, [sessionId, activeId, rootId]);
+
+  // Write-through local snapshot (IndexedDB): keep the device copy current as
+  // sections stream in and branches/highlights change, so the next launch paints
+  // instantly from cache. Loading/optimistic nodes are stripped — their temp ids
+  // don't exist server-side and a restored spinner would hang forever.
+  useEffect(() => {
+    if (!sessionId || !rootId || !nodes[rootId]) return;
+    const t = setTimeout(() => {
+      const settled: Record<string, ForkNode> = {};
+      for (const [id, n] of Object.entries(nodes)) {
+        if (!n.loading) settled[id] = n;
+      }
+      if (!settled[rootId]) return;
+      putCachedSession({
+        sessionId, rootId, nodes: settled, annotations, persistentHl, highlightsList,
+        notionPageUrl: notionSavedUrl, savedAt: Date.now(),
+      }).catch(() => {});
+    }, 400); // debounce: streaming sections update `nodes` rapidly
+    return () => clearTimeout(t);
+  }, [sessionId, rootId, nodes, annotations, persistentHl, highlightsList, notionSavedUrl]);
 
   // Restore "read" markers for the active session (reset on session switch).
   useEffect(() => {

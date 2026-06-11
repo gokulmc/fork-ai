@@ -176,7 +176,7 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
   grid-template-rows: 1fr auto;
   background: var(--bg);
   z-index: 50;
-  transition: opacity .25s ease, transform .25s ease;
+  transition: opacity .08s ease, transform .08s ease;
   overflow-y: auto;
 }
 .landing.leaving { opacity: 0; transform: scale(0.99); }

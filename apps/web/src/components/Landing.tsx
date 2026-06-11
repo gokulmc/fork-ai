@@ -20,7 +20,9 @@ export function Landing({ onSubmit, loading, onShowHistory, outOfCredit, initial
   const onGo = () => {
     if (!q.trim() || loading) return;
     setLeaving(true);
-    setTimeout(() => onSubmit(q.trim()), 280);
+    // Keep this in sync with the .landing transition in globals.css — it blocks
+    // the network request, so it must stay short (~animation + one paint).
+    setTimeout(() => onSubmit(q.trim()), 100);
   };
 
   return (
