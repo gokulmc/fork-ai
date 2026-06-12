@@ -79,6 +79,19 @@ export class UsersService {
     }
   }
 
+  // Cross-instance backstop against anonymous abuse: per-IP throttling can be
+  // dodged by a botnet, the shared daily counter cannot.
+  async checkTrialBudget(): Promise<void> {
+    const budget = this.cfg.get<number>('billing.trialDailyBudgetUsd') ?? 5.00;
+    const spent = await this.db.getTrialSpend(utcDay());
+    if (spent >= budget) {
+      throw new HttpException(
+        'Trial limit reached for today — log in to continue',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
+
   async billUsage(
     sub: string,
     inputTokens: number,
@@ -87,6 +100,7 @@ export class UsersService {
     sessionId: string,
     nodeId: string,
     model: string,
+    isTrial = false,
   ): Promise<void> {
     const multiplier = this.cfg.get<number>('billing.creditMultiplier') ?? 1.5;
     const rate = priceFor(model);
@@ -113,6 +127,7 @@ export class UsersService {
     await Promise.all([
       this.db.deductCredit(sub, costUsd),
       this.db.putUsageEvent(event),
+      ...(isTrial ? [this.db.addTrialSpend(utcDay(), costUsd)] : []),
     ]);
 
     void this.maybeAwardReferralCredit(sub);
@@ -204,6 +219,10 @@ export class UsersService {
       this.logger.warn(`[referral] award failed for ${sub}: ${String(err)}`);
     }
   }
+}
+
+function utcDay(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function isPrivateIp(ip: string): boolean {

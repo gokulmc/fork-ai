@@ -145,6 +145,7 @@ export class SessionsService {
     if (!houseSub) throw new Error('TRIAL_HOUSE_SUB not configured');
 
     await this.users.checkCredit(houseSub);
+    await this.users.checkTrialBudget();
 
     const sessionId = ulid();
     const nodeId = ulid();
@@ -229,7 +230,7 @@ export class SessionsService {
           this.db.putNode({ ...rootNode, title, emoji, lede, sections, ...sourcesPatch }),
           this.db.updateSessionMeta(houseSub, sessionId, { title, emoji, lede }),
         ]);
-        await this.users.billUsage(houseSub, event.usage.inputTokens, event.usage.outputTokens, 'QUERY', sessionId, nodeId, ROOT_MODEL);
+        await this.users.billUsage(houseSub, event.usage.inputTokens, event.usage.outputTokens, 'QUERY', sessionId, nodeId, ROOT_MODEL, true);
         emit({ type: 'done', sessionId, nodeId, token, sections, sources: event.sources });
       }
     }

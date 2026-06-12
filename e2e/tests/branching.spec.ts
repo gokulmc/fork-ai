@@ -98,12 +98,14 @@ test.describe('Branching — Go deeper & Ask AI', () => {
     await expect(page.locator('.ws-error')).toContainText('Out of credit');
   });
 
-  test('failed branch keeps the node in an error state with a retry hint', async ({ page }) => {
+  test('failed branch keeps the node in an error state with the server message surfaced', async ({ page }) => {
     const api = baseApi().on(`POST /sessions/${SID}/nodes`, 500);
     await gotoWorkspace(page, api);
 
     await page.locator('.deeper-btn').first().click();
-    await expect(page.locator('.ws-error')).toContainText('Failed to load');
+    // The banner shows the backend's JSON `message` verbatim (the numeric mock
+    // sends `e2e mock error 500`); retry flows are covered in error-retry.spec.ts.
+    await expect(page.locator('.ws-error')).toContainText('e2e mock error 500');
   });
 
   test('branching invalidates a stale Notion export (Open in Notion → Save to Notion)', async ({ page }) => {

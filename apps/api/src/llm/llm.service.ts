@@ -14,6 +14,20 @@ export type StreamEvent =
   | { type: 'section'; heading: string; body: string }
   | { type: 'done'; usage: LlmUsage; sections?: LlmSection[]; sources?: CitationSource[] };
 
+// Map raw provider/SDK failures to a short, safe reason the UI can show next
+// to its Retry button. Never leaks keys, URLs, or stack traces.
+export function friendlyLlmError(err?: Error): string {
+  const msg = err?.message ?? '';
+  const status = (err as { status?: number; statusCode?: number } | undefined)?.status
+    ?? (err as { status?: number; statusCode?: number } | undefined)?.statusCode;
+  if (status === 429 || /rate.?limit/i.test(msg)) return 'The AI provider is rate-limiting requests';
+  if (status === 529 || /overloaded/i.test(msg)) return 'The AI model is overloaded right now';
+  if (/timeout|timed out|ETIMEDOUT|ECONNRESET|fetch failed|network/i.test(msg)) return 'The AI provider took too long to respond';
+  if (/json|parse/i.test(msg)) return 'The AI returned an unreadable answer';
+  if (status === 401 || status === 403) return 'The AI provider rejected the request';
+  return 'The AI request failed';
+}
+
 function extractMeta(text: string): { title: string; emoji: string; lede: string } | null {
   const title = text.match(/"title"\s*:\s*"((?:[^"\\]|\\.)*)"/)?.[1];
   const emoji = text.match(/"emoji"\s*:\s*"((?:[^"\\]|\\.)*)"/)?.[1];
@@ -367,7 +381,7 @@ Rules:
       }
     }
 
-    throw new InternalServerErrorException(`LLM call failed: ${lastError?.message}`);
+    throw new InternalServerErrorException(friendlyLlmError(lastError));
   }
 
   private parseJson(raw: string): LlmResponse {

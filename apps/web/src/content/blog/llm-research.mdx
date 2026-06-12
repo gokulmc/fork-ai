@@ -8,6 +8,11 @@ Doing research with LLMs isn't prompt engineering and it isn't fact-retrieval. I
 
 Here's the core technique. Start with a single substantive question and ask the model to break its answer into distinct sections rather than one block of prose. Now you have not one answer but several entry points. Each section is a candidate for a follow-up. Pick the ones that matter and branch them into their own answers — and branch again from there.
 
+<figure>
+  <img src="/blog/question-fanout.svg" alt="Diagram of one substantive question fanning out into four sectioned answers, with two of those answers branching again into deeper answers" width="1200" height="620" />
+  <figcaption>The core move: one question becomes several entry points, and the entry points branch again.</figcaption>
+</figure>
+
 What you're building is a tree of answers grown from one question. This is the same idea as the broader [AI research workflow](/blog/ai-research-workflow): breadth first, then depth, with the structure preserved as you go.
 
 ## Why context is the whole game

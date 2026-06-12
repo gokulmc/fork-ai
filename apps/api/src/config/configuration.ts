@@ -20,6 +20,7 @@ export const validationSchema = Joi.object({
   RAZORPAY_KEY_SECRET: Joi.string().allow('').optional(),
   RAZORPAY_WEBHOOK_SECRET: Joi.string().allow('').optional(),
   TRIAL_HOUSE_SUB: Joi.string().allow('').optional(),
+  TRIAL_DAILY_BUDGET_USD: Joi.number().default(5.00),
 });
 
 export const configuration = () => ({
@@ -57,6 +58,7 @@ export const configuration = () => ({
     signupCreditUsd: parseFloat(process.env.SIGNUP_CREDIT_USD ?? '5.00'),
     referralCreditUsd: parseFloat(process.env.REFERRAL_CREDIT_USD ?? '5.00'),
     creditMultiplier: parseFloat(process.env.CREDIT_MULTIPLIER ?? '1.5'),
+    trialDailyBudgetUsd: parseFloat(process.env.TRIAL_DAILY_BUDGET_USD ?? '5.00'),
   },
   razorpay: {
     keyId: process.env.RAZORPAY_KEY_ID ?? '',

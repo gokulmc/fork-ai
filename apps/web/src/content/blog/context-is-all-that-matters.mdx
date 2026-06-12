@@ -1,0 +1,38 @@
+In 2017, a paper called [*Attention Is All You Need*](https://arxiv.org/abs/1706.03762) quietly rewired the field. Nine years later, the slogan needs an update. The models are good — startlingly good, and converging. Ask three frontier models the same well-posed question and you'll get three competent answers. What separates a useless AI session from a brilliant one is no longer the model. It's the context you hand it.
+
+## The model is becoming a commodity; the context isn't
+
+Every serious lab now ships a model that can explain quantum decoherence, draft a contract clause, or critique your database schema. The intelligence is on tap. But intelligence applied to the wrong question — or to the right question stripped of its surroundings — produces fluent irrelevance. The model doesn't know what you've already read, which definition of a term you're using, or that your real question is two levels under the one you typed.
+
+That information lives in context. And context is the one input the model cannot supply for itself.
+
+## Prompt engineering was a phase. Context engineering is the job.
+
+The early playbook was incantations: "think step by step," "you are an expert," magic phrasings traded like cheat codes. Most of that has been absorbed into the models themselves. What remains — and what compounds — is the discipline of deciding *what the model gets to see*: the passage you're reacting to, the chain of questions that led you here, the constraint you discovered three branches ago.
+
+This is less like spellcasting and more like briefing a brilliant new colleague. They're smart on day one; they're *useful* once they know what you know. Every time an answer disappoints you, before blaming the model, ask: did it actually have the information a thoughtful human would have needed to answer well? Usually it didn't.
+
+## Context is a structure, not a transcript
+
+The default chat interface treats context as "everything said so far," accumulated in a single scrolling column. That's the laziest possible structure, and it fails in both directions at once. Early, crucial framing drifts out of relevance as the conversation meanders. Meanwhile, every dead end and tangent you abandoned stays in the window, quietly steering answers you no longer want steered.
+
+<figure>
+  <img src="/blog/context-lineage.svg" alt="Diagram comparing a linear chat, where the whole transcript including dead tangents stays in the context window, with a branching map, where only the highlighted lineage from root question to current branch is sent to the model" width="1200" height="640" />
+  <figcaption>A transcript carries everything forever. A tree sends each question only its own lineage.</figcaption>
+</figure>
+
+Real inquiry isn't linear, so its context shouldn't be either. When you go deeper on one section of an answer, the context that matters is *that section's lineage* — the path of questions from your root query down to this branch — not the sibling tangent you explored and dropped. When you highlight one sentence and ask about it, the sentence is the subject; the model should receive it as such, not rediscover it inside a transcript.
+
+This is the premise **fork.ai** is built on. Every answer arrives as a node on a live map, split into sections you can act on: hit "Go deeper" on a section and the new branch inherits exactly that section's lineage; highlight a passage and "Ask AI" sends the model that passage as the subject. The [branching conversation](/blog/branching-ai-chat) gives every question its own precisely scoped context for free, because the structure of the inquiry *is* the structure of the context — you never assemble it by hand, and you never drag a dead tangent along.
+
+## The compounding effect
+
+Here's what changes when you get this right. Scoped context makes each answer sharper. Sharper answers produce better follow-up questions. Better follow-ups, asked with their own tight context, go deeper than the last round. A session stops being a sequence of independent oracle consultations and becomes something cumulative — each node standing on the ones above it, the way [a real research workflow](/blog/ai-research-workflow) builds.
+
+And the artifact you're left with isn't a transcript you'll never reopen. A fork.ai session ends as a map of contexts: every answer attached to exactly the question and material that produced it, ready to revisit, extend, or [export](/blog/notion-ai-research). That's reusable in a way chat history never is.
+
+## All that matters
+
+The next leaps in model capability will arrive on schedule, and they'll be impressive. But they'll be evenly distributed — everyone gets the same weights. What won't be evenly distributed is the skill of feeding them. Two people with identical models and identical questions will get wildly different value, and the difference will be entirely in what surrounded the question.
+
+Attention was all the *architecture* needed. Context is all that matters for the rest of us.

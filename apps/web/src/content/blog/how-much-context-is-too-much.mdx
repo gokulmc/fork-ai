@@ -1,0 +1,40 @@
+If [context is all that matters](/blog/context-is-all-that-matters), the tempting conclusion is: give the model everything. Context windows have ballooned from 4,000 tokens to a million-plus, and the marketing writes itself — drop in the whole codebase, the whole textbook, the whole conversation, and let the model sort it out.
+
+It doesn't sort it out. Past a point, more context makes answers *worse*, and the point arrives much earlier than the window's advertised size. Knowing where that point is — and how to stay under it — is the difference between using long context and being used by it.
+
+## The window is not the budget
+
+A million-token window means the model *can* read a million tokens, not that it attends to them equally. Research on long-context behaviour keeps finding the same shape: retrieval is strong at the beginning and end of the window and sags in the middle — the ["lost in the middle" effect](https://arxiv.org/abs/2307.03172) documented by Liu et al. across both open and closed models. Stack enough loosely relevant material in front of a model and the genuinely relevant paragraph starts competing with thousands of plausible distractors. Attention is a finite resource being spread thinner; the window grew, the budget didn't.
+
+<figure>
+  <img src="/blog/lost-in-the-middle.svg" alt="Chart of retrieval accuracy against the position of a key fact in the context window: accuracy is high when the fact is near the start or end of the window and sags in the middle" width="1200" height="560" />
+  <figcaption>The U-curve of long context: models recall the edges of the window far better than the middle (after Liu et al., 2023).</figcaption>
+</figure>
+
+Practitioners have started calling the degradation [*context rot*](https://research.trychroma.com/context-rot): as a session accumulates, answers get vaguer, earlier instructions stop being honoured, and the model begins averaging over everything it's seen instead of focusing on what you just asked — Chroma's report measured performance on even trivially simple tasks degrading as input length alone grew. If you've ever felt a long chat get *dumber* as it got longer, that wasn't your imagination.
+
+## Three ways too much context hurts
+
+**Dilution.** The signal-to-noise ratio of the window drops. Your current question deserves a model whose full attention is on the two passages that matter — not one reconciling them with forty paragraphs of abandoned tangents.
+
+**Contamination.** Dead ends don't just dilute, they steer. The framing you tried and discarded an hour ago is still in the window, still exerting gravity on every subsequent answer. In a linear chat there is no way to *un-say* something short of starting over.
+
+**Cost and latency.** Every token in the window is paid for and processed on every single turn. A bloated context makes each round slower and more expensive while delivering less. You are paying a premium for degradation.
+
+## The fix is curation, not capacity
+
+The answer to "how much is too much?" is roughly: *anything a thoughtful human briefing a colleague would have left out.* The skill isn't fitting more in; it's scoping — handing the model the relevant lineage and nothing else.
+
+That's brutal to do by hand in a chat window, which is why almost nobody does it. But it falls out naturally from structure — and it's exactly how **fork.ai** assembles context. In a fork.ai session, each node's context is its *ancestry*: the chain from your root question down to the section you're expanding, not the whole session. The sibling branch where you explored and rejected an idea simply isn't in the window, because it isn't on the path. Highlight one sentence and [ask about it](/blog/branching-ai-chat), and the model gets that sentence as the subject, full stop. Pruning happens by construction instead of discipline.
+
+There's a useful test buried in this: if you couldn't say *why* a given piece of context is in the window, it shouldn't be.
+
+## Small contexts, big maps
+
+None of this is an argument for knowing less. It's an argument for separating the two jobs we currently force one window to do. Accumulated knowledge belongs in a durable structure — [a map you can navigate and keep](/blog/knowledge-map) — where its size is a feature. The model's working context should stay small, sharp, and scoped to the question at hand, assembled fresh from the relevant slice of that structure each time. That separation is fork.ai's architecture in one sentence: the mind map holds everything you've built, and each new branch sends the model only the lineage that earned its place.
+
+Big memory, small attention. That's how people work, and it's how the best LLM sessions work too. The million-token window is a wonderful capability and a terrible default — treat it like a warehouse, not a desk.
+
+---
+
+<p className="post-sources">Sources: Nelson F. Liu et al., <a href="https://arxiv.org/abs/2307.03172">“Lost in the Middle: How Language Models Use Long Contexts”</a> (TACL, 2024); Kelly Hong et al., <a href="https://research.trychroma.com/context-rot">“Context Rot: How Increasing Input Tokens Impacts LLM Performance”</a> (Chroma Research, 2025).</p>

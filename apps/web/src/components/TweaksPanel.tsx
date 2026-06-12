@@ -423,36 +423,36 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, 
           onClick={e => { if (e.currentTarget === e.target) setHowToOpen(false); }}
           style={{
             position: 'fixed', inset: 0, zIndex: 80,
-            background: 'rgba(255,255,255,0.88)', backdropFilter: 'blur(4px)',
+            background: 'color-mix(in srgb, var(--bg) 88%, transparent)', backdropFilter: 'blur(4px)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}
         >
           <div style={{
-            background: '#ffffff', border: '1px solid rgba(10,10,10,0.15)',
+            background: 'var(--paper)', border: '1px solid var(--line-strong)',
             borderRadius: 8, padding: '28px',
             width: 'min(620px, 92vw)',
             maxHeight: '84vh',
             display: 'flex', flexDirection: 'column',
             fontFamily: "ui-monospace,'JetBrains Mono','SF Mono',Menlo,monospace",
-            boxShadow: '0 8px 32px rgba(10,10,10,0.10)',
+            boxShadow: 'var(--shadow-2)',
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexShrink: 0 }}>
-              <div style={{ fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'rgba(10,10,10,0.4)' }}>
+              <div style={{ fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>
                 How to use fork ai
               </div>
-              <button onClick={() => setHowToOpen(false)} style={{ background: 'none', border: 0, cursor: 'pointer', fontSize: 14, color: 'rgba(10,10,10,0.4)', lineHeight: 1 }}>✕</button>
+              <button onClick={() => setHowToOpen(false)} style={{ background: 'none', border: 0, cursor: 'pointer', fontSize: 14, color: 'var(--ink-3)', lineHeight: 1 }}>✕</button>
             </div>
-            <div style={{ overflowY: 'auto', flex: 1, fontSize: 11, lineHeight: 1.75, color: 'rgba(10,10,10,0.8)', letterSpacing: '0.02em' }}>
+            <div style={{ overflowY: 'auto', flex: 1, fontSize: 11, lineHeight: 1.75, color: 'var(--ink)', letterSpacing: '0.02em' }}>
               <HowToContent />
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20, flexShrink: 0 }}>
               <button
                 onClick={() => setHowToOpen(false)}
                 style={{
-                  background: 'none', border: '1px solid rgba(10,10,10,0.15)',
+                  background: 'none', border: '1px solid var(--line-strong)',
                   borderRadius: 4, padding: '7px 16px', cursor: 'pointer',
                   fontFamily: "ui-monospace,'JetBrains Mono','SF Mono',Menlo,monospace",
-                  fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(10,10,10,0.5)',
+                  fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-2)',
                 }}
               >Close</button>
             </div>
@@ -466,18 +466,18 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, 
           onClick={e => { if (e.currentTarget === e.target) setSupportOpen(false); }}
           style={{
             position: 'fixed', inset: 0, zIndex: 80,
-            background: 'rgba(255,255,255,0.88)', backdropFilter: 'blur(4px)',
+            background: 'color-mix(in srgb, var(--bg) 88%, transparent)', backdropFilter: 'blur(4px)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}
         >
           <div style={{
-            background: '#ffffff', border: '1px solid rgba(10,10,10,0.15)',
+            background: 'var(--paper)', border: '1px solid var(--line-strong)',
             borderRadius: 8, padding: '28px',
             width: 'min(420px, 92vw)',
             fontFamily: "ui-monospace,'JetBrains Mono','SF Mono',Menlo,monospace",
-            boxShadow: '0 8px 32px rgba(10,10,10,0.10)',
+            boxShadow: 'var(--shadow-2)',
           }}>
-            <div style={{ fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'rgba(10,10,10,0.4)', marginBottom: 20 }}>
+            <div style={{ fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'var(--ink-3)', marginBottom: 20 }}>
               Contact support
             </div>
             {supportSent ? (
@@ -501,10 +501,10 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, 
                     disabled={supportLoading}
                     style={{
                       display: 'block', width: '100%', boxSizing: 'border-box',
-                      border: 0, borderBottom: '1px solid rgba(10,10,10,0.12)',
+                      border: 0, borderBottom: '1px solid var(--line-strong)',
                       padding: '10px 0', marginBottom: 14,
-                      fontFamily: 'inherit', fontSize: 11, color: '#0a0a0a',
-                      background: '#ffffff', outline: 'none', letterSpacing: '0.04em',
+                      fontFamily: 'inherit', fontSize: 11, color: 'var(--ink)',
+                      background: 'transparent', outline: 'none', letterSpacing: '0.04em',
                     }}
                   />
                 ))}
@@ -514,10 +514,10 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, 
                   disabled={supportLoading}
                   style={{
                     display: 'block', width: '100%', boxSizing: 'border-box',
-                    border: 0, borderBottom: '1px solid rgba(10,10,10,0.12)',
+                    border: 0, borderBottom: '1px solid var(--line-strong)',
                     padding: '10px 0', marginBottom: 14,
-                    fontFamily: 'inherit', fontSize: 11, color: '#0a0a0a',
-                    background: '#ffffff', outline: 'none', letterSpacing: '0.04em',
+                    fontFamily: 'inherit', fontSize: 11, color: 'var(--ink)',
+                    background: 'transparent', outline: 'none', letterSpacing: '0.04em',
                     appearance: 'none', cursor: 'pointer',
                   }}
                 >
@@ -533,10 +533,10 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, 
                   rows={5}
                   style={{
                     display: 'block', width: '100%', boxSizing: 'border-box',
-                    border: '1px solid rgba(10,10,10,0.12)', borderRadius: 4,
+                    border: '1px solid var(--line-strong)', borderRadius: 4,
                     padding: '10px', marginBottom: 14,
-                    fontFamily: 'inherit', fontSize: 11, color: '#0a0a0a',
-                    background: '#ffffff', outline: 'none', letterSpacing: '0.04em',
+                    fontFamily: 'inherit', fontSize: 11, color: 'var(--ink)',
+                    background: 'transparent', outline: 'none', letterSpacing: '0.04em',
                     resize: 'vertical',
                   }}
                 />
@@ -547,10 +547,10 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, 
                   <button
                     onClick={() => setSupportOpen(false)}
                     style={{
-                      background: 'none', border: '1px solid rgba(10,10,10,0.15)',
+                      background: 'none', border: '1px solid var(--line-strong)',
                       borderRadius: 4, padding: '7px 16px', cursor: 'pointer',
                       fontFamily: 'inherit', fontSize: 10, letterSpacing: '0.12em',
-                      textTransform: 'uppercase', color: 'rgba(10,10,10,0.5)',
+                      textTransform: 'uppercase', color: 'var(--ink-2)',
                     }}
                   >Cancel</button>
                   <button
@@ -572,10 +572,10 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, 
                       }
                     }}
                     style={{
-                      background: '#0a0a0a', border: 0,
+                      background: 'var(--ink)', border: 0,
                       borderRadius: 4, padding: '7px 16px', cursor: 'pointer',
                       fontFamily: 'inherit', fontSize: 10, letterSpacing: '0.12em',
-                      textTransform: 'uppercase', color: '#ffffff',
+                      textTransform: 'uppercase', color: 'var(--bg)',
                       opacity: supportLoading ? 0.6 : 1,
                     }}
                   >{supportLoading ? '…' : 'Send'}</button>
@@ -587,10 +587,10 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, 
                 <button
                   onClick={() => setSupportOpen(false)}
                   style={{
-                    background: 'none', border: '1px solid rgba(10,10,10,0.15)',
+                    background: 'none', border: '1px solid var(--line-strong)',
                     borderRadius: 4, padding: '7px 16px', cursor: 'pointer',
                     fontFamily: 'inherit', fontSize: 10, letterSpacing: '0.12em',
-                    textTransform: 'uppercase', color: 'rgba(10,10,10,0.5)',
+                    textTransform: 'uppercase', color: 'var(--ink-2)',
                   }}
                 >Close</button>
               </div>
@@ -603,13 +603,13 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, 
 }
 
 function HowToContent() {
-  const h2: React.CSSProperties = { fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#0a0a0a', marginTop: 20, marginBottom: 6 };
+  const h2: React.CSSProperties = { fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--ink)', marginTop: 20, marginBottom: 6 };
   const p: React.CSSProperties = { margin: '0 0 10px' };
   const li: React.CSSProperties = { marginBottom: 4 };
   const code: React.CSSProperties = {
-    fontFamily: 'inherit', background: '#ffffff',
+    fontFamily: 'inherit', background: 'var(--panel)',
     padding: '1px 5px', borderRadius: 3, fontSize: 10,
-    border: '1px solid rgba(10,10,10,0.12)',
+    border: '1px solid var(--line-strong)',
   };
   return (
     <div>

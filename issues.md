@@ -6,6 +6,31 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
+### Anonymous trial endpoint accepted unbounded `sectionCount` (cost hole) and had no rate limiting
+- **Symptom:** `POST /share` (public, no auth) fired a Sonnet stream billed to the house account with whatever `sectionCount` the body carried — `{ query, sectionCount: 1000 }` in a loop could drain real money. No per-IP limit existed on any endpoint.
+- **Cause:** `CreateSessionDto.sectionCount` had `@IsOptional()` but no range validation (the branch DTO was clamped 4–8; the root DTO was missed). No ThrottlerModule or custom guard was ever configured.
+- **Fix:** Clamp `sectionCount` (`@IsInt @Min(1) @Max(8)`) in `create-session.dto.ts`; add `@nestjs/throttler` (global 100/min/IP; `POST /share` 5/hour, `POST /share/:token/nodes` 30/hour, `GET /topics` 10/min); add a cross-instance daily trial budget — a `TRIAL#<yyyy-mm-dd>` DynamoDB counter incremented in `billUsage(isTrial)` and checked via `UsersService.checkTrialBudget()` (429 once `TRIAL_DAILY_BUDGET_USD`, default $5, is spent). The budget is the backstop the per-instance throttler can't provide against distributed bots.
+
+### Error banner was a dead end: doubled "Try again.. Try again.", no retry, generic message
+- **Symptom:** A failed branch/root LLM call showed "Sorry — Failed to load. Try again.. Try again." — static text, nothing clickable; the only recovery was re-invoking the action from the parent. A failed root query silently dumped the user back to Landing. Real failure reasons (model overloaded, rate-limited) never reached the UI; SSE `error` events were parsed but ignored entirely (node stuck loading).
+- **Cause:** The banner rendered `Sorry — {active.error}. Try again.` while the catch blocks already set `error = 'Failed to load. Try again.'` (hence the doubling). No retry context was kept. `createSessionStream`/`createTrialSessionStream` forwarded `{type:'error'}` to a handler that had no case for it. Backend threw `LLM call failed: <raw provider message>` (leak) and SSE catch blocks sent raw `err.message`.
+- **Fix:** Backend maps provider failures through `friendlyLlmError()` (llm.service.ts) and both SSE catch blocks send `{ message, status }` sanitized. Frontend: `extractErrorMessage` pulls the NestJS `message` into `ApiError`; the shared `readSseStream` throws `ApiError` on in-band `error` events; catch blocks store `RetryInfo` keyed by the failed node id and the banner renders a working **Retry** button (`retryNode` re-fires the call reusing the same node id; failed root queries keep the workspace + Retry instead of bouncing to Landing). The hardcoded `. Try again.` suffix is gone. `apps/web/src/components/App.tsx`, `apps/web/src/lib/api.ts`.
+
+### Guests hitting the trial cap saw "Out of credit — open Billing to recharge"
+- **Symptom:** A guest branching past the 5-node trial cap (402) was told to open Billing — which guests don't have — and users read the wall as "you can only go one level deep".
+- **Cause:** The 402 handler had a single authed-user message for all callers.
+- **Fix:** `nodeErrorDisplay()` keys the copy on guest-ness ("Trial limit reached — log in to keep exploring") and the banner shows a **Log in** button (`setForceLogin(true)`) for unauthenticated 402/429 instead of Retry. `apps/web/src/components/App.tsx`.
+
+### Dark mode: white LoginPage, white TweaksPanel dialog inputs, glaring highlight pastels
+- **Symptom:** In dark mode the login screen stayed a white flashbang, the How-to/Support dialog inputs were white-on-white, and text highlights kept their solid light pastels.
+- **Cause:** LoginPage predates the theme system — `#ffffff`/`#0a0a0a`/`#555555`/`rgba(10,10,10,…)` hardcoded in inline styles and SVG `setAttribute` calls. TweaksPanel overlays hardcoded white surfaces. The dark `::highlight()` override only forced text black, never dimming the pastel backgrounds.
+- **Fix:** LoginPage resolves a palette from `data-theme` (`lpPal()`) used by both JSX styles and the SVG graph (the "arrived" overlay intentionally stays white — the mark is dark-on-transparent). TweaksPanel overlays now use `var(--paper)`/`var(--ink)`/`var(--line-strong)` etc. Dark highlights use translucent washes of each pastel (page ink stays readable) with brightened fg variants for colour combos. `apps/web/src/components/LoginPage.tsx`, `TweaksPanel.tsx`, `globals.css`.
+
+### `dynamo.repository.spec.ts` failed to compile its testing module (18 tests)
+- **Symptom:** The whole repository suite errored at `createTestingModule().compile()`.
+- **Cause:** `BLOG_SUBMISSION_MODEL`/`BLOG_VIEW_MODEL` were added to the repository constructor without updating the spec's providers (pre-existing); `TRIAL_SPEND_MODEL` joined the list with the trial-budget work.
+- **Fix:** Provide mocks for all three models in the spec. `apps/api/src/dynamo/dynamo.repository.spec.ts`.
+
 ### Saved highlights didn't paint until the first interaction on a cold session load
 - **Symptom:** Opening a session that already has highlights showed the prose un-highlighted on first paint; the marks only appeared after the user selected some text or switched nodes. The data was correct — purely a render-timing miss.
 - **Cause:** `Section` is code-split (`next/dynamic`, `ssr:false`). The `useLayoutEffect` in `App.tsx` that paints highlights via the CSS Custom Highlight API runs once its deps (`persistentHl`/`activeId`/`hlMenu`) settle, but on a cold load that happens *before* the `Section` chunk has mounted any `.section-body` — so `querySelector` finds nothing and nothing re-runs the effect when the chunk later mounts.

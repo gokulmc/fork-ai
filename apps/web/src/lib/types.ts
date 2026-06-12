@@ -23,6 +23,7 @@ export interface ForkNode {
   createdAt: number;
   loading: boolean;
   error?: string;
+  errorStatus?: number; // HTTP status of the failure — drives Retry vs Log-in CTA
   sources?: CitationSource[];
   model?: string; // concrete model id that produced this node
 }

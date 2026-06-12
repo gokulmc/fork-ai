@@ -14,6 +14,12 @@ import path from 'path';
  * was started with the localhost base or the route mocks will not match —
  * the mocks themselves are host-agnostic, but auth cookies and CORS aren't.
  */
+// Port 3001 can be squatted by OTHER local apps (e.g. p2p-lending-tracker's dev
+// server) — reuseExistingServer would then run the whole suite against the wrong
+// app and every test fails with "element not found". Set E2E_PORT to sidestep a
+// collision: `E2E_PORT=3101 npm run test:e2e`.
+const PORT = Number(process.env.E2E_PORT ?? 3001);
+
 export default defineConfig({
   testDir: './tests',
   fullyParallel: true,
@@ -27,7 +33,7 @@ export default defineConfig({
   expect: { timeout: 10_000 },
 
   use: {
-    baseURL: 'http://localhost:3001',
+    baseURL: `http://localhost:${PORT}`,
     trace: 'retain-on-failure',
     // The app registers a service worker (public/sw.js). Once active it proxies
     // fetches, and WebKit does NOT surface SW-initiated requests to page.route
@@ -53,9 +59,9 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: 'npm run dev:web',
-    cwd: path.resolve(__dirname, '..'),
-    port: 3001,
+    command: `npx next dev -p ${PORT}`,
+    cwd: path.resolve(__dirname, '../apps/web'),
+    port: PORT,
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
     env: {
@@ -63,7 +69,7 @@ export default defineConfig({
       // Override the LAN-IP values that may live in apps/web/.env.local —
       // real process env always wins over .env files in Next.js.
       NEXT_PUBLIC_API_BASE_URL: 'http://localhost:3000',
-      NEXTAUTH_URL: 'http://localhost:3001',
+      NEXTAUTH_URL: `http://localhost:${PORT}`,
     },
   },
 });

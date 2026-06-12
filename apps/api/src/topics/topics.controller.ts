@@ -1,5 +1,6 @@
 import { Controller, Get, InternalServerErrorException, Logger } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { Public } from '@/auth/public.decorator';
 import { LlmService } from '@/llm/llm.service';
 
@@ -21,6 +22,7 @@ export class TopicsController {
 
   @Public()
   @Get()
+  @Throttle({ default: { ttl: 60_000, limit: 10 } }) // cached daily, but the cold path hits the LLM
   @ApiOperation({ summary: 'Trending research topics (web-searched once per day, same for all users)' })
   async getTopics(): Promise<{ topics: string[] }> {
     if (cachedTopics && Date.now() < cacheExpiresAt) {

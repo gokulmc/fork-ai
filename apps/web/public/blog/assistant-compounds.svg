@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 620" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
+  <rect width="1200" height="620" fill="#fbfaf8"/>
+
+  <text x="300" y="76" text-anchor="middle" font-size="22" letter-spacing="3" fill="#8f897c">FORGETS</text>
+  <text x="300" y="106" text-anchor="middle" font-size="17" fill="#b3ac9c">every session evaporates</text>
+  <text x="890" y="76" text-anchor="middle" font-size="22" letter-spacing="3" fill="#8f897c">KEEPS THE MAP</text>
+  <text x="890" y="106" text-anchor="middle" font-size="17" fill="#b3ac9c">every session attaches</text>
+
+  <!-- left: three fading transcripts, each starts over -->
+  <g opacity="0.35">
+    <rect x="90" y="150" width="130" height="170" rx="12" fill="#ffffff" stroke="#e3ded4"/>
+    <rect x="106" y="170" width="98" height="8" rx="4" fill="#d8d2c6"/>
+    <rect x="106" y="188" width="80" height="8" rx="4" fill="#d8d2c6"/>
+    <rect x="106" y="206" width="92" height="8" rx="4" fill="#d8d2c6"/>
+    <rect x="106" y="224" width="70" height="8" rx="4" fill="#d8d2c6"/>
+  </g>
+  <text x="155" y="350" text-anchor="middle" font-size="16" fill="#b3ac9c">monday</text>
+  <g opacity="0.6">
+    <rect x="240" y="150" width="130" height="170" rx="12" fill="#ffffff" stroke="#e3ded4"/>
+    <rect x="256" y="170" width="98" height="8" rx="4" fill="#d8d2c6"/>
+    <rect x="256" y="188" width="84" height="8" rx="4" fill="#d8d2c6"/>
+    <rect x="256" y="206" width="92" height="8" rx="4" fill="#d8d2c6"/>
+    <rect x="256" y="224" width="64" height="8" rx="4" fill="#d8d2c6"/>
+  </g>
+  <text x="305" y="350" text-anchor="middle" font-size="16" fill="#b3ac9c">tuesday</text>
+  <rect x="390" y="150" width="130" height="170" rx="12" fill="#ffffff" stroke="#e3ded4"/>
+  <rect x="406" y="170" width="98" height="8" rx="4" fill="#d8d2c6"/>
+  <rect x="406" y="188" width="74" height="8" rx="4" fill="#d8d2c6"/>
+  <rect x="406" y="206" width="92" height="8" rx="4" fill="#d8d2c6"/>
+  <rect x="406" y="224" width="80" height="8" rx="4" fill="#d8d2c6"/>
+  <text x="455" y="350" text-anchor="middle" font-size="16" fill="#26231f">today</text>
+
+  <text x="230" y="420" font-size="17" fill="#c4452e">↺ re-asking what you</text>
+  <text x="230" y="444" font-size="17" fill="#c4452e">already answered</text>
+
+  <!-- right: one growing map; sessions in deepening shade -->
+  <g stroke="#d8d2c6" stroke-width="2.5" fill="none">
+    <path d="M 890 200 C 890 240, 800 240, 800 280"/>
+    <path d="M 890 200 C 890 240, 980 240, 980 280"/>
+    <path d="M 800 336 C 800 370, 740 370, 740 404"/>
+  </g>
+  <g stroke="#b45309" stroke-width="3" fill="none">
+    <path d="M 980 336 C 980 370, 1040 370, 1040 404"/>
+    <path d="M 800 336 C 800 370, 870 370, 870 404"/>
+  </g>
+
+  <!-- session 1 nodes (oldest, gray) -->
+  <rect x="810" y="150" width="160" height="50" rx="11" fill="#f1eee8" stroke="#e3ded4"/>
+  <text x="890" y="181" text-anchor="middle" font-size="16" fill="#8f897c">monday</text>
+  <rect x="730" y="280" width="140" height="56" rx="11" fill="#f1eee8" stroke="#e3ded4"/>
+  <text x="800" y="313" text-anchor="middle" font-size="16" fill="#8f897c">monday</text>
+  <!-- session 2 -->
+  <rect x="910" y="280" width="140" height="56" rx="11" fill="#efe5d6" stroke="#d8c8ac"/>
+  <text x="980" y="313" text-anchor="middle" font-size="16" fill="#7a6c52">tuesday</text>
+  <rect x="676" y="404" width="128" height="50" rx="11" fill="#efe5d6" stroke="#d8c8ac"/>
+  <text x="740" y="435" text-anchor="middle" font-size="16" fill="#7a6c52">tuesday</text>
+  <!-- session 3 (today, accent) -->
+  <rect x="806" y="404" width="128" height="50" rx="11" fill="#fdf3e7" stroke="#b45309" stroke-width="2.5"/>
+  <text x="870" y="435" text-anchor="middle" font-size="16" fill="#7a4a12">today</text>
+  <rect x="976" y="404" width="128" height="50" rx="11" fill="#fdf3e7" stroke="#b45309" stroke-width="2.5"/>
+  <text x="1040" y="435" text-anchor="middle" font-size="16" fill="#7a4a12">today</text>
+
+  <text x="890" y="520" text-anchor="middle" font-size="17" fill="#b45309">today branches off monday — nothing is re-asked</text>
+
+  <line x1="600" y1="140" x2="600" y2="540" stroke="#eee9df" stroke-width="2"/>
+  <text x="600" y="586" text-anchor="middle" font-size="18" fill="#b3ac9c">research is supposed to accumulate</text>
+</svg>

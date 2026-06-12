@@ -295,6 +295,30 @@ The brand mark exists as two SVGs in `public/`: **`icon.svg` (light)** and **`ic
 
 ---
 
+## Blog — content & illustration conventions
+
+Curated posts live in `src/content/blog/*.mdx` with **all metadata in `src/content/blog/index.ts`** (typed `POSTS` registry: slug, emoji, title, description, keywords, ISO date, readingMinutes, lazy `load()` importer — no frontmatter in the MDX). Adding a post = write the `.mdx` + register it in `index.ts`; `generateStaticParams` in `app/blog/[slug]/page.tsx` picks it up automatically. Shared chrome/typography (including `figure`/`img`/`figcaption`/`.post-sources` styles) is inline CSS in `app/blog/layout.tsx`.
+
+**Editorial conventions (every post):**
+- Essayistic prose, `##` headings, no H1 (the page renders the title from the registry).
+- Cross-link related posts inline (`/blog/<slug>`), and present **fork.ai as the solution** by name at the post's pivot point — not just via links.
+- Cite factual claims inline with real links (arXiv, primary sources); fact-heavy posts get a closing `<p className="post-sources">Sources: …</p>` after a `---`.
+
+**Illustrations — every post gets one bespoke SVG diagram:**
+- Hand-authored SVG in `public/blog/<motif>.svg`, embedded in MDX as:
+  ```jsx
+  <figure>
+    <img src="/blog/<name>.svg" alt="<full description of the diagram>" width="1200" height="620" />
+    <figcaption>One-line takeaway.</figcaption>
+  </figure>
+  ```
+- **Canvas:** `viewBox="0 0 1200 <560–640>"`, root `font-family="ui-monospace, SFMono-Regular, Menlo, monospace"`. The SVG carries its own paper background (works in dark mode as a card; the layout adds the border/radius).
+- **Palette (fixed — keep all diagrams consistent):** bg `#fbfaf8` · ink `#26231f` · muted label `#8f897c` · faint label `#b3ac9c` · line/stroke `#e3ded4` · node fill `#f1eee8` · fake-text bars `#d8d2c6` · grid `#eee9df` · **accent `#b45309`** · accent fill `#fdf3e7` · accent text `#7a4a12` · accent bars `#e3c49a` · negative/red `#c4452e` · dark panel `#211e1a`.
+- **Vocabulary:** rounded-rect nodes (`rx≈12`) + curved edges for maps; accent = the highlighted path/solution, gray = everything else, red = the failure mode; simulate text with rounded bars, real labels in mono ≥14px (≥16px preferred — the SVG renders at 720px wide); side-by-side comparisons get mono uppercase headers + a faint center divider; one faint takeaway line at the bottom.
+- Validate with `xmllint --noout public/blog/*.svg` (typographic quotes are fine; no unescaped `&`/`<`).
+
+Community submissions (`/blog/submit`) are markdown stored via the API — untouched by all of the above.
+
 ## Design system
 
 Styles live entirely in `src/app/globals.css` (ported from root `styles.css`).

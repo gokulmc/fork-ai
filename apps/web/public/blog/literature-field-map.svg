@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 620" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
+  <rect width="1200" height="620" fill="#fbfaf8"/>
+
+  <!-- edges field -> areas -->
+  <g stroke="#d8d2c6" stroke-width="2.5" fill="none">
+    <path d="M 600 176 C 600 230, 280 230, 280 282"/>
+    <path d="M 600 176 L 600 282"/>
+    <path d="M 600 176 C 600 230, 920 230, 920 282"/>
+  </g>
+
+  <!-- field node -->
+  <rect x="490" y="110" width="220" height="66" rx="14" fill="#fdf3e7" stroke="#b45309" stroke-width="2.5"/>
+  <text x="600" y="138" text-anchor="middle" font-size="19" fill="#7a4a12">the field</text>
+  <text x="600" y="161" text-anchor="middle" font-size="15" fill="#b45309">mapped before reading</text>
+
+  <!-- area: methods -->
+  <rect x="190" y="282" width="180" height="56" rx="12" fill="#f1eee8" stroke="#e3ded4"/>
+  <text x="280" y="316" text-anchor="middle" font-size="17" fill="#26231f">methods</text>
+  <!-- sources -->
+  <g stroke="#d8d2c6" stroke-width="2">
+    <line x1="240" y1="338" x2="218" y2="392"/>
+    <line x1="320" y1="338" x2="342" y2="392"/>
+  </g>
+  <circle cx="218" cy="404" r="11" fill="#ffffff" stroke="#e3ded4" stroke-width="2"/>
+  <circle cx="342" cy="404" r="11" fill="#ffffff" stroke="#e3ded4" stroke-width="2"/>
+  <text x="218" y="440" text-anchor="middle" font-size="14" fill="#b3ac9c">paper</text>
+  <text x="342" y="440" text-anchor="middle" font-size="14" fill="#b3ac9c">paper</text>
+
+  <!-- area: competing models -->
+  <rect x="500" y="282" width="200" height="56" rx="12" fill="#f1eee8" stroke="#e3ded4"/>
+  <text x="600" y="316" text-anchor="middle" font-size="17" fill="#26231f">competing models</text>
+  <g stroke="#d8d2c6" stroke-width="2">
+    <line x1="560" y1="338" x2="530" y2="392"/>
+    <line x1="640" y1="338" x2="670" y2="392"/>
+  </g>
+  <circle cx="530" cy="404" r="11" fill="#ffffff" stroke="#e3ded4" stroke-width="2"/>
+  <circle cx="670" cy="404" r="11" fill="#ffffff" stroke="#e3ded4" stroke-width="2"/>
+  <text x="530" y="440" text-anchor="middle" font-size="14" fill="#b3ac9c">paper</text>
+  <text x="670" y="440" text-anchor="middle" font-size="14" fill="#b3ac9c">paper</text>
+
+  <!-- disagreement edge between the two source papers -->
+  <path d="M 552 404 L 576 398 L 600 410 L 624 398 L 648 404" fill="none" stroke="#c4452e" stroke-width="2.5"/>
+  <text x="600" y="470" text-anchor="middle" font-size="16" fill="#c4452e">they disagree — branch it,</text>
+  <text x="600" y="492" text-anchor="middle" font-size="16" fill="#c4452e">it’s the most valuable node</text>
+
+  <!-- area: applications -->
+  <rect x="830" y="282" width="180" height="56" rx="12" fill="#f1eee8" stroke="#e3ded4"/>
+  <text x="920" y="316" text-anchor="middle" font-size="17" fill="#26231f">applications</text>
+  <line x1="920" y1="338" x2="920" y2="392" stroke="#d8d2c6" stroke-width="2"/>
+  <circle cx="920" cy="404" r="11" fill="#ffffff" stroke="#e3ded4" stroke-width="2"/>
+  <text x="920" y="440" text-anchor="middle" font-size="14" fill="#b3ac9c">paper</text>
+
+  <!-- claim check branch -->
+  <path d="M 353 404 C 390 404, 400 480, 420 510" fill="none" stroke="#b45309" stroke-width="3"/>
+  <rect x="420" y="492" width="260" height="40" rx="10" fill="#fdf3e7" stroke="#b45309" stroke-width="2.5"/>
+  <text x="550" y="518" text-anchor="middle" font-size="15" fill="#7a4a12">“what’s the evidence for this?”</text>
+
+  <text x="600" y="586" text-anchor="middle" font-size="18" fill="#b3ac9c">map the field first — depth becomes a choice, not an accident</text>
+</svg>

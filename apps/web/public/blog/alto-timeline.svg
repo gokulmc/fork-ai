@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 620" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
+  <rect width="1200" height="620" fill="#fbfaf8"/>
+
+  <text x="90" y="92" font-size="22" letter-spacing="3" fill="#8f897c">PERSONAL COMPUTING</text>
+  <line x1="100" y1="180" x2="1110" y2="180" stroke="#e3ded4" stroke-width="2.5"/>
+
+  <g text-anchor="middle">
+    <circle cx="240" cy="180" r="9" fill="#26231f"/>
+    <text x="240" y="146" font-size="21" fill="#26231f">1973</text>
+    <text x="240" y="222" font-size="18" fill="#8f897c">Xerox Alto</text>
+    <text x="240" y="246" font-size="16" fill="#b3ac9c">the paradigm, invented</text>
+
+    <circle cx="600" cy="180" r="9" fill="#26231f"/>
+    <text x="600" y="146" font-size="21" fill="#26231f">1979</text>
+    <text x="600" y="222" font-size="18" fill="#8f897c">Jobs tours PARC</text>
+    <text x="600" y="246" font-size="16" fill="#b3ac9c">the demo escapes</text>
+
+    <circle cx="960" cy="180" r="9" fill="#b45309"/>
+    <text x="960" y="146" font-size="21" fill="#b45309">1984</text>
+    <text x="960" y="222" font-size="18" fill="#7a4a12">Macintosh ships</text>
+    <text x="960" y="246" font-size="16" fill="#b3ac9c">someone else’s ending</text>
+  </g>
+
+  <!-- connectors -->
+  <g stroke="#d8d2c6" stroke-width="2" stroke-dasharray="4 7">
+    <line x1="240" y1="200" x2="240" y2="400"/>
+    <line x1="600" y1="200" x2="600" y2="400"/>
+    <line x1="960" y1="200" x2="960" y2="400"/>
+  </g>
+
+  <text x="90" y="352" font-size="22" letter-spacing="3" fill="#8f897c">THE GPT WORLD</text>
+  <line x1="100" y1="420" x2="1110" y2="420" stroke="#e3ded4" stroke-width="2.5"/>
+
+  <g text-anchor="middle">
+    <circle cx="240" cy="420" r="9" fill="#26231f"/>
+    <text x="240" y="386" font-size="21" fill="#26231f">2017</text>
+    <text x="240" y="462" font-size="18" fill="#8f897c">Transformer (Google)</text>
+    <text x="240" y="486" font-size="16" fill="#b3ac9c">the architecture, invented</text>
+
+    <circle cx="600" cy="420" r="9" fill="#26231f"/>
+    <text x="600" y="386" font-size="21" fill="#26231f">2022</text>
+    <text x="600" y="462" font-size="18" fill="#8f897c">ChatGPT</text>
+    <text x="600" y="486" font-size="16" fill="#b3ac9c">the Alto of interfaces</text>
+
+    <circle cx="960" cy="420" r="13" fill="none" stroke="#b45309" stroke-width="3" stroke-dasharray="5 5"/>
+    <text x="960" y="427" font-size="16" fill="#b45309">?</text>
+    <text x="960" y="386" font-size="21" fill="#b45309">20??</text>
+    <text x="960" y="462" font-size="18" fill="#7a4a12">the Macintosh moment</text>
+    <text x="960" y="486" font-size="16" fill="#b45309">unclaimed</text>
+  </g>
+</svg>

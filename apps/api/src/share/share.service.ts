@@ -2,6 +2,7 @@ import { Injectable, ForbiddenException, HttpException, HttpStatus } from '@nest
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
 import { SessionsService, FullSession, SessionSummary } from '@/sessions/sessions.service';
 import { NodesService } from '@/nodes/nodes.service';
+import { UsersService } from '@/users/users.service';
 import { HighlightsService } from '@/highlights/highlights.service';
 import { CreateNodeDto } from '@/nodes/dto/create-node.dto';
 import { CreateHighlightDto } from '@/highlights/dto/create-highlight.dto';
@@ -16,6 +17,7 @@ export class ShareService {
     private readonly sessions: SessionsService,
     private readonly nodes: NodesService,
     private readonly highlights: HighlightsService,
+    private readonly users: UsersService,
   ) {}
 
   private async resolve(token: string): Promise<{ sessionId: string; ownerSub: string }> {
@@ -38,7 +40,8 @@ export class ShareService {
     if (meta?.isTrial && (meta.nodeCount ?? 0) >= 5) {
       throw new HttpException('Trial node limit reached', HttpStatus.PAYMENT_REQUIRED);
     }
-    return this.nodes.createNode(ownerSub, sessionId, dto, true);
+    if (meta?.isTrial) await this.users.checkTrialBudget();
+    return this.nodes.createNode(ownerSub, sessionId, dto, true, meta?.isTrial ?? false);
   }
 
   async createHighlight(token: string, dto: CreateHighlightDto): Promise<HighlightItem> {

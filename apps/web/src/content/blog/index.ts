@@ -176,6 +176,58 @@ export const POSTS: Record<string, BlogPost> = {
     },
     load: () => import('./branching-ai-chat.mdx'),
   },
+  'context-is-all-that-matters': {
+    meta: {
+      slug: 'context-is-all-that-matters',
+      emoji: '🎯',
+      title: 'Context Is All That Matters',
+      description:
+        'Models are converging; context is the differentiator. Why context engineering beats prompt engineering, and why context should be a structure, not a transcript.',
+      keywords: ['context engineering', 'llm context', 'prompt engineering', 'ai context'],
+      date: '2026-06-08',
+      readingMinutes: 6,
+    },
+    load: () => import('./context-is-all-that-matters.mdx'),
+  },
+  'how-much-context-is-too-much': {
+    meta: {
+      slug: 'how-much-context-is-too-much',
+      emoji: '⚖️',
+      title: 'How Much Context Is Too Much?',
+      description:
+        'Million-token windows do not mean million-token attention. Lost-in-the-middle, context rot, and why curating context beats maximizing it.',
+      keywords: ['context window', 'context rot', 'long context llm', 'lost in the middle'],
+      date: '2026-06-09',
+      readingMinutes: 6,
+    },
+    load: () => import('./how-much-context-is-too-much.mdx'),
+  },
+  'gui-for-llms': {
+    meta: {
+      slug: 'gui-for-llms',
+      emoji: '🖥️',
+      title: 'What Does the GUI for LLMs Look Like?',
+      description:
+        'Chat is the command line of AI. What happens when visible state, direct manipulation, and spatial persistence — the principles of the GUI — meet large language models?',
+      keywords: ['gui for llms', 'llm interface', 'ai user interface', 'beyond chat'],
+      date: '2026-06-10',
+      readingMinutes: 7,
+    },
+    load: () => import('./gui-for-llms.mdx'),
+  },
+  'xerox-of-the-gpt-world': {
+    meta: {
+      slug: 'xerox-of-the-gpt-world',
+      emoji: '🖨️',
+      title: 'Who Is the Xerox of the GPT World?',
+      description:
+        'Xerox PARC invented personal computing and let someone else ship it. Google, OpenAI, and why fork.ai is claiming the PARC role — inventing the AI interface paradigm — with a different ending.',
+      keywords: ['xerox parc', 'openai vs google', 'ai interface paradigm', 'fork.ai'],
+      date: '2026-06-11',
+      readingMinutes: 7,
+    },
+    load: () => import('./xerox-of-the-gpt-world.mdx'),
+  },
   'notion-ai-research': {
     meta: {
       slug: 'notion-ai-research',

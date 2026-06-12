@@ -13,6 +13,9 @@ import {
   ADMIN_AUDIT_MODEL,
   REFERRAL_MODEL,
   CREDIT_EVENT_MODEL,
+  BLOG_SUBMISSION_MODEL,
+  BLOG_VIEW_MODEL,
+  TRIAL_SPEND_MODEL,
 } from './dynamo.constants';
 
 // Factory for a Dynamoose-model-shaped mock with chainable query builder
@@ -54,6 +57,9 @@ describe('DynamoRepository', () => {
   let adminAudit: ReturnType<typeof makeModelMock>;
   let referral: ReturnType<typeof makeModelMock>;
   let creditEvent: ReturnType<typeof makeModelMock>;
+  let blogSubmission: ReturnType<typeof makeModelMock>;
+  let blogView: ReturnType<typeof makeModelMock>;
+  let trialSpend: ReturnType<typeof makeModelMock>;
 
   beforeEach(async () => {
     userMeta = makeModelMock();
@@ -67,6 +73,9 @@ describe('DynamoRepository', () => {
     adminAudit = makeModelMock();
     referral = makeModelMock();
     creditEvent = makeModelMock();
+    blogSubmission = makeModelMock();
+    blogView = makeModelMock();
+    trialSpend = makeModelMock();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -83,6 +92,9 @@ describe('DynamoRepository', () => {
         { provide: ADMIN_AUDIT_MODEL, useValue: adminAudit.mock },
         { provide: REFERRAL_MODEL, useValue: referral.mock },
         { provide: CREDIT_EVENT_MODEL, useValue: creditEvent.mock },
+        { provide: BLOG_SUBMISSION_MODEL, useValue: blogSubmission.mock },
+        { provide: BLOG_VIEW_MODEL, useValue: blogView.mock },
+        { provide: TRIAL_SPEND_MODEL, useValue: trialSpend.mock },
       ],
     }).compile();
     repo = module.get<DynamoRepository>(DynamoRepository);

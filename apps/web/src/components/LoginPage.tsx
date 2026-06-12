@@ -6,6 +6,16 @@ import { signIn } from 'next-auth/react';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
+// LoginPage predates the theme system and was hard-coded white; resolve the
+// palette from data-theme so dark mode doesn't flash a white page.
+function lpPal() {
+  const dark = typeof document !== 'undefined'
+    && document.documentElement.getAttribute('data-theme') === 'dark';
+  return dark
+    ? { dark, paper: '#111111', ink: '#ededed', soft: '#9a9a9a', faint: (a: number) => `rgba(237,237,237,${a})` }
+    : { dark, paper: '#ffffff', ink: '#0a0a0a', soft: '#555555', faint: (a: number) => `rgba(10,10,10,${a})` };
+}
+
 const CFG = {
   density: 0.7,
   jitter: 0.18,
@@ -429,6 +439,8 @@ export function LoginPage({ onEnter }: LoginPageProps) {
     let graph = buildGraph();
     if (!graph) return;
 
+    const pal = lpPal();
+
     function applyGraph(g: Graph) {
       svgEl!.setAttribute('viewBox', `0 0 ${g.W} ${g.H}`);
       svgEl!.setAttribute('width', String(g.W));
@@ -440,7 +452,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
         const p = document.createElementNS(SVG_NS, 'path');
         p.setAttribute('d', `M ${na.x} ${na.y} Q ${e.cx} ${e.cy} ${nb.x} ${nb.y}`);
         p.setAttribute('fill', 'none');
-        p.setAttribute('stroke', 'rgba(10,10,10,0.28)');
+        p.setAttribute('stroke', pal.faint(0.28));
         p.setAttribute('stroke-width', '1.6');
         p.setAttribute('stroke-linecap', 'round');
         gEdges!.appendChild(p);
@@ -450,8 +462,8 @@ export function LoginPage({ onEnter }: LoginPageProps) {
         if (n.id === g.centerId) continue;
         const c = document.createElementNS(SVG_NS, 'circle');
         c.setAttribute('cx', String(n.x)); c.setAttribute('cy', String(n.y));
-        c.setAttribute('r', '3.2'); c.setAttribute('fill', '#ffffff');
-        c.setAttribute('stroke', '#0a0a0a'); c.setAttribute('stroke-width', '1.4');
+        c.setAttribute('r', '3.2'); c.setAttribute('fill', pal.paper);
+        c.setAttribute('stroke', pal.ink); c.setAttribute('stroke-width', '1.4');
         c.dataset.node = String(n.id);
         gNodes!.appendChild(c);
       }
@@ -461,25 +473,25 @@ export function LoginPage({ onEnter }: LoginPageProps) {
       const outerRing = document.createElementNS(SVG_NS, 'circle');
       outerRing.setAttribute('cx', String(ctr.x)); outerRing.setAttribute('cy', String(ctr.y));
       outerRing.setAttribute('r', '36'); outerRing.setAttribute('fill', 'none');
-      outerRing.setAttribute('stroke', 'rgba(10,10,10,0.22)'); outerRing.setAttribute('stroke-width', '1');
+      outerRing.setAttribute('stroke', pal.faint(0.22)); outerRing.setAttribute('stroke-width', '1');
       outerRing.setAttribute('stroke-dasharray', '2 5'); outerRing.id = 'lp-cRingOuter';
       gCenter!.appendChild(outerRing);
 
       const innerRing = document.createElementNS(SVG_NS, 'circle');
       innerRing.setAttribute('cx', String(ctr.x)); innerRing.setAttribute('cy', String(ctr.y));
       innerRing.setAttribute('r', '22'); innerRing.setAttribute('fill', 'none');
-      innerRing.setAttribute('stroke', '#0a0a0a'); innerRing.setAttribute('stroke-width', '1.2');
+      innerRing.setAttribute('stroke', pal.ink); innerRing.setAttribute('stroke-width', '1.2');
       innerRing.id = 'lp-cRingInner'; gCenter!.appendChild(innerRing);
 
       const seed = document.createElementNS(SVG_NS, 'circle');
       seed.setAttribute('cx', String(ctr.x)); seed.setAttribute('cy', String(ctr.y));
-      seed.setAttribute('r', '7'); seed.setAttribute('fill', '#ffffff');
-      seed.setAttribute('stroke', '#0a0a0a'); seed.setAttribute('stroke-width', '1.6');
+      seed.setAttribute('r', '7'); seed.setAttribute('fill', pal.paper);
+      seed.setAttribute('stroke', pal.ink); seed.setAttribute('stroke-width', '1.6');
       seed.id = 'lp-cSeed'; gCenter!.appendChild(seed);
 
       const seedDot = document.createElementNS(SVG_NS, 'circle');
       seedDot.setAttribute('cx', String(ctr.x)); seedDot.setAttribute('cy', String(ctr.y));
-      seedDot.setAttribute('r', '2.4'); seedDot.setAttribute('fill', '#555555');
+      seedDot.setAttribute('r', '2.4'); seedDot.setAttribute('fill', pal.soft);
       seedDot.id = 'lp-cSeedDot'; gCenter!.appendChild(seedDot);
 
       const hit = document.createElementNS(SVG_NS, 'circle');
@@ -535,14 +547,14 @@ export function LoginPage({ onEnter }: LoginPageProps) {
 
       const glow = document.createElementNS(SVG_NS, 'path');
       glow.setAttribute('d', d); glow.setAttribute('fill', 'none');
-      glow.setAttribute('stroke', '#555555'); glow.setAttribute('stroke-width', '8');
+      glow.setAttribute('stroke', pal.soft); glow.setAttribute('stroke-width', '8');
       glow.setAttribute('stroke-linecap', 'round'); glow.setAttribute('stroke-linejoin', 'round');
       glow.setAttribute('opacity', '0.32'); glow.setAttribute('filter', 'url(#lp-bigglow)');
       gTrace!.appendChild(glow);
 
       const trace = document.createElementNS(SVG_NS, 'path');
       trace.setAttribute('d', d); trace.setAttribute('fill', 'none');
-      trace.setAttribute('stroke', '#555555'); trace.setAttribute('stroke-width', '2.6');
+      trace.setAttribute('stroke', pal.soft); trace.setAttribute('stroke-width', '2.6');
       trace.setAttribute('stroke-linecap', 'round'); trace.setAttribute('stroke-linejoin', 'round');
       trace.setAttribute('filter', 'url(#lp-trace-glow)');
       gTrace!.appendChild(trace);
@@ -556,7 +568,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
       const sp = trace.getPointAtLength(0);
       const head = document.createElementNS(SVG_NS, 'circle');
       head.setAttribute('cx', String(sp.x)); head.setAttribute('cy', String(sp.y));
-      head.setAttribute('r', '6'); head.setAttribute('fill', '#555555');
+      head.setAttribute('r', '6'); head.setAttribute('fill', pal.soft);
       head.setAttribute('filter', 'url(#lp-trace-glow)');
       gTrace!.appendChild(head);
 
@@ -583,13 +595,13 @@ export function LoginPage({ onEnter }: LoginPageProps) {
         setTimeout(() => {
           const id = pathIds[i];
           if (id === graph!.centerId) {
-            document.getElementById('lp-cSeed')?.setAttribute('stroke', '#555555');
+            document.getElementById('lp-cSeed')?.setAttribute('stroke', pal.soft);
             const dot = document.getElementById('lp-cSeedDot');
             if (dot) dot.setAttribute('r', '3.6');
           } else {
             const el = gNodes!.querySelector(`circle[data-node="${id}"]`);
             if (el) {
-              el.setAttribute('stroke', '#555555');
+              el.setAttribute('stroke', pal.soft);
               el.setAttribute('stroke-width', '2');
               el.setAttribute('r', '4.2');
             }
@@ -613,7 +625,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
 
       const flash = document.createElementNS(SVG_NS, 'circle');
       flash.setAttribute('cx', String(end.x)); flash.setAttribute('cy', String(end.y));
-      flash.setAttribute('r', '4'); flash.setAttribute('fill', '#555555');
+      flash.setAttribute('r', '4'); flash.setAttribute('fill', pal.soft);
       flash.setAttribute('opacity', '0.85'); flash.setAttribute('filter', 'url(#lp-bigglow)');
       gFX!.appendChild(flash);
       flash.animate(
@@ -623,7 +635,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
 
       const flash2 = document.createElementNS(SVG_NS, 'circle');
       flash2.setAttribute('cx', String(end.x)); flash2.setAttribute('cy', String(end.y));
-      flash2.setAttribute('r', '2'); flash2.setAttribute('fill', '#555555');
+      flash2.setAttribute('r', '2'); flash2.setAttribute('fill', pal.soft);
       gFX!.appendChild(flash2);
       flash2.animate(
         [{ r: '2', opacity: '1' }, { r: '70', opacity: '0' }] as Keyframe[],
@@ -633,7 +645,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
       const ring = document.createElementNS(SVG_NS, 'circle');
       ring.setAttribute('cx', String(end.x)); ring.setAttribute('cy', String(end.y));
       ring.setAttribute('r', '4'); ring.setAttribute('fill', 'none');
-      ring.setAttribute('stroke', '#555555'); ring.setAttribute('stroke-width', '2');
+      ring.setAttribute('stroke', pal.soft); ring.setAttribute('stroke-width', '2');
       ring.setAttribute('opacity', '0.8');
       gFX!.appendChild(ring);
       ring.animate(
@@ -645,7 +657,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
         const p = document.createElementNS(SVG_NS, 'circle');
         p.setAttribute('cx', String(end.x)); p.setAttribute('cy', String(end.y));
         p.setAttribute('r', String(1.4 + Math.random() * 2.2));
-        p.setAttribute('fill', '#555555'); p.setAttribute('filter', 'url(#lp-trace-glow)');
+        p.setAttribute('fill', pal.soft); p.setAttribute('filter', 'url(#lp-trace-glow)');
         gFX!.appendChild(p);
         const angle = (Math.PI * 2) * (i / 26) + Math.random() * 0.4;
         const dist = 110 + Math.random() * 260;
@@ -755,10 +767,11 @@ export function LoginPage({ onEnter }: LoginPageProps) {
     }
   })();
   const barH = 44 + (barRows.length - 1) * 46;
+  const pal = lpPal();
 
   return (
     <div style={{
-      position: 'fixed', inset: 0, background: '#ffffff', overflow: 'hidden',
+      position: 'fixed', inset: 0, background: pal.paper, overflow: 'hidden',
       fontFamily: "ui-monospace,'JetBrains Mono','SF Mono',Menlo,monospace",
     }}>
       <style>{`
@@ -805,10 +818,10 @@ export function LoginPage({ onEnter }: LoginPageProps) {
             position: 'fixed', bottom: 38, left: '50%', transform: 'translateX(-50%)',
             display: 'flex', alignItems: 'center', gap: 12, fontSize: 10,
             letterSpacing: '0.22em', textTransform: 'uppercase' as const,
-            color: 'rgba(10,10,10,0.55)', pointerEvents: 'none', userSelect: 'none',
+            color: pal.faint(0.55), pointerEvents: 'none', userSelect: 'none',
           }}>
             <span style={{
-              width: 6, height: 6, borderRadius: '50%', background: '#555555', display: 'inline-block',
+              width: 6, height: 6, borderRadius: '50%', background: pal.soft, display: 'inline-block',
               boxShadow: '0 0 12px rgba(85,85,85,0.35)', animation: 'lp-blink 1.6s ease-in-out infinite',
             }} />
             <span>tap the seed</span>
@@ -822,9 +835,9 @@ export function LoginPage({ onEnter }: LoginPageProps) {
         transform: barHidden ? 'translate(-50%, calc(-50% - 115px))' : 'translate(-50%, calc(-50% - 100px))',
         display: 'flex', flexDirection: 'column',
         width: 'min(440px, 86vw)', height: barH,
-        background: '#ffffff', border: '1px solid rgba(10,10,10,0.20)',
+        background: pal.paper, border: `1px solid ${pal.faint(0.20)}`,
         borderRadius: 4, overflow: 'hidden', zIndex: 4,
-        boxShadow: '0 6px 24px rgba(10,10,10,0.06)',
+        boxShadow: `0 6px 24px ${pal.faint(0.06)}`,
         transition: 'opacity .55s ease, transform .55s ease, height .2s ease',
         opacity: barHidden ? 0 : 1,
         pointerEvents: barHidden ? 'none' : 'auto',
@@ -848,7 +861,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
             key={r.key}
             style={{
               display: 'flex', alignItems: 'stretch', flex: i === 0 ? '0 0 44px' : '0 0 46px',
-              ...(i > 0 ? { borderTop: '1px solid rgba(10,10,10,0.10)' } : null),
+              ...(i > 0 ? { borderTop: `1px solid ${pal.faint(0.10)}` } : null),
             }}
           >
             <input
@@ -864,7 +877,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
               style={{
                 flex: 1, minWidth: 0, border: 0, outline: 0, background: 'transparent',
                 padding: '0 14px', fontFamily: 'inherit', fontSize: 11,
-                letterSpacing: '0.04em', color: '#0a0a0a',
+                letterSpacing: '0.04em', color: pal.ink,
               }}
             />
           </div>
@@ -881,7 +894,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
           zIndex: 4,
         }}>
           {/* Step hint */}
-          <div style={{ fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase' as const, color: 'rgba(10,10,10,0.32)' }}>
+          <div style={{ fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase' as const, color: pal.faint(0.32) }}>
             {step === 'password' && (userExists === false ? `signing up as ${email}` : `signing in as ${email}`)}
             {step === 'signup-password' && `creating account for ${email}`}
             {step === 'verify' && `verify ${email}`}
@@ -892,14 +905,14 @@ export function LoginPage({ onEnter }: LoginPageProps) {
           {(step === 'verify' || step === 'reset') && (
             <div style={{
               display: 'flex', gap: 8, alignItems: 'flex-start',
-              fontSize: 11.5, letterSpacing: '0.02em', color: 'rgba(10,10,10,0.7)', lineHeight: 1.5,
-              background: 'rgba(10,10,10,0.045)', border: '1px solid rgba(10,10,10,0.10)',
-              borderLeft: '2px solid rgba(10,10,10,0.45)',
+              fontSize: 11.5, letterSpacing: '0.02em', color: pal.faint(0.7), lineHeight: 1.5,
+              background: pal.faint(0.045), border: `1px solid ${pal.faint(0.10)}`,
+              borderLeft: `2px solid ${pal.faint(0.45)}`,
               borderRadius: 4, padding: '9px 11px',
             }}>
               <span aria-hidden style={{ fontSize: 13, lineHeight: 1.3 }}>✉</span>
               <span>
-                We emailed you a code. If it&rsquo;s not in your inbox, <strong style={{ fontWeight: 600, color: '#0a0a0a' }}>check your spam folder</strong>.
+                We emailed you a code. If it&rsquo;s not in your inbox, <strong style={{ fontWeight: 600, color: pal.ink }}>check your spam folder</strong>.
               </span>
             </div>
           )}
@@ -913,22 +926,22 @@ export function LoginPage({ onEnter }: LoginPageProps) {
           <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
             <button
               onClick={() => { setStep('email'); setPassword(''); setConfirmPw(''); setVerifyCode(''); setError(null); setResetAvailable(false); }}
-              style={subLinkStyle}
+              style={subLinkStyle()}
             >
               ← back
             </button>
             {step === 'verify' && (
-              <button onClick={() => void handleResendCode()} style={subLinkStyle}>
+              <button onClick={() => void handleResendCode()} style={subLinkStyle()}>
                 resend code
               </button>
             )}
             {step === 'reset' && (
-              <button onClick={() => void handleResendReset()} style={subLinkStyle}>
+              <button onClick={() => void handleResendReset()} style={subLinkStyle()}>
                 resend code
               </button>
             )}
             {step === 'password' && resetAvailable && (
-              <button onClick={() => void handleForgotPassword()} style={subLinkStyle}>
+              <button onClick={() => void handleForgotPassword()} style={subLinkStyle()}>
                 forgot password?
               </button>
             )}
@@ -943,19 +956,21 @@ export function LoginPage({ onEnter }: LoginPageProps) {
           style={{
             position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column',
             alignItems: 'center', justifyContent: 'center', gap: 36,
-            background: '#ffffff', zIndex: 5,
+            background: pal.paper, zIndex: 5,
           }}
         >
           <img
-            src="/mark-168.png" alt="Fork"
+            // mark-dark-* is the light variant for dark backgrounds (same convention
+            // as the dark favicons); the default mark is dark-on-transparent.
+            src={pal.dark ? '/mark-dark-72.png' : '/mark-168.png'} alt="Fork"
             style={{ width: 56, height: 56, animation: 'lp-rise 1.4s 0.3s cubic-bezier(.2,.8,.2,1) both' }}
           />
           <div style={{
             fontSize: 10, letterSpacing: '0.45em', textTransform: 'uppercase' as const,
-            color: '#0a0a0a', animation: 'lp-rise 1.4s 0.6s cubic-bezier(.2,.8,.2,1) both',
+            color: pal.ink, animation: 'lp-rise 1.4s 0.6s cubic-bezier(.2,.8,.2,1) both',
           }}>arrived</div>
           <div style={{
-            fontSize: 10, letterSpacing: '0.25em', color: 'rgba(10,10,10,0.28)',
+            fontSize: 10, letterSpacing: '0.25em', color: pal.faint(0.28),
             textTransform: 'uppercase' as const, marginTop: -22,
             animation: 'lp-rise 1.4s 0.85s cubic-bezier(.2,.8,.2,1) both',
           }}>a clean slate</div>
@@ -968,12 +983,12 @@ export function LoginPage({ onEnter }: LoginPageProps) {
 const uiRow: React.CSSProperties = { lineHeight: 1.8 };
 
 
-const subLinkStyle: React.CSSProperties = {
+const subLinkStyle = (): React.CSSProperties => ({
   background: 'none', border: 0, padding: 0, cursor: 'pointer',
   fontFamily: "ui-monospace,'JetBrains Mono','SF Mono',Menlo,monospace",
   fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase',
-  color: 'rgba(10,10,10,0.38)',
-};
+  color: lpPal().faint(0.38),
+});
 
 function corner(pos: 'tl' | 'tr' | 'bl' | 'br'): React.CSSProperties {
   return {
@@ -981,6 +996,6 @@ function corner(pos: 'tl' | 'tr' | 'bl' | 'br'): React.CSSProperties {
     ...(pos[0] === 't' ? { top: 28 } : { bottom: 28 }),
     ...(pos[1] === 'l' ? { left: 32 } : { right: 32 }),
     fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase',
-    color: 'rgba(10,10,10,0.28)', pointerEvents: 'none', userSelect: 'none', zIndex: 3,
+    color: lpPal().faint(0.28), pointerEvents: 'none', userSelect: 'none', zIndex: 3,
   };
 }

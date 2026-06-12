@@ -19,6 +19,12 @@ npx playwright test -c e2e tests/branching.spec.ts   # one file
 
 First run needs browsers: `npx playwright install chromium webkit` (mobile emulates iPhone 13 on the WebKit engine).
 
+> ⚠️ **Port 3001 squatters.** If another local app's dev server holds :3001 (e.g.
+> p2p-lending-tracker), `reuseExistingServer` runs the whole suite against the
+> wrong app — every test fails with "element not found". Check `lsof -i :3001`
+> when the suite fails wholesale, or sidestep with `E2E_PORT=3101 npm run test:e2e`
+> (the config, baseURL, and fixtures all follow `E2E_PORT`).
+
 > ⚠️ If you already have `npm run dev:web` running, Playwright reuses it. That
 > is only safe if it was started with `NEXT_PUBLIC_API_BASE_URL=http://localhost:3000`
 > — after LAN phone testing, `apps/web/.env.local` may point at a LAN IP, which
@@ -70,6 +76,8 @@ e2e/
 | Trial 5-node lock & claim-on-login | `guest-share.spec.ts` trial + claim tests |
 | Root query > 500 chars truncation (`6d50b05`) | `root-query-stream.spec.ts` › *long root query is sent in full* |
 | Mobile single-tap fused two sentences with web search on (`Section.tsx`) | `selection.spec.ts` › *citation boundary* + `mobile.spec.ts` › *single tap* |
+| Error banner was a dead end (doubled "Try again", no retry, SSE `error` events ignored) | `error-retry.spec.ts` › *failed branch shows the backend reason…* + *failed root query keeps the workspace…* |
+| Guest trial-cap 402 said "open Billing" (guests have no Billing) | `error-retry.spec.ts` › *guest hitting the trial cap…* + *daily trial budget (429)…* |
 
 Backend-only regressions (Dynamoose `$ADD` casing, `saveUnknown` stripping,
 SES/Cognito infra, Notion block splitting) are **not** reproducible from the

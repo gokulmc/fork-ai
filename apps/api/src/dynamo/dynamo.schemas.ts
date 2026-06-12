@@ -200,3 +200,12 @@ export const BlogViewSchema = new dynamoose.Schema({
   SK: { type: String, rangeKey: true },
   views: { type: Number, required: false },
 });
+
+// Daily trial (house-account) spend counter. PK is TRIAL#<yyyy-mm-dd> (UTC);
+// `spentUsd` is incremented atomically with $ADD. Caps unauthenticated LLM cost
+// per day regardless of how many IPs the traffic comes from.
+export const TrialSpendSchema = new dynamoose.Schema({
+  PK: { type: String, hashKey: true },
+  SK: { type: String, rangeKey: true },
+  spentUsd: { type: Number, required: false },
+});

@@ -14,6 +14,9 @@ const API_PATH_RE = new RegExp(
   '^https?://[^/]+/(sessions|share|users|notion|billing|admin|blog-submissions|blog-views|support|health|topics)([/?].*)?$',
 );
 
+// The web app's own port — must stay in sync with playwright.config.ts (E2E_PORT).
+export const APP_PORT = process.env.E2E_PORT ?? '3001';
+
 const CORS_HEADERS: Record<string, string> = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET,POST,PATCH,PUT,DELETE,OPTIONS',
@@ -99,8 +102,8 @@ export class MockApi {
 
       // Some API prefixes collide with the web app's OWN routes (e.g. /admin and
       // /blog-submissions are real Next.js pages). The API is always a different
-      // origin (port 3000/LAN), so never intercept the app's own origin (:3001).
-      if (url.port === '3001') return route.continue();
+      // origin (port 3000/LAN), so never intercept the app's own origin.
+      if (url.port === APP_PORT) return route.continue();
 
       if (method === 'OPTIONS') {
         return route.fulfill({ status: 204, headers: CORS_HEADERS });
