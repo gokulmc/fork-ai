@@ -12,9 +12,11 @@
     "dev:api": "nx run @fork-ai/api:dev",
     "build": "nx run-many --target=build",
     "test": "nx run-many --target=test",
+    "test:e2e": "playwright test -c e2e",
     "type-check": "nx run-many --target=type-check"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "nx": "latest"
   },
   "dependencies": {

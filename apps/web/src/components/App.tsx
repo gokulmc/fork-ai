@@ -316,6 +316,15 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   // floating pill swaps to a full-screen map. Init false so SSR/desktop match.
   const isNarrow = useIsNarrow();
   const [mapOpen, setMapOpen] = useState(false);
+
+  // `Section` is code-split (next/dynamic), so on a cold session load the
+  // highlight layout-effect below runs before any `.section-body` exists and
+  // finds nothing to paint — and none of its other deps change when the chunk
+  // later mounts. Flip this once the chunk is loaded so the effect re-runs after
+  // the section DOM is committed; otherwise saved highlights stay invisible
+  // until the first selection nudges `hlMenu`.
+  const [sectionReady, setSectionReady] = useState(false);
+  useEffect(() => { import('./Section').then(() => setSectionReady(true)).catch(() => {}); }, []);
   // Reset the swap whenever we leave narrow mode or the session empties.
   useEffect(() => { if (!isNarrow || Object.keys(nodes).length === 0) setMapOpen(false); }, [isNarrow, nodes]);
 
@@ -1133,7 +1142,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       ALL_HL_NAMES.forEach(n => CSS.highlights.delete(n));
       CSS.highlights.delete('temp-hl');
     };
-  }, [persistentHl, activeId, hlMenu]);
+  }, [persistentHl, activeId, hlMenu, sectionReady]);
 
   const handleHlAction = useCallback((action: string, payload?: { bg: string; fg: string | null }) => {
     if (!hlMenu) return;

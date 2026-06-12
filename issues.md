@@ -6,6 +6,11 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
+### Saved highlights didn't paint until the first interaction on a cold session load
+- **Symptom:** Opening a session that already has highlights showed the prose un-highlighted on first paint; the marks only appeared after the user selected some text or switched nodes. The data was correct — purely a render-timing miss.
+- **Cause:** `Section` is code-split (`next/dynamic`, `ssr:false`). The `useLayoutEffect` in `App.tsx` that paints highlights via the CSS Custom Highlight API runs once its deps (`persistentHl`/`activeId`/`hlMenu`) settle, but on a cold load that happens *before* the `Section` chunk has mounted any `.section-body` — so `querySelector` finds nothing and nothing re-runs the effect when the chunk later mounts.
+- **Fix:** Add a `sectionReady` state that flips once `import('./Section')` resolves, and include it in the highlight effect's dependency array so the effect re-runs after the section DOM is committed. `apps/web/src/components/App.tsx`. Regression-covered by `e2e/tests/highlights.spec.ts` ("persisted highlights paint on cold load without any interaction").
+
 ### Dev: JWTSessionError "no matching decryption secret" on every page load
 - **Symptom:** In local dev, the console spammed `[auth][error] JWTSessionError … no matching decryption secret` on each request and the user appeared logged out, even with a valid fork.ai login.
 - **Cause:** Cookies on `localhost` are shared across **ports**. Another next-auth v5 app (`p2p-lending-tracker` on `:3001`) writes the default `authjs.session-token` cookie with its own secret; fork.ai (any port) then tries to decrypt that foreign cookie with `NEXTAUTH_SECRET` and fails. Whichever app was logged into last breaks the other.

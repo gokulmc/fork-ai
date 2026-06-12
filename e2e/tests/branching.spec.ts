@@ -1,0 +1,121 @@
+import { test, expect } from '@playwright/test';
+import { deferred } from '../fixtures/mock-api';
+import { baseApi, gotoWorkspace, askAiFromSelection } from '../fixtures/app';
+import { fullSession, deeperNode, askNode, SID, ROOT_ID } from '../fixtures/data';
+
+test.describe('Branching — Go deeper & Ask AI', () => {
+  test('Go deeper creates a child node and navigates to it', async ({ page }) => {
+    const api = baseApi().on(`POST /sessions/${SID}/nodes`, deeperNode());
+    await gotoWorkspace(page, api);
+
+    await page.locator('.deeper-btn').first().click();
+    await expect(page.locator('.ws-title')).toHaveText('Thylakoid Electron Transport');
+    await expect(page.locator('.section-body[data-section-id="d1"]')).toContainText('P680');
+    // Breadcrumb walks the parent chain
+    await expect(page.locator('.crumbs .crumb').first()).toHaveText('Photosynthesis Basics');
+    // Map now shows both nodes
+    await expect(page.locator('.mm-node')).toHaveCount(2);
+
+    const [call] = api.callsTo(`POST /sessions/${SID}/nodes`);
+    expect(call.body).toMatchObject({
+      kind: 'DEEPER',
+      parentNodeId: ROOT_ID,
+      fromSection: 's1',
+      query: 'Light reactions',
+      model: 'haiku', // default branch model
+    });
+  });
+
+  test('Ask AI from a highlight creates a branch and stays on the current node', async ({ page }) => {
+    const api = baseApi()
+      .on(`POST /sessions/${SID}/nodes`, askNode())
+      .on(`POST /sessions/${SID}/highlights`, { hlId: 'hl-branch-1' });
+    await gotoWorkspace(page, api);
+
+    await askAiFromSelection(page, 's1', 'What pigments are involved?');
+
+    // Deliberately does NOT auto-navigate — panel stays on the root
+    await expect(page.locator('.mm-node')).toHaveCount(2);
+    await expect(page.locator('.ws-title')).toHaveText('Photosynthesis Basics');
+
+    const [call] = api.callsTo(`POST /sessions/${SID}/nodes`);
+    expect(call.body).toMatchObject({ kind: 'ASK', parentNodeId: ROOT_ID, fromSection: 's1' });
+    expect((call.body as { highlightText: string }).highlightText.length).toBeGreaterThan(3);
+
+    // The source passage gets the reserved branch-glow highlight persisted
+    expect(api.callsTo(`POST /sessions/${SID}/highlights`).length).toBe(1);
+  });
+
+  test('REGRESSION (1c647ae): opening the Ask-AI node while loading must not blank the panel when the answer lands', async ({ page }) => {
+    const gate = deferred();
+    const api = baseApi()
+      .on(`POST /sessions/${SID}/nodes`, async () => { await gate.promise; return askNode(); })
+      .on(`POST /sessions/${SID}/highlights`, { hlId: 'hl-branch-1' });
+    await gotoWorkspace(page, api);
+
+    await askAiFromSelection(page, 's1', 'What pigments are involved?');
+
+    // Click the optimistic loading node on the map while the request is in flight
+    const loadingNode = page.locator('.mm-node.loading');
+    await expect(loadingNode).toBeVisible();
+    await loadingNode.click();
+    await expect(page.locator('.ws-title')).toHaveText('What pigments are involved?');
+
+    gate.resolve();
+    // Pre-fix: activeId stayed on the deleted temp id → `{active && …}` rendered
+    // nothing. Post-fix the panel follows the id swap and fills in.
+    await expect(page.locator('.ws-title')).toHaveText('Pigments Beyond Chlorophyll');
+    await expect(page.locator('.section-body[data-section-id="a1"]')).toContainText('Carotenoids');
+  });
+
+  test('REGRESSION (178c411): Ask-AI questions longer than 500 chars are sent in full and succeed', async ({ page }) => {
+    const longQuestion = ('Why does the rate of photosynthesis plateau at high light intensity even when ' +
+      'carbon dioxide is abundant, and how do photoprotective mechanisms like non-photochemical ' +
+      'quenching interact with the xanthophyll cycle under those conditions? ').repeat(3).trim();
+    expect(longQuestion.length).toBeGreaterThan(500);
+
+    const api = baseApi()
+      .on(`POST /sessions/${SID}/nodes`, askNode({ title: 'Light Saturation Explained', query: longQuestion }))
+      .on(`POST /sessions/${SID}/highlights`, { hlId: 'hl-branch-1' });
+    await gotoWorkspace(page, api);
+
+    await askAiFromSelection(page, 's1', longQuestion);
+
+    const [call] = api.callsTo(`POST /sessions/${SID}/nodes`);
+    // The frontend must not truncate; the (mocked, fixed) backend accepts it
+    expect((call.body as { query: string }).query).toBe(longQuestion);
+
+    await page.locator('.mm-node', { hasText: 'Light Saturation Explained' }).click();
+    await expect(page.locator('.ws-error')).toHaveCount(0);
+    await expect(page.locator('.section-body[data-section-id="a1"]')).toBeVisible();
+  });
+
+  test('402 on a branch shows the out-of-credit error on the node, not a generic crash', async ({ page }) => {
+    const api = baseApi().on(`POST /sessions/${SID}/nodes`, 402);
+    await gotoWorkspace(page, api);
+
+    await page.locator('.deeper-btn').first().click();
+    await expect(page.locator('.ws-error')).toContainText('Out of credit');
+  });
+
+  test('failed branch keeps the node in an error state with a retry hint', async ({ page }) => {
+    const api = baseApi().on(`POST /sessions/${SID}/nodes`, 500);
+    await gotoWorkspace(page, api);
+
+    await page.locator('.deeper-btn').first().click();
+    await expect(page.locator('.ws-error')).toContainText('Failed to load');
+  });
+
+  test('branching invalidates a stale Notion export (Open in Notion → Save to Notion)', async ({ page }) => {
+    const api = baseApi().on(`POST /sessions/${SID}/nodes`, deeperNode());
+    await gotoWorkspace(page, api, {
+      session: fullSession({ notionPageUrl: 'https://www.notion.so/e2e-fake-page' }),
+    });
+
+    await expect(page.locator('.mm-copy-btn')).toContainText('Open in Notion');
+    await page.locator('.deeper-btn').first().click();
+    await expect(page.locator('.ws-title')).toHaveText('Thylakoid Electron Transport');
+    // Backend clears notionPageUrl inside createNode; the UI mirrors it instantly
+    await expect(page.locator('.mm-copy-btn')).toContainText('Save to Notion');
+  });
+});
