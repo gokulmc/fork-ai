@@ -18,3 +18,10 @@ plugins, permissions). The mobile-specific UI (mind map hidden behind a floating
 pill, icon-only nav) therefore lives in `apps/web` behind a
 `@media (max-width: 768px)` block + a `useIsNarrow` hook, scoped so desktop
 browsers at `forkai.in` are unaffected.
+
+**Amendment (2026-06):** the service worker now caches the app shell
+(immutable `/_next/static/*` cache-first; HTML network-first with cache
+fallback), so where SWs run the shell can launch on bad/no network. The
+freshness contract is preserved — online launches always fetch fresh HTML, so
+deploys still ship instantly; API/data calls are never cached. See
+`apps/web/CLAUDE.md → Performance`.

@@ -149,6 +149,18 @@ export class ApiError extends Error {
   }
 }
 
+// NestJS error bodies are JSON ({ message, statusCode }); pull out the human message.
+// Non-JSON bodies (LB/proxy HTML error pages) must never leak into the UI banner.
+function extractErrorMessage(text: string, fallback: string): string {
+  if (!text) return fallback;
+  try {
+    const body = JSON.parse(text) as { message?: string | string[] };
+    if (body.message) return Array.isArray(body.message) ? body.message.join('; ') : body.message;
+  } catch { /* not JSON */ }
+  const t = text.trim();
+  return t && !t.startsWith('<') && t.length <= 160 ? t : fallback;
+}
+
 // ── Core fetch helper ────────────────────────────────────────────────────────
 
 const base = () => process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3000';
@@ -168,12 +180,12 @@ async function apiFetch<T>(
   });
 
   if (!res.ok) {
-    const msg = await res.text().catch(() => res.statusText);
+    const text = await res.text().catch(() => '');
     // Only treat 401 as a session-expired signal when we actually sent a token.
     // A 401 on an empty Bearer means "this endpoint requires auth" — calling
     // signOut() in that case kicks unauthenticated guests off the share page.
     if (res.status === 401 && idToken) unauthorizedHandler?.();
-    throw new ApiError(res.status, msg);
+    throw new ApiError(res.status, extractErrorMessage(text, res.statusText));
   }
   if (res.status === 204) return undefined as T;
   const text = await res.text();
@@ -320,7 +332,7 @@ export type StreamEvent =
   | { type: 'meta'; title: string; emoji: string; lede: string }
   | { type: 'section'; id: string; heading: string; body: string }
   | { type: 'done'; sessionId: string; nodeId: string; token?: string; sections?: Array<{ id: string; heading: string; body: string }>; sources?: CitationSource[] }
-  | { type: 'error'; message: string };
+  | { type: 'error'; message: string; status?: number };
 
 export async function createSessionStream(
   idToken: string,
@@ -339,11 +351,17 @@ export async function createSessionStream(
   });
 
   if (!res.ok || !res.body) {
-    const msg = await res.text().catch(() => res.statusText);
-    throw new ApiError(res.status, msg);
+    const text = await res.text().catch(() => '');
+    throw new ApiError(res.status, extractErrorMessage(text, res.statusText));
   }
 
-  const reader = res.body.getReader();
+  await readSseStream(res.body, onEvent);
+}
+
+// Shared SSE reader — an in-band `error` event becomes a thrown ApiError so
+// callers handle stream failures on the same catch path as HTTP failures.
+async function readSseStream(body: ReadableStream<Uint8Array>, onEvent: (event: StreamEvent) => void): Promise<void> {
+  const reader = body.getReader();
   const decoder = new TextDecoder();
   let buf = '';
 
@@ -355,10 +373,12 @@ export async function createSessionStream(
     buf = lines.pop() ?? '';
     for (const line of lines) {
       if (!line.startsWith('data: ')) continue;
+      let event: StreamEvent;
       try {
-        const event = JSON.parse(line.slice(6)) as StreamEvent;
-        onEvent(event);
-      } catch { /* ignore malformed lines */ }
+        event = JSON.parse(line.slice(6)) as StreamEvent;
+      } catch { continue; /* malformed line */ }
+      if (event.type === 'error') throw new ApiError(event.status ?? 500, event.message);
+      onEvent(event);
     }
   }
 }
@@ -376,28 +396,11 @@ export async function createTrialSessionStream(
   });
 
   if (!res.ok || !res.body) {
-    const msg = await res.text().catch(() => res.statusText);
-    throw new ApiError(res.status, msg);
+    const text = await res.text().catch(() => '');
+    throw new ApiError(res.status, extractErrorMessage(text, res.statusText));
   }
 
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buf = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    const lines = buf.split('\n');
-    buf = lines.pop() ?? '';
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-      try {
-        const event = JSON.parse(line.slice(6)) as StreamEvent;
-        onEvent(event);
-      } catch { /* ignore malformed lines */ }
-    }
-  }
+  await readSseStream(res.body, onEvent);
 }
 
 // ── Nodes ─────────────────────────────────────────────────────────────────────

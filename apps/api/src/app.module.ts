@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { configuration, validationSchema } from '@/config/configuration';
 import { AuthModule } from '@/auth/auth.module';
 import { JwtAuthGuard } from '@/auth/jwt-auth.guard';
@@ -28,6 +29,9 @@ import { HealthController } from './health.controller';
       load: [configuration],
       validationSchema,
     }),
+    // Per-IP rate limit (in-memory, per instance). Public LLM endpoints carry
+    // stricter @Throttle overrides; the daily trial budget is the cross-instance backstop.
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
     AuthModule,
     DynamoModule,
     LlmModule,
@@ -47,6 +51,8 @@ import { HealthController } from './health.controller';
   ],
   controllers: [HealthController],
   providers: [
+    // Throttler first so rate limits apply before auth (covers @Public routes too)
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
     // Apply JWT guard globally; controllers opt out via @Public()
     { provide: APP_GUARD, useClass: JwtAuthGuard },
   ],

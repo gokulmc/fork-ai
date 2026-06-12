@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 620" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
+  <rect width="1200" height="620" fill="#fbfaf8"/>
+
+  <!-- floor plan -->
+  <rect x="200" y="100" width="800" height="420" rx="18" fill="#ffffff" stroke="#26231f" stroke-width="2.5"/>
+  <!-- internal walls (with door gaps) -->
+  <g stroke="#26231f" stroke-width="2.5">
+    <line x1="600" y1="100" x2="600" y2="240"/>
+    <line x1="600" y1="310" x2="600" y2="520"/>
+    <line x1="200" y1="310" x2="380" y2="310"/>
+    <line x1="450" y1="310" x2="600" y2="310"/>
+    <line x1="600" y1="330" x2="790" y2="330"/>
+    <line x1="860" y1="330" x2="1000" y2="330"/>
+  </g>
+
+  <!-- room labels + placed ideas -->
+  <circle cx="400" cy="180" r="13" fill="#fdf3e7" stroke="#b45309" stroke-width="2.5"/>
+  <text x="400" y="232" text-anchor="middle" font-size="17" fill="#26231f">mechanisms</text>
+  <text x="400" y="256" text-anchor="middle" font-size="14" fill="#b3ac9c">“over here”</text>
+
+  <circle cx="800" cy="180" r="13" fill="#fdf3e7" stroke="#b45309" stroke-width="2.5"/>
+  <text x="800" y="232" text-anchor="middle" font-size="17" fill="#26231f">history</text>
+  <text x="800" y="256" text-anchor="middle" font-size="14" fill="#b3ac9c">“over there”</text>
+
+  <circle cx="400" cy="400" r="13" fill="#fdf3e7" stroke="#b45309" stroke-width="2.5"/>
+  <text x="400" y="452" text-anchor="middle" font-size="17" fill="#26231f">limitations</text>
+
+  <circle cx="800" cy="410" r="13" fill="#fdf3e7" stroke="#b45309" stroke-width="2.5"/>
+  <text x="800" y="462" text-anchor="middle" font-size="17" fill="#26231f">open questions</text>
+
+  <!-- walking route -->
+  <path d="M 150 180 C 250 180, 320 180, 388 180 C 540 180, 640 180, 788 180 C 880 180, 880 280, 800 300 C 700 330, 480 330, 412 396 C 500 470, 680 430, 788 412"
+        fill="none" stroke="#b45309" stroke-width="3" stroke-dasharray="8 8" opacity="0.8"/>
+  <path d="M 788 412 l -16 -4 l 8 12 z" fill="#b45309"/>
+  <text x="120" y="150" font-size="16" fill="#b45309">enter, and</text>
+  <text x="120" y="172" font-size="16" fill="#b45309">walk it →</text>
+
+  <text x="600" y="586" text-anchor="middle" font-size="18" fill="#b3ac9c">recall becomes “what’s in that part of the map” — a question spatial memory can answer</text>
+</svg>

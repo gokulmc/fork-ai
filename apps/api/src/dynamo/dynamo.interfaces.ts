@@ -25,6 +25,12 @@ export interface BlogViewItem {
   views: number;
 }
 
+export interface TrialSpendItem {
+  PK: string; // TRIAL#<yyyy-mm-dd> (UTC)
+  SK: string; // METADATA
+  spentUsd?: number;
+}
+
 export interface UserMetaItem {
   PK: string;
   SK: string;

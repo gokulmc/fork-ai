@@ -1,8 +1,9 @@
 import {
   Controller, Get, Post, Patch, Delete,
-  Body, Param, HttpCode, HttpStatus, Res, Header,
+  Body, Param, HttpCode, HttpStatus, Res, Header, HttpException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiParam } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { Response } from 'express';
 import { Public } from '@/auth/public.decorator';
 import { CurrentUser } from '@/auth/current-user.decorator';
@@ -12,6 +13,7 @@ import { CreateNodeDto } from '@/nodes/dto/create-node.dto';
 import { CreateHighlightDto } from '@/highlights/dto/create-highlight.dto';
 import { UpdateHighlightDto } from '@/highlights/dto/update-highlight.dto';
 import { CreateSessionDto } from '@/sessions/dto/create-session.dto';
+import { friendlyLlmError } from '@/llm/llm.service';
 
 @ApiTags('share')
 @Controller('share')
@@ -20,6 +22,7 @@ export class ShareController {
 
   @Public()
   @Post()
+  @Throttle({ default: { ttl: 3_600_000, limit: 5 } }) // 5 trial sessions/hour/IP — each fires a root LLM stream
   @Header('Content-Type', 'text/event-stream')
   @Header('Cache-Control', 'no-cache')
   @Header('Connection', 'keep-alive')
@@ -29,7 +32,12 @@ export class ShareController {
     try {
       await this.shareService.createTrialSession(dto, send);
     } catch (err) {
-      send({ type: 'error', message: (err as Error).message });
+      const isHttp = err instanceof HttpException;
+      send({
+        type: 'error',
+        message: isHttp ? err.message : friendlyLlmError(err as Error),
+        status: isHttp ? err.getStatus() : 500,
+      });
     } finally {
       res.end();
     }
@@ -45,6 +53,7 @@ export class ShareController {
 
   @Public()
   @Post(':token/nodes')
+  @Throttle({ default: { ttl: 3_600_000, limit: 30 } }) // 30 guest branches/hour/IP — each fires a branch LLM call
   @ApiOperation({ summary: 'Create a branch node as a guest (public)' })
   @ApiParam({ name: 'token', description: 'Opaque share token' })
   createNode(@Param('token') token: string, @Body() dto: CreateNodeDto) {

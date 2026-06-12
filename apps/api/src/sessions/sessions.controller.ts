@@ -1,6 +1,7 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, HttpCode, HttpStatus, Res, Header } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, HttpCode, HttpStatus, Res, Header, HttpException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiParam } from '@nestjs/swagger';
 import { Response } from 'express';
+import { friendlyLlmError } from '@/llm/llm.service';
 import { CurrentUser } from '@/auth/current-user.decorator';
 import { CognitoUser } from '@/auth/jwt.strategy';
 import { SessionsService } from './sessions.service';
@@ -32,7 +33,14 @@ export class SessionsController {
     try {
       await this.sessionsService.createStreaming(user.sub, dto, send);
     } catch (err) {
-      send({ type: 'error', message: (err as Error).message });
+      // Intentional HttpExceptions (out of credit, trial cap) pass through with
+      // their status; anything else is sanitized so internals never reach the client.
+      const isHttp = err instanceof HttpException;
+      send({
+        type: 'error',
+        message: isHttp ? err.message : friendlyLlmError(err as Error),
+        status: isHttp ? err.getStatus() : 500,
+      });
     } finally {
       res.end();
     }

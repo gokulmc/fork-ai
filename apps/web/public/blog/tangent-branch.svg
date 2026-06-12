@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 640" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
+  <rect width="1200" height="640" fill="#fbfaf8"/>
+
+  <text x="300" y="78" text-anchor="middle" font-size="22" letter-spacing="3" fill="#8f897c">ONE TIMELINE</text>
+  <text x="300" y="108" text-anchor="middle" font-size="17" fill="#b3ac9c">a tangent buries your place</text>
+  <text x="890" y="78" text-anchor="middle" font-size="22" letter-spacing="3" fill="#8f897c">A TREE</text>
+  <text x="890" y="108" text-anchor="middle" font-size="17" fill="#b3ac9c">a tangent becomes a branch</text>
+
+  <!-- left: linear thread with tangent shoved into it -->
+  <rect x="130" y="142" width="340" height="60" rx="11" fill="#f1eee8" stroke="#e3ded4" opacity="0.55"/>
+  <text x="300" y="178" text-anchor="middle" font-size="15" fill="#8f897c">main topic, part 1</text>
+  <rect x="130" y="214" width="340" height="60" rx="11" fill="#f1eee8" stroke="#e3ded4" opacity="0.55"/>
+  <text x="300" y="250" text-anchor="middle" font-size="15" fill="#8f897c">main topic, part 2</text>
+  <text x="300" y="306" text-anchor="middle" font-size="15" fill="#b3ac9c">↑ scroll and hope ↑</text>
+
+  <rect x="130" y="330" width="340" height="60" rx="11" fill="#fff" stroke="#c4452e" stroke-width="2" stroke-dasharray="6 5"/>
+  <text x="300" y="360" text-anchor="middle" font-size="15" fill="#c4452e">a side-question</text>
+  <text x="300" y="380" text-anchor="middle" font-size="14" fill="#c4452e">(now everything below is about this)</text>
+  <rect x="130" y="402" width="340" height="60" rx="11" fill="#fff" stroke="#c4452e" stroke-width="2" stroke-dasharray="6 5"/>
+  <text x="300" y="438" text-anchor="middle" font-size="15" fill="#c4452e">…the tangent, continued</text>
+  <rect x="130" y="474" width="340" height="60" rx="11" fill="#fff" stroke="#c4452e" stroke-width="2" stroke-dasharray="6 5"/>
+  <text x="300" y="510" text-anchor="middle" font-size="15" fill="#c4452e">…still the tangent</text>
+
+  <!-- right: trunk + side branch -->
+  <g stroke="#26231f" stroke-width="3" fill="none">
+    <line x1="800" y1="200" x2="800" y2="290"/>
+    <line x1="800" y1="346" x2="800" y2="436"/>
+  </g>
+  <path d="M 800 318 C 880 318, 900 318, 950 318" stroke="#d8d2c6" stroke-width="2.5" fill="none"/>
+
+  <rect x="710" y="142" width="180" height="58" rx="12" fill="#f1eee8" stroke="#e3ded4"/>
+  <text x="800" y="177" text-anchor="middle" font-size="15" fill="#26231f">main topic, part 1</text>
+  <rect x="710" y="290" width="180" height="56" rx="12" fill="#f1eee8" stroke="#e3ded4"/>
+  <text x="800" y="324" text-anchor="middle" font-size="15" fill="#26231f">main topic, part 2</text>
+  <rect x="710" y="436" width="180" height="58" rx="12" fill="#fdf3e7" stroke="#b45309" stroke-width="2.5"/>
+  <text x="800" y="464" text-anchor="middle" font-size="15" fill="#7a4a12">main topic, part 3</text>
+  <text x="800" y="483" text-anchor="middle" font-size="13" fill="#b45309">picked up exactly here</text>
+
+  <rect x="950" y="290" width="170" height="56" rx="12" fill="#ffffff" stroke="#e3ded4"/>
+  <text x="1035" y="314" text-anchor="middle" font-size="15" fill="#8f897c">the tangent</text>
+  <text x="1035" y="333" text-anchor="middle" font-size="13" fill="#b3ac9c">its own thread</text>
+
+  <!-- return arrow -->
+  <path d="M 1035 346 C 1035 410, 920 440, 902 452" fill="none" stroke="#b45309" stroke-width="2.5" stroke-dasharray="7 6"/>
+  <path d="M 896 456 l 17 -7 l -7 14 z" fill="#b45309"/>
+  <text x="1040" y="416" font-size="15" fill="#b45309">return with</text>
+  <text x="1040" y="437" font-size="15" fill="#b45309">nothing buried</text>
+
+  <line x1="600" y1="140" x2="600" y2="560" stroke="#eee9df" stroke-width="2"/>
+  <text x="600" y="606" text-anchor="middle" font-size="18" fill="#b3ac9c">thinking doesn’t happen in one line</text>
+</svg>

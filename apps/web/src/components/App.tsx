@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import { useSession, signOut } from 'next-auth/react';
 import type { ForkNode, Annotation, HlMenuState, FollowUpState, ContextMenuState, PersistentHighlight, HighlightRecord } from '@/lib/types';
 import { uid, short5, stripMarkdown, stripCite, getRangeOffsets, modelDisplayName } from '@/lib/utils';
@@ -43,7 +44,33 @@ function rangeFromOffsets(root: Element, start: number, end: number): Range | nu
   r.setEnd(endNode, endOff);
   return r;
 }
+
+// Map an API failure to error-banner copy + status. The status drives the CTA:
+// 402/429 without auth → "Log in", anything else retryable → "Retry".
+function nodeErrorDisplay(err: unknown, isGuestReq: boolean): { msg: string; status?: number } {
+  if (err instanceof ApiError) {
+    if (err.status === 402) {
+      return {
+        msg: isGuestReq ? 'Trial limit reached — log in to keep exploring' : 'Out of credit — open Billing to recharge',
+        status: 402,
+      };
+    }
+    if (err.status === 429 && /throttler/i.test(err.message)) {
+      return { msg: 'Too many requests — please wait a minute', status: 429 };
+    }
+    if (err.message) return { msg: err.message, status: err.status };
+  }
+  return { msg: 'Failed to load' };
+}
+
+// Retry context for a failed LLM node, keyed by the failed node's id.
+type RetryInfo =
+  | { kind: 'ROOT'; query: string }
+  | { kind: 'DEEPER'; parentNodeId: string; section: { id: string; heading: string; body: string } }
+  | { kind: 'ASK'; question: string; source: FollowUpState };
 import { useTweaks } from '@/hooks/useTweaks';
+import { initAnalytics, track, identifyUser } from '@/lib/analytics';
+import { getCachedSession, putCachedSession, deleteCachedSession } from '@/lib/sessionCache';
 import { buildNotionClipboard } from '@/lib/notion-clipboard';
 import {
   listSessions,
@@ -76,8 +103,6 @@ import {
   type NotionPage,
 } from '@/lib/api';
 import { OnboardingTour } from './OnboardingTour';
-import { MindMap } from './MindMap';
-import { Section } from './Section';
 import { SkeletonSections } from './SkeletonSections';
 import { HighlightMenu } from './HighlightMenu';
 import { FollowUpPop } from './FollowUpPop';
@@ -94,6 +119,15 @@ import {
   Search, Bookmark, ChevronRight, Sparkles, CornerDownRight, Hash,
   Quote, AlertCircle, ArrowUpRight, Pencil, Trash, Clock, LogIn,
 } from './Icons';
+
+// Code-split the session-only heavyweights out of the initial bundle: Section
+// drags in marked + katex + highlight.js (~300KB) and MindMap the SVG engine —
+// none of it is needed to paint Landing/History. Loaded on first session render.
+const Section = dynamic(() => import('./Section').then(m => m.Section), { ssr: false });
+const MindMap = dynamic(() => import('./MindMap').then(m => m.MindMap), {
+  ssr: false,
+  loading: () => <div className="mm-empty">Loading map…</div>,
+});
 
 const TWEAK_DEFAULTS = {
   theme: 'light' as const,
@@ -210,6 +244,14 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   // Auto sign-out on any 401 (expired Cognito id_token)
   useEffect(() => { setUnauthorizedHandler(() => void signOut()); }, []);
 
+  // PostHog — no-op without NEXT_PUBLIC_POSTHOG_KEY
+  useEffect(() => { initAnalytics(); }, []);
+  useEffect(() => {
+    if (status === 'authenticated' && authSession?.user?.email) {
+      identifyUser(authSession.user.email, authSession.user.email);
+    }
+  }, [status, authSession?.user?.email]);
+
   // Sign out when the refresh token itself has expired (30-day limit reached)
   useEffect(() => { if (authSession?.error === 'RefreshTokenExpired') void signOut(); }, [authSession?.error]);
 
@@ -307,6 +349,15 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   // floating pill swaps to a full-screen map. Init false so SSR/desktop match.
   const isNarrow = useIsNarrow();
   const [mapOpen, setMapOpen] = useState(false);
+
+  // `Section` is code-split (next/dynamic), so on a cold session load the
+  // highlight layout-effect below runs before any `.section-body` exists and
+  // finds nothing to paint — and none of its other deps change when the chunk
+  // later mounts. Flip this once the chunk is loaded so the effect re-runs after
+  // the section DOM is committed; otherwise saved highlights stay invisible
+  // until the first selection nudges `hlMenu`.
+  const [sectionReady, setSectionReady] = useState(false);
+  useEffect(() => { import('./Section').then(() => setSectionReady(true)).catch(() => {}); }, []);
   // Reset the swap whenever we leave narrow mode or the session empties.
   useEffect(() => { if (!isNarrow || Object.keys(nodes).length === 0) setMapOpen(false); }, [isNarrow, nodes]);
 
@@ -434,6 +485,25 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
 
   const loadSession = useCallback(async (sid: string, targetNodeId?: string) => {
     setLoadingRoot(true);
+    // Cache-first: paint the last local snapshot instantly (IndexedDB), then let
+    // the network result below — always authoritative — replace it when it lands.
+    let paintedFromCache = false;
+    try {
+      const cached = await getCachedSession(sid);
+      if (cached && Object.keys(cached.nodes).length) {
+        const activeTarget = (targetNodeId && cached.nodes[targetNodeId]) ? targetNodeId : cached.rootId;
+        setSessionId(cached.sessionId);
+        setNodes(cached.nodes);
+        setRootId(cached.rootId);
+        setActiveId(activeTarget);
+        setAnnotations(cached.annotations);
+        setPersistentHl(cached.persistentHl);
+        setHighlightsList(cached.highlightsList);
+        setNotionSavedUrl(cached.notionPageUrl);
+        setLoadingRoot(false);
+        paintedFromCache = true;
+      }
+    } catch { /* cache is best-effort — fall through to the network */ }
     try {
       const session = await getSession(idToken, sid);
       const forkNodes = session.nodes.map(toForkNode);
@@ -444,7 +514,9 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       setSessionId(session.sessionId);
       setNodes(nodeMap);
       setRootId(root?.id ?? null);
-      setActiveId(activeTarget);
+      // Don't yank the user off a node they navigated to while the cache copy
+      // was showing — keep the current node if it still exists server-side.
+      setActiveId(prev => (prev && nodeMap[prev]) ? prev : activeTarget);
       setAnnotations(session.annotations.map(toAnnotation));
       setPersistentHl(toHlMap(session.highlights));
       setHighlightsList(toHighlightRecords(session.highlights, nodeMap));
@@ -457,6 +529,11 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       if (err instanceof ApiError && (err.status === 404 || err.status === 403)) {
         localStorage.removeItem('fork.ai.session');
         localStorage.removeItem('fork.ai.node');
+        deleteCachedSession(sid).catch(() => {});
+        // The session is gone server-side — drop the ghost we painted from cache.
+        if (paintedFromCache) {
+          setSessionId(null); setNodes({}); setRootId(null); setActiveId(null);
+        }
       }
     } finally {
       setLoadingRoot(false);
@@ -474,6 +551,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         localStorage.removeItem('fork.ai.trial');
         setGuestToken(null);
         setIsTrial(false);
+        track('guest_claimed');
         return loadSession(summary.sessionId);
       })
       .catch(err => console.error('Failed to claim session after login', err));
@@ -497,6 +575,26 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       localStorage.removeItem('fork.ai.node');
     }
   }, [sessionId, activeId, rootId]);
+
+  // Write-through local snapshot (IndexedDB): keep the device copy current as
+  // sections stream in and branches/highlights change, so the next launch paints
+  // instantly from cache. Loading/optimistic nodes are stripped — their temp ids
+  // don't exist server-side and a restored spinner would hang forever.
+  useEffect(() => {
+    if (!sessionId || !rootId || !nodes[rootId]) return;
+    const t = setTimeout(() => {
+      const settled: Record<string, ForkNode> = {};
+      for (const [id, n] of Object.entries(nodes)) {
+        if (!n.loading) settled[id] = n;
+      }
+      if (!settled[rootId]) return;
+      putCachedSession({
+        sessionId, rootId, nodes: settled, annotations, persistentHl, highlightsList,
+        notionPageUrl: notionSavedUrl, savedAt: Date.now(),
+      }).catch(() => {});
+    }, 400); // debounce: streaming sections update `nodes` rapidly
+    return () => clearTimeout(t);
+  }, [sessionId, rootId, nodes, annotations, persistentHl, highlightsList, notionSavedUrl]);
 
   // Restore "read" markers for the active session (reset on session switch).
   useEffect(() => {
@@ -662,6 +760,8 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
 
   // ── Start a new root research session (streaming) ────────────────────────
 
+  const retryInfoRef = useRef<Record<string, RetryInfo>>({});
+
   const submitRootQuery = useCallback(async (query: string) => {
     const tempId = uid();
     const optimisticNode: ForkNode = {
@@ -699,6 +799,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       let metaLede = '';
 
       const isTrialQuery = !idToken && !guestToken;
+      track('root_query', { trial: isTrialQuery, webSearch: tweaksRef.current.webSearch });
       const streamFn = isTrialQuery
         ? (cb: Parameters<typeof createSessionStream>[4]) => createTrialSessionStream(query, tweaksRef.current.maxSections, tweaksRef.current.webSearch, cb)
         : (cb: Parameters<typeof createSessionStream>[4]) => createSessionStream(idToken, query, tweaksRef.current.maxSections, tweaksRef.current.webSearch, cb);
@@ -788,14 +889,22 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         }
       });
     } catch (err) {
-      if (err instanceof ApiError && err.status === 402) {
+      if (err instanceof ApiError && err.status === 402 && idToken) {
         setRootQueryOutOfCredit(true);
+        setNodes({});
+        setRootId(null);
+        setActiveId(null);
       } else {
+        // Keep the failed node on screen with the actual reason and a Retry
+        // (or Log in) CTA instead of silently dumping the user back to Landing.
         console.error('Failed to create session', err);
+        const { msg, status } = nodeErrorDisplay(err, !idToken);
+        track('node_error', { kind: 'QUERY', status, message: msg });
+        retryInfoRef.current[tempId] = { kind: 'ROOT', query };
+        setNodes(prev => prev[tempId]
+          ? { ...prev, [tempId]: { ...prev[tempId], loading: false, error: msg, errorStatus: status } }
+          : prev);
       }
-      setNodes({});
-      setRootId(null);
-      setActiveId(null);
     } finally {
       setLoadingRoot(false);
       // Ensure loading flag is cleared on the node
@@ -811,14 +920,15 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
 
   // ── Branch: Go Deeper ─────────────────────────────────────────────────────
 
-  const expandSectionAsChild = useCallback(async (parentNodeId: string, section: ForkNode['sections'][0]) => {
+  const expandSectionAsChild = useCallback(async (parentNodeId: string, section: ForkNode['sections'][0], reuseNodeId?: string) => {
     const sid = sessionIdRef.current;
     const gt = guestTokenRef.current;
     if (!sid || (!idToken && !gt)) return;
     const parent = nodes[parentNodeId];
     if (!parent) return;
 
-    const tempId = uid();
+    // Retry reuses the failed node's id so the card flips back to loading in place.
+    const tempId = reuseNodeId ?? uid();
     setSectionLoading(section.id);
     setLoadingNodes(prev => new Set(prev).add(tempId));
     setNodes(prev => ({
@@ -867,11 +977,12 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         return next;
       });
       setActiveId(realNode.id);
+      track('branch_created', { kind: 'DEEPER', model: tweaksRef.current.branchModel, guest: !!gt && !idToken });
     } catch (err) {
-      const msg = err instanceof ApiError && err.status === 402
-        ? 'Out of credit — open Billing to recharge'
-        : 'Failed to load. Try again.';
-      setNodes(prev => ({ ...prev, [tempId]: { ...prev[tempId], loading: false, error: msg } }));
+      const { msg, status } = nodeErrorDisplay(err, !!gt && !idToken);
+      track('node_error', { kind: 'DEEPER', status, message: msg, guest: !!gt && !idToken });
+      if (status !== 402) retryInfoRef.current[tempId] = { kind: 'DEEPER', parentNodeId, section };
+      setNodes(prev => ({ ...prev, [tempId]: { ...prev[tempId], loading: false, error: msg, errorStatus: status } }));
     } finally {
       setSectionLoading(null);
       setLoadingNodes(prev => { const n = new Set(prev); n.delete(tempId); return n; });
@@ -880,14 +991,15 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
 
   // ── Branch: Ask AI from highlight ────────────────────────────────────────
 
-  const askFromHighlight = useCallback(async (question: string, source: FollowUpState) => {
+  const askFromHighlight = useCallback(async (question: string, source: FollowUpState, reuseNodeId?: string) => {
     const sid = sessionIdRef.current;
     const gt = guestTokenRef.current;
     if (!sid || (!idToken && !gt)) return;
     const parent = nodes[source.nodeId];
     if (!parent) return;
 
-    const tempId = uid();
+    // Retry reuses the failed node's id so the card flips back to loading in place.
+    const tempId = reuseNodeId ?? uid();
     setFollowUp(prev => prev ? { ...prev, loading: true } : null);
     setLoadingNodes(prev => new Set(prev).add(tempId));
     setNodes(prev => ({
@@ -937,11 +1049,12 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       setActiveId(prev => (prev === tempId ? realNode.id : prev));
       // Branch source gets the reserved glow style, not the last picked highlighter colour.
       persistHighlight(source.nodeId, source.sectionId, source.text, BRANCH_HL, null, source.start, source.end);
+      track('branch_created', { kind: 'ASK', model: tweaksRef.current.branchModel, guest: !!gt && !idToken });
     } catch (err) {
-      const msg = err instanceof ApiError && err.status === 402
-        ? 'Out of credit — open Billing to recharge'
-        : 'Failed to load. Try again.';
-      setNodes(prev => ({ ...prev, [tempId]: { ...prev[tempId], loading: false, error: msg } }));
+      const { msg, status } = nodeErrorDisplay(err, !!gt && !idToken);
+      track('node_error', { kind: 'ASK', status, message: msg, guest: !!gt && !idToken });
+      if (status !== 402) retryInfoRef.current[tempId] = { kind: 'ASK', question, source };
+      setNodes(prev => ({ ...prev, [tempId]: { ...prev[tempId], loading: false, error: msg, errorStatus: status } }));
     } finally {
       setLoadingNodes(prev => { const n = new Set(prev); n.delete(tempId); return n; });
       // Only close the popup that triggered THIS request — a newer Q2 popup must survive.
@@ -952,6 +1065,18 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       });
     }
   }, [nodes, idToken, scrollWsTop, persistHighlight, notionSavedUrl]);
+
+  // ── Retry a failed LLM node ───────────────────────────────────────────────
+
+  const retryNode = useCallback((failedId: string) => {
+    const info = retryInfoRef.current[failedId];
+    if (!info) return;
+    delete retryInfoRef.current[failedId];
+    track('retry_clicked', { kind: info.kind });
+    if (info.kind === 'ROOT') void submitRootQuery(info.query);
+    else if (info.kind === 'DEEPER') void expandSectionAsChild(info.parentNodeId, info.section, failedId);
+    else void askFromHighlight(info.question, info.source, failedId);
+  }, [submitRootQuery, expandSectionAsChild, askFromHighlight]);
 
   // ── Text selection → highlight menu ──────────────────────────────────────
 
@@ -1078,7 +1203,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       ALL_HL_NAMES.forEach(n => CSS.highlights.delete(n));
       CSS.highlights.delete('temp-hl');
     };
-  }, [persistentHl, activeId, hlMenu]);
+  }, [persistentHl, activeId, hlMenu, sectionReady]);
 
   const handleHlAction = useCallback((action: string, payload?: { bg: string; fg: string | null }) => {
     if (!hlMenu) return;
@@ -1113,6 +1238,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         createdAt: Date.now(),
       };
       setAnnotations(prev => [...prev, newAnn]);
+      track('callout_created');
       setHlMenu(null);
       window.getSelection()?.removeAllRanges();
 
@@ -1255,6 +1381,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       const title = nodes[rootId]?.title ?? 'fork ai research';
       const { url } = await pushToNotion(idToken, title, blocks, childrenMap, parentPageId);
       setNotionSavedUrl(url);
+      track('notion_export');
       if (sessionId) {
         updateSessionNotionUrl(idToken, sessionId, url).catch(err => console.error('Failed to persist Notion URL', err));
       }
@@ -1363,6 +1490,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       <LoginPage
         onEnter={() => {
           localStorage.setItem('fork.ai.visited', '1');
+          track('login_completed');
           setShowLogin(false);
           setForceLogin(false);
         }}
@@ -1531,7 +1659,12 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
               {active.error && (
                 <div className="ws-error">
                   <AlertCircle size={16} className="ic" />
-                  <span>Sorry — {active.error}. Try again.</span>
+                  <span>Sorry — {active.error}</span>
+                  {(active.errorStatus === 402 || active.errorStatus === 429) && !idToken ? (
+                    <button className="ws-error-btn" onClick={() => setForceLogin(true)}>Log in</button>
+                  ) : retryInfoRef.current[active.id] ? (
+                    <button className="ws-error-btn" onClick={() => retryNode(active.id)}>Retry</button>
+                  ) : null}
                 </div>
               )}
               {active.loading && !active.sections.length && <SkeletonSections />}

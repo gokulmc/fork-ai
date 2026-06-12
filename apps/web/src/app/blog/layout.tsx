@@ -82,6 +82,10 @@ export default function BlogLayout({ children }: { children: React.ReactNode }) 
         .post code { font-family: var(--mono); font-size: 0.86em; background: var(--panel); padding: 1px 5px; border-radius: var(--radius-sm); }
         .post blockquote { margin: 0 0 20px; padding: 4px 0 4px 18px; border-left: 2px solid var(--line-strong); color: var(--ink-2); font-style: italic; }
         .post hr { border: 0; border-top: 1px solid var(--line); margin: 36px 0; }
+        .post figure { margin: 30px 0 28px; }
+        .post img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: var(--radius-lg); }
+        .post figcaption { font-family: var(--mono); font-size: 11px; letter-spacing: 0.04em; color: var(--ink-3); margin-top: 10px; text-align: center; }
+        .post .post-sources { font-size: 13.5px; color: var(--ink-3); line-height: 1.6; }
 
         /* End-of-post CTA */
         .post-cta { margin-top: 48px; padding: 28px 30px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-lg); }

@@ -41,3 +41,4 @@ npm-debug.log*
 
 # Claude tool artifacts (binary cache files, not source)
 .claude/projects/
+playwright-report/

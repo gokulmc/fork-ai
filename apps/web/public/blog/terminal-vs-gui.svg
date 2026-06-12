@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 640" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
+  <rect width="1200" height="640" fill="#fbfaf8"/>
+
+  <text x="310" y="84" text-anchor="middle" font-size="23" letter-spacing="3" fill="#8f897c">THE TERMINAL ERA</text>
+  <text x="890" y="84" text-anchor="middle" font-size="23" letter-spacing="3" fill="#8f897c">THE GUI ERA</text>
+
+  <!-- terminal window -->
+  <rect x="60" y="118" width="500" height="430" rx="16" fill="#211e1a"/>
+  <circle cx="92" cy="148" r="7" fill="#ff5f57"/>
+  <circle cx="116" cy="148" r="7" fill="#febc2e"/>
+  <circle cx="140" cy="148" r="7" fill="#28c840"/>
+  <g font-size="19">
+    <text x="92" y="208" fill="#e8954a">❯</text>
+    <text x="116" y="208" fill="#cfc9bd">explain transformer attention</text>
+    <text x="92" y="244" fill="#6e675c">· · · (answer scrolls away)</text>
+    <text x="92" y="296" fill="#e8954a">❯</text>
+    <text x="116" y="296" fill="#cfc9bd">no — the second point you</text>
+    <text x="116" y="324" fill="#cfc9bd">made earlier, about K and V</text>
+    <text x="92" y="360" fill="#6e675c">· · ·</text>
+    <text x="92" y="412" fill="#e8954a">❯</text>
+    <text x="116" y="412" fill="#cfc9bd">as I said before, assume the</text>
+    <text x="116" y="440" fill="#cfc9bd">reader knows linear algebra</text>
+    <rect x="92" y="476" width="13" height="24" fill="#e8954a"/>
+  </g>
+  <text x="310" y="592" text-anchor="middle" font-size="18" fill="#8f897c">you address everything by re-describing it</text>
+
+  <!-- map window -->
+  <rect x="640" y="118" width="500" height="430" rx="16" fill="#ffffff" stroke="#e3ded4"/>
+
+  <!-- edges -->
+  <path d="M 815 333 C 870 333, 880 198, 925 198" fill="none" stroke="#d8d2c6" stroke-width="2.5"/>
+  <path d="M 815 333 C 870 333, 880 333, 925 333" fill="none" stroke="#b45309" stroke-width="3.5"/>
+  <path d="M 815 333 C 870 333, 880 468, 925 468" fill="none" stroke="#d8d2c6" stroke-width="2.5"/>
+
+  <!-- root -->
+  <rect x="685" y="303" width="130" height="60" rx="12" fill="#f1eee8" stroke="#e3ded4"/>
+  <text x="750" y="339" text-anchor="middle" font-size="17" fill="#26231f">question</text>
+
+  <!-- branches -->
+  <rect x="925" y="170" width="170" height="56" rx="12" fill="#f1eee8" stroke="#e3ded4"/>
+  <text x="1010" y="203" text-anchor="middle" font-size="16" fill="#8f897c">history</text>
+
+  <rect x="925" y="305" width="170" height="56" rx="12" fill="#fdf3e7" stroke="#b45309" stroke-width="2.5"/>
+  <text x="1010" y="331" text-anchor="middle" font-size="16" fill="#7a4a12">attention</text>
+  <rect x="952" y="340" width="116" height="9" rx="4.5" fill="#b45309" opacity="0.35"/>
+
+  <rect x="925" y="440" width="170" height="56" rx="12" fill="#f1eee8" stroke="#e3ded4"/>
+  <text x="1010" y="473" text-anchor="middle" font-size="16" fill="#8f897c">applications</text>
+
+  <!-- pointer + action tag -->
+  <path d="M 1048 367 l 0 26 l 7 -7 l 6 13 l 7 -3 l -6 -13 l 10 -1 z" fill="#26231f"/>
+  <rect x="1000" y="396" width="128" height="34" rx="8" fill="#26231f"/>
+  <text x="1064" y="418" text-anchor="middle" font-size="15" fill="#fbfaf8">✦ ask ai</text>
+
+  <text x="890" y="592" text-anchor="middle" font-size="18" fill="#b45309">you point at the thing itself</text>
+</svg>

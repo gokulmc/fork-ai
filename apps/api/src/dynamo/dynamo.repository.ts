@@ -14,6 +14,7 @@ import {
   CREDIT_EVENT_MODEL,
   BLOG_SUBMISSION_MODEL,
   BLOG_VIEW_MODEL,
+  TRIAL_SPEND_MODEL,
   DYNAMO_TABLE,
 } from './dynamo.constants';
 import type {
@@ -30,6 +31,7 @@ import type {
   CreditEventItem,
   BlogSubmissionItem,
   BlogViewItem,
+  TrialSpendItem,
 } from './dynamo.interfaces';
 
 @Injectable()
@@ -49,6 +51,7 @@ export class DynamoRepository {
     @Inject(CREDIT_EVENT_MODEL) private readonly creditEventModel: any,
     @Inject(BLOG_SUBMISSION_MODEL) private readonly blogSubmissionModel: any,
     @Inject(BLOG_VIEW_MODEL) private readonly blogViewModel: any,
+    @Inject(TRIAL_SPEND_MODEL) private readonly trialSpendModel: any,
   ) {}
 
   // ── Key helpers ─────────────────────────────────────────────────────────────
@@ -132,6 +135,20 @@ export class DynamoRepository {
     await this.userMetaModel.update(
       { PK: this.userPk(sub), SK: 'METADATA' },
       { '$ADD': { creditUsd: amount } },
+    );
+  }
+
+  // ── Trial daily budget ────────────────────────────────────────────────────
+
+  async getTrialSpend(day: string): Promise<number> {
+    const item = await this.trialSpendModel.get({ PK: `TRIAL#${day}`, SK: 'METADATA' });
+    return item ? (this.toPlain<TrialSpendItem>(item).spentUsd ?? 0) : 0;
+  }
+
+  async addTrialSpend(day: string, amount: number): Promise<void> {
+    await this.trialSpendModel.update(
+      { PK: `TRIAL#${day}`, SK: 'METADATA' },
+      { '$ADD': { spentUsd: amount } },
     );
   }
 

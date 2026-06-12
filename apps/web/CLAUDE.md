@@ -116,6 +116,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 });
 ```
 
+### Dev-only session cookie name (`forkai.session-token`)
+
+`localhost` cookies are shared across **ports**, so any other next-auth app running locally (e.g. `p2p-lending-tracker` on `:3001`) writes the default `authjs.session-token` cookie with *its* secret — fork.ai then fails every request with `JWTSessionError: no matching decryption secret` and the user looks logged out. `src/auth.ts` therefore namespaces the session cookie in dev:
+
+```ts
+...(process.env.NODE_ENV !== 'production' && {
+  cookies: { sessionToken: { name: 'forkai.session-token' } },
+}),
+```
+
+**Prod must keep the default name** — renaming it there would log out every live forkai.in session at once. If a sibling local app ever shows the same error, it needs its own namespaced cookie name on its side.
+
 ---
 
 ## API client: `src/lib/api.ts`
@@ -236,9 +248,40 @@ Section bodies are GitHub-flavoured markdown that may contain LaTeX. `marked.use
 ## Session-restore resilience (no "clear cache to fix")
 
 Restore reads `fork.ai.session` / `fork.ai.node` / `fork.ai.trial` at mount. These **self-heal** so a stale/deleted id can't strand the user (was a real prod bug fixed only by manually clearing site data):
-- `loadSession` catch removes `fork.ai.session`/`fork.ai.node` on a definitive **404/403** (kept on network blips, still retryable).
+- `loadSession` catch removes `fork.ai.session`/`fork.ai.node` on a definitive **404/403** (kept on network blips, still retryable). It also deletes the IndexedDB snapshot and, if one was already painted, clears the in-memory session state so a deleted session can't ghost-restore.
 - The guest share-load catch removes a stale `fork.ai.trial` so the invalid-link → login bounce can't recur.
 - A safety-net effect forces `loadingRoot = false` once auth settles **unauthenticated with no guest token**, so the `ResearchingScreen` can never hang (covers a logged-out former-guest with a persisted session id — the case the login gate skips).
+
+---
+
+## Performance — app shell & session cache
+
+Four mechanisms keep "time to usable" low; each has an invariant that must not be regressed.
+
+### 1. Service worker caches the app shell (`public/sw.js`)
+
+No longer a no-op. Caching is scoped to what can never go stale, preserving the ADR-0008 freshness contract (every deploy ships instantly):
+- **`/_next/static/*` → cache-first.** Content-hashed, immutable; a deploy mints new URLs referenced by freshly-fetched HTML, so staleness is impossible.
+- **Navigations (HTML) → network-first**, cached copy used only when the network fails — this is what lets the installed PWA launch on bad/no internet instead of white-screening.
+- **Public assets (icons/fonts/images) → stale-while-revalidate.**
+- **Everything else — API calls (cross-origin to NestJS), `/api/auth`, RSC payloads, SSE streams — is never intercepted.** Do not add caching for these.
+
+Bump `CACHE_VERSION` in `sw.js` when changing the caching strategy (the `activate` handler purges old caches by name).
+
+### 2. `Section` and `MindMap` are code-split (`App.tsx`)
+
+Loaded via `next/dynamic` (`ssr: false`), NOT static imports — `Section` drags in `marked` + `katex` + `highlight.js` (~1MB+ uncompressed) which Landing/History never need. **Do not convert these back to static imports**; the chunks load on first session render, in parallel with the LLM call. Anything else that imports `Section.tsx`/`MindMap.tsx` statically would silently pull the libraries back into the shared bundle.
+
+### 3. IndexedDB session cache (`src/lib/sessionCache.ts`)
+
+`loadSession` is **cache-first / network-authoritative**: it paints the last local snapshot from IndexedDB immediately (clearing `loadingRoot`), then lets `GET /sessions/:id` overwrite it when it lands. A write-through effect in `App.tsx` snapshots `{ nodes, annotations, persistentHl, highlightsList, notionPageUrl }` to IndexedDB (debounced 400ms) on every change, so the snapshot stays current as sections stream and branches are added.
+- **Loading/optimistic nodes are stripped before writing** — their temp ids don't exist server-side and a restored spinner would hang forever.
+- **The network result is always authoritative**; the cache only accelerates first paint. On the network apply, the current `activeId` is kept if it still exists (so the refresh doesn't yank a user off a node they navigated to while the cached copy was showing).
+- The store is capped at 10 sessions (oldest-by-`savedAt` evicted on write). All cache calls are best-effort — failures must behave as a cache miss, never block the network path.
+
+### 4. Landing exit delay
+
+`Landing.tsx`'s `setTimeout(…, 100)` before `onSubmit` must stay in sync with the `.landing` transition in `globals.css` (80ms). It sits on the critical path to the first LLM byte — keep it at ~animation + one paint, and don't raise either without the other.
 
 ---
 
@@ -251,6 +294,30 @@ The brand mark exists as two SVGs in `public/`: **`icon.svg` (light)** and **`ic
 - **The in-app brand logo** (`.app-brand .brand-logo` in `App.tsx`) is a CSS `background-image` that swaps `icon.svg` → `icon_b.svg` under `[data-theme="dark"]` — i.e. it *does* track the in-app toggle (the correct behaviour for an in-page element). The login arrived-screen logo is hard-coded to `icon.svg` (always on a white background).
 
 ---
+
+## Blog — content & illustration conventions
+
+Curated posts live in `src/content/blog/*.mdx` with **all metadata in `src/content/blog/index.ts`** (typed `POSTS` registry: slug, emoji, title, description, keywords, ISO date, readingMinutes, lazy `load()` importer — no frontmatter in the MDX). Adding a post = write the `.mdx` + register it in `index.ts`; `generateStaticParams` in `app/blog/[slug]/page.tsx` picks it up automatically. Shared chrome/typography (including `figure`/`img`/`figcaption`/`.post-sources` styles) is inline CSS in `app/blog/layout.tsx`.
+
+**Editorial conventions (every post):**
+- Essayistic prose, `##` headings, no H1 (the page renders the title from the registry).
+- Cross-link related posts inline (`/blog/<slug>`), and present **fork.ai as the solution** by name at the post's pivot point — not just via links.
+- Cite factual claims inline with real links (arXiv, primary sources); fact-heavy posts get a closing `<p className="post-sources">Sources: …</p>` after a `---`.
+
+**Illustrations — every post gets one bespoke SVG diagram:**
+- Hand-authored SVG in `public/blog/<motif>.svg`, embedded in MDX as:
+  ```jsx
+  <figure>
+    <img src="/blog/<name>.svg" alt="<full description of the diagram>" width="1200" height="620" />
+    <figcaption>One-line takeaway.</figcaption>
+  </figure>
+  ```
+- **Canvas:** `viewBox="0 0 1200 <560–640>"`, root `font-family="ui-monospace, SFMono-Regular, Menlo, monospace"`. The SVG carries its own paper background (works in dark mode as a card; the layout adds the border/radius).
+- **Palette (fixed — keep all diagrams consistent):** bg `#fbfaf8` · ink `#26231f` · muted label `#8f897c` · faint label `#b3ac9c` · line/stroke `#e3ded4` · node fill `#f1eee8` · fake-text bars `#d8d2c6` · grid `#eee9df` · **accent `#b45309`** · accent fill `#fdf3e7` · accent text `#7a4a12` · accent bars `#e3c49a` · negative/red `#c4452e` · dark panel `#211e1a`.
+- **Vocabulary:** rounded-rect nodes (`rx≈12`) + curved edges for maps; accent = the highlighted path/solution, gray = everything else, red = the failure mode; simulate text with rounded bars, real labels in mono ≥14px (≥16px preferred — the SVG renders at 720px wide); side-by-side comparisons get mono uppercase headers + a faint center divider; one faint takeaway line at the bottom.
+- Validate with `xmllint --noout public/blog/*.svg` (typographic quotes are fine; no unescaped `&`/`<`).
+
+Community submissions (`/blog/submit`) are markdown stored via the API — untouched by all of the above.
 
 ## Design system
 

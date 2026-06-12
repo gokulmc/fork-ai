@@ -19,7 +19,7 @@ import {
 } from '@/lib/api';
 import { LineChart, BarChart, Sparkline, PieChart, type PieSlice } from './charts';
 
-type Tab = 'overview' | 'users' | 'payments' | 'audit' | 'submissions';
+type Tab = 'overview' | 'users' | 'payments' | 'audit' | 'submissions' | 'analytics';
 
 const C = { accent: '#6366f1', green: '#22c55e', sky: '#38bdf8', amber: '#f59e0b', pink: '#ec4899', violet: '#8b5cf6' };
 const PIE_COLORS = [C.violet, C.sky, C.amber, C.green, C.pink, C.accent, '#14b8a6', '#f97316'];
@@ -101,7 +101,33 @@ export function AdminDashboard() {
       {tab === 'payments' && <Payments idToken={idToken} />}
       {tab === 'audit' && <Audit idToken={idToken} />}
       {tab === 'submissions' && <Submissions idToken={idToken} />}
+      {tab === 'analytics' && <Analytics />}
     </ShellLive>
+  );
+}
+
+// ── PostHog product analytics (shared-dashboard embed) ────────────────────────
+
+function Analytics() {
+  const url = process.env.NEXT_PUBLIC_POSTHOG_DASHBOARD_URL;
+  if (!url) {
+    return (
+      <div className="ad-card" style={{ padding: 32 }}>
+        <p className="ad-muted">
+          Product analytics isn&apos;t wired up yet. In PostHog open the dashboard →
+          Share → enable public sharing, then set <code>NEXT_PUBLIC_POSTHOG_DASHBOARD_URL</code> to
+          the embed URL and rebuild.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <iframe
+      src={url}
+      title="PostHog analytics"
+      allowFullScreen
+      style={{ width: '100%', height: 'calc(100vh - 190px)', border: 0, borderRadius: 12, background: '#fff' }}
+    />
   );
 }
 
@@ -122,7 +148,7 @@ function ShellLive({ idToken, tab, setTab, children }: { idToken: string; tab: T
   return (
     <Shell health={health} authed email={email}>
       <nav className="ad-tabs">
-        {(['overview', 'users', 'payments', 'audit', 'submissions'] as Tab[]).map((t) => (
+        {(['overview', 'users', 'payments', 'audit', 'submissions', 'analytics'] as Tab[]).map((t) => (
           <button key={t} className={`ad-tab ${tab === t ? 'on' : ''}`} onClick={() => setTab(t)}>
             {t[0].toUpperCase() + t.slice(1)}
           </button>

@@ -18,7 +18,7 @@ export class NodesService {
     private readonly users: UsersService,
   ) {}
 
-  async createNode(sub: string, sessionId: string, dto: CreateNodeDto, isGuest = false): Promise<NodeItem> {
+  async createNode(sub: string, sessionId: string, dto: CreateNodeDto, isGuest = false, isTrial = false): Promise<NodeItem> {
     await this.users.checkCredit(sub);
 
     const model = resolveBranchModel(dto.model, isGuest);
@@ -82,7 +82,7 @@ export class NodesService {
       // Invalidate any previous Notion export — the branch tree just changed.
       // Works for both authed and guest writes (guest can't call PATCH /sessions/:id).
       this.db.updateSessionMeta(sub, sessionId, { notionPageUrl: null }),
-      this.users.billUsage(sub, llmResult.usage.inputTokens, llmResult.usage.outputTokens, dto.kind, sessionId, node.nodeId, model),
+      this.users.billUsage(sub, llmResult.usage.inputTokens, llmResult.usage.outputTokens, dto.kind, sessionId, node.nodeId, model, isTrial),
     ]);
 
     return node;
