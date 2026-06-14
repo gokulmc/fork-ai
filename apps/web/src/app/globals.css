@@ -1061,6 +1061,12 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 .workspace { position: relative; overflow-y: auto; background: var(--bg); }
 .workspace-inner { max-width: 760px; margin: 0 auto; padding: var(--content-pad-y) var(--content-pad-x); }
 
+/* Select-all (Cmd/Ctrl+A) grabs body prose only — the chrome (title, pills, lede,
+   "branched from", section headings, buttons) is excluded from text selection,
+   matching the highlight feature which already only works on section bodies. */
+.workspace-inner { -webkit-user-select: none; user-select: none; }
+.workspace-inner .section-body { -webkit-user-select: text; user-select: text; }
+
 .ws-meta { display: flex; align-items: center; gap: 8px; font-family: var(--sans); font-size: 12px; color: var(--ink-3); margin-bottom: 16px; }
 .ws-meta .pill { border: 1px solid var(--line); border-radius: 4px; padding: 2px 8px; background: var(--paper); display: inline-flex; align-items: center; gap: 5px; font-weight: 500; }
 .ws-meta .pill .ic { width: 12px; height: 12px; }
