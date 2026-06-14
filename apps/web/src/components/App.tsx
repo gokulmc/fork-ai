@@ -1177,6 +1177,53 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     };
   }, [activeId]);
 
+  // Cmd/Ctrl+A → select the whole reading pane (the active node's content) as one
+  // contiguous range, instead of the document. Skips editable targets so Cmd+A in
+  // the query box / inputs keeps native behaviour.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'a' || e.altKey || e.shiftKey) return;
+      const el = document.activeElement;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || (el as HTMLElement).isContentEditable)) return;
+      const inner = wsInnerRef.current;
+      const bodies = inner?.querySelectorAll<HTMLElement>('.section-body');
+      if (!inner || !bodies || !bodies.length) return;
+      const sel = window.getSelection();
+      if (!sel) return;
+      e.preventDefault();
+
+      // The user-select CSS makes everything but .section-body unselectable, so
+      // the selected *text* is body-only; spanning the bodies anchors the menu at
+      // the first line of prose.
+      const single = bodies.length === 1;
+      const range = document.createRange();
+      if (single) range.selectNodeContents(bodies[0]);
+      else { range.setStartBefore(bodies[0]); range.setEndAfter(bodies[bodies.length - 1]); }
+      sel.removeAllRanges();
+      sel.addRange(range);
+
+      // Keyboard selection doesn't fire mouseup, so the highlight/Ask-AI menu
+      // (which listens on mouseup) must be popped here. Offsets only resolve
+      // within a single body; a multi-section select-all uses start=end=0 — Ask
+      // AI / Callout / Copy still work (like the title pill), Highlight won't paint.
+      const text = sel.toString().trim();
+      if (text.length < 3) return;
+      const rects = range.getClientRects();
+      const r = rects.length ? rects[0] : range.getBoundingClientRect();
+      const offsets = single ? getRangeOffsets(bodies[0], range) : null;
+      setHlMenu({
+        rect: { left: r.left, top: r.top, width: r.width, height: r.height, bottom: r.bottom },
+        text,
+        nodeId: activeId!,
+        sectionId: bodies[0].getAttribute('data-section-id')!,
+        start: offsets?.start ?? 0,
+        end: offsets?.end ?? 0,
+      });
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [activeId]);
+
   // Clear hlMenu on mousedown so useLayoutEffect runs before paint — Safari won't
   // repaint CSS.highlights after a deferred (post-paint) mutation, so we must
   // clear temp-hl before the browser draws the frame that follows the click.
