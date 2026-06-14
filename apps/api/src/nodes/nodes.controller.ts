@@ -32,16 +32,16 @@ export class NodesController {
   }
 
   @Patch(':nodeId')
-  @ApiOperation({ summary: 'Rename a node' })
+  @ApiOperation({ summary: 'Update a node (rename and/or star)' })
   @ApiParam({ name: 'sessionId', description: 'ULID session ID' })
   @ApiParam({ name: 'nodeId', description: 'ULID node ID' })
-  rename(
+  update(
     @CurrentUser() user: CognitoUser,
     @Param('sessionId') sessionId: string,
     @Param('nodeId') nodeId: string,
     @Body() dto: UpdateNodeDto,
   ) {
-    return this.nodesService.renameNode(user.sub, sessionId, nodeId, dto);
+    return this.nodesService.updateNode(user.sub, sessionId, nodeId, dto);
   }
 
   @Delete(':nodeId')

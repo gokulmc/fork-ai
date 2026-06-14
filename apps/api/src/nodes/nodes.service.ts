@@ -30,26 +30,42 @@ export class NodesService {
       throw new NotFoundException(`Parent node ${dto.parentNodeId} not found`);
     }
 
-    // Walk up to root to build context trail (root first)
+    // Soft-dedupe emoji against existing siblings (same parent) so the map
+    // doesn't repeat the same icon across branches under one node.
+    const usedEmojis = new Set(
+      session.nodes
+        .filter((n) => n.parentId === dto.parentNodeId && n.emoji)
+        .map((n) => n.emoji as string),
+    );
+
+    // Walk up to root to build context trail (root first), also collecting
+    // ancestor emojis so a branch doesn't echo its parent/grandparent icon.
     const ancestors: Array<{ title: string; query: string }> = [];
     let cur: string | null = dto.parentNodeId;
     while (cur) {
       const n = nodeById.get(cur);
       if (!n) break;
       ancestors.unshift({ title: n.title, query: n.query });
+      if (n.emoji) usedEmojis.add(n.emoji);
       cur = n.parentId ?? null;
     }
+    const avoidEmojis = [...usedEmojis];
 
     let llmResult;
     let fromText: string;
 
+    // Authenticated callers get the larger Output Budget; a boosted retry only
+    // applies for them (guests can't Retry a Cut-Off). See ADR-0009.
+    const authed = !isGuest;
+    const boost = authed && (dto.boost ?? false);
+
     if (dto.kind === 'DEEPER') {
       if (!dto.sectionBody) throw new BadRequestException('sectionBody required for DEEPER nodes');
-      llmResult = await this.llm.expandSection(ancestors, dto.query, dto.sectionBody, dto.sectionCount ?? 4, dto.webSearch ?? false, model, dto.verbose ?? false);
+      llmResult = await this.llm.expandSection(ancestors, dto.query, dto.sectionBody, dto.sectionCount ?? 4, dto.webSearch ?? false, model, dto.verbose ?? false, authed, boost, avoidEmojis);
       fromText = `${dto.query}: ${dto.sectionBody.slice(0, 200)}…`;
     } else {
       if (!dto.highlightText) throw new BadRequestException('highlightText required for ASK nodes');
-      llmResult = await this.llm.followUpFromHighlight(ancestors, dto.highlightText, dto.query, dto.sectionCount ?? 4, dto.webSearch ?? false, model, dto.verbose ?? false);
+      llmResult = await this.llm.followUpFromHighlight(ancestors, dto.highlightText, dto.query, dto.sectionCount ?? 4, dto.webSearch ?? false, model, dto.verbose ?? false, authed, boost, avoidEmojis);
       fromText = dto.highlightText;
     }
 
@@ -88,11 +104,22 @@ export class NodesService {
     return node;
   }
 
-  async renameNode(sub: string, sessionId: string, nodeId: string, dto: UpdateNodeDto): Promise<void> {
+  async updateNode(sub: string, sessionId: string, nodeId: string, dto: UpdateNodeDto): Promise<void> {
     await this.sessions.getSession(sub, sessionId);
     const node = await this.db.getNode(sessionId, nodeId);
     if (!node) throw new NotFoundException(`Node ${nodeId} not found`);
-    await this.db.updateNode(sessionId, nodeId, { title: dto.title });
+
+    const updates: Partial<Pick<NodeItem, 'title' | 'starred'>> = {};
+    if (dto.title !== undefined) updates.title = dto.title;
+    if (dto.starred !== undefined) updates.starred = dto.starred;
+    if (!Object.keys(updates).length) return;
+
+    await this.db.updateNode(sessionId, nodeId, updates);
+
+    // Starring changes the Notion export, so any previously-saved page is now stale.
+    if (dto.starred !== undefined) {
+      await this.db.updateSessionMeta(sub, sessionId, { notionPageUrl: null });
+    }
   }
 
   async deleteBranch(sub: string, sessionId: string, nodeId: string): Promise<void> {

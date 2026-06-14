@@ -5,6 +5,7 @@ import { NodesService } from '@/nodes/nodes.service';
 import { UsersService } from '@/users/users.service';
 import { HighlightsService } from '@/highlights/highlights.service';
 import { CreateNodeDto } from '@/nodes/dto/create-node.dto';
+import { UpdateNodeDto } from '@/nodes/dto/update-node.dto';
 import { CreateHighlightDto } from '@/highlights/dto/create-highlight.dto';
 import { UpdateHighlightDto } from '@/highlights/dto/update-highlight.dto';
 import { CreateSessionDto } from '@/sessions/dto/create-session.dto';
@@ -42,6 +43,11 @@ export class ShareService {
     }
     if (meta?.isTrial) await this.users.checkTrialBudget();
     return this.nodes.createNode(ownerSub, sessionId, dto, true, meta?.isTrial ?? false);
+  }
+
+  async updateNode(token: string, nodeId: string, dto: UpdateNodeDto): Promise<void> {
+    const { sessionId, ownerSub } = await this.resolve(token);
+    return this.nodes.updateNode(ownerSub, sessionId, nodeId, dto);
   }
 
   async createHighlight(token: string, dto: CreateHighlightDto): Promise<HighlightItem> {

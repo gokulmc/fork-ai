@@ -20,6 +20,7 @@ export interface ApiNode {
   createdAt: string;
   sources?: CitationSource[];
   model?: string;
+  starred?: boolean;
 }
 
 export interface ApiAnnotation {
@@ -85,6 +86,7 @@ export function toForkNode(n: ApiNode): ForkNode {
     loading: false,
     sources: n.sources,
     model: n.model,
+    starred: (raw['starred'] as boolean | undefined) ?? false,
   };
 }
 
@@ -144,21 +146,28 @@ export class ApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    // Machine-readable error code from the JSON body (e.g. OUTPUT_TRUNCATED),
+    // when the backend set one — lets the UI branch without parsing copy.
+    public readonly code?: string,
   ) {
     super(message);
   }
 }
 
-// NestJS error bodies are JSON ({ message, statusCode }); pull out the human message.
-// Non-JSON bodies (LB/proxy HTML error pages) must never leak into the UI banner.
-function extractErrorMessage(text: string, fallback: string): string {
-  if (!text) return fallback;
+// NestJS error bodies are JSON ({ message, code, statusCode }); pull out the human
+// message + any machine code. Non-JSON bodies (LB/proxy HTML error pages) must
+// never leak into the UI banner.
+function extractError(text: string, fallback: string): { message: string; code?: string } {
+  if (!text) return { message: fallback };
   try {
-    const body = JSON.parse(text) as { message?: string | string[] };
-    if (body.message) return Array.isArray(body.message) ? body.message.join('; ') : body.message;
+    const body = JSON.parse(text) as { message?: string | string[]; code?: string };
+    if (body.message) {
+      const message = Array.isArray(body.message) ? body.message.join('; ') : body.message;
+      return { message, code: body.code };
+    }
   } catch { /* not JSON */ }
   const t = text.trim();
-  return t && !t.startsWith('<') && t.length <= 160 ? t : fallback;
+  return { message: t && !t.startsWith('<') && t.length <= 160 ? t : fallback };
 }
 
 // ── Core fetch helper ────────────────────────────────────────────────────────
@@ -185,7 +194,8 @@ async function apiFetch<T>(
     // A 401 on an empty Bearer means "this endpoint requires auth" — calling
     // signOut() in that case kicks unauthenticated guests off the share page.
     if (res.status === 401 && idToken) unauthorizedHandler?.();
-    throw new ApiError(res.status, extractErrorMessage(text, res.statusText));
+    const { message, code } = extractError(text, res.statusText);
+    throw new ApiError(res.status, message, code);
   }
   if (res.status === 204) return undefined as T;
   const text = await res.text();
@@ -352,7 +362,8 @@ export async function createSessionStream(
 
   if (!res.ok || !res.body) {
     const text = await res.text().catch(() => '');
-    throw new ApiError(res.status, extractErrorMessage(text, res.statusText));
+    const { message, code } = extractError(text, res.statusText);
+    throw new ApiError(res.status, message, code);
   }
 
   await readSseStream(res.body, onEvent);
@@ -397,7 +408,8 @@ export async function createTrialSessionStream(
 
   if (!res.ok || !res.body) {
     const text = await res.text().catch(() => '');
-    throw new ApiError(res.status, extractErrorMessage(text, res.statusText));
+    const { message, code } = extractError(text, res.statusText);
+    throw new ApiError(res.status, message, code);
   }
 
   await readSseStream(res.body, onEvent);
@@ -415,6 +427,7 @@ export interface CreateNodePayload {
   sectionCount?: number;
   webSearch?: boolean;
   verbose?: boolean;
+  boost?: boolean;  // retry of a length-limit Cut-Off: double the output budget (authed only)
   model?: 'haiku' | 'sonnet' | 'opus' | 'gemini-pro' | 'gemini-flash' | 'gemini-flash-lite' | 'deepseek-pro' | 'deepseek-flash';
 }
 
@@ -438,6 +451,18 @@ export function renameNode(
   return apiFetch<ApiNode>(`/sessions/${sessionId}/nodes/${nodeId}`, idToken, {
     method: 'PATCH',
     body: JSON.stringify({ title }),
+  });
+}
+
+export function setNodeStar(
+  idToken: string,
+  sessionId: string,
+  nodeId: string,
+  starred: boolean,
+): Promise<void> {
+  return apiFetch<void>(`/sessions/${sessionId}/nodes/${nodeId}`, idToken, {
+    method: 'PATCH',
+    body: JSON.stringify({ starred }),
   });
 }
 
@@ -555,8 +580,9 @@ async function shareFetch<T>(path: string, init?: RequestInit, idToken?: string)
   if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
   const res = await fetch(`${base()}${path}`, { ...init, headers });
   if (!res.ok) {
-    const msg = await res.text().catch(() => res.statusText);
-    throw new ApiError(res.status, msg);
+    const text = await res.text().catch(() => res.statusText);
+    const { message, code } = extractError(text, res.statusText);
+    throw new ApiError(res.status, message, code);
   }
   if (res.status === 204) return undefined as T;
   const text = await res.text();
@@ -573,6 +599,13 @@ export const shareApi = {
     return shareFetch<ApiNode>(`/share/${token}/nodes`, {
       method: 'POST',
       body: JSON.stringify(payload),
+    });
+  },
+
+  setNodeStar(token: string, nodeId: string, starred: boolean): Promise<void> {
+    return shareFetch<void>(`/share/${token}/nodes/${nodeId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ starred }),
     });
   },
 

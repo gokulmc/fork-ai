@@ -55,6 +55,7 @@ NotionController → NotionService
 | fork.ai concept | Notion block |
 |---|---|
 | Mind map diagram | `code` block with `language: "mermaid"` — always the **first** block. Notion renders the diagram but lands in code view; users must manually click **Preview** to hide the code — the Notion API has no preview-mode property on code blocks. |
+| Starred nodes | `heading_2` toggle **⭐ Starred nodes** — rendered **second** (right after the Mermaid diagram), only when ≥1 node is starred. Each starred node is a `heading_3` toggle (yellow) holding its own lede + sections + callouts + sources. Descendants are NOT re-walked here (they already appear in the main body), so this is a flat summary, not a subtree. Built by `starredNodeBlocks` in `notion-clipboard.ts`. |
 | Root node lede | `paragraph` (title is omitted — it's already the Notion page title) |
 | Section heading (root) | `heading_1` in blue |
 | Section heading (depth 1) | `heading_3` default |

@@ -2,7 +2,7 @@
 
 import { signOut, useSession } from 'next-auth/react';
 import { useState, useEffect, useRef } from 'react';
-import { getUsageEvents, getCreditEvents, createRechargeOrder, verifyPayment, getReferralLink, type UsageEvent, type CreditEvent } from '@/lib/api';
+import { getMe, getUsageEvents, getCreditEvents, createRechargeOrder, verifyPayment, getReferralLink, type UsageEvent, type CreditEvent } from '@/lib/api';
 
 const PW_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&_\-#])[A-Za-z\d@$!%*?&_\-#]{8,}$/;
 
@@ -86,6 +86,9 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
   // Balance shown in billing overlay — starts from prop, updates after recharge
   const [localBalance, setLocalBalance] = useState<number | null | undefined>(creditBalance);
   useEffect(() => { setLocalBalance(creditBalance); }, [creditBalance]);
+  // True only when we have no balance to show AND the last fetch failed — drives the
+  // billing overlay's error+retry state so it never hangs on "Loading…" forever.
+  const [balanceError, setBalanceError] = useState(false);
 
   // Referral modal state
   const [referralOpen, setReferralOpen] = useState(false);
@@ -135,9 +138,23 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
     });
   }
 
+  // Cache-first: keep showing the current balance while re-reading the live value.
+  function refreshBalance() {
+    if (!idToken) return;
+    setBalanceError(false);
+    getMe(idToken)
+      .then(me => {
+        const b = me.creditUsd ?? null;
+        setLocalBalance(b);
+        if (b != null) onCreditUpdated?.(b);
+      })
+      .catch(() => setBalanceError(true));
+  }
+
   function openBilling() {
     setOpen(false);
     setBillingOpen(true);
+    refreshBalance();
     if (usageEvents === null && idToken) {
       setUsageLoading(true);
       Promise.all([
@@ -429,7 +446,14 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
             <div style={{ marginBottom: 20 }}>
               <div style={{ fontSize: 10, letterSpacing: '0.12em', color: 'rgba(10,10,10,0.4)', marginBottom: 6, textTransform: 'uppercase' }}>Balance</div>
               {localBalance == null ? (
-                <div style={{ fontSize: 11, color: 'rgba(10,10,10,0.4)' }}>Loading…</div>
+                balanceError ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontSize: 11, color: '#c0392b', letterSpacing: '0.04em' }}>Couldn&apos;t load balance.</span>
+                    <button onClick={refreshBalance} style={cancelBtnStyle}>Retry</button>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 11, color: 'rgba(10,10,10,0.4)' }}>Loading…</div>
+                )
               ) : localBalance <= 0 ? (
                 <div style={{ fontSize: 13, color: '#c0392b', letterSpacing: '0.04em' }}>Out of credit — add credit to continue.</div>
               ) : (

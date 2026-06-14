@@ -9,6 +9,9 @@ export interface CompleteOptions {
 export interface CompleteResult {
   rawText: string; // accumulated model text, pre-JSON-parse
   usage: LlmUsage;
+  // True when generation stopped because it hit maxTokens (the length limit),
+  // so rawText is a cut-off — distinct from a genuinely unparseable answer.
+  truncated?: boolean;
   // Provider-specific citation finisher: given the parsed sections, returns the
   // sections with inline footnote markers injected + the cited-only sources list.
   // Undefined when there was no web search / no usable sources.

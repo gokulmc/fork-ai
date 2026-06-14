@@ -96,6 +96,12 @@ npm run dev:api   # NestJS on :3000
 npm run dev:web   # Next.js on :3001
 ```
 
+**Open the app in a real browser** (Chrome / Safari / Edge) at the exact origin in `NEXTAUTH_URL` — e.g. `http://localhost:3001`. Use that same host:port you logged in on; next-auth cookies are bound to it, so a different origin shows you as logged out (no History).
+
+> ⚠️ **Don't use the VS Code "Simple Browser".** Its sandbox blocks the cross-origin `fetch` to the API and drops the auth cookie, so every request fails with `Failed to fetch` and History never loads — even when both servers are healthy. This is a limitation of the embedded webview, not the app. Open a normal browser instead.
+>
+> **LAN / phone testing:** when serving on the machine's LAN IP, the web dev port and ports may differ from the defaults — `apps/web/package.json` hardcodes `next dev -p 3001`, so launch web on the env's port explicitly (`cd apps/web && npx next dev -p <port>`) and open `http://<lan-ip>:<port>` (the exact `NEXTAUTH_URL`).
+
 Swagger docs are available at `http://localhost:3000/api` when the backend is running.
 
 ---

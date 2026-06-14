@@ -112,6 +112,9 @@ describe('NodesService', () => {
         false,
         BRANCH_DEFAULT_MODEL,
         false,
+        true,  // authed (non-guest createNode)
+        false, // boost
+        [],    // avoidEmojis (parent has no emoji, no siblings)
       );
     });
 
@@ -125,7 +128,23 @@ describe('NodesService', () => {
         expect.anything(),
         expect.anything(),
         true,
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
       );
+    });
+
+    it('passes ancestor + sibling emojis to avoid as the last arg', async () => {
+      mockSessions.getSession.mockResolvedValueOnce({
+        ...fullSession,
+        nodes: [
+          { ...parentNode, emoji: '🌳' },
+          { nodeId: '01HZSIB', parentId: PARENT_NODE_ID, query: 'q', title: 't', kind: 'DEEPER', emoji: '🍃' },
+        ],
+      });
+      await service.createNode(SUB, SESSION_ID, dto);
+      const lastArg = mockLlm.expandSection.mock.calls[0].at(-1);
+      expect(lastArg).toEqual(expect.arrayContaining(['🌳', '🍃']));
     });
 
     it('persists node and updates session metadata', async () => {
@@ -194,6 +213,9 @@ describe('NodesService', () => {
         false,
         BRANCH_DEFAULT_MODEL,
         false,
+        true,  // authed (non-guest createNode)
+        false, // boost
+        [],    // avoidEmojis (parent has no emoji, no siblings)
       );
     });
 
@@ -209,19 +231,29 @@ describe('NodesService', () => {
     });
   });
 
-  describe('renameNode', () => {
+  describe('updateNode', () => {
     it('updates the title field', async () => {
       mockSessions.getSession.mockResolvedValue(fullSession);
       mockDb.getNode.mockResolvedValue({ nodeId: 'n1', title: 'Old' });
       mockDb.updateNode.mockResolvedValue(undefined);
-      await service.renameNode(SUB, SESSION_ID, 'n1', { title: 'New title' });
+      await service.updateNode(SUB, SESSION_ID, 'n1', { title: 'New title' });
       expect(mockDb.updateNode).toHaveBeenCalledWith(SESSION_ID, 'n1', { title: 'New title' });
+    });
+
+    it('stars a node and invalidates the stale Notion export', async () => {
+      mockSessions.getSession.mockResolvedValue(fullSession);
+      mockDb.getNode.mockResolvedValue({ nodeId: 'n1', title: 'Old' });
+      mockDb.updateNode.mockResolvedValue(undefined);
+      mockDb.updateSessionMeta.mockResolvedValue(undefined);
+      await service.updateNode(SUB, SESSION_ID, 'n1', { starred: true });
+      expect(mockDb.updateNode).toHaveBeenCalledWith(SESSION_ID, 'n1', { starred: true });
+      expect(mockDb.updateSessionMeta).toHaveBeenCalledWith(SUB, SESSION_ID, { notionPageUrl: null });
     });
 
     it('throws NotFoundException when node does not exist', async () => {
       mockSessions.getSession.mockResolvedValue(fullSession);
       mockDb.getNode.mockResolvedValue(null);
-      await expect(service.renameNode(SUB, SESSION_ID, 'n1', { title: 'x' })).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.updateNode(SUB, SESSION_ID, 'n1', { title: 'x' })).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 

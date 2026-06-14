@@ -6,6 +6,11 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
+### Large/Verbose branch answers failed with "The AI returned an unreadable answer"
+- **Symptom:** A "Go Deeper"/"Ask AI" branch — especially with **Verbose** style (and worse with Web search) — failed with the red "Sorry — The AI returned an unreadable answer", and Retry failed identically. Reproduced across different models (Opus, etc.), so it looked model-agnostic.
+- **Cause:** Branch calls ran with a fixed `max_tokens: 2048` (the *output* cap). A thorough verbose answer wrapped in JSON overran 2048, the response was truncated mid-string, `parseJson` threw, and `friendlyLlmError` mapped the `/json|parse/` failure to "unreadable answer". The 2048 cap is model-independent, hence the "two different models both failed" symptom. The internal retry re-ran at the same 2048 cap → deterministic re-failure.
+- **Fix:** Introduce a tiered **Output Budget** for branch calls (`outputBudget` in `models.ts`): authed Verbose 8192 / authed Sectioned 4096 / Guest-Trial 2048; 16384 is the non-streaming ceiling. Providers now report `truncated` (`stop_reason: 'max_tokens'` / Gemini `MAX_TOKENS`); a Cut-Off surfaces as a distinct `422 { code: 'OUTPUT_TRUNCATED' }` ("the answer was cut off — it hit the length limit") instead of "unreadable", and is **not** retried internally. Frontend: an authed user can Retry a Cut-Off, which re-runs with the budget doubled (`boost`, clamped to 16384); a Guest gets the clear message but no Retry (same-budget retry would only truncate again). Branch path stays non-streaming (ADR-0009). `apps/api/src/llm/{models.ts,llm.service.ts,providers/*}`, `nodes.service.ts`, `create-node.dto.ts`, `apps/web/src/lib/api.ts`, `apps/web/src/components/App.tsx`, `apps/web/src/lib/types.ts`.
+
 ### Anonymous trial endpoint accepted unbounded `sectionCount` (cost hole) and had no rate limiting
 - **Symptom:** `POST /share` (public, no auth) fired a Sonnet stream billed to the house account with whatever `sectionCount` the body carried — `{ query, sectionCount: 1000 }` in a loop could drain real money. No per-IP limit existed on any endpoint.
 - **Cause:** `CreateSessionDto.sectionCount` had `@IsOptional()` but no range validation (the branch DTO was clamped 4–8; the root DTO was missed). No ThrottlerModule or custom guard was ever configured.

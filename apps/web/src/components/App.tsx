@@ -47,7 +47,7 @@ function rangeFromOffsets(root: Element, start: number, end: number): Range | nu
 
 // Map an API failure to error-banner copy + status. The status drives the CTA:
 // 402/429 without auth → "Log in", anything else retryable → "Retry".
-function nodeErrorDisplay(err: unknown, isGuestReq: boolean): { msg: string; status?: number } {
+function nodeErrorDisplay(err: unknown, isGuestReq: boolean): { msg: string; status?: number; code?: string } {
   if (err instanceof ApiError) {
     if (err.status === 402) {
       return {
@@ -58,7 +58,7 @@ function nodeErrorDisplay(err: unknown, isGuestReq: boolean): { msg: string; sta
     if (err.status === 429 && /throttler/i.test(err.message)) {
       return { msg: 'Too many requests — please wait a minute', status: 429 };
     }
-    if (err.message) return { msg: err.message, status: err.status };
+    if (err.message) return { msg: err.message, status: err.status, code: err.code };
   }
   return { msg: 'Failed to load' };
 }
@@ -66,8 +66,8 @@ function nodeErrorDisplay(err: unknown, isGuestReq: boolean): { msg: string; sta
 // Retry context for a failed LLM node, keyed by the failed node's id.
 type RetryInfo =
   | { kind: 'ROOT'; query: string }
-  | { kind: 'DEEPER'; parentNodeId: string; section: { id: string; heading: string; body: string } }
-  | { kind: 'ASK'; question: string; source: FollowUpState };
+  | { kind: 'DEEPER'; parentNodeId: string; section: { id: string; heading: string; body: string }; boost?: boolean }
+  | { kind: 'ASK'; question: string; source: FollowUpState; boost?: boolean };
 import { useTweaks } from '@/hooks/useTweaks';
 import { initAnalytics, track, identifyUser } from '@/lib/analytics';
 import { getCachedSession, putCachedSession, deleteCachedSession } from '@/lib/sessionCache';
@@ -79,6 +79,7 @@ import {
   createTrialSessionStream,
   createNode,
   renameNode as apiRenameNode,
+  setNodeStar as apiSetNodeStar,
   deleteNode as apiDeleteNode,
   createAnnotation,
   deleteAnnotation as apiDeleteAnnotation,
@@ -296,6 +297,19 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   const [followUp, setFollowUp] = useState<FollowUpState | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 
+  // Transient "Ask AI" pill revealed by hovering/tapping the active node's title.
+  // Auto-hides 5s after the last reveal; never persisted (resets on refresh).
+  const [titleAskVisible, setTitleAskVisible] = useState(false);
+  const titleAskTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const titleAskBtnRef = useRef<HTMLButtonElement>(null);
+  const revealTitleAsk = useCallback(() => {
+    setTitleAskVisible(true);
+    if (titleAskTimer.current) clearTimeout(titleAskTimer.current);
+    titleAskTimer.current = setTimeout(() => setTitleAskVisible(false), 5000);
+  }, []);
+  useEffect(() => () => { if (titleAskTimer.current) clearTimeout(titleAskTimer.current); }, []);
+  useEffect(() => { setTitleAskVisible(false); }, [activeId]);
+
   const [persistentHl, setPersistentHl] = useState<Record<string, PersistentHighlight[]>>({});
   const [highlightsList, setHighlightsList] = useState<HighlightRecord[]>([]);
   const [lastHlColors, setLastHlColors] = useState<{ bg: string; fg: string | null }>({ bg: '#fef08a', fg: null });
@@ -467,6 +481,16 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
           }
         }
       })
+      .catch(() => {});
+  }, [idToken]);
+
+  // Cache-first balance refresh: re-reads the live balance after a billed op so the
+  // account/billing panels reflect spend instead of a stale once-at-login value.
+  // Only overwrites on success — a failed refetch leaves the last-known balance intact.
+  const refreshCredit = useCallback(() => {
+    if (!idToken) return;
+    getMe(idToken)
+      .then(me => setCreditBalance(me.creditUsd ?? null))
       .catch(() => {});
   }, [idToken]);
 
@@ -758,6 +782,18 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     }
   }, [sessionId, idToken, guestToken]);
 
+  const toggleStar = useCallback((node: ForkNode) => {
+    if (node.loading || node.error) return;
+    const next = !node.starred;
+    setNodes(prev => prev[node.id] ? { ...prev, [node.id]: { ...prev[node.id], starred: next } } : prev);
+    if (!sessionId) return;
+    if (guestToken && !idToken) {
+      shareApi.setNodeStar(guestToken, node.id, next).catch(err => console.error('Failed to star node', err));
+    } else if (idToken) {
+      apiSetNodeStar(idToken, sessionId, node.id, next).catch(err => console.error('Failed to star node', err));
+    }
+  }, [sessionId, idToken, guestToken]);
+
   // ── Start a new root research session (streaming) ────────────────────────
 
   const retryInfoRef = useRef<Record<string, RetryInfo>>({});
@@ -858,6 +894,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
           });
           setRootId(realNodeId);
           setActiveId(realNodeId);
+          refreshCredit();
           // Patch any open UI state that was anchored to the optimistic temp ID
           setHlMenu(prev => prev?.nodeId === tempId ? { ...prev, nodeId: realNodeId } : prev);
           setFollowUp(prev => prev?.nodeId === tempId ? { ...prev, nodeId: realNodeId } : prev);
@@ -920,7 +957,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
 
   // ── Branch: Go Deeper ─────────────────────────────────────────────────────
 
-  const expandSectionAsChild = useCallback(async (parentNodeId: string, section: ForkNode['sections'][0], reuseNodeId?: string) => {
+  const expandSectionAsChild = useCallback(async (parentNodeId: string, section: ForkNode['sections'][0], reuseNodeId?: string, boost?: boolean) => {
     const sid = sessionIdRef.current;
     const gt = guestTokenRef.current;
     if (!sid || (!idToken && !gt)) return;
@@ -965,6 +1002,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         webSearch: tweaksRef.current.webSearch,
         verbose: tweaksRef.current.answerStyle === 'verbose',
         model: tweaksRef.current.branchModel,
+        ...(boost ? { boost: true } : {}),
       };
       const apiNode = gt && !idToken
         ? await shareApi.createNode(gt, nodePayload)
@@ -977,12 +1015,19 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         return next;
       });
       setActiveId(realNode.id);
+      refreshCredit();
       track('branch_created', { kind: 'DEEPER', model: tweaksRef.current.branchModel, guest: !!gt && !idToken });
     } catch (err) {
-      const { msg, status } = nodeErrorDisplay(err, !!gt && !idToken);
-      track('node_error', { kind: 'DEEPER', status, message: msg, guest: !!gt && !idToken });
-      if (status !== 402) retryInfoRef.current[tempId] = { kind: 'DEEPER', parentNodeId, section };
-      setNodes(prev => ({ ...prev, [tempId]: { ...prev[tempId], loading: false, error: msg, errorStatus: status } }));
+      const isGuestReq = !!gt && !idToken;
+      const { msg, status, code } = nodeErrorDisplay(err, isGuestReq);
+      track('node_error', { kind: 'DEEPER', status, message: msg, guest: isGuestReq });
+      // A guest can't Retry a Cut-Off (same budget → cut off again), so don't offer it;
+      // an authed Cut-Off retries with a doubled budget (boost). See ADR-0009.
+      const truncated = code === 'OUTPUT_TRUNCATED';
+      if (status !== 402 && !(truncated && isGuestReq)) {
+        retryInfoRef.current[tempId] = { kind: 'DEEPER', parentNodeId, section, boost: truncated };
+      }
+      setNodes(prev => ({ ...prev, [tempId]: { ...prev[tempId], loading: false, error: msg, errorStatus: status, errorCode: code } }));
     } finally {
       setSectionLoading(null);
       setLoadingNodes(prev => { const n = new Set(prev); n.delete(tempId); return n; });
@@ -991,7 +1036,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
 
   // ── Branch: Ask AI from highlight ────────────────────────────────────────
 
-  const askFromHighlight = useCallback(async (question: string, source: FollowUpState, reuseNodeId?: string) => {
+  const askFromHighlight = useCallback(async (question: string, source: FollowUpState, reuseNodeId?: string, boost?: boolean) => {
     const sid = sessionIdRef.current;
     const gt = guestTokenRef.current;
     if (!sid || (!idToken && !gt)) return;
@@ -1033,6 +1078,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         webSearch: tweaksRef.current.webSearch,
         verbose: tweaksRef.current.answerStyle === 'verbose',
         model: tweaksRef.current.branchModel,
+        ...(boost ? { boost: true } : {}),
       };
       const apiNode = gt && !idToken
         ? await shareApi.createNode(gt, nodePayload)
@@ -1049,12 +1095,19 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       setActiveId(prev => (prev === tempId ? realNode.id : prev));
       // Branch source gets the reserved glow style, not the last picked highlighter colour.
       persistHighlight(source.nodeId, source.sectionId, source.text, BRANCH_HL, null, source.start, source.end);
+      refreshCredit();
       track('branch_created', { kind: 'ASK', model: tweaksRef.current.branchModel, guest: !!gt && !idToken });
     } catch (err) {
-      const { msg, status } = nodeErrorDisplay(err, !!gt && !idToken);
-      track('node_error', { kind: 'ASK', status, message: msg, guest: !!gt && !idToken });
-      if (status !== 402) retryInfoRef.current[tempId] = { kind: 'ASK', question, source };
-      setNodes(prev => ({ ...prev, [tempId]: { ...prev[tempId], loading: false, error: msg, errorStatus: status } }));
+      const isGuestReq = !!gt && !idToken;
+      const { msg, status, code } = nodeErrorDisplay(err, isGuestReq);
+      track('node_error', { kind: 'ASK', status, message: msg, guest: isGuestReq });
+      // A guest can't Retry a Cut-Off (same budget → cut off again), so don't offer it;
+      // an authed Cut-Off retries with a doubled budget (boost). See ADR-0009.
+      const truncated = code === 'OUTPUT_TRUNCATED';
+      if (status !== 402 && !(truncated && isGuestReq)) {
+        retryInfoRef.current[tempId] = { kind: 'ASK', question, source, boost: truncated };
+      }
+      setNodes(prev => ({ ...prev, [tempId]: { ...prev[tempId], loading: false, error: msg, errorStatus: status, errorCode: code } }));
     } finally {
       setLoadingNodes(prev => { const n = new Set(prev); n.delete(tempId); return n; });
       // Only close the popup that triggered THIS request — a newer Q2 popup must survive.
@@ -1074,8 +1127,8 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     delete retryInfoRef.current[failedId];
     track('retry_clicked', { kind: info.kind });
     if (info.kind === 'ROOT') void submitRootQuery(info.query);
-    else if (info.kind === 'DEEPER') void expandSectionAsChild(info.parentNodeId, info.section, failedId);
-    else void askFromHighlight(info.question, info.source, failedId);
+    else if (info.kind === 'DEEPER') void expandSectionAsChild(info.parentNodeId, info.section, failedId, info.boost);
+    else void askFromHighlight(info.question, info.source, failedId, info.boost);
   }, [submitRootQuery, expandSectionAsChild, askFromHighlight]);
 
   // ── Text selection → highlight menu ──────────────────────────────────────
@@ -1620,25 +1673,58 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
           {active && (
             <>
               <div className="ws-meta">
-                <span className="pill">
+                <button
+                  type="button"
+                  data-tour="tour-star"
+                  className={`pill pill-kind${active.starred ? ' starred' : ''}`}
+                  onClick={() => toggleStar(active)}
+                  title={active.starred ? 'Starred — click to unstar' : 'Star this node'}
+                >
                   {active.kind === 'ASK'
                     ? <><Sparkles size={12} className="ic" /> Follow-up</>
                     : active.kind === 'DEEPER'
                       ? <><CornerDownRight size={12} className="ic" /> Deep dive</>
                       : <><Search size={12} className="ic" /> Query</>}
-                </span>
+                </button>
                 {active.kind === 'QUERY' && (
                   <span className="pill"><Hash size={12} className="ic" /> {active.sections.length || '—'} sections</span>
                 )}
                 {active.model ? <span className="pill">✳ {modelDisplayName(active.model)}</span> : null}
                 {active.sources?.length ? <span className="pill pill-search">🔍 Web search</span> : null}
+                {titleAskVisible && !active.loading && !active.error && active.sections.length > 0 && (
+                  <button
+                    ref={titleAskBtnRef}
+                    className="pill pill-ask"
+                    onMouseEnter={() => { if (titleAskTimer.current) clearTimeout(titleAskTimer.current); }}
+                    onMouseLeave={revealTitleAsk}
+                    onClick={() => {
+                      const r = titleAskBtnRef.current?.getBoundingClientRect();
+                      const rect = r
+                        ? { left: r.left, top: r.top, width: r.width, height: r.height, bottom: r.bottom }
+                        : { left: 0, top: 0, width: 0, height: 0, bottom: 0 };
+                      setFollowUp({
+                        rect,
+                        text: active.lede || active.title || active.query,
+                        nodeId: active.id,
+                        sectionId: active.sections[0].id,
+                        start: 0,
+                        end: 0,
+                        loading: false,
+                      });
+                      setTitleAskVisible(false);
+                      if (titleAskTimer.current) clearTimeout(titleAskTimer.current);
+                    }}
+                  >
+                    <Sparkles size={12} className="ic" /> Ask AI
+                  </button>
+                )}
                 {active.loading && (
                   <span className="thinking">
                     Thinking<span className="dots"><span /><span /><span /></span>
                   </span>
                 )}
               </div>
-              <div className="ws-title-row">
+              <div className="ws-title-row" onMouseEnter={revealTitleAsk} onClick={revealTitleAsk}>
                 <h1 className="ws-title">{active.title || active.query}</h1>
                 {active.title && active.title !== active.query && (
                   <span className="ws-query-label">{active.query}</span>

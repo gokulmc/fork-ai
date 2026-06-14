@@ -1,8 +1,8 @@
-import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import { HttpException, Injectable, InternalServerErrorException, Logger, UnprocessableEntityException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
 import { LlmResponse, LlmSection, LlmUsage, CitationSource } from './llm.types';
-import { ROOT_MODEL, BRANCH_DEFAULT_MODEL, providerNameFor, ProviderName, supportsWebSearch } from './models';
+import { ROOT_MODEL, BRANCH_DEFAULT_MODEL, providerNameFor, ProviderName, supportsWebSearch, outputBudget, NON_STREAMING_MAX_TOKENS } from './models';
 import { LlmProvider } from './providers/provider.types';
 import { AnthropicProvider } from './providers/anthropic.provider';
 import { GeminiProvider } from './providers/gemini.provider';
@@ -68,6 +68,12 @@ function extractCompletedSections(text: string): LlmSection[] {
   }
   return sections;
 }
+
+// Soft nudge so nearby branches don't all land on the same emoji (e.g. 🧠).
+const avoidEmojiNote = (usedEmojis: string[]): string =>
+  usedEmojis.length
+    ? `\n\nThe "emoji" must be a DISTINCT single emoji — do NOT reuse any of these already used by sibling or ancestor topics: ${usedEmojis.join(' ')}.`
+    : '';
 
 const CITATION_NOTE = `When you use web search results, cite sources inline as plain text — e.g. (Source: Name) or a bracketed number like [1] — never wrap cited sentences or paragraphs in *asterisks* or _underscores_. Do not italicise entire sentences to indicate attribution.`;
 
@@ -225,6 +231,9 @@ Each section "body" should be 80-180 words. You MAY use GitHub-flavored markdown
     webSearch = false,
     model: string = BRANCH_DEFAULT_MODEL,
     verbose = false,
+    authed = false,
+    boost = false,
+    usedEmojis: string[] = [],
   ): Promise<LlmResponse> {
     const trail = ancestors
       .map((a, i) => `${ i === 0 ? 'Root query' : 'Sub-topic'}: "${a.query}" → "${a.title}"`)
@@ -251,7 +260,7 @@ ${SECTIONS_SCHEMA}
 
 You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase capturing the deep dive. Escape double-quotes inside JSON strings.`;
 
-    return this.callJson(prompt, webSearch, model);
+    return this.callJson(prompt + avoidEmojiNote(usedEmojis), webSearch, model, { authed, verbose, boost });
   }
 
   async followUpFromHighlight(
@@ -262,6 +271,9 @@ You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase 
     webSearch = false,
     model: string = BRANCH_DEFAULT_MODEL,
     verbose = false,
+    authed = false,
+    boost = false,
+    usedEmojis: string[] = [],
   ): Promise<LlmResponse> {
     const trail = ancestors
       .map((a, i) => `${i === 0 ? 'Root query' : 'Sub-topic'}: "${a.query}" → "${a.title}"`)
@@ -288,7 +300,7 @@ ${SECTIONS_SCHEMA}
 
 You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase capturing the answer topic. Escape double-quotes inside JSON strings.`;
 
-    return this.callJson(prompt, webSearch, model);
+    return this.callJson(prompt + avoidEmojiNote(usedEmojis), webSearch, model, { authed, verbose, boost });
   }
 
   async getTrendingTopics(): Promise<string[]> {
@@ -352,21 +364,43 @@ Rules:
     }
   }
 
-  private async callJson(prompt: string, webSearch = false, model: string = ROOT_MODEL, retries = 1): Promise<LlmResponse> {
+  private async callJson(
+    prompt: string,
+    webSearch = false,
+    model: string = ROOT_MODEL,
+    opts: { authed?: boolean; verbose?: boolean; boost?: boolean } = {},
+    retries = 1,
+  ): Promise<LlmResponse> {
     // Drop web search for providers that don't support it (DeepSeek) — no
     // grounding tool, so don't append the web-search guidance/citation prompt.
     const ws = webSearch && supportsWebSearch(model);
     const fullPrompt = ws ? `${prompt}\n\n${WEB_SEARCH_GUIDANCE}\n\n${CITATION_NOTE}` : prompt;
     const provider = this.providerFor(model);
+
+    // Output budget tiered by auth + answer style. A boosted retry (authed Retry
+    // of a Cut-Off) doubles it, clamped to the non-streaming ceiling. See ADR-0009.
+    const authed = opts.authed ?? false;
+    let maxTokens = outputBudget(authed, opts.verbose ?? false);
+    if (opts.boost && authed) maxTokens = Math.min(maxTokens * 2, NON_STREAMING_MAX_TOKENS);
+
     let lastError: Error | undefined;
 
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        const { rawText, usage, applyCitations } = await provider.complete(fullPrompt, {
+        const { rawText, usage, applyCitations, truncated } = await provider.complete(fullPrompt, {
           model,
-          maxTokens: 2048,
+          maxTokens,
           webSearch: ws,
         });
+        // A length-limit cut-off is deterministic — retrying at the same budget
+        // would just truncate again, so surface it immediately as its own error
+        // rather than letting parseJson fail into the generic "unreadable" path.
+        if (truncated) {
+          throw new UnprocessableEntityException({
+            message: 'The answer was cut off — it hit the length limit',
+            code: 'OUTPUT_TRUNCATED',
+          });
+        }
         const result = this.parseJson(rawText);
         result.usage = usage;
         if (ws && applyCitations) {
@@ -376,6 +410,8 @@ Rules:
         }
         return result;
       } catch (err) {
+        // The truncation error is deterministic — propagate it, don't retry.
+        if (err instanceof HttpException) throw err;
         lastError = err as Error;
         this.logger.warn(`LLM attempt ${attempt + 1} failed: ${lastError.message}`);
       }
