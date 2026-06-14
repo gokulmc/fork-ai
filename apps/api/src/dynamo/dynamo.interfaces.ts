@@ -144,6 +144,7 @@ export interface NodeItem {
   createdAt: string;
   sources?: CitationSource[];
   model?: string; // concrete model id that produced this node
+  starred?: boolean;
 }
 
 export interface AnnotationItem {

@@ -50,8 +50,9 @@ export class DeepSeekProvider implements LlmProvider {
       inputTokens: message.usage.input_tokens,
       outputTokens: message.usage.output_tokens,
     };
+    const truncated = (message as { stop_reason?: string }).stop_reason === 'max_tokens';
 
     // No web search → no citations.
-    return { rawText, usage };
+    return { rawText, usage, truncated };
   }
 }

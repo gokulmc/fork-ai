@@ -24,8 +24,10 @@ export interface ForkNode {
   loading: boolean;
   error?: string;
   errorStatus?: number; // HTTP status of the failure — drives Retry vs Log-in CTA
+  errorCode?: string;   // machine code of the failure (e.g. OUTPUT_TRUNCATED) — gates the Cut-Off Retry
   sources?: CitationSource[];
   model?: string; // concrete model id that produced this node
+  starred?: boolean; // marked important — grey glow on the map + first in Notion export
 }
 
 export interface Annotation {

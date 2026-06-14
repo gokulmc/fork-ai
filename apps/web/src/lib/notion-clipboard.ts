@@ -587,6 +587,39 @@ function splitBlocks(blocks: NBlock[]): {
   return { flat, childrenMap };
 }
 
+// ── Starred nodes section ─────────────────────────────────────────────────────
+
+// One starred node's own content (lede + sections + callouts + sources) as a
+// heading_3 toggle. Descendants are intentionally NOT walked — they already
+// appear in the main body, so re-rendering them here would duplicate content.
+function starredNodeBlocks(
+  node: ForkNode,
+  persistentHl: Record<string, PersistentHighlight[]>,
+  annotations: Annotation[],
+): NBlock {
+  const inner: NBlock[] = [
+    { type: 'paragraph', paragraph: { rich_text: [makeRT(stripCiteRefs(node.lede), { italic: true })], color: 'default' } },
+  ];
+
+  for (const section of node.sections) {
+    const hls = persistentHl[`${node.id}::${section.id}`] ?? [];
+    const callouts = annotations.filter(a => a.nodeId === node.id && a.sectionId === section.id);
+
+    if (section.heading) {
+      inner.push({ type: 'paragraph', paragraph: { rich_text: [makeRT(section.heading, { bold: true })], color: 'default' } });
+    }
+    inner.push(...mdToBlocks(stripCiteRefs(section.body), hls));
+    for (const c of callouts) {
+      inner.push({ type: 'callout', callout: { rich_text: [makeRT(c.text)], icon: { type: 'emoji', emoji: '💡' }, color: 'default' } });
+    }
+  }
+
+  inner.push(...sourcesNBlocks(node.sources));
+
+  const emojiPrefix = node.emoji ? `${node.emoji} ` : '';
+  return { type: 'heading_3', heading_3: { rich_text: [makeRT(`${emojiPrefix}${node.title}`, { color: 'yellow' })], is_toggleable: true, color: 'default' }, children: inner };
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export function buildNotionClipboard(
@@ -605,7 +638,19 @@ export function buildNotionClipboard(
   const plain = renderNodePlain(root, 0, nodes, childMap, annotations);
   const mermaid = buildMermaid(nodes, rootId, childMap);
   const nested = nodeToNBlocks(root, 0, nodes, childMap, persistentHl, annotations);
-  const { flat: blocks, childrenMap } = splitBlocks([mermaid, ...nested]);
+
+  const starred = Object.values(nodes)
+    .filter(n => n.starred && !n.loading)
+    .sort((a, b) => a.createdAt - b.createdAt);
+  const starredSection: NBlock[] = starred.length
+    ? [{
+        type: 'heading_2',
+        heading_2: { rich_text: [makeRT('⭐ Starred nodes')], is_toggleable: true, color: 'default' },
+        children: starred.map(n => starredNodeBlocks(n, persistentHl, annotations)),
+      }]
+    : [];
+
+  const { flat: blocks, childrenMap } = splitBlocks([mermaid, ...starredSection, ...nested]);
 
   return { html, plain, blocks, childrenMap };
 }

@@ -100,6 +100,54 @@ test.describe('Error surfacing & retry', () => {
     await expect(banner.locator('.ws-error-btn', { hasText: 'Log in' })).toBeVisible();
   });
 
+  test('REGRESSION: authed Cut-Off shows the length-limit reason; Retry re-fires with boost', async ({ page }) => {
+    // Pre-fix: an over-long (Verbose) answer truncated at max_tokens → JSON parse
+    // failed → generic "unreadable answer", and Retry re-ran at the same budget →
+    // identical failure. Now: a 422 OUTPUT_TRUNCATED surfaces the real reason and
+    // the authed Retry doubles the budget (boost:true).
+    let attempts = 0;
+    const api = baseApi().on(`POST /sessions/${SID}/nodes`, route => {
+      attempts++;
+      if (attempts === 1) {
+        return fulfillJson(route, { message: 'The answer was cut off — it hit the length limit', code: 'OUTPUT_TRUNCATED' }, 422);
+      }
+      return fulfillJson(route, deeperNode());
+    });
+    await gotoWorkspace(page, api);
+
+    await page.locator('.deeper-btn').first().click();
+    const banner = page.locator('.ws-error');
+    await expect(banner).toContainText('hit the length limit');
+
+    await banner.locator('.ws-error-btn', { hasText: 'Retry' }).click();
+    await expect(page.locator('.ws-title')).toHaveText('Thylakoid Electron Transport');
+    await expect(page.locator('.ws-error')).toHaveCount(0);
+
+    const calls = api.callsTo(`POST /sessions/${SID}/nodes`);
+    expect(calls.length).toBe(2);
+    // First attempt carries no boost; the Retry of a Cut-Off doubles the budget.
+    expect((calls[0].body as { boost?: boolean }).boost).toBeUndefined();
+    expect((calls[1].body as { boost?: boolean }).boost).toBe(true);
+  });
+
+  test('REGRESSION: guest Cut-Off shows the reason but no Retry (same budget would truncate again)', async ({ page }) => {
+    const api = new MockApi()
+      .on(`GET /share/${SHARE_TOKEN}`, fullSession({ isTrial: true, nodeCount: 1 }))
+      .on(`POST /share/${SHARE_TOKEN}/nodes`, route =>
+        fulfillJson(route, { message: 'The answer was cut off — it hit the length limit', code: 'OUTPUT_TRUNCATED' }, 422));
+    await mockAuth(page, { authed: false });
+    await primeStorage(page, { visited: false });
+    await api.install(page);
+
+    await page.goto(`/?sk=${SHARE_TOKEN}`);
+    await page.locator('.deeper-btn').first().click();
+
+    const banner = page.locator('.ws-error');
+    await expect(banner).toContainText('hit the length limit');
+    // 422 → not the 402/429 Log-in CTA; a guest can't Retry a Cut-Off either.
+    await expect(banner.locator('.ws-error-btn')).toHaveCount(0);
+  });
+
   test('authed 402 on a branch still points at Billing (no retry button)', async ({ page }) => {
     const api = baseApi().on(`POST /sessions/${SID}/nodes`, 402);
     await gotoWorkspace(page, api);

@@ -50,6 +50,7 @@ export class GeminiProvider implements LlmProvider {
       inputTokens: um?.promptTokenCount ?? 0,
       outputTokens: um?.candidatesTokenCount ?? 0,
     };
+    const truncated = (response.candidates?.[0]?.finishReason as string | undefined) === 'MAX_TOKENS';
 
     let applyCitations: CompleteResult['applyCitations'];
     if (webSearch) {
@@ -59,6 +60,6 @@ export class GeminiProvider implements LlmProvider {
       }
     }
 
-    return { rawText, usage, applyCitations };
+    return { rawText, usage, truncated, applyCitations };
   }
 }

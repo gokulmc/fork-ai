@@ -1018,6 +1018,14 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 }
 .mm-node.read[data-depth="0"] .pill-read { stroke-width: 2.25; }
 
+/* Starred — a thick grey bar on the node's left edge (same overlay-path idea as the
+   read marker). Grey is themed/inverted so it stays visible on every node fill. */
+.mm-node.starred .pill-star { fill: none; stroke: #5a5a5a; stroke-width: 1.5; stroke-linecap: round; pointer-events: none; }
+.mm-node.starred[data-depth="0"] .pill-star { stroke-width: 2.25; }
+.mm-node.starred.active .pill-star { stroke: #cfcfcf; }
+[data-theme="dark"] .mm-node.starred .pill-star { stroke: #c8c8c8; }
+[data-theme="dark"] .mm-node.starred.active .pill-star { stroke: #3a3a3a; }
+
 .mm-fo { pointer-events: none; }
 .mm-card {
   display: flex; align-items: center; gap: 10px;
@@ -1057,6 +1065,14 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 .ws-meta .pill { border: 1px solid var(--line); border-radius: 4px; padding: 2px 8px; background: var(--paper); display: inline-flex; align-items: center; gap: 5px; font-weight: 500; }
 .ws-meta .pill .ic { width: 12px; height: 12px; }
 .ws-meta .pill-search { border-color: var(--accent); color: var(--accent); }
+.ws-meta .pill-ask { border-color: var(--accent); color: var(--accent); cursor: pointer; animation: pillAskIn .14s ease-out; }
+.ws-meta .pill-ask:hover { background: var(--accent); color: #fff; }
+@keyframes pillAskIn { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: none; } }
+
+/* Kind pill doubles as the star toggle — grey tones only; fills when starred. */
+.ws-meta button.pill-kind { cursor: pointer; font: inherit; color: inherit; transition: border-color .12s, background .12s, color .12s; }
+.ws-meta .pill-kind:hover { border-color: var(--ink-3); }
+.ws-meta .pill-kind.starred { border-color: var(--ink-3); background: var(--hover); color: var(--ink); }
 
 .ws-title-row { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
 .ws-title { font-family: var(--sans); font-weight: 600; font-size: clamp(28px, 3.4vw, 38px); line-height: 1.15; letter-spacing: -0.025em; margin: 0; text-wrap: balance; color: var(--ink); flex: 1; min-width: 0; }

@@ -47,6 +47,13 @@ const TOUR_STEPS: TourStep[] = [
     phase: 'session',
   },
   {
+    dataTour: 'tour-star',
+    title: 'Star important nodes',
+    body: 'Tap the pill above the title to star a node. Starred nodes get a grey glow on the map and appear first, under "Starred nodes", when you export to Notion.',
+    position: 'bottom',
+    phase: 'session',
+  },
+  {
     dataTour: 'tour-notion',
     title: 'Save to Notion',
     body: 'Export your full research tree to Notion as a structured page — mind map diagram, toggle sections, and all.',

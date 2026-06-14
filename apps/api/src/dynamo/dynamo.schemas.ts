@@ -135,6 +135,7 @@ export const NodeSchema = new dynamoose.Schema({
   fromText: { type: String, required: false },
   createdAt: String,
   model: { type: String, required: false },
+  starred: { type: Boolean, required: false },
   sources: {
     type: Array,
     required: false,

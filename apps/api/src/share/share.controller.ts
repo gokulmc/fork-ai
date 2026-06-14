@@ -10,6 +10,7 @@ import { CurrentUser } from '@/auth/current-user.decorator';
 import { CognitoUser } from '@/auth/jwt.strategy';
 import { ShareService } from './share.service';
 import { CreateNodeDto } from '@/nodes/dto/create-node.dto';
+import { UpdateNodeDto } from '@/nodes/dto/update-node.dto';
 import { CreateHighlightDto } from '@/highlights/dto/create-highlight.dto';
 import { UpdateHighlightDto } from '@/highlights/dto/update-highlight.dto';
 import { CreateSessionDto } from '@/sessions/dto/create-session.dto';
@@ -58,6 +59,19 @@ export class ShareController {
   @ApiParam({ name: 'token', description: 'Opaque share token' })
   createNode(@Param('token') token: string, @Body() dto: CreateNodeDto) {
     return this.shareService.createNode(token, dto);
+  }
+
+  @Public()
+  @Patch(':token/nodes/:nodeId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Update a node (rename and/or star) as a guest (public)' })
+  @ApiParam({ name: 'token', description: 'Opaque share token' })
+  updateNode(
+    @Param('token') token: string,
+    @Param('nodeId') nodeId: string,
+    @Body() dto: UpdateNodeDto,
+  ) {
+    return this.shareService.updateNode(token, nodeId, dto);
   }
 
   @Public()

@@ -47,6 +47,11 @@ export class CreateNodeDto {
   @IsBoolean()
   verbose?: boolean;
 
+  @ApiPropertyOptional({ description: 'Retry of a length-limit Cut-Off: double the output budget (authenticated only)', example: false })
+  @IsOptional()
+  @IsBoolean()
+  boost?: boolean;
+
   @ApiPropertyOptional({
     enum: ['haiku', 'sonnet', 'opus', 'gemini-pro', 'gemini-flash', 'gemini-flash-lite', 'deepseek-pro', 'deepseek-flash'],
     description: 'Branch model alias (default haiku; top tier clamped to mid for guests: opus→sonnet, gemini-pro→gemini-flash, deepseek-pro→deepseek-flash)',

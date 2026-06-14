@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { InternalServerErrorException } from '@nestjs/common';
+import { InternalServerErrorException, UnprocessableEntityException } from '@nestjs/common';
 import { LlmService } from './llm.service';
 
 const mockCreate = jest.fn();
@@ -278,6 +278,54 @@ describe('LlmService', () => {
       expect(params.messages[0].content).not.toContain('web search tool'); // guidance not appended
       expect(result.title).toBe('Test Title');
       expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 50 });
+    });
+  });
+
+  describe('output budget (branch calls)', () => {
+    const CLAUDE = 'claude-haiku-4-5-20251001';
+    const budgetFor = async (verbose: boolean, authed: boolean, boost: boolean): Promise<number> => {
+      mockCreate.mockResolvedValue(sdkResponse(validResponse));
+      await service.expandSection([{ title: 'T', query: 'Q' }], 'H', 'B', 4, false, CLAUDE, verbose, authed, boost);
+      return mockCreate.mock.calls[0][0].max_tokens;
+    };
+
+    it('gives an authed Verbose answer 8192 tokens', async () => {
+      expect(await budgetFor(true, true, false)).toBe(8192);
+    });
+
+    it('gives an authed Sectioned answer 4096 tokens', async () => {
+      expect(await budgetFor(false, true, false)).toBe(4096);
+    });
+
+    it('caps a Guest/Trial answer at 2048 tokens regardless of style', async () => {
+      expect(await budgetFor(true, false, false)).toBe(2048);
+    });
+
+    it('doubles the budget on a boosted authed retry, clamped to 16384', async () => {
+      expect(await budgetFor(true, true, true)).toBe(16384); // 8192×2 = 16384 (ceiling)
+      mockCreate.mockClear();
+      expect(await budgetFor(false, true, true)).toBe(8192); // 4096×2
+    });
+
+    it('ignores boost for a Guest (stays at 2048)', async () => {
+      expect(await budgetFor(true, false, true)).toBe(2048);
+    });
+  });
+
+  describe('truncation (Cut-Off)', () => {
+    const CLAUDE = 'claude-haiku-4-5-20251001';
+    const truncatedSdk = (json: object) => ({ ...sdkResponse(json), stop_reason: 'max_tokens' });
+
+    it('throws UnprocessableEntity with code OUTPUT_TRUNCATED and does not retry', async () => {
+      mockCreate.mockResolvedValue(truncatedSdk(validResponse));
+      expect.assertions(3);
+      try {
+        await service.expandSection([{ title: 'T', query: 'Q' }], 'H', 'B', 4, false, CLAUDE, true, true, false);
+      } catch (err) {
+        expect(err).toBeInstanceOf(UnprocessableEntityException);
+        expect((err as UnprocessableEntityException).getResponse()).toMatchObject({ code: 'OUTPUT_TRUNCATED' });
+      }
+      expect(mockCreate).toHaveBeenCalledTimes(1); // deterministic — no retry
     });
   });
 

@@ -30,6 +30,7 @@ export class AnthropicProvider implements LlmProvider {
       inputTokens: message.usage.input_tokens,
       outputTokens: message.usage.output_tokens,
     };
+    const truncated = (message as { stop_reason?: string }).stop_reason === 'max_tokens';
 
     let applyCitations: CompleteResult['applyCitations'];
     if (webSearch) {
@@ -37,6 +38,6 @@ export class AnthropicProvider implements LlmProvider {
       if (allSources.length) applyCitations = sections => processCitations(sections, allSources);
     }
 
-    return { rawText, usage, applyCitations };
+    return { rawText, usage, truncated, applyCitations };
   }
 }

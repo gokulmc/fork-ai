@@ -28,6 +28,21 @@ const ALIAS_TO_ID: Record<ModelAlias, string> = {
 // Default branch model when the client sends nothing / something invalid (cheapest Claude tier).
 export const BRANCH_DEFAULT_MODEL = ALIAS_TO_ID.haiku;
 
+// Hard output-token ceiling for branch calls. The branch path is non-streaming
+// (provider.complete), and the Anthropic SDK risks HTTP timeouts above ~16K
+// max_tokens non-streamed — so this is the most we can ever ask for here, and
+// the clamp for a doubled retry. See ADR-0009.
+export const NON_STREAMING_MAX_TOKENS = 16384;
+
+// Output-token budget for a branch call (DEEPER/ASK), tiered by the caller's
+// authentication and answer style. Guests/Trials stay small because their
+// branches spend the session owner's Credit; an authenticated caller gets more
+// room, most of it for Verbose. See ADR-0009.
+export function outputBudget(authed: boolean, verbose: boolean): number {
+  if (!authed) return 2048;
+  return verbose ? 8192 : 4096;
+}
+
 // List prices, USD per 1M tokens. Gemini rates are the ≤200k-prompt tier; branch
 // prompts are <5k tokens so always the low tier. (Gemini 2.5 Pro has a >200k tier
 // of 2.50/15.00 that is intentionally omitted because it is unreachable here.)

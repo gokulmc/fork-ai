@@ -18,6 +18,10 @@ function topRightBracket(w: number, r: number, ext: number): string {
 }
 const READ_CORNERS = topRightBracket(NODE_W, RX, 1);
 
+// A thick bar on the left edge — marks a starred/important node (see globals.css).
+// Centred on the border (x=0) so it concentrically thickens it, like the read marker.
+const STAR_EDGE = `M 0 ${RX} L 0 ${NODE_H - RX}`;
+
 interface LayoutResult {
   pos: Record<string, { x: number; y: number }>;
   bounds: { minX: number; minY: number; maxX: number; maxY: number };
@@ -413,6 +417,7 @@ export function MindMap({
             const isRoot = depth === 0;
             const loading = loadingIds.has(n.id);
             const isRead = readIds.has(n.id);
+            const starred = !!n.starred;
             const NodeIcon = pickIcon(n.kind, isRoot);
             const kicker = isRoot
               ? 'Root'
@@ -424,7 +429,7 @@ export function MindMap({
             return (
               <g
                 key={n.id}
-                className={`mm-node${isActive ? ' active' : ''}${isRoot ? ' root' : ''}${loading ? ' loading' : ''}${isRead ? ' read' : ''}`}
+                className={`mm-node${isActive ? ' active' : ''}${isRoot ? ' root' : ''}${loading ? ' loading' : ''}${isRead ? ' read' : ''}${starred ? ' starred' : ''}`}
                 data-depth={Math.min(depth, 6)}
                 transform={`translate(${p.x} ${p.y})`}
                 onClick={e => { e.stopPropagation(); onSelect(n.id); }}
@@ -436,6 +441,7 @@ export function MindMap({
               >
                 <rect className="pill" x="0" y="0" width={NODE_W} height={NODE_H} rx={RX} />
                 {isRead && <path className="pill-read" d={READ_CORNERS} />}
+                {starred && <path className="pill-star" d={STAR_EDGE} />}
                 <foreignObject x="0" y="0" width={NODE_W} height={NODE_H} className="mm-fo">
                   <div className="mm-card">
                     <div className="mm-card-ic">
