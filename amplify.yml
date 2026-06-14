@@ -6,7 +6,10 @@ applications:
         preBuild:
           commands:
             - cd $(pwd)/../../
-            - npm ci
+            # --prefer-offline reuses the cached .npm store (below); --no-audit/--no-fund
+            # skip network round-trips. npm ci wipes node_modules every run, so caching
+            # node_modules is pointless — cache the npm download store instead.
+            - npm ci --prefer-offline --no-audit --no-fund --cache apps/web/.npm
         build:
           commands:
             - npm run build
@@ -16,5 +19,5 @@ applications:
           - '**/*'
       cache:
         paths:
+          - .npm/**/*
           - .next/cache/**/*
-          - node_modules/**/*
