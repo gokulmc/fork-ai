@@ -4,7 +4,7 @@ WORKDIR /repo
 
 COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/package.json
-RUN npm ci
+RUN npm ci --no-audit --no-fund
 
 COPY apps/api/ apps/api/
 WORKDIR /repo/apps/api
@@ -16,7 +16,7 @@ FROM public.ecr.aws/docker/library/node:22-alpine
 WORKDIR /app
 
 COPY apps/api/package.json ./package.json
-RUN npm install --omit=dev
+RUN npm install --omit=dev --no-audit --no-fund
 
 COPY --from=builder /repo/apps/api/dist ./dist
 
