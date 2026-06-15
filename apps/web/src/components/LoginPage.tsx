@@ -750,7 +750,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
       case 'email':
         return [{ key: 'email', type: 'email', value: email, set: setEmail, placeholder: 'enter email to login or signup', autoComplete: 'email', ref: inputRef, onEnter: () => { if (email.trim()) void goToPassword(); } }];
       case 'password':
-        return [{ key: 'password', type: 'password', value: password, set: setPassword, placeholder: 'password', autoComplete: 'current-password', ref: inputRef, onEnter: () => void handlePasswordSubmit() }];
+        return [{ key: 'password', type: 'password', value: password, set: setPassword, placeholder: 'enter password to login or signup', autoComplete: 'current-password', ref: inputRef, onEnter: () => void handlePasswordSubmit() }];
       case 'signup-password':
         return [
           { key: 'new', type: 'password', value: password, set: setPassword, placeholder: 'new password', autoComplete: 'new-password', ref: inputRef, onEnter: () => confirmRef.current?.focus() },
