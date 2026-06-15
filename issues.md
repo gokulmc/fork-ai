@@ -6,6 +6,11 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
+### Web-search branches failed with "The AI returned an unreadable answer" (Anthropic pause_turn)
+- **Symptom:** A branch with **Web search on** (e.g. Verbose + Opus + Web) failed with the red "Sorry — The AI returned an unreadable answer", and Retry re-failed identically. The same query without web search worked. Distinct from the earlier truncation bug — this showed "unreadable", not the "cut off" message.
+- **Cause:** When a web search runs long, Anthropic returns `stop_reason: 'pause_turn'` with only the *partial* assistant turn (the `server_tool_use` / `web_search_tool_result` blocks, no final JSON answer) and expects the partial content fed back to continue the turn. `AnthropicProvider.complete` made a **single** `messages.create` call and never handled `pause_turn`: `truncated` was false (stop_reason ≠ `max_tokens`), `rawText` held no JSON, `parseJson` threw a `JSON.parse` error, and `friendlyLlmError`'s `/json|parse/` branch mapped it to "unreadable answer". Deterministic, so Retry failed the same way.
+- **Fix:** Loop in `AnthropicProvider.complete` while `stop_reason === 'pause_turn'` — append the returned assistant content to `messages` and call again (keeping `tools`), accumulating text blocks, sources, and token usage, capped at `MAX_TURNS = 5`. Non-web-search calls are unaffected (the loop runs once). `apps/api/src/llm/providers/anthropic.provider.ts`; regression test in `apps/api/src/llm/llm.service.spec.ts`.
+
 ### Notion export failed on large pages (e.g. "Context engineering for LLMs")
 - **Symptom:** "Save to Notion" produced no working link for large sessions — the push failed and the button showed the error state. Small pages exported fine.
 - **Cause:** Notion rejects any `rich_text` element whose `text.content` exceeds **2000 chars**. `notion-clipboard.ts` never chunked content: `mdToBlocks` joins consecutive lines into one paragraph (`paraLines.join(' ')`), code blocks pass the whole fenced body as one rich-text, and the Mermaid diagram for a big map is one long string. Large pages overran 2000 on at least one block, Notion 400'd `pages.create`/`append`, `pushPage` threw `BadGatewayException`, and no URL was returned.

@@ -196,6 +196,45 @@ describe('LlmService', () => {
       expect(result.sources![0].url).toBe('https://used.com');
     });
 
+    // REGRESSION: a long web search makes Anthropic return stop_reason 'pause_turn'
+    // with no final answer yet. Pre-fix the provider made a single call, got no JSON,
+    // and parseJson failed into "The AI returned an unreadable answer". The provider
+    // must feed the paused content back and finish the turn.
+    it('continues a paused web-search turn (pause_turn) instead of failing as unreadable', async () => {
+      const paused = {
+        content: [
+          { type: 'server_tool_use', id: 'srvtoolu_1', name: 'web_search', input: { query: 'x' } },
+          {
+            type: 'web_search_tool_result',
+            content: [{ type: 'web_search_result', title: 'Src', url: 'https://src.com' }],
+          },
+        ],
+        usage: USAGE,
+        stop_reason: 'pause_turn',
+      };
+      const finished = {
+        content: [{ type: 'text', text: JSON.stringify({
+          ...validResponse,
+          sections: [{ heading: 'S1', body: '<cite index="1-0">fact</cite>.' }],
+        }) }],
+        usage: USAGE,
+        stop_reason: 'end_turn',
+      };
+      mockCreate.mockResolvedValueOnce(paused).mockResolvedValueOnce(finished);
+
+      const result = await service.answerQuery('latest news?', 4, true);
+
+      expect(mockCreate).toHaveBeenCalledTimes(2);
+      // The second call carries the paused assistant turn so the model can resume.
+      const secondMessages = mockCreate.mock.calls[1][0].messages;
+      expect(secondMessages).toHaveLength(2);
+      expect(secondMessages[1].role).toBe('assistant');
+      // Sources surfaced across the paused + finished turns; usage is summed.
+      expect(result.sources).toHaveLength(1);
+      expect(result.sources![0].url).toBe('https://src.com');
+      expect(result.usage).toEqual({ inputTokens: 200, outputTokens: 100 });
+    });
+
     it('cite superscript contains anchor with correct href', async () => {
       const responseWithCite = {
         ...validResponse,
