@@ -1227,6 +1227,28 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [activeId]);
 
+  // Native Cmd/Ctrl+C (and right-click → Copy) over section prose copies markdown,
+  // matching the highlight-menu copy button. Only overrides selections inside a
+  // section body — inputs (no window selection) and other panes fall through to
+  // the browser default.
+  useEffect(() => {
+    const onCopy = (e: ClipboardEvent) => {
+      if (!e.clipboardData) return;
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
+      const range = sel.getRangeAt(0);
+      const node = range.commonAncestorContainer;
+      const el = (node.nodeType === 1 ? node : node.parentElement) as Element | null;
+      if (!el || !(el.closest('.section-body') || el.querySelector('.section-body'))) return;
+      const md = rangeToMarkdown(range);
+      if (!md) return;
+      e.clipboardData.setData('text/plain', md);
+      e.preventDefault();
+    };
+    document.addEventListener('copy', onCopy);
+    return () => document.removeEventListener('copy', onCopy);
+  }, []);
+
   // Clear hlMenu on mousedown so useLayoutEffect runs before paint — Safari won't
   // repaint CSS.highlights after a deferred (post-paint) mutation, so we must
   // clear temp-hl before the browser draws the frame that follows the click.
