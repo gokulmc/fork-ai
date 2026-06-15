@@ -47,6 +47,7 @@ e2e/
     ├── login.spec.ts            # correct/wrong password, signup→verify, forgot-password reset
     ├── root-query-stream.spec.ts# SSE happy path, persist-first refresh, 402, long query, markdown
     ├── branching.spec.ts        # Go deeper, Ask AI, error states, long Ask query, Notion invalidation
+    ├── notion-export.spec.ts    # large-page push chunks rich_text under Notion's 2000-char cap
     ├── llm-providers.spec.ts    # branch via Claude / Gemini / DeepSeek + ✳ model pill
     ├── session-restore.spec.ts  # localStorage restore + self-healing
     ├── guest-share.spec.ts      # ?sk= guest mode, trial mode, claim, invalid links
@@ -72,6 +73,7 @@ e2e/
 | Users silently logged out hourly → `RefreshTokenExpired` handling | `auth-gate.spec.ts` › *RefreshTokenExpired forces sign-out* |
 | Stale `fork.ai.trial` → invalid-link → login bounce loop | `guest-share.spec.ts` › *invalid share link* |
 | Notion export staleness on new branches | `branching.spec.ts` › *branching invalidates a stale Notion export* |
+| Notion export 400'd on large pages (rich_text > 2000 chars) | `notion-export.spec.ts` › *no rich_text content exceeds Notion's 2000-char cap* |
 | Out-of-credit (402) on root query / branch | `root-query-stream.spec.ts` + `branching.spec.ts` 402 tests |
 | Trial 5-node lock & claim-on-login | `guest-share.spec.ts` trial + claim tests |
 | Root query > 500 chars truncation (`6d50b05`) | `root-query-stream.spec.ts` › *long root query is sent in full* |

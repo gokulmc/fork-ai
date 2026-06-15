@@ -6,6 +6,11 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
+### Notion export failed on large pages (e.g. "Context engineering for LLMs")
+- **Symptom:** "Save to Notion" produced no working link for large sessions — the push failed and the button showed the error state. Small pages exported fine.
+- **Cause:** Notion rejects any `rich_text` element whose `text.content` exceeds **2000 chars**. `notion-clipboard.ts` never chunked content: `mdToBlocks` joins consecutive lines into one paragraph (`paraLines.join(' ')`), code blocks pass the whole fenced body as one rich-text, and the Mermaid diagram for a big map is one long string. Large pages overran 2000 on at least one block, Notion 400'd `pages.create`/`append`, `pushPage` threw `BadGatewayException`, and no URL was returned.
+- **Fix:** Add `capLongText` — a recursive pass (run on every block before `splitBlocks`) that splits any over-2000-char rich-text content into multiple rich-text elements (seamless in Notion), covering paragraphs, code, quotes, list items, headings, table cells, and toggle children. `apps/web/src/lib/notion-clipboard.ts`.
+
 ### Large/Verbose branch answers failed with "The AI returned an unreadable answer"
 - **Symptom:** A "Go Deeper"/"Ask AI" branch — especially with **Verbose** style (and worse with Web search) — failed with the red "Sorry — The AI returned an unreadable answer", and Retry failed identically. Reproduced across different models (Opus, etc.), so it looked model-agnostic.
 - **Cause:** Branch calls ran with a fixed `max_tokens: 2048` (the *output* cap). A thorough verbose answer wrapped in JSON overran 2048, the response was truncated mid-string, `parseJson` threw, and `friendlyLlmError` mapped the `/json|parse/` failure to "unreadable answer". The 2048 cap is model-independent, hence the "two different models both failed" symptom. The internal retry re-ran at the same 2048 cap → deterministic re-failure.
