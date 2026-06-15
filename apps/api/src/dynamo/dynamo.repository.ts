@@ -181,6 +181,7 @@ export class DynamoRepository {
       .eq(this.userPk(sub))
       .using('gsi1')
       .sort('descending')
+      .all() // paginate so users with many sessions see their full History
       .exec();
     return this.toPlainArray<SessionMetaItem>(items);
   }
@@ -269,11 +270,16 @@ export class DynamoRepository {
   }
 
   async queryNodes(sessionId: string): Promise<NodeItem[]> {
+    // .all() paginates past DynamoDB's 1MB-per-Query limit. Without it, a session
+    // whose nodes exceed 1MB (a few verbose / web-search answers do) silently
+    // loses its newest nodes on load — they render after creation but vanish on
+    // refresh.
     const items = await this.nodeModel
       .query('PK')
       .eq(this.sessionPk(sessionId))
       .where('SK')
       .beginsWith('NODE#')
+      .all()
       .exec();
     return this.toPlainArray<NodeItem>(items);
   }
@@ -320,6 +326,7 @@ export class DynamoRepository {
       .eq(this.sessionPk(sessionId))
       .where('SK')
       .beginsWith('ANN#')
+      .all() // paginate past the 1MB Query limit (see queryNodes)
       .exec();
     return this.toPlainArray<AnnotationItem>(items);
   }
@@ -362,6 +369,7 @@ export class DynamoRepository {
       .eq(this.sessionPk(sessionId))
       .where('SK')
       .beginsWith('HL#')
+      .all() // paginate past the 1MB Query limit (see queryNodes)
       .exec();
     return this.toPlainArray<HighlightItem>(items);
   }
