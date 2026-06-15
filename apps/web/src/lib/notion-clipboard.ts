@@ -554,6 +554,40 @@ function renderNodePlain(
   return text;
 }
 
+// ── Rich-text length cap ──────────────────────────────────────────────────────
+// Notion rejects any rich_text element whose text.content exceeds 2000 chars.
+// Long paragraphs, code blocks, table cells and the Mermaid diagram routinely
+// overrun this on large pages, 400ing the whole push. Split over-long content
+// into multiple rich_text elements (rendered seamlessly by Notion).
+
+const NOTION_TEXT_LIMIT = 2000;
+
+function chunkRichText(rt: NRichText[]): NRichText[] {
+  const out: NRichText[] = [];
+  for (const span of rt) {
+    const content = span.text.content;
+    if (content.length <= NOTION_TEXT_LIMIT) { out.push(span); continue; }
+    for (let i = 0; i < content.length; i += NOTION_TEXT_LIMIT) {
+      out.push({ ...span, text: { ...span.text, content: content.slice(i, i + NOTION_TEXT_LIMIT) } });
+    }
+  }
+  return out;
+}
+
+// Recursively cap rich_text in every block (incl. table cells, toggle children,
+// and table rows). Mutates in place — blocks are freshly built per export.
+function capLongText(block: NBlock): NBlock {
+  const inner = (block as unknown as Record<string, { rich_text?: NRichText[]; children?: NBlock[]; cells?: NRichText[][] }>)[block.type];
+  if (inner) {
+    if (Array.isArray(inner.rich_text)) inner.rich_text = chunkRichText(inner.rich_text);
+    if (Array.isArray(inner.cells)) inner.cells = inner.cells.map(chunkRichText);
+    if (Array.isArray(inner.children)) inner.children.forEach(capLongText);
+  }
+  const blockChildren = (block as { children?: NBlock[] }).children;
+  if (Array.isArray(blockChildren)) blockChildren.forEach(capLongText);
+  return block;
+}
+
 // ── Block tree splitting ──────────────────────────────────────────────────────
 // Notion's pages.create rejects toggle-heading blocks with inline `children`.
 // We split those into a flat block array + a recursive children map so the
@@ -650,7 +684,8 @@ export function buildNotionClipboard(
       }]
     : [];
 
-  const { flat: blocks, childrenMap } = splitBlocks([mermaid, ...starredSection, ...nested]);
+  const allBlocks = [mermaid, ...starredSection, ...nested].map(capLongText);
+  const { flat: blocks, childrenMap } = splitBlocks(allBlocks);
 
   return { html, plain, blocks, childrenMap };
 }
