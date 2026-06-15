@@ -235,6 +235,21 @@ describe('LlmService', () => {
       expect(result.usage).toEqual({ inputTokens: 200, outputTokens: 100 });
     });
 
+    // REGRESSION: a failed web search returns the tool_result block with `content`
+    // as an error OBJECT, not a results array. Iterating it threw "object is not
+    // iterable", crashing the whole branch call so no node was ever persisted.
+    it('does not crash when a web_search_tool_result is an error object', async () => {
+      const blocks = [
+        { type: 'web_search_tool_result', content: { type: 'web_search_tool_result_error', error_code: 'max_uses_exceeded' } },
+        { type: 'text', text: JSON.stringify(validResponse) },
+      ];
+      mockCreate.mockResolvedValue({ content: blocks, usage: USAGE, stop_reason: 'end_turn' });
+      const result = await service.answerQuery('latest?', 4, true);
+      expect(result.title).toBe('Test Title');
+      expect(result.sections).toHaveLength(2);
+      expect(result.sources).toBeUndefined(); // no usable sources from a failed search
+    });
+
     it('cite superscript contains anchor with correct href', async () => {
       const responseWithCite = {
         ...validResponse,

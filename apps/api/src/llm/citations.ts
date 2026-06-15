@@ -4,11 +4,16 @@ import { LlmSection, CitationSource } from './llm.types';
 
 // Collect all web search results (title + url) in order from all tool result blocks.
 // The <cite index="N-..."> first number is the 1-based index into this list.
-export function extractAnthropicSources(blocks: Array<{ type: string; content?: unknown[] }>): CitationSource[] {
+export function extractAnthropicSources(blocks: Array<{ type: string; content?: unknown }>): CitationSource[] {
   const sources: CitationSource[] = [];
   for (const block of blocks) {
     if (block.type !== 'web_search_tool_result') continue;
-    for (const item of (block.content ?? []) as Array<{ type: string; title?: string; url?: string }>) {
+    // On a failed search Anthropic sets `content` to an error OBJECT
+    // ({ type: 'web_search_tool_result_error', error_code }) rather than the
+    // usual results array — iterating it threw "object is not iterable" and
+    // crashed the whole branch call. Skip anything that isn't a results array.
+    if (!Array.isArray(block.content)) continue;
+    for (const item of block.content as Array<{ type: string; title?: string; url?: string }>) {
       if (item.type === 'web_search_result' && item.title && item.url) {
         sources.push({ title: item.title, url: item.url });
       }
