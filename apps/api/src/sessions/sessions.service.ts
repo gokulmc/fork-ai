@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
 import { ulid } from 'ulid';
 import { randomBytes } from 'crypto';
 import { ConfigService } from '@nestjs/config';
@@ -39,6 +39,23 @@ export class SessionsService {
     private readonly users: UsersService,
     private readonly cfg: ConfigService,
   ) {}
+
+  private readonly logger = new Logger(SessionsService.name);
+
+  // A DynamoDB Query returns ≤1MB/page; queryNodes now paginates via .all(), so
+  // a large session loads correctly but costs extra round-trips + a heavy payload.
+  // Warn once it crosses ~80% of the single-page limit so we get an early signal
+  // of when incremental node loading becomes worth building (vs. full-session load).
+  private static readonly LARGE_SESSION_WARN_BYTES = 800_000;
+
+  private warnIfLarge(sessionId: string, nodes: NodeItem[], annotations: AnnotationItem[], highlights: HighlightItem[]): void {
+    const bytes = Buffer.byteLength(JSON.stringify(nodes)) +
+      Buffer.byteLength(JSON.stringify(annotations)) +
+      Buffer.byteLength(JSON.stringify(highlights));
+    if (bytes >= SessionsService.LARGE_SESSION_WARN_BYTES) {
+      this.logger.warn(`Large session load: ${sessionId} — ${nodes.length} nodes, ~${Math.round(bytes / 1024)}KB (crossed single-page Query limit; multi-page read)`);
+    }
+  }
 
   private userPk(sub: string) { return `USER#${sub}`; }
   private sessionSk(sessionId: string) { return `SESSION#${sessionId}`; }
@@ -315,6 +332,7 @@ export class SessionsService {
       this.db.queryHighlights(sessionId),
     ]);
 
+    this.warnIfLarge(sessionId, nodes, annotations, highlights);
     return { ...this.toSummary(meta), highlightCount: highlights.length, nodes, annotations, highlights };
   }
 
@@ -406,6 +424,7 @@ export class SessionsService {
       this.db.getSessionMeta(share.ownerSub, share.sessionId),
     ]);
     if (!meta) throw new ForbiddenException('Invalid or revoked share token');
+    this.warnIfLarge(share.sessionId, nodes, annotations, highlights);
     return { ...this.toSummary(meta), highlightCount: highlights.length, nodes, annotations, highlights };
   }
 

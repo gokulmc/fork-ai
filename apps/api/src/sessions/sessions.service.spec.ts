@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { NotFoundException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SessionsService } from './sessions.service';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
@@ -217,6 +217,27 @@ describe('SessionsService', () => {
       expect(result.annotations).toHaveLength(1);
       expect(result.highlights).toHaveLength(1);
       expect(result.highlightCount).toBe(1);
+    });
+
+    it('warns only when the loaded session crosses the multi-page size threshold', async () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      mockDb.getSessionMeta.mockResolvedValue(sessionMeta);
+      mockDb.queryAnnotations.mockResolvedValue([]);
+      mockDb.queryHighlights.mockResolvedValue([]);
+
+      // Small session — no warning.
+      mockDb.queryNodes.mockResolvedValue([{ nodeId: 'n1', sections: [{ body: 'tiny' }] }]);
+      await service.getSession(SUB, SESSION_ID);
+      expect(warn).not.toHaveBeenCalled();
+
+      // ~1.2MB of node bodies — over the 800KB threshold → one warning.
+      const big = { nodeId: 'big', sections: [{ body: 'x'.repeat(1_200_000) }] };
+      mockDb.queryNodes.mockResolvedValue([big]);
+      await service.getSession(SUB, SESSION_ID);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0][0]).toContain('Large session load');
+
+      warn.mockRestore();
     });
   });
 
