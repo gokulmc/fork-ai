@@ -28,13 +28,15 @@ function makeModelMock() {
     batchDelete: jest.fn(),
     query: jest.fn(),
   };
-  // query().eq().using().sort().exec() chain
-  const queryChain = { eq: jest.fn(), using: jest.fn(), sort: jest.fn(), exec: jest.fn(), where: jest.fn(), beginsWith: jest.fn() };
+  // query().eq().using().sort().where().beginsWith().limit().all().exec() chain
+  const queryChain = { eq: jest.fn(), using: jest.fn(), sort: jest.fn(), exec: jest.fn(), where: jest.fn(), beginsWith: jest.fn(), limit: jest.fn(), all: jest.fn() };
   queryChain.eq.mockReturnValue(queryChain);
   queryChain.using.mockReturnValue(queryChain);
   queryChain.sort.mockReturnValue(queryChain);
   queryChain.where.mockReturnValue(queryChain);
   queryChain.beginsWith.mockReturnValue(queryChain);
+  queryChain.limit.mockReturnValue(queryChain);
+  queryChain.all.mockReturnValue(queryChain);
   queryChain.exec.mockResolvedValue([]);
   mock.query.mockReturnValue(queryChain);
   return { mock, queryChain };
@@ -203,6 +205,14 @@ describe('DynamoRepository', () => {
       expect(node.mock.query).toHaveBeenCalledWith('PK');
       expect(node.queryChain.beginsWith).toHaveBeenCalledWith('NODE#');
       expect(result).toHaveLength(1);
+    });
+
+    // REGRESSION: must paginate past DynamoDB's 1MB Query limit, else a session
+    // over 1MB silently drops its newest nodes on load (rendered after creation,
+    // gone on refresh).
+    it('paginates with .all() so large sessions are fully loaded', async () => {
+      await repo.queryNodes(SESSION_ID);
+      expect(node.queryChain.all).toHaveBeenCalled();
     });
   });
 
