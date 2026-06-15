@@ -72,6 +72,7 @@ export interface Tweaks {
 export interface HlMenuState {
   rect: { left: number; top: number; width: number; height: number; bottom: number };
   text: string;
+  markdown: string;
   nodeId: string;
   sectionId: string;
   start: number;

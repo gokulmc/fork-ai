@@ -4,6 +4,7 @@ import dynamic from 'next/dynamic';
 import { useSession, signOut } from 'next-auth/react';
 import type { ForkNode, Annotation, HlMenuState, FollowUpState, ContextMenuState, PersistentHighlight, HighlightRecord } from '@/lib/types';
 import { uid, short5, stripMarkdown, stripCite, getRangeOffsets, modelDisplayName } from '@/lib/utils';
+import { rangeToMarkdown } from '@/lib/htmlToMarkdown';
 
 const CSS_HL_SUPPORTED = typeof window !== 'undefined' && typeof CSS !== 'undefined' && 'highlights' in CSS;
 
@@ -1162,6 +1163,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         setHlMenu({
           rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height, bottom: rect.bottom },
           text,
+          markdown: rangeToMarkdown(range),
           nodeId: activeId!,
           sectionId,
           start: offsets?.start ?? 0,
@@ -1214,6 +1216,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       setHlMenu({
         rect: { left: r.left, top: r.top, width: r.width, height: r.height, bottom: r.bottom },
         text,
+        markdown: rangeToMarkdown(range),
         nodeId: activeId!,
         sectionId: bodies[0].getAttribute('data-section-id')!,
         start: offsets?.start ?? 0,
@@ -1310,7 +1313,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     const src = hlMenu;
 
     if (action === 'copy') {
-      navigator.clipboard?.writeText(src.text);
+      navigator.clipboard?.writeText(src.markdown || src.text);
       setHlMenu(null);
       return;
     }
