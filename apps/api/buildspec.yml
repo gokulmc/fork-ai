@@ -28,10 +28,13 @@ phases:
       - docker push $ECR_REPO:$IMAGE_TAG
       - docker push $ECR_REPO:latest
       - printf '{"AWSEBDockerrunVersion":"1","Image":{"Name":"%s","Update":"true"},"Ports":[{"ContainerPort":8080}]}' $ECR_REPO:$IMAGE_TAG > Dockerrun.aws.json
-      # Upload artifact to S3
-      - aws s3 cp Dockerrun.aws.json s3://$S3_BUCKET/$IMAGE_TAG/Dockerrun.aws.json
+      # Bundle Dockerrun + .platform hooks (nginx proxy timeouts) into a zip. A bare
+      # Dockerrun.aws.json source bundle silently ignores .platform; a zip applies it.
+      - cp -r apps/api/.platform .platform
+      - zip -r app-bundle.zip Dockerrun.aws.json .platform
+      - aws s3 cp app-bundle.zip s3://$S3_BUCKET/$IMAGE_TAG/app-bundle.zip
       # Create EB application version (no-op if this commit was already registered)
-      - aws elasticbeanstalk create-application-version --application-name $EB_APP_NAME --version-label $IMAGE_TAG --source-bundle S3Bucket=$S3_BUCKET,S3Key=$IMAGE_TAG/Dockerrun.aws.json --region $AWS_DEFAULT_REGION || true
+      - aws elasticbeanstalk create-application-version --application-name $EB_APP_NAME --version-label $IMAGE_TAG --source-bundle S3Bucket=$S3_BUCKET,S3Key=$IMAGE_TAG/app-bundle.zip --region $AWS_DEFAULT_REGION || true
       # Deploy new version and inject secrets in one call to avoid OperationInProgress conflict
       - aws elasticbeanstalk update-environment --application-name $EB_APP_NAME --environment-name $EB_ENV_NAME --version-label $IMAGE_TAG --region $AWS_DEFAULT_REGION --option-settings "Namespace=aws:elasticbeanstalk:application:environment,OptionName=ANTHROPIC_API_KEY,Value=$ANTHROPIC_API_KEY" "Namespace=aws:elasticbeanstalk:application:environment,OptionName=NOTION_CLIENT_SECRET,Value=$NOTION_CLIENT_SECRET" "Namespace=aws:elasticbeanstalk:application:environment,OptionName=GEMINI_API_KEY,Value=$GEMINI_API_KEY" "Namespace=aws:elasticbeanstalk:application:environment,OptionName=DEEPSEEK_API_KEY,Value=$DEEPSEEK_API_KEY"
 
