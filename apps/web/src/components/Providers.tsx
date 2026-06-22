@@ -20,5 +20,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  return <SessionProvider>{children}</SessionProvider>;
+  // refetchInterval re-runs the jwt callback every 4 min, so the id_token is refreshed
+  // proactively (it expires after 60 min) and a transient refresh failure is retried well
+  // before the token actually lapses — rather than relying on the user refocusing the tab.
+  return <SessionProvider refetchInterval={4 * 60}>{children}</SessionProvider>;
 }

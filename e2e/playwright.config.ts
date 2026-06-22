@@ -47,8 +47,10 @@ export default defineConfig({
       name: 'chromium',
       // clipboard permissions are Chromium-only — WebKit rejects them.
       use: { ...devices['Desktop Chrome'], permissions: ['clipboard-read', 'clipboard-write'] },
-      // Mobile-only specs are isolated to the mobile project.
-      testIgnore: /mobile\.spec\.ts/,
+      // Mobile-only specs are isolated to the mobile project. auth-refresh runs the REAL
+      // next-auth refresh against a black-holed Cognito — it has its own config
+      // (playwright.auth-refresh.config.ts) and must not run on this mock-everything server.
+      testIgnore: [/mobile\.spec\.ts/, /auth-refresh\.spec\.ts/],
     },
     {
       name: 'mobile',

@@ -57,8 +57,11 @@ e2e/
     ├── highlights.spec.ts       # CSS Custom Highlight persistence, colours, fg, last-colour reuse, callouts, drawer
     ├── selection.spec.ts        # double / triple / quadruple-click selection + citation boundary
     ├── admin.spec.ts            # signed-out / non-admin gates, overview KPIs, users, payments, Bearer
+    ├── auth-refresh.spec.ts     # [own config: playwright.auth-refresh.config.ts] REAL jwt-callback refresh vs black-holed Cognito
     └── mobile.spec.ts           # [mobile project] pill/map, breadcrumb collapse, tap-select, follow-up, pinch-suppression
 ```
+
+> `auth-refresh.spec.ts` is the **one exception** to "everything mocked except the web app": it drives the genuine next-auth `jwt` callback (no `/api/auth/session` stub) to prove server-side refresh resilience. It still touches no real AWS — its dedicated server (`playwright.auth-refresh.config.ts`) points the Cognito SDK at `127.0.0.1:1` so every refresh fails as a transient connection error. Run it on its own: `npm run test:e2e:auth-refresh`.
 
 ## Regression coverage (mapped to `issues.md`)
 
@@ -71,6 +74,7 @@ e2e/
 | Model change in Tweaks didn't apply to next branch (`44515f2`) | `tweaks.spec.ts` › *model change applies to the very next branch* |
 | Guest bounced to login on an authed 401 (`&& idToken` gate) | `guest-share.spec.ts` › sign-out-call guards on every guest test |
 | Users silently logged out hourly → `RefreshTokenExpired` handling | `auth-gate.spec.ts` › *RefreshTokenExpired forces sign-out* |
+| Intermittent forced login after ~1h (transient refresh failure logged users out) | `auth-refresh.spec.ts` › *a transient Cognito failure does NOT force logout* |
 | Stale `fork.ai.trial` → invalid-link → login bounce loop | `guest-share.spec.ts` › *invalid share link* |
 | Notion export staleness on new branches | `branching.spec.ts` › *branching invalidates a stale Notion export* |
 | Notion export 400'd on large pages (rich_text > 2000 chars) | `notion-export.spec.ts` › *no rich_text content exceeds Notion's 2000-char cap* |
