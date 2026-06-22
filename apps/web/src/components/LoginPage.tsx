@@ -149,7 +149,8 @@ export function LoginPage({ onEnter }: LoginPageProps) {
   onEnterRef.current = onEnter;
 
   const [step, setStep] = useState<Step>('email');
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(() =>
+    typeof window !== 'undefined' ? localStorage.getItem('fork.ai.email') ?? '' : '');
   const [password, setPassword] = useState('');
   const [confirmPw, setConfirmPw] = useState('');
   const [verifyCode, setVerifyCode] = useState('');
@@ -258,6 +259,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
           redirect: false,
         });
         if (result?.error) { setError(result.error); return; }
+        localStorage.setItem('fork.ai.email', email);
         graphTriggerRef.current?.();
       }
     } catch {
@@ -320,6 +322,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
           redirect: false,
         });
         if (result?.error) { setError(result.error); return; }
+        localStorage.setItem('fork.ai.email', email);
         graphTriggerRef.current?.();
       }
     } catch {
@@ -419,6 +422,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
         redirect: false,
       });
       if (result?.error) { setError(result.error); return; }
+      localStorage.setItem('fork.ai.email', email);
       graphTriggerRef.current?.();
     } catch {
       setError('Connection error');
