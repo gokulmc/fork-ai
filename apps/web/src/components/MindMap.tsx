@@ -442,7 +442,7 @@ export function MindMap({
                 <rect className="pill" x="0" y="0" width={NODE_W} height={NODE_H} rx={RX} />
                 {isRead && <path className="pill-read" d={READ_CORNERS} />}
                 {starred && <path className="pill-star" d={STAR_EDGE} />}
-                <foreignObject x="0" y="0" width={NODE_W} height={NODE_H} className="mm-fo">
+                <foreignObject x="0" y="0" width={NODE_W} height={NODE_H} className="mm-fo" overflow="hidden">
                   <div className="mm-card">
                     <div className="mm-card-ic">
                       {n.emoji

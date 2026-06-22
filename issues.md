@@ -6,6 +6,11 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
+### Mind map node text from one card bled into an adjacent sibling card
+- **Symptom:** A mind map node card showed two overlapping text strings — the correct title for that node and a partial title ("eamlined" / "ntext") from the adjacent sibling node bleeding in from the left.
+- **Cause:** SVG `foreignObject` defaults to `overflow: hidden` per spec, but Safari/WebKit does not reliably honour this. The sibling node's label text (`.mm-label` with `word-break: break-word`) could overflow the declared 192×58 `foreignObject` bounds and paint into the 18px gap between siblings and into the next node's card area. Neither `.mm-fo` nor `.mm-card` had explicit `overflow: hidden` in CSS.
+- **Fix:** Added `overflow: hidden` to `.mm-fo` in CSS and `overflow="hidden"` as an SVG attribute on the `<foreignObject>` element (belt-and-suspenders for WebKit); also added `overflow: hidden; width: 100%` to `.mm-card` so the HTML flex container is guaranteed to stay within its foreignObject bounds. `apps/web/src/app/globals.css`, `apps/web/src/components/MindMap.tsx`. (commit: pending)
+
 ### Mermaid syntax errors showed a bomb/error SVG instead of falling back to code block
 - **Symptom:** Sections containing mermaid diagrams that the LLM generated with invalid syntax showed three bomb icons ("Syntax error in text — mermaid version 11.15.0") instead of gracefully falling back to the raw code block.
 - **Cause:** mermaid v11 changed `render()` to resolve with an error SVG rather than rejecting on parse errors. The try/catch in `renderMermaidSvg` never fired, so the error SVG was injected into the DOM as if it were a valid diagram.
