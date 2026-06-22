@@ -6,6 +6,7 @@ import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import hljs from 'highlight.js';
 import type { Section as SectionData, ForkNode, Annotation } from '@/lib/types';
+import { cleanHeading } from '@/lib/utils';
 import { CornerDownRight, Branch, ChevronRight, Lightbulb, X } from './Icons';
 
 marked.use({ gfm: true, breaks: false });
@@ -279,6 +280,7 @@ export function Section({
   onRemoveCallout,
 }: SectionProps) {
   const num = String(idx + 1).padStart(2, '0');
+  const heading = cleanHeading(section.heading);
 
   return (
     <section
@@ -290,10 +292,10 @@ export function Section({
       {/* Verbose branch answers (Go Deeper / Ask AI) carry one section with an
           empty heading — render them as flowing prose: no number, no heading,
           no per-section Go-deeper button. Branching there is highlight-driven. */}
-      {section.heading && (
+      {heading && (
         <div className="section-head">
           <span className="section-num">{num}</span>
-          <h2 data-section-heading>{section.heading}</h2>
+          <h2 data-section-heading>{heading}</h2>
           <button
             className={`deeper-btn${deeperLoading ? ' loading' : ''}`}
             onClick={() => onDeeper(section)}
@@ -312,7 +314,7 @@ export function Section({
       <SectionBody
         body={section.body}
         sectionId={section.id}
-        sectionHeading={section.heading}
+        sectionHeading={heading}
         isFirst={idx === 0}
       />
       {calloutsForSection.length > 0 && (

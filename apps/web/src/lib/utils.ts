@@ -71,6 +71,21 @@ export function stripCite(s: string): string {
     .trim();
 }
 
+// LLM section headings sometimes arrive with their markdown ATX hashes intact
+// (e.g. "## Foo", "##Foo", or "## Foo ##"), which would render as a literal `##`
+// in the <h2>. Strip the leading/closing heading markers. Two+ leading hashes are
+// dropped even without a following space (never legitimate text); a single leading
+// hash must be space-separated so "#hashtag" is left alone, and a trailing run must
+// be space-separated so internal/trailing `#` ("C#", "F#") survives.
+export function cleanHeading(s: string): string {
+  if (!s) return '';
+  return s
+    .replace(/^\s*#{2,6}\s*/, '')
+    .replace(/^\s*#\s+/, '')
+    .replace(/\s+#{1,6}\s*$/, '')
+    .trim();
+}
+
 export function clamp(n: number, a: number, b: number): number {
   return Math.max(a, Math.min(b, n));
 }

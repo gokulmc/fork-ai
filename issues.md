@@ -6,6 +6,11 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
+### Section headings rendered with literal markdown `##`
+- **Symptom:** Some section headings displayed their markdown hashes — e.g. `## Light reactions` instead of `Light reactions` (sometimes `###`, or a trailing ` ##`). The same leaked into "Go deeper" node titles on the mind map and into Notion exports.
+- **Cause:** The LLM occasionally returns a heading with its ATX hashes intact in `section.heading`; the value was rendered verbatim in the `<h2>` and reused as-is for derived titles/queries and the Notion block/HTML/markdown export builders.
+- **Fix:** `cleanHeading()` in `apps/web/src/lib/utils.ts` strips leading (`#`–`######`) and ATX-closing hashes while preserving legitimate internal/trailing `#` (`C#`, `F#`, `#hashtag`); applied at every display surface — `Section.tsx` `<h2>` + `sectionHeading`, `App.tsx` Go-deeper title/query/fromText, and the three `notion-clipboard.ts` export builders. Regression: `e2e/tests/heading-hashes.spec.ts`. (commit: pending)
+
 ### Intermittent forced login after ~1 hour (transient refresh failure logged users out)
 - **Symptom:** Users were occasionally bounced to the login page ~1 hour after signing in. Not every time — it "just happened sometimes". 1h = the Cognito `IdTokenValidity` (60 min).
 - **Cause:** `refreshIdToken` in `apps/web/src/auth.ts` swallowed **every** failure into `null`, and the `jwt` callback mapped `null` → `error: 'RefreshTokenExpired'`, which `App.tsx` turns into an immediate `signOut()`. So any *transient* failure at the refresh boundary (network blip, Cognito `TooManyRequestsException` from a refresh stampede across tabs/requests, Lambda cold-start timeout) nuked a session whose 30-day refresh token was still perfectly valid — there was no retry and no distinction between "refresh token genuinely dead" vs "momentary blip". A latent companion bug: the callback never persisted a rotated refresh token, so if the pool ever enables rotation the *next* refresh would reuse an invalidated token.
