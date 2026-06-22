@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { deferred } from '../fixtures/mock-api';
-import { baseApi, gotoWorkspace, askAiFromSelection } from '../fixtures/app';
+import { baseApi, gotoWorkspace, askAiFromSelection, selectSectionText } from '../fixtures/app';
 import { fullSession, deeperNode, askNode, SID, ROOT_ID } from '../fixtures/data';
 
 test.describe('Branching — Go deeper & Ask AI', () => {
@@ -44,6 +44,61 @@ test.describe('Branching — Go deeper & Ask AI', () => {
 
     // The source passage gets the reserved branch-glow highlight persisted
     expect(api.callsTo(`POST /sessions/${SID}/highlights`).length).toBe(1);
+  });
+
+  test('Ask AI follow-up popup plays the slide-left exit on Branch (desktop), matching mobile', async ({ page }) => {
+    // Pre-change desktop kept the popup open while the branch loaded; the first fix
+    // closed it instantly. Now desktop plays the same popOutLeft slide-left exit as
+    // mobile: the --closing class is applied on submit, then it unmounts after the
+    // animation. Gate held in-flight so the close is driven by the exit, not the
+    // request finishing (the loading node already shows on the map).
+    const gate = deferred();
+    const api = baseApi()
+      .on(`POST /sessions/${SID}/nodes`, async () => { await gate.promise; return askNode(); })
+      .on(`POST /sessions/${SID}/highlights`, { hlId: 'hl-branch-1' });
+    await gotoWorkspace(page, api);
+
+    await askAiFromSelection(page, 's1', 'What pigments are involved?');
+
+    // The slide-left animation runs (it did not instantly vanish)…
+    await expect(page.locator('.followup-pop.followup-pop--closing')).toBeVisible();
+    await expect(page.locator('.mm-node.loading')).toBeVisible();
+    // …then unmounts once popOutLeft completes (~500ms).
+    await expect(page.locator('.followup-pop')).toHaveCount(0);
+
+    gate.resolve();
+    await expect(page.locator('.mm-node', { hasText: 'Pigments Beyond Chlorophyll' })).toBeVisible();
+  });
+
+  test('desktop slide-left exit actually moves the popup left and fades it (not an instant vanish)', async ({ page }) => {
+    const gate = deferred();
+    const api = baseApi()
+      .on(`POST /sessions/${SID}/nodes`, async () => { await gate.promise; return askNode(); })
+      .on(`POST /sessions/${SID}/highlights`, { hlId: 'hl-vis-1' });
+    await gotoWorkspace(page, api);
+
+    await selectSectionText(page, 's1', 0, 40);
+    await page.locator('.hl-menu--visible button', { hasText: 'Ask AI' }).click();
+    const pop = page.locator('.followup-pop');
+    await pop.waitFor();
+    await pop.locator('textarea').fill('What pigments are involved?');
+
+    const before = await pop.boundingBox();
+    const opacityBefore = Number(await pop.evaluate(el => getComputedStyle(el).opacity));
+
+    // Freeze popOutLeft ~40% in so the read is deterministic (the popup self-unmounts
+    // 500ms after submit, so a live mid-animation read would race that timer).
+    await page.addStyleTag({ content:
+      '.followup-pop--closing{animation-play-state:paused!important;animation-delay:-.2s!important}' });
+
+    await pop.locator('button.btn-primary').click();
+    await page.locator('.followup-pop--closing').waitFor();
+
+    const after = await pop.boundingBox();
+    const opacityAfter = Number(await pop.evaluate(el => getComputedStyle(el).opacity));
+
+    expect(after!.x).toBeLessThan(before!.x - 50); // slid left
+    expect(opacityAfter).toBeLessThan(opacityBefore); // faded
   });
 
   test('REGRESSION (1c647ae): opening the Ask-AI node while loading must not blank the panel when the answer lands', async ({ page }) => {

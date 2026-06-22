@@ -33,12 +33,11 @@ export function FollowUpPop({ rect, sourceText, loading, onSubmit, onClose }: Fo
   const [pos, setPos] = useState({ left: 0, top: 0 });
   const [closing, setClosing] = useState(false);
 
-  // Mobile only: play the slide-left exit, then unmount. Desktop closes instantly
-  // (X / Esc) as before. closingRef guards against double-fire.
+  // Play the slide-left exit (popOutLeft), then unmount — same on desktop and
+  // mobile. closingRef guards against double-fire.
   const closingRef = useRef(false);
   const requestClose = useCallback(() => {
     if (closingRef.current) return;
-    if (window.innerWidth > 768) { onClose(); return; }
     closingRef.current = true;
     setClosing(true);
     setTimeout(onClose, 500); // keep in sync with popOutLeft duration in globals.css
@@ -92,10 +91,9 @@ export function FollowUpPop({ rect, sourceText, loading, onSubmit, onClose }: Fo
     const expanded = SHORTHANDS[trimmed] ?? trimmed;
     setQ(expanded);
     onSubmit(expanded);
-    // Mobile: close on branch (slide-left exit) — the loading node already shows on
-    // the map and the popup covers the whole small screen. Desktop keeps it open so a
-    // follow-up question can be asked while the first one loads.
-    if (window.innerWidth <= 768) requestClose();
+    // Close on branch — the loading node already shows on the map. Mobile plays the
+    // slide-left exit; desktop closes instantly (both handled inside requestClose).
+    requestClose();
   };
 
   useEffect(() => {

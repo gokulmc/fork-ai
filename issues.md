@@ -6,11 +6,6 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
-### Prefilled login email never appeared on a fresh page load (worked only after an in-tab logout)
-- **Symptom:** The "remember email and prefill after logout" feature worked in incognito but not in a normal browser — the email field stayed empty on a reload/fresh visit while logged out, yet prefilled fine when logging out within an already-open tab.
-- **Cause:** `email` state used a lazy `useState` initializer that read `localStorage`. During SSR there is no `localStorage`, so the server rendered the input with `value=""`; the client initializer then computed the stored email, but React does not patch a controlled input's `value` on a hydration mismatch — so the empty SSR value persisted. Incognito only "worked" because it was tested via a client-side logout (LoginPage remount, no SSR involved).
-- **Fix:** Initial state is `''` (matches SSR); a client-only `useEffect(…, [])` reads `localStorage.getItem('fork.ai.email')` after mount and sets it, which runs on the client regardless of SSR with no hydration mismatch. `apps/web/src/components/LoginPage.tsx`. (commit: pending)
-
 ### Section headings rendered with literal markdown `##`
 - **Symptom:** Some section headings displayed their markdown hashes — e.g. `## Light reactions` instead of `Light reactions` (sometimes `###`, or a trailing ` ##`). The same leaked into "Go deeper" node titles on the mind map and into Notion exports.
 - **Cause:** The LLM occasionally returns a heading with its ATX hashes intact in `section.heading`; the value was rendered verbatim in the `<h2>` and reused as-is for derived titles/queries and the Notion block/HTML/markdown export builders.
