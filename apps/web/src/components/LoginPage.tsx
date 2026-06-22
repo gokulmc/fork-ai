@@ -149,8 +149,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
   onEnterRef.current = onEnter;
 
   const [step, setStep] = useState<Step>('email');
-  const [email, setEmail] = useState(() =>
-    typeof window !== 'undefined' ? localStorage.getItem('fork.ai.email') ?? '' : '');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPw, setConfirmPw] = useState('');
   const [verifyCode, setVerifyCode] = useState('');
@@ -166,6 +165,15 @@ export function LoginPage({ onEnter }: LoginPageProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const confirmRef = useRef<HTMLInputElement>(null);
   const resetPwRef = useRef<HTMLInputElement>(null);
+
+  // Prefill the last-used email. Must run as a client-only effect (not a lazy
+  // useState initializer) — reading localStorage during SSR returns '' and React
+  // won't patch a controlled input's value on hydration mismatch, so a reload
+  // while logged out would show an empty field.
+  useEffect(() => {
+    const saved = localStorage.getItem('fork.ai.email');
+    if (saved) setEmail(saved);
+  }, []);
 
   // Focus the primary input when step changes
   useEffect(() => {
