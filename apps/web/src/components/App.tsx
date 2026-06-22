@@ -3,7 +3,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } fr
 import dynamic from 'next/dynamic';
 import { useSession, signOut } from 'next-auth/react';
 import type { ForkNode, Annotation, HlMenuState, FollowUpState, ContextMenuState, PersistentHighlight, HighlightRecord } from '@/lib/types';
-import { uid, short5, stripMarkdown, stripCite, getRangeOffsets, modelDisplayName } from '@/lib/utils';
+import { uid, short5, stripMarkdown, stripCite, getRangeOffsets, modelDisplayName, cleanHeading } from '@/lib/utils';
 import { rangeToMarkdown } from '@/lib/htmlToMarkdown';
 
 const CSS_HL_SUPPORTED = typeof window !== 'undefined' && typeof CSS !== 'undefined' && 'highlights' in CSS;
@@ -967,6 +967,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
 
     // Retry reuses the failed node's id so the card flips back to loading in place.
     const tempId = reuseNodeId ?? uid();
+    const heading = cleanHeading(section.heading);
     setSectionLoading(section.id);
     setLoadingNodes(prev => new Set(prev).add(tempId));
     setNodes(prev => ({
@@ -974,14 +975,14 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       [tempId]: {
         id: tempId,
         parentId: parentNodeId,
-        title: short5(section.heading),
+        title: short5(heading),
         kind: 'DEEPER',
-        query: section.heading,
+        query: heading,
         emoji: null,
         lede: '',
         sections: [],
         fromSection: section.id,
-        fromText: `${section.heading}: ${stripMarkdown(section.body).slice(0, 200)}…`,
+        fromText: `${heading}: ${stripMarkdown(section.body).slice(0, 200)}…`,
         createdAt: Date.now(),
         loading: true,
       },
@@ -997,7 +998,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         kind: 'DEEPER' as const,
         parentNodeId,
         fromSection: section.id,
-        query: section.heading,
+        query: heading,
         sectionBody: section.body,
         sectionCount: tweaksRef.current.maxSections,
         webSearch: tweaksRef.current.webSearch,
