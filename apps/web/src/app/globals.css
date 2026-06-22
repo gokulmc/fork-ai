@@ -1160,6 +1160,18 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 .section-body.md pre code.hljs { background: transparent !important; padding: 14px 16px; }
 [data-theme="dark"] .section-body.md pre code,[data-theme="dark"] .section-body.md pre code.hljs { color: #e6e6e6; }
 
+/* Mermaid: rendered diagram shown by default, raw code behind the toggle */
+.section-body.md .mermaid-block { position: relative; margin: 14px 0; }
+.section-body.md .mermaid-block .mermaid-graph { background: #fafafa; border: 1px solid var(--line); border-radius: 6px; padding: 16px; overflow-x: auto; text-align: center; }
+[data-theme="dark"] .section-body.md .mermaid-block .mermaid-graph { background: #1c1c1c; }
+.section-body.md .mermaid-block .mermaid-graph svg { max-width: 100%; height: auto; }
+.section-body.md .mermaid-block pre { display: none; margin: 0; }
+.section-body.md .mermaid-block pre::before { display: none; }
+.section-body.md .mermaid-block.show-code .mermaid-graph { display: none; }
+.section-body.md .mermaid-block.show-code pre { display: block; }
+.section-body.md .mermaid-toggle { position: absolute; top: 6px; right: 6px; z-index: 1; font-family: var(--sans); font-size: 11px; color: var(--ink-3); background: var(--paper); border: 1px solid var(--line-strong); border-radius: 4px; padding: 3px 8px; cursor: pointer; transition: all .12s; }
+.section-body.md .mermaid-toggle:hover { color: var(--ink); border-color: var(--ink-3); background: var(--hover); }
+
 .section-body.md table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
 .section-body.md thead { background: var(--panel); }
 .section-body.md th,.section-body.md td { border-bottom: 1px solid var(--line); text-align: left; padding: 8px 12px; vertical-align: top; }

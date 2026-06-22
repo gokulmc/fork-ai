@@ -83,6 +83,91 @@ function renderMd(src: string): string {
   }
 }
 
+// Mermaid is ~2MB — load it only when a section actually contains a diagram, so
+// answers without one never pay for it (the chunk loads on first diagram render).
+type MermaidApi = typeof import('mermaid').default;
+let mermaidLoader: Promise<MermaidApi> | null = null;
+function loadMermaid(): Promise<MermaidApi> {
+  if (!mermaidLoader) mermaidLoader = import('mermaid').then(m => m.default);
+  return mermaidLoader;
+}
+let mermaidSeq = 0;
+
+// LLMs routinely emit mindmaps with unquoted parens/punctuation in node text
+// (e.g. `Define Value Proposition (Early Stage)`), which is a mermaid parse error
+// because `(...)` is reserved for node shapes. Rewrite every node to a quoted
+// literal label, preserving indentation (and therefore the hierarchy), and
+// unwrapping any explicit shape so `root((X))` keeps just `X`. Only used as a
+// retry after a real failure, so valid diagrams are never touched.
+function sanitizeMindmap(src: string): string {
+  let id = 0;
+  return src
+    .split('\n')
+    .map(line => {
+      const m = line.match(/^(\s*)(\S.*?)\s*$/);
+      if (!m) return line;
+      let text = m[2];
+      if (text === 'mindmap') return line;
+      for (const w of [/^[\w-]*\(\((.*)\)\)$/, /^[\w-]*\{\{(.*)\}\}$/, /^[\w-]*\[(.*)\]$/, /^[\w-]*\((.*)\)$/]) {
+        const inner = text.match(w);
+        if (inner) { text = inner[1]; break; }
+      }
+      return `${m[1]}n${id++}["${text.replace(/"/g, '')}"]`;
+    })
+    .join('\n');
+}
+
+async function renderMermaidSvg(mermaid: MermaidApi, src: string): Promise<string | null> {
+  try {
+    return (await mermaid.render(`mmd-${++mermaidSeq}`, src)).svg;
+  } catch (err) {
+    if (/^\s*mindmap\b/.test(src)) {
+      try { return (await mermaid.render(`mmd-${++mermaidSeq}`, sanitizeMindmap(src))).svg; }
+      catch { /* sanitised retry also failed — fall through to the code block */ }
+    }
+    console.warn('[mermaid] render failed:', err);
+    return null;
+  }
+}
+
+// Replace each ```mermaid code block with its rendered SVG (the default view),
+// keeping the original <pre> hidden behind a "View code" toggle. A diagram that
+// fails to parse (e.g. still streaming) is left as the code block and retried on
+// the next render. `cancelled` guards against the body re-rendering mid-await.
+async function renderMermaidBlocks(codes: HTMLElement[], cancelled: () => boolean): Promise<void> {
+  let mermaid: MermaidApi;
+  try { mermaid = await loadMermaid(); } catch { return; }
+  if (cancelled()) return;
+
+  const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+  mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: dark ? 'dark' : 'default', fontFamily: 'inherit' });
+
+  for (const code of codes) {
+    const pre = code.closest('pre');
+    if (!pre || !pre.isConnected) continue;
+    const src = (code.textContent ?? '').trim();
+    if (!src) continue;
+    const svg = await renderMermaidSvg(mermaid, src);
+    if (svg == null || cancelled() || !pre.isConnected) continue;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'mermaid-block';
+    const graph = document.createElement('div');
+    graph.className = 'mermaid-graph';
+    graph.innerHTML = svg;
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'mermaid-toggle';
+    toggle.textContent = 'View code';
+    toggle.addEventListener('click', () => {
+      const showCode = wrap.classList.toggle('show-code');
+      toggle.textContent = showCode ? 'View diagram' : 'View code';
+    });
+    pre.replaceWith(wrap);
+    wrap.append(toggle, graph, pre);
+  }
+}
+
 
 function selectSentenceAtPoint(blockEl: Element, clientX: number, clientY: number) {
   const text = blockEl.textContent ?? '';
@@ -230,15 +315,24 @@ const SectionBody = memo(function SectionBody({
   const tap = useMemo(tapSelectHandlers, []);
 
   useEffect(() => {
-    if (!bodyRef.current) return;
-    bodyRef.current.querySelectorAll('pre').forEach(pre => {
+    const root = bodyRef.current;
+    if (!root) return;
+    let cancelled = false;
+
+    root.querySelectorAll('pre').forEach(pre => {
       const codeEl = pre.querySelector('code');
       const m = codeEl?.className.match(/language-([a-zA-Z0-9+\-_#]+)/);
       if (m) pre.setAttribute('data-lang', m[1]);
     });
-    bodyRef.current.querySelectorAll('pre code:not(.hljs)').forEach(el => {
+    root.querySelectorAll('pre code:not(.hljs)').forEach(el => {
+      if (el.classList.contains('language-mermaid')) return; // rendered as a diagram, not highlighted
       try { hljs.highlightElement(el as HTMLElement); } catch { /* ignore */ }
     });
+
+    const mermaidCodes = Array.from(root.querySelectorAll<HTMLElement>('pre > code.language-mermaid'));
+    if (mermaidCodes.length) void renderMermaidBlocks(mermaidCodes, () => cancelled);
+
+    return () => { cancelled = true; };
   }, [html]);
 
   return (

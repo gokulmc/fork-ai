@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { APP_PORT } from './mock-api';
+import { APP_BASE_URL } from './mock-api';
 
 /**
  * next-auth v5 session mocking.
@@ -69,13 +69,13 @@ export async function mockAuth(
   // Credentials sign-in from the custom LoginPage → session becomes authed
   await page.route('**/api/auth/callback/**', route => {
     state.authed = true;
-    return route.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: `http://localhost:${APP_PORT}/` }) });
+    return route.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: `${APP_BASE_URL}/` }) });
   });
 
   await page.route('**/api/auth/signout', route => {
     signOutCalls.push(Date.now());
     state.authed = false;
-    return route.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: `http://localhost:${APP_PORT}/` }) });
+    return route.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: `${APP_BASE_URL}/` }) });
   });
 
   return { state, signOutCalls };

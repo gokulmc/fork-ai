@@ -16,6 +16,8 @@ const API_PATH_RE = new RegExp(
 
 // The web app's own port — must stay in sync with playwright.config.ts (E2E_PORT).
 export const APP_PORT = process.env.E2E_PORT ?? '3001';
+// Full base URL — override with E2E_BASE_URL for remote runs (e.g. https://main.forkai.in).
+export const APP_BASE_URL = process.env.E2E_BASE_URL ?? `http://localhost:${APP_PORT}`;
 
 const CORS_HEADERS: Record<string, string> = {
   'access-control-allow-origin': '*',
