@@ -118,16 +118,27 @@ function sanitizeMindmap(src: string): string {
 }
 
 async function renderMermaidSvg(mermaid: MermaidApi, src: string): Promise<string | null> {
-  try {
-    return (await mermaid.render(`mmd-${++mermaidSeq}`, src)).svg;
-  } catch (err) {
-    if (/^\s*mindmap\b/.test(src)) {
-      try { return (await mermaid.render(`mmd-${++mermaidSeq}`, sanitizeMindmap(src))).svg; }
-      catch { /* sanitised retry also failed — fall through to the code block */ }
+  // mermaid v11 render() resolves with an error SVG instead of rejecting on
+  // parse errors — use parse() to validate first so failures fall through cleanly.
+  const tryRender = async (text: string): Promise<string | null> => {
+    try {
+      await (mermaid as any).parse(text);
+      return (await mermaid.render(`mmd-${++mermaidSeq}`, text)).svg;
+    } catch {
+      return null;
     }
-    console.warn('[mermaid] render failed:', err);
-    return null;
+  };
+
+  const svg = await tryRender(src);
+  if (svg !== null) return svg;
+
+  if (/^\s*mindmap\b/.test(src)) {
+    const sanitized = await tryRender(sanitizeMindmap(src));
+    if (sanitized !== null) return sanitized;
   }
+
+  console.warn('[mermaid] render failed');
+  return null;
 }
 
 // Replace each ```mermaid code block with its rendered SVG (the default view),
