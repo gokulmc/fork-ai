@@ -246,6 +246,8 @@ The app uses a **custom email/password login UI** instead of the Cognito Hosted 
 
 Input rows carry **no submit arrow** — every step submits via Enter or the centre seed dot (`triggerRef`). The bar height is derived from the row count (`44 + (rows-1)*46`). The spam-folder hint shows on both `verify` and `reset`.
 
+The **email is remembered locally for prefill.** On a successful `signIn('cognito-token')` (login, signup-verify, or forgot-password-reset), `LoginPage` writes the email to `localStorage` under `fork.ai.email`; the `email` state lazily initialises from that key, so after logout the email step opens pre-filled. It is written only on success (no saved typos) and intentionally NOT cleared on logout.
+
 The **Forgot Password** flow (see `CONTEXT.md`) is offered only after a wrong-password attempt (`resetAvailable` flips true on `NotAuthorizedException`). A Google/federated account has no native password: `ForgotPassword` fails with `NotAuthorizedException: …cannot be reset…`, which the UI maps to a "use the Google button" hint.
 
 ### Next.js API routes (all server-side, call Cognito AWS SDK)
