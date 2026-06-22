@@ -198,7 +198,7 @@ function StatusPill({ health }: { health: HealthStatus | null }) {
 function Overview({ idToken }: { idToken: string }) {
   const [m, setM] = useState<AdminMetrics | null>(null);
   const [cfg, setCfg] = useState<{ signupCreditUsd: number; referralCreditUsd: number; creditMultiplier: number } | null>(null);
-  const [rangeKey, setRangeKey] = useState('30d');
+  const [rangeKey, setRangeKey] = useState('today');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [day, setDay] = useState<string | null>(null);
@@ -223,7 +223,7 @@ function Overview({ idToken }: { idToken: string }) {
   const labels = s.map((d) => d.date);
 
   // Spend within the selected window — total + per-provider, derived from the daily series.
-  const range = RANGES.find((r) => r.key === rangeKey) ?? RANGES[2];
+  const range = RANGES.find((r) => r.key === rangeKey) ?? RANGES[0];
   const from = cutoffDate(range.days);
   const win = s.filter((d) => d.date >= from);
   const winTotal = win.reduce((a, d) => a + d.llmSpendUsd, 0);

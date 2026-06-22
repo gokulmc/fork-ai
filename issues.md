@@ -6,6 +6,11 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
+### Admin LLM Spend defaulted to 30-day window instead of today
+- **Symptom:** Opening the admin dashboard showed the LLM Spend chart pre-filtered to "30 days" — too broad to see today's cost at a glance.
+- **Cause:** `useState('30d')` initial value in `AdminDashboard.tsx`; the fallback `RANGES[2]` also pointed at the 30-day entry.
+- **Fix:** Changed initial state to `'today'` and fallback to `RANGES[0]`. `apps/web/src/components/admin/AdminDashboard.tsx`. (commit: pending)
+
 ### Section headings rendered with literal markdown `##`
 - **Symptom:** Some section headings displayed their markdown hashes — e.g. `## Light reactions` instead of `Light reactions` (sometimes `###`, or a trailing ` ##`). The same leaked into "Go deeper" node titles on the mind map and into Notion exports.
 - **Cause:** The LLM occasionally returns a heading with its ATX hashes intact in `section.heading`; the value was rendered verbatim in the `<h2>` and reused as-is for derived titles/queries and the Notion block/HTML/markdown export builders.
