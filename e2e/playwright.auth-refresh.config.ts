@@ -39,6 +39,9 @@ export default defineConfig({
       AWS_ENDPOINT_URL: 'http://127.0.0.1:1',
       AWS_MAX_ATTEMPTS: '1', // no SDK-level retry/backoff — keep the test fast
       NEXTAUTH_URL: `http://localhost:${PORT}`,
+      // Keep the test hermetic — the refresh path now emits a PostHog beacon; blank the key
+      // so captureServer no-ops instead of POSTing a junk event to real PostHog.
+      NEXT_PUBLIC_POSTHOG_KEY: '',
     },
   },
 });

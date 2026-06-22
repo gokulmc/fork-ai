@@ -2,6 +2,7 @@ import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 import { CognitoIdentityProviderClient, InitiateAuthCommand } from '@aws-sdk/client-cognito-identity-provider';
 import crypto from 'crypto';
+import { captureServer } from '@/lib/analytics-server';
 
 const cognitoClient = new CognitoIdentityProviderClient({
   region: process.env.AWS_REGION ?? 'ap-south-1',
@@ -15,9 +16,9 @@ function secretHash(username: string) {
 }
 
 type RefreshResult =
-  | { status: 'ok'; idToken: string; expiresAt: number; refreshToken?: string }
-  | { status: 'expired' } // refresh token genuinely dead → must log out
-  | { status: 'transient' }; // network/throttle blip → keep the session, retry later
+  | { status: 'ok'; idToken: string; expiresAt: number; refreshToken?: string; attempts: number }
+  | { status: 'expired'; error?: string } // refresh token genuinely dead → must log out
+  | { status: 'transient'; error?: string; attempts: number }; // network/throttle blip → keep the session, retry later
 
 // Only these mean the refresh token itself is invalid. Everything else (network errors,
 // TooManyRequestsException, 5xx, timeouts) is transient and must NOT log the user out of a
@@ -50,7 +51,8 @@ async function refreshIdToken(refreshToken: string, username: string): Promise<R
         }),
       );
       const auth = result.AuthenticationResult;
-      if (!auth?.IdToken) return { status: 'transient' }; // unexpected empty — retryable
+      // unexpected empty — retryable
+      if (!auth?.IdToken) return { status: 'transient', error: 'EmptyAuthResult', attempts: attempt + 1 };
       return {
         status: 'ok',
         idToken: auth.IdToken,
@@ -58,18 +60,37 @@ async function refreshIdToken(refreshToken: string, username: string): Promise<R
         // If the pool rotates refresh tokens, persist the new one — otherwise the next
         // refresh would reuse the now-invalidated token and force a logout.
         refreshToken: auth.RefreshToken ?? undefined,
+        attempts: attempt + 1,
       };
     } catch (e) {
       lastErr = e as Error & { name?: string };
       if (FATAL_REFRESH_ERRORS.has(lastErr.name ?? '')) {
         console.error('[auth/refresh] fatal', lastErr.name, lastErr.message);
-        return { status: 'expired' };
+        return { status: 'expired', error: lastErr.name };
       }
       if (attempt < 2) await new Promise(r => setTimeout(r, 200 * (attempt + 1)));
     }
   }
   console.error('[auth/refresh] transient (exhausted)', lastErr?.name, lastErr?.message);
-  return { status: 'transient' };
+  return { status: 'transient', error: lastErr?.name, attempts: 3 };
+}
+
+// PostHog distinct_id — the client identifies users by email (analytics.ts), so derive the
+// same from the id_token payload to keep server + client events on one person.
+function distinctIdFor(idToken: string | undefined, fallback: string | undefined): string {
+  if (idToken) {
+    try {
+      const p = JSON.parse(Buffer.from(idToken.split('.')[1], 'base64url').toString()) as {
+        email?: string;
+        sub?: string;
+      };
+      if (p.email) return p.email;
+      if (p.sub) return p.sub;
+    } catch {
+      // fall through to the fallback
+    }
+  }
+  return fallback ?? 'unknown';
 }
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
@@ -139,15 +160,28 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (!token.refreshToken || !token.username) {
         return { ...token, error: 'RefreshTokenExpired' };
       }
+      const distinctId = distinctIdFor(token.idToken, token.username);
       const refreshed = await refreshIdToken(token.refreshToken, token.username);
       if (refreshed.status === 'expired') {
+        await captureServer(distinctId, 'auth_refresh', { outcome: 'fatal', error: refreshed.error });
         return { ...token, error: 'RefreshTokenExpired' };
       }
       if (refreshed.status === 'transient') {
-        // Keep the (still-recent) session. expiresAt stays in the past, so the next session
-        // refetch retries — far better than logging out on a blip. SessionProvider's
+        // This is the bug's old logout path — now surfaced in PostHog (Admin) instead of a silent
+        // forced login. Keep the (still-recent) session. expiresAt stays in the past, so the next
+        // session refetch retries — far better than logging out on a blip. SessionProvider's
         // refetchInterval guarantees that retry happens even if the tab never refocuses.
+        await captureServer(distinctId, 'auth_refresh', {
+          outcome: 'transient_exhausted',
+          error: refreshed.error,
+          attempts: refreshed.attempts,
+        });
         return { ...token, error: undefined };
+      }
+      // A refresh that needed >1 attempt would have forced a logout before the fix — the retry
+      // saved it. That "recovered" signal is the clearest proof the fix is working.
+      if (refreshed.attempts > 1) {
+        await captureServer(distinctId, 'auth_refresh', { outcome: 'recovered', attempts: refreshed.attempts });
       }
       return {
         ...token,
