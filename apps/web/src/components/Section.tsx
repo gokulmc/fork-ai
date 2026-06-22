@@ -137,7 +137,7 @@ async function renderMermaidSvg(mermaid: MermaidApi, src: string): Promise<strin
     if (sanitized !== null) return sanitized;
   }
 
-  console.warn('[mermaid] render failed');
+  console.warn('[mermaid] render failed — source:\n', src);
   return null;
 }
 
