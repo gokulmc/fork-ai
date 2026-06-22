@@ -14,36 +14,62 @@ function secretHash(username: string) {
     .digest('base64');
 }
 
-async function refreshIdToken(
-  refreshToken: string,
-  username: string,
-): Promise<{ idToken: string; expiresAt: number } | null> {
-  try {
-    const result = await cognitoClient.send(
-      new InitiateAuthCommand({
-        AuthFlow: 'REFRESH_TOKEN_AUTH',
-        ClientId: process.env.COGNITO_CLIENT_ID!,
-        AuthParameters: {
-          REFRESH_TOKEN: refreshToken,
-          // SECRET_HASH for REFRESH_TOKEN_AUTH must use the canonical Cognito username
-          // (the cognito:username UUID), NOT the email alias. The pool uses
-          // UsernameAttributes: ["email"], so login (USER_PASSWORD_AUTH) accepts a hash of the
-          // submitted email, but refresh validates the hash against the real username —
-          // secretHash(email) here fails with NotAuthorizedException and logs the user out.
-          SECRET_HASH: secretHash(username),
-        },
-      }),
-    );
-    if (!result.AuthenticationResult?.IdToken) return null;
-    return {
-      idToken: result.AuthenticationResult.IdToken,
-      expiresAt: Date.now() + (result.AuthenticationResult.ExpiresIn ?? 3600) * 1000,
-    };
-  } catch (e) {
-    const err = e as Error;
-    console.error('[auth/refresh]', err.name, err.message);
-    return null;
+type RefreshResult =
+  | { status: 'ok'; idToken: string; expiresAt: number; refreshToken?: string }
+  | { status: 'expired' } // refresh token genuinely dead → must log out
+  | { status: 'transient' }; // network/throttle blip → keep the session, retry later
+
+// Only these mean the refresh token itself is invalid. Everything else (network errors,
+// TooManyRequestsException, 5xx, timeouts) is transient and must NOT log the user out of a
+// still-valid 30-day refresh token — that was the intermittent "forced login after ~1h" bug.
+const FATAL_REFRESH_ERRORS = new Set([
+  'NotAuthorizedException',
+  'InvalidParameterException',
+  'UserNotFoundException',
+]);
+
+async function refreshIdToken(refreshToken: string, username: string): Promise<RefreshResult> {
+  let lastErr: (Error & { name?: string }) | undefined;
+  // The refresh fires 60s before expiry, so the id_token is still valid during these retries —
+  // a momentary blip recovers within the same request instead of forcing a re-login.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const result = await cognitoClient.send(
+        new InitiateAuthCommand({
+          AuthFlow: 'REFRESH_TOKEN_AUTH',
+          ClientId: process.env.COGNITO_CLIENT_ID!,
+          AuthParameters: {
+            REFRESH_TOKEN: refreshToken,
+            // SECRET_HASH for REFRESH_TOKEN_AUTH must use the canonical Cognito username
+            // (the cognito:username UUID), NOT the email alias. The pool uses
+            // UsernameAttributes: ["email"], so login (USER_PASSWORD_AUTH) accepts a hash of the
+            // submitted email, but refresh validates the hash against the real username —
+            // secretHash(email) here fails with NotAuthorizedException and logs the user out.
+            SECRET_HASH: secretHash(username),
+          },
+        }),
+      );
+      const auth = result.AuthenticationResult;
+      if (!auth?.IdToken) return { status: 'transient' }; // unexpected empty — retryable
+      return {
+        status: 'ok',
+        idToken: auth.IdToken,
+        expiresAt: Date.now() + (auth.ExpiresIn ?? 3600) * 1000,
+        // If the pool rotates refresh tokens, persist the new one — otherwise the next
+        // refresh would reuse the now-invalidated token and force a logout.
+        refreshToken: auth.RefreshToken ?? undefined,
+      };
+    } catch (e) {
+      lastErr = e as Error & { name?: string };
+      if (FATAL_REFRESH_ERRORS.has(lastErr.name ?? '')) {
+        console.error('[auth/refresh] fatal', lastErr.name, lastErr.message);
+        return { status: 'expired' };
+      }
+      if (attempt < 2) await new Promise(r => setTimeout(r, 200 * (attempt + 1)));
+    }
   }
+  console.error('[auth/refresh] transient (exhausted)', lastErr?.name, lastErr?.message);
+  return { status: 'transient' };
 }
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
@@ -114,10 +140,22 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         return { ...token, error: 'RefreshTokenExpired' };
       }
       const refreshed = await refreshIdToken(token.refreshToken, token.username);
-      if (!refreshed) {
+      if (refreshed.status === 'expired') {
         return { ...token, error: 'RefreshTokenExpired' };
       }
-      return { ...token, idToken: refreshed.idToken, expiresAt: refreshed.expiresAt, error: undefined };
+      if (refreshed.status === 'transient') {
+        // Keep the (still-recent) session. expiresAt stays in the past, so the next session
+        // refetch retries — far better than logging out on a blip. SessionProvider's
+        // refetchInterval guarantees that retry happens even if the tab never refocuses.
+        return { ...token, error: undefined };
+      }
+      return {
+        ...token,
+        idToken: refreshed.idToken,
+        expiresAt: refreshed.expiresAt,
+        refreshToken: refreshed.refreshToken ?? token.refreshToken,
+        error: undefined,
+      };
     },
     session({ session, token }) {
       session.idToken = token.idToken;

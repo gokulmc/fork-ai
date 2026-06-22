@@ -13,6 +13,7 @@
     "build": "nx run-many --target=build",
     "test": "nx run-many --target=test",
     "test:e2e": "playwright test -c e2e",
+    "test:e2e:auth-refresh": "playwright test -c e2e/playwright.auth-refresh.config.ts",
     "type-check": "nx run-many --target=type-check"
   },
   "devDependencies": {
