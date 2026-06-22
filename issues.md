@@ -6,6 +6,11 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
+### Mermaid syntax errors showed a bomb/error SVG instead of falling back to code block
+- **Symptom:** Sections containing mermaid diagrams that the LLM generated with invalid syntax showed three bomb icons ("Syntax error in text — mermaid version 11.15.0") instead of gracefully falling back to the raw code block.
+- **Cause:** mermaid v11 changed `render()` to resolve with an error SVG rather than rejecting on parse errors. The try/catch in `renderMermaidSvg` never fired, so the error SVG was injected into the DOM as if it were a valid diagram.
+- **Fix:** Validate with `mermaid.parse(text)` before calling `render()`. `parse()` still throws on syntax errors in v11, so failures now correctly fall through to the sanitize-mindmap retry and then to `null` (code block fallback). `apps/web/src/components/Section.tsx`. (commit: pending)
+
 ### Admin LLM Spend defaulted to 30-day window instead of today
 - **Symptom:** Opening the admin dashboard showed the LLM Spend chart pre-filtered to "30 days" — too broad to see today's cost at a glance.
 - **Cause:** `useState('30d')` initial value in `AdminDashboard.tsx`; the fallback `RANGES[2]` also pointed at the 30-day entry.
