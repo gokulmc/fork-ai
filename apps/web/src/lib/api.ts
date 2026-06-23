@@ -204,17 +204,17 @@ async function apiFetch<T>(
     const recovered = !!fresh && fresh !== idToken;
     track('auth_401', { path, recovered });
     if (recovered) return apiFetch<T>(path, fresh!, init, true);
-    // fresh === null means the /api/auth/session endpoint was temporarily unavailable
-    // (e.g. a Lambda cold start during a deploy). The session may still be valid —
-    // don't sign the user out; let the error propagate so they can retry.
+    // fresh === null means /api/auth/session was temporarily unavailable (e.g. a
+    // Lambda cold-start during a deploy). The session may still be valid — don't
+    // sign the user out; let the error propagate so they can retry.
     if (fresh === null) refreshFailed = true;
   }
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     // Only treat 401 as a session-expired signal when we actually sent a token AND
-    // the refresh endpoint was reachable (refreshFailed = true means the refresher
-    // itself failed, not that the token is dead — signing out there is wrong).
+    // the refresh endpoint was reachable. refreshFailed means the refresher itself
+    // threw — not that the token is dead — so signing out there is wrong.
     if (res.status === 401 && idToken && !refreshFailed) unauthorizedHandler?.();
     const { message, code } = extractError(text, res.statusText);
     throw new ApiError(res.status, message, code);

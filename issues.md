@@ -6,10 +6,10 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
-### Forced logout during Lambda deploy — refresh endpoint temporarily unavailable signed user out
-- **Symptom:** Logged out 1–3 minutes after a new Amplify deployment lands on `main.forkai.in` (or `forkai.in`), even with a valid session and a working Cognito refresh token.
-- **Cause:** During the Amplify Lambda switchover, the browser fires a 401 (stale id_token in the expiry window). `apiFetch` calls `sessionRefresher()` → `getSession()` → `/api/auth/session` → but that endpoint is momentarily unreachable (Lambda cold start / in-flight switchover) → `.catch(() => null)` → `fresh = null`. The code fell through to `unauthorizedHandler()` → `signOut()`, treating "refresh endpoint down" the same as "token genuinely dead".
-- **Fix:** Track `refreshFailed = true` when `fresh === null` and skip `unauthorizedHandler()` in that case — let the 401 error propagate naturally so the user can retry. `signOut()` is only called when the refresh endpoint was reachable but the session is genuinely expired (`fresh !== null && fresh === idToken`). `apps/web/src/lib/api.ts`. (commit: pending)
+### Forced logout during Lambda deploy — refresh endpoint unavailable triggered signOut
+- **Symptom:** Logged out 1–3 minutes after a new Amplify deployment, even with a valid session and working Cognito refresh token.
+- **Cause:** During the Amplify Lambda switchover a 401 fires (stale id_token). `apiFetch` calls `sessionRefresher()` → `getSession()` → `/api/auth/session`, but that endpoint is momentarily unreachable (cold start / in-flight switchover) → `.catch(() => null)` → `fresh = null`. The code fell through to `unauthorizedHandler()` → `signOut()`, treating "refresh endpoint down" the same as "token genuinely dead".
+- **Fix:** Track `refreshFailed = true` when `fresh === null` and skip `unauthorizedHandler()` in that case. `signOut()` is now only called when the refresh endpoint was reachable but returned the same expired token (genuine expiry). `apps/web/src/lib/api.ts`. (commit: pending)
 
 ### Forced logout mid-use — a single stale-token 401 hard-signed-out instead of refreshing
 - **Symptom:** Logged out while **actively** using the app (not after sitting idle). Persisted even after the transient-refresh fix, and left **no `auth_refresh` telemetry** — because this logout path never touches the jwt-callback refresh.
