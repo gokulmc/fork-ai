@@ -9,7 +9,7 @@
 | Framework | NestJS 11, TypeScript strict |
 | Database | AWS DynamoDB — single-table design |
 | Auth | AWS Cognito User Pool — JWT validated via `jwks-rsa` (no Cognito API call per request) |
-| LLM | Anthropic Claude (`@anthropic-ai/sdk`) + Google Gemini (`@google/genai`) + DeepSeek (via Anthropic-compat endpoint, reuses `@anthropic-ai/sdk`) behind a provider abstraction |
+| LLM | Anthropic Claude (`@anthropic-ai/sdk`) + Google Gemini (`@google/genai`) + DeepSeek (via Anthropic-compat endpoint, reuses `@anthropic-ai/sdk`) + Z.ai GLM (via OpenAI-style endpoint, raw `fetch`) behind a provider abstraction |
 | ID generation | `ulid` (lexicographically sortable — used as DynamoDB sort key) |
 | API style | REST + OpenAPI (Swagger at `/api`) |
 | Port | **3000** (default) |
@@ -43,12 +43,13 @@ backend/src/
 └── llm/
     ├── llm.service.ts              # Orchestrator: prompts, streaming, JSON parse, callJson → provider
     ├── models.ts                   # Aliases ↔ model ids, per-model pricing, resolveBranchModel, providerNameFor
-    ├── citations.ts                # Anthropic <cite> + Gemini grounding → numbered footnotes
+    ├── citations.ts                # Anthropic <cite> + Gemini grounding + GLM self-reported sources → numbered footnotes
     └── providers/                  # LlmProvider abstraction
         ├── provider.types.ts       # complete() interface
         ├── anthropic.provider.ts   # @anthropic-ai/sdk
         ├── gemini.provider.ts      # @google/genai (lazy client; branch calls only)
-        └── deepseek.provider.ts    # DeepSeek V4 via api.deepseek.com/anthropic (reuses @anthropic-ai/sdk; no web search)
+        ├── deepseek.provider.ts    # DeepSeek V4 via api.deepseek.com/anthropic (reuses @anthropic-ai/sdk; no web search)
+        └── glm.provider.ts         # Z.ai GLM 5.2 / 4.5-air via api.z.ai/api/paas/v4 (raw fetch; reasoning off; web_search+JSON together)
 ```
 
 ---
@@ -161,6 +162,7 @@ DYNAMO_TABLE_NAME=forkai-main
 ANTHROPIC_API_KEY=sk-ant-...
 GEMINI_API_KEY=AIza...              # optional — only needed for Gemini branch models
 DEEPSEEK_API_KEY=sk-...             # optional — only needed for DeepSeek branch models
+GLM_API_KEY=...                     # optional — only needed for GLM branch models (Z.ai key)
 PORT=3000                           # optional, defaults to 3000
 CORS_ORIGIN=http://localhost:3001   # Next.js dev server
 FRONTEND_URL=http://localhost:3001  # used for Notion OAuth redirect
