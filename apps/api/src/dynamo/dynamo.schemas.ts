@@ -16,6 +16,7 @@ export const UserMetaSchema = new dynamoose.Schema({
   referralSlug: { type: String, required: false },
   referredBy: { type: String, required: false },
   referralCreditAwarded: { type: Boolean, required: false },
+  persona: { type: String, required: false },
 });
 
 export const ReferralSchema = new dynamoose.Schema({

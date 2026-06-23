@@ -2,9 +2,14 @@
 
 import { signOut, useSession } from 'next-auth/react';
 import { useState, useEffect, useRef } from 'react';
-import { getMe, getUsageEvents, getCreditEvents, createRechargeOrder, verifyPayment, getReferralLink, type UsageEvent, type CreditEvent } from '@/lib/api';
+import { getMe, getUsageEvents, getCreditEvents, createRechargeOrder, verifyPayment, getReferralLink, updatePersona, type UsageEvent, type CreditEvent } from '@/lib/api';
 
 const PW_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&_\-#])[A-Za-z\d@$!%*?&_\-#]{8,}$/;
+
+// Shown in the persona editor the first time, before anything is saved. Editing
+// and saving this (or a replacement) is what activates persona injection.
+const DEFAULT_PERSONA =
+  "Respond with warmth and genuine enthusiasm. I'm a curious person who values clear, depth-first explanations with concrete examples. My background: [add your profession or field here]. Tailor analogies and detail to that context, and don't shy away from nuance.";
 
 function isGoogleUser(idToken?: string): boolean {
   if (!idToken) return false;
@@ -95,6 +100,13 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
   const [referralUrl, setReferralUrl] = useState<string | null>(null);
   const [referralLoading, setReferralLoading] = useState(false);
   const [referralCopied, setReferralCopied] = useState(false);
+
+  // Persona modal state
+  const [personaOpen, setPersonaOpen] = useState(false);
+  const [personaText, setPersonaText] = useState('');
+  const [personaLoading, setPersonaLoading] = useState(false);
+  const [personaError, setPersonaError] = useState<string | null>(null);
+  const [personaSuccess, setPersonaSuccess] = useState(false);
 
   if (!session?.user?.email) return null;
 
@@ -242,6 +254,47 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
     }
   }
 
+  function resetPersona() {
+    setPersonaOpen(false);
+    setPersonaError(null);
+    setPersonaSuccess(false);
+  }
+
+  function openPersona() {
+    setOpen(false);
+    setPersonaOpen(true);
+    setPersonaError(null);
+    setPersonaSuccess(false);
+    // Prefill with the saved persona, or the default starter text on first use.
+    if (idToken) {
+      getMe(idToken)
+        .then(me => setPersonaText(me.persona?.trim() ? me.persona : DEFAULT_PERSONA))
+        .catch(() => setPersonaText(prev => prev || DEFAULT_PERSONA));
+    } else {
+      setPersonaText(prev => prev || DEFAULT_PERSONA);
+    }
+  }
+
+  async function handleSavePersona() {
+    if (personaLoading) return;
+    const text = personaText.trim();
+    if (!text) {
+      setPersonaError('Persona cannot be empty');
+      return;
+    }
+    setPersonaLoading(true);
+    setPersonaError(null);
+    try {
+      await updatePersona(idToken, text);
+      setPersonaSuccess(true);
+      setTimeout(resetPersona, 1500);
+    } catch {
+      setPersonaError('Could not save — try again');
+    } finally {
+      setPersonaLoading(false);
+    }
+  }
+
   async function handleChangePw() {
     if (!currentPw || !newPw || !confirmPw || loading) return;
     if (!PW_REGEX.test(newPw)) {
@@ -331,6 +384,9 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
           )}
           <div style={{ height: 1, background: 'rgba(10,10,10,0.08)', marginBottom: 10 }} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <button onClick={openPersona} style={menuBtnStyle}>
+              Persona
+            </button>
             <button onClick={openBilling} style={menuBtnStyle}>
               Billing
             </button>
@@ -398,6 +454,64 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
                   <button onClick={resetChangePw} style={cancelBtnStyle}>Cancel</button>
                   <button onClick={() => void handleChangePw()} disabled={loading} style={submitBtnStyle}>
                     {loading ? '…' : 'Update'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Persona overlay */}
+      {personaOpen && (
+        <div
+          onClick={e => { if (e.currentTarget === e.target) resetPersona(); }}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 70,
+            background: 'rgba(255,255,255,0.88)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <div style={{
+            background: '#ffffff', border: '1px solid rgba(10,10,10,0.15)',
+            borderRadius: 8, padding: '28px',
+            width: 'min(460px, 92vw)',
+            fontFamily: "ui-monospace,'JetBrains Mono','SF Mono',Menlo,monospace",
+            boxShadow: '0 8px 32px rgba(10,10,10,0.10)',
+          }}>
+            <div style={{ fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'rgba(10,10,10,0.4)', marginBottom: 12 }}>
+              Persona
+            </div>
+
+            {personaSuccess ? (
+              <div style={{ fontSize: 11, color: '#27ae60', letterSpacing: '0.06em' }}>Persona saved.</div>
+            ) : (
+              <>
+                <div style={{ fontSize: 11, color: 'rgba(10,10,10,0.55)', letterSpacing: '0.03em', lineHeight: 1.5, marginBottom: 14 }}>
+                  Added to the context of every AI answer. Takes effect once you save it.
+                </div>
+                <textarea
+                  value={personaText}
+                  onChange={e => { setPersonaError(null); setPersonaText(e.target.value); }}
+                  disabled={personaLoading}
+                  rows={6}
+                  style={{
+                    display: 'block', width: '100%', boxSizing: 'border-box',
+                    border: '1px solid rgba(10,10,10,0.12)', borderRadius: 6,
+                    padding: '12px', marginBottom: 14, resize: 'vertical',
+                    fontFamily: 'inherit', fontSize: 11, color: '#0a0a0a', lineHeight: 1.6,
+                    background: 'transparent', outline: 'none', letterSpacing: '0.02em',
+                  }}
+                />
+
+                {personaError && (
+                  <div style={{ fontSize: 10, color: '#c0392b', marginBottom: 12, letterSpacing: '0.04em' }}>{personaError}</div>
+                )}
+
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
+                  <button onClick={resetPersona} style={cancelBtnStyle}>Cancel</button>
+                  <button onClick={() => void handleSavePersona()} disabled={personaLoading} style={submitBtnStyle}>
+                    {personaLoading ? '…' : 'Save to Persona'}
                   </button>
                 </div>
               </>

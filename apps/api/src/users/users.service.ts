@@ -67,8 +67,16 @@ export class UsersService {
     return this.db.getUserMeta(sub);
   }
 
-  async patchMe(sub: string, updates: { hasOnboarded?: boolean }): Promise<void> {
+  async patchMe(sub: string, updates: { hasOnboarded?: boolean; persona?: string }): Promise<void> {
     await this.db.updateUserMeta(sub, updates);
+  }
+
+  // Persona is prepended to every LLM prompt for this user. Returns undefined
+  // (not injected) until the user first saves a non-empty one.
+  async getPersona(sub: string): Promise<string | undefined> {
+    const user = await this.db.getUserMeta(sub);
+    const persona = user?.persona?.trim();
+    return persona ? persona : undefined;
   }
 
   async checkCredit(sub: string): Promise<void> {

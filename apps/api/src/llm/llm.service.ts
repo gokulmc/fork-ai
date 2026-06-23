@@ -69,6 +69,17 @@ function extractCompletedSections(text: string): LlmSection[] {
   return sections;
 }
 
+// Prepended to every prompt once the user has saved a persona. Empty (inert)
+// until then, so behaviour is unchanged for anyone who never sets one.
+const personaPreamble = (persona?: string): string =>
+  persona && persona.trim()
+    ? `The person you are helping has described how they'd like you to respond:
+"${persona.trim()}"
+Keep this in mind throughout — match the requested tone and tailor depth, examples, and framing to them. Still obey all formatting and JSON-shape rules below.
+
+`
+    : '';
+
 // Soft nudge so nearby branches don't all land on the same emoji (e.g. 🧠).
 const avoidEmojiNote = (usedEmojis: string[]): string =>
   usedEmojis.length
@@ -125,8 +136,8 @@ export class LlmService {
     return this.providers[providerNameFor(modelId)];
   }
 
-  async *streamAnswerQuery(query: string, sectionCount = 5, webSearch = false): AsyncGenerator<StreamEvent> {
-    const prompt = `You are a research assistant. Answer this query as a structured study note with ${sectionCount} sections.
+  async *streamAnswerQuery(query: string, sectionCount = 5, webSearch = false, persona?: string): AsyncGenerator<StreamEvent> {
+    const prompt = `${personaPreamble(persona)}You are a research assistant. Answer this query as a structured study note with ${sectionCount} sections.
 
 Query: "${query}"
 
@@ -211,8 +222,8 @@ Each section "body" should be 80-180 words. You MAY use GitHub-flavored markdown
     };
   }
 
-  async answerQuery(query: string, sectionCount = 4, webSearch = false): Promise<LlmResponse> {
-    const prompt = `You are a research assistant. Answer this query as a structured study note. Use as many sections as the topic genuinely warrants — no more than ${sectionCount}. Do not pad with redundant or filler sections; fewer is better when the topic is focused.
+  async answerQuery(query: string, sectionCount = 4, webSearch = false, persona?: string): Promise<LlmResponse> {
+    const prompt = `${personaPreamble(persona)}You are a research assistant. Answer this query as a structured study note. Use as many sections as the topic genuinely warrants — no more than ${sectionCount}. Do not pad with redundant or filler sections; fewer is better when the topic is focused.
 
 Query: "${query}"
 
@@ -234,11 +245,12 @@ Each section "body" should be 80-180 words. You MAY use GitHub-flavored markdown
     authed = false,
     boost = false,
     usedEmojis: string[] = [],
+    persona?: string,
   ): Promise<LlmResponse> {
     const trail = ancestors
       .map((a, i) => `${ i === 0 ? 'Root query' : 'Sub-topic'}: "${a.query}" → "${a.title}"`)
       .join('\n');
-    const intro = `You are continuing a branching research session. Research trail (root → current):
+    const intro = `${personaPreamble(persona)}You are continuing a branching research session. Research trail (root → current):
 ${trail}
 
 Go DEEPER on the section titled "${sectionHeading}" within this context.
@@ -274,11 +286,12 @@ You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase 
     authed = false,
     boost = false,
     usedEmojis: string[] = [],
+    persona?: string,
   ): Promise<LlmResponse> {
     const trail = ancestors
       .map((a, i) => `${i === 0 ? 'Root query' : 'Sub-topic'}: "${a.query}" → "${a.title}"`)
       .join('\n');
-    const intro = `You are continuing a branching research session. Research trail (root → current):
+    const intro = `${personaPreamble(persona)}You are continuing a branching research session. Research trail (root → current):
 ${trail}
 
 The user highlighted this passage: "${highlight.slice(0, 800)}"

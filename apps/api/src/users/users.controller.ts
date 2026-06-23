@@ -11,6 +11,11 @@ class PatchMeDto {
   @IsOptional()
   @IsBoolean()
   hasOnboarded?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  persona?: string;
 }
 
 class ReferrerDto {

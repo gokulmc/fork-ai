@@ -59,13 +59,17 @@ export class NodesService {
     const authed = !isGuest;
     const boost = authed && (dto.boost ?? false);
 
+    // Persona is a per-user setting — only the account owner's branches inherit
+    // it. Guests (shared sessions) never carry the host's persona.
+    const persona = authed ? await this.users.getPersona(sub) : undefined;
+
     if (dto.kind === 'DEEPER') {
       if (!dto.sectionBody) throw new BadRequestException('sectionBody required for DEEPER nodes');
-      llmResult = await this.llm.expandSection(ancestors, dto.query, dto.sectionBody, dto.sectionCount ?? 4, dto.webSearch ?? false, model, dto.verbose ?? false, authed, boost, avoidEmojis);
+      llmResult = await this.llm.expandSection(ancestors, dto.query, dto.sectionBody, dto.sectionCount ?? 4, dto.webSearch ?? false, model, dto.verbose ?? false, authed, boost, avoidEmojis, persona);
       fromText = `${dto.query}: ${dto.sectionBody.slice(0, 200)}…`;
     } else {
       if (!dto.highlightText) throw new BadRequestException('highlightText required for ASK nodes');
-      llmResult = await this.llm.followUpFromHighlight(ancestors, dto.highlightText, dto.query, dto.sectionCount ?? 4, dto.webSearch ?? false, model, dto.verbose ?? false, authed, boost, avoidEmojis);
+      llmResult = await this.llm.followUpFromHighlight(ancestors, dto.highlightText, dto.query, dto.sectionCount ?? 4, dto.webSearch ?? false, model, dto.verbose ?? false, authed, boost, avoidEmojis, persona);
       fromText = dto.highlightText;
     }
 
