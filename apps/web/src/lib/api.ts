@@ -1,8 +1,14 @@
 import type { ForkNode, Annotation, HighlightRecord, PersistentHighlight, CitationSource } from './types';
+import { track } from './analytics';
 
-// Called on any 401 — set once at app startup to trigger sign-out
+// Called on any 401 that survives a token-refresh retry — set once at app startup to sign out.
 let unauthorizedHandler: (() => void) | null = null;
 export function setUnauthorizedHandler(fn: () => void) { unauthorizedHandler = fn; }
+
+// Returns a freshly-refreshed id_token (or null). Set at startup so a 401 from a
+// just-expired token can be retried with a new token instead of forcing a logout.
+let sessionRefresher: (() => Promise<string | null>) | null = null;
+export function setSessionRefresher(fn: () => Promise<string | null>) { sessionRefresher = fn; }
 
 // ── Response shapes from NestJS ─────────────────────────────────────────────
 
@@ -178,6 +184,7 @@ async function apiFetch<T>(
   path: string,
   idToken: string,
   init?: RequestInit,
+  retried = false,
 ): Promise<T> {
   const res = await fetch(`${base()}${path}`, {
     ...init,
@@ -187,6 +194,16 @@ async function apiFetch<T>(
       ...(init?.headers as Record<string, string> | undefined),
     },
   });
+
+  // A 401 with a token is usually a just-expired id_token used in the brief window
+  // before useSession refetched the refreshed one. Refresh once and retry before
+  // logging the user out — a single stale-token 401 must not nuke a valid session.
+  if (res.status === 401 && idToken && !retried && sessionRefresher) {
+    const fresh = await sessionRefresher().catch(() => null);
+    const recovered = !!fresh && fresh !== idToken;
+    track('auth_401', { path, recovered });
+    if (recovered) return apiFetch<T>(path, fresh!, init, true);
+  }
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
