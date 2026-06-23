@@ -66,7 +66,7 @@ export interface Tweaks {
   answerStyle: 'sectioned' | 'verbose';
   maxSections: number;
   webSearch: boolean;
-  branchModel: 'haiku' | 'sonnet' | 'opus' | 'gemini-pro' | 'gemini-flash' | 'gemini-flash-lite' | 'deepseek-pro' | 'deepseek-flash';
+  branchModel: 'haiku' | 'sonnet' | 'opus' | 'gemini-pro' | 'gemini-flash' | 'gemini-flash-lite' | 'deepseek-pro' | 'deepseek-flash' | 'glm' | 'glm-air';
 }
 
 export interface HlMenuState {

@@ -8,6 +8,7 @@ export const validationSchema = Joi.object({
   ANTHROPIC_API_KEY: Joi.string().required(),
   GEMINI_API_KEY: Joi.string().allow('').optional(),
   DEEPSEEK_API_KEY: Joi.string().allow('').optional(),
+  GLM_API_KEY: Joi.string().allow('').optional(),
   PORT: Joi.number().default(3000),
   NOTION_CLIENT_ID: Joi.string().optional(),
   NOTION_CLIENT_SECRET: Joi.string().optional(),
@@ -46,6 +47,9 @@ export const configuration = () => ({
   },
   deepseek: {
     apiKey: process.env.DEEPSEEK_API_KEY ?? '',
+  },
+  glm: {
+    apiKey: process.env.GLM_API_KEY ?? '',
   },
   port: parseInt(process.env.PORT ?? '3000', 10),
   notion: {

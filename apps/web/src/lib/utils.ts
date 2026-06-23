@@ -13,6 +13,8 @@ const MODEL_NAMES: Record<string, string> = {
   'gemini-2.5-flash-lite': 'Gemini 2.5 Flash-Lite',
   'deepseek-v4-pro': 'DeepSeek V4 Pro',
   'deepseek-v4-flash': 'DeepSeek V4 Flash',
+  'glm-5.2': 'GLM 5.2',
+  'glm-4.5-air': 'GLM 4.5 Air',
 };
 export function modelDisplayName(modelId: string | undefined | null): string | null {
   if (!modelId) return null;

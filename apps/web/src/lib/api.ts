@@ -198,19 +198,24 @@ async function apiFetch<T>(
   // A 401 with a token is usually a just-expired id_token used in the brief window
   // before useSession refetched the refreshed one. Refresh once and retry before
   // logging the user out — a single stale-token 401 must not nuke a valid session.
+  let refreshFailed = false; // true when the refresh endpoint itself was unreachable
   if (res.status === 401 && idToken && !retried && sessionRefresher) {
     const fresh = await sessionRefresher().catch(() => null);
     const recovered = !!fresh && fresh !== idToken;
     track('auth_401', { path, recovered });
     if (recovered) return apiFetch<T>(path, fresh!, init, true);
+    // fresh === null means the /api/auth/session endpoint was temporarily unavailable
+    // (e.g. a Lambda cold start during a deploy). The session may still be valid —
+    // don't sign the user out; let the error propagate so they can retry.
+    if (fresh === null) refreshFailed = true;
   }
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    // Only treat 401 as a session-expired signal when we actually sent a token.
-    // A 401 on an empty Bearer means "this endpoint requires auth" — calling
-    // signOut() in that case kicks unauthenticated guests off the share page.
-    if (res.status === 401 && idToken) unauthorizedHandler?.();
+    // Only treat 401 as a session-expired signal when we actually sent a token AND
+    // the refresh endpoint was reachable (refreshFailed = true means the refresher
+    // itself failed, not that the token is dead — signing out there is wrong).
+    if (res.status === 401 && idToken && !refreshFailed) unauthorizedHandler?.();
     const { message, code } = extractError(text, res.statusText);
     throw new ApiError(res.status, message, code);
   }
@@ -455,7 +460,7 @@ export interface CreateNodePayload {
   webSearch?: boolean;
   verbose?: boolean;
   boost?: boolean;  // retry of a length-limit Cut-Off: double the output budget (authed only)
-  model?: 'haiku' | 'sonnet' | 'opus' | 'gemini-pro' | 'gemini-flash' | 'gemini-flash-lite' | 'deepseek-pro' | 'deepseek-flash';
+  model?: 'haiku' | 'sonnet' | 'opus' | 'gemini-pro' | 'gemini-flash' | 'gemini-flash-lite' | 'deepseek-pro' | 'deepseek-flash' | 'glm' | 'glm-air';
 }
 
 export function createNode(
@@ -677,6 +682,7 @@ export interface ProviderSpend {
   anthropic: number;
   gemini: number;
   deepseek: number;
+  glm: number;
 }
 
 export interface MetricsDay {
