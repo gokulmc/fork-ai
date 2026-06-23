@@ -7,9 +7,10 @@
 export type ModelAlias =
   | 'haiku' | 'sonnet' | 'opus'
   | 'gemini-pro' | 'gemini-flash' | 'gemini-flash-lite'
-  | 'deepseek-pro' | 'deepseek-flash';
+  | 'deepseek-pro' | 'deepseek-flash'
+  | 'glm' | 'glm-air';
 
-export type ProviderName = 'anthropic' | 'gemini' | 'deepseek';
+export type ProviderName = 'anthropic' | 'gemini' | 'deepseek' | 'glm';
 
 // Root queries (kind QUERY) are always Claude Sonnet and not user-selectable.
 export const ROOT_MODEL = 'claude-sonnet-4-6';
@@ -23,6 +24,8 @@ const ALIAS_TO_ID: Record<ModelAlias, string> = {
   'gemini-flash-lite': 'gemini-2.5-flash-lite',
   'deepseek-pro': 'deepseek-v4-pro',
   'deepseek-flash': 'deepseek-v4-flash',
+  glm: 'glm-5.2',
+  'glm-air': 'glm-4.5-air',
 };
 
 // Default branch model when the client sends nothing / something invalid (cheapest Claude tier).
@@ -56,6 +59,9 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   // DeepSeek V4, standard cache-miss rates (conservative; re-verify after the v4-pro promo window).
   'deepseek-v4-pro': { input: 1.74, output: 3.48 },
   'deepseek-v4-flash': { input: 0.14, output: 0.28 },
+  // Z.ai GLM, list prices per docs.z.ai/guides/overview/pricing.
+  'glm-5.2': { input: 1.4, output: 4.4 },
+  'glm-4.5-air': { input: 0.2, output: 1.1 },
 };
 
 // Guest cost-ceiling clamp: top tier downgrades to mid tier, within the same
@@ -64,12 +70,14 @@ const GUEST_CLAMP: Partial<Record<ModelAlias, ModelAlias>> = {
   opus: 'sonnet',
   'gemini-pro': 'gemini-flash',
   'deepseek-pro': 'deepseek-flash',
+  glm: 'glm-air',
 };
 
 const ALL_ALIASES: ModelAlias[] = [
   'haiku', 'sonnet', 'opus',
   'gemini-pro', 'gemini-flash', 'gemini-flash-lite',
   'deepseek-pro', 'deepseek-flash',
+  'glm', 'glm-air',
 ];
 
 function isAlias(v: string | undefined): v is ModelAlias {
@@ -80,6 +88,7 @@ function isAlias(v: string | undefined): v is ModelAlias {
 export function providerNameFor(modelId: string): ProviderName {
   if (modelId.startsWith('gemini')) return 'gemini';
   if (modelId.startsWith('deepseek')) return 'deepseek';
+  if (modelId.startsWith('glm')) return 'glm';
   return 'anthropic';
 }
 

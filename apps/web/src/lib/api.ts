@@ -460,7 +460,7 @@ export interface CreateNodePayload {
   webSearch?: boolean;
   verbose?: boolean;
   boost?: boolean;  // retry of a length-limit Cut-Off: double the output budget (authed only)
-  model?: 'haiku' | 'sonnet' | 'opus' | 'gemini-pro' | 'gemini-flash' | 'gemini-flash-lite' | 'deepseek-pro' | 'deepseek-flash';
+  model?: 'haiku' | 'sonnet' | 'opus' | 'gemini-pro' | 'gemini-flash' | 'gemini-flash-lite' | 'deepseek-pro' | 'deepseek-flash' | 'glm' | 'glm-air';
 }
 
 export function createNode(
@@ -682,6 +682,7 @@ export interface ProviderSpend {
   anthropic: number;
   gemini: number;
   deepseek: number;
+  glm: number;
 }
 
 export interface MetricsDay {

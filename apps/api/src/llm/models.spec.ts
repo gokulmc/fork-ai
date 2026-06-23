@@ -19,6 +19,11 @@ describe('models', () => {
       expect(resolveBranchModel('deepseek-pro')).toBe('deepseek-v4-pro');
     });
 
+    it('maps GLM aliases to concrete ids', () => {
+      expect(resolveBranchModel('glm')).toBe('glm-5.2');
+      expect(resolveBranchModel('glm-air')).toBe('glm-4.5-air');
+    });
+
     it('falls back to Haiku on missing/invalid alias', () => {
       expect(resolveBranchModel(undefined)).toBe('claude-haiku-4-5-20251001');
       expect(resolveBranchModel('bogus')).toBe('claude-haiku-4-5-20251001');
@@ -28,6 +33,7 @@ describe('models', () => {
       expect(resolveBranchModel('opus', true)).toBe('claude-sonnet-4-6');
       expect(resolveBranchModel('gemini-pro', true)).toBe('gemini-2.5-flash');
       expect(resolveBranchModel('deepseek-pro', true)).toBe('deepseek-v4-flash');
+      expect(resolveBranchModel('glm', true)).toBe('glm-4.5-air');
     });
 
     it('does not clamp non-top tiers for guests', () => {
@@ -40,6 +46,8 @@ describe('models', () => {
     it('dispatches by model id prefix', () => {
       expect(providerNameFor('gemini-2.5-pro')).toBe('gemini');
       expect(providerNameFor('deepseek-v4-flash')).toBe('deepseek');
+      expect(providerNameFor('glm-5.2')).toBe('glm');
+      expect(providerNameFor('glm-4.5-air')).toBe('glm');
       expect(providerNameFor('claude-opus-4-8')).toBe('anthropic');
     });
   });
@@ -49,6 +57,7 @@ describe('models', () => {
       expect(priceFor('claude-opus-4-8')).toEqual({ input: 15, output: 75 });
       expect(priceFor('gemini-2.5-flash-lite')).toEqual({ input: 0.10, output: 0.40 });
       expect(priceFor('deepseek-v4-flash')).toEqual({ input: 0.14, output: 0.28 });
+      expect(priceFor('glm-5.2')).toEqual({ input: 1.4, output: 4.4 });
     });
 
     it('falls back to Sonnet rates for an unknown id', () => {
@@ -57,10 +66,11 @@ describe('models', () => {
   });
 
   describe('supportsWebSearch', () => {
-    it('is false for DeepSeek, true for Claude/Gemini', () => {
+    it('is false for DeepSeek, true for Claude/Gemini/GLM', () => {
       expect(supportsWebSearch('deepseek-v4-pro')).toBe(false);
       expect(supportsWebSearch('claude-sonnet-4-6')).toBe(true);
       expect(supportsWebSearch('gemini-2.5-flash')).toBe(true);
+      expect(supportsWebSearch('glm-5.2')).toBe(true);
     });
   });
 });

@@ -7,7 +7,8 @@ import { LlmProvider } from './providers/provider.types';
 import { AnthropicProvider } from './providers/anthropic.provider';
 import { GeminiProvider } from './providers/gemini.provider';
 import { DeepSeekProvider } from './providers/deepseek.provider';
-import { extractAnthropicSources, processCitations } from './citations';
+import { GlmProvider } from './providers/glm.provider';
+import { extractAnthropicSources, processCitations, sanitizeGlmSources, processGlmCitations } from './citations';
 
 export type StreamEvent =
   | { type: 'meta'; title: string; emoji: string; lede: string }
@@ -88,6 +89,12 @@ const avoidEmojiNote = (usedEmojis: string[]): string =>
 
 const CITATION_NOTE = `When you use web search results, cite sources inline as plain text — e.g. (Source: Name) or a bracketed number like [1] — never wrap cited sentences or paragraphs in *asterisks* or _underscores_. Do not italicise entire sentences to indicate attribution.`;
 
+// GLM's endpoint returns no structured search results, so we make GLM self-report
+// them: number cited claims inline ([1], [2], … in order of first use) AND list each
+// source in a top-level "sources" array aligned to those numbers. processGlmCitations
+// then turns the [N] markers into the same superscript footnotes used for Claude/Gemini.
+const GLM_CITATION_NOTE = `When you use web search results, cite them. Mark each sourced claim inline with a sequential bracketed number in order of first appearance: [1], [2], [3], and so on. Then add a top-level "sources" field to your JSON — an array of {"title": "...", "url": "..."} objects, where the first entry is the source for [1], the second for [2], etc. List only sources you actually cite, in citation order. Never wrap cited text in *asterisks* or _underscores_.`;
+
 const WEB_SEARCH_GUIDANCE = `You have access to a web search tool. Use it only when the question genuinely requires information that may have changed after your training cutoff — current events, recent developments, live prices, newly released products, or breaking news. For foundational concepts, historical facts, established science, or explanations you already know well, answer directly from your knowledge without searching.`;
 
 const SECTIONS_SCHEMA = `Return ONLY valid JSON, no prose, no markdown fences. Shape:
@@ -129,6 +136,7 @@ export class LlmService {
       anthropic: new AnthropicProvider(this.client),
       gemini: new GeminiProvider(() => cfg.get<string>('gemini.apiKey')),
       deepseek: new DeepSeekProvider(() => cfg.get<string>('deepseek.apiKey')),
+      glm: new GlmProvider(() => cfg.get<string>('glm.apiKey')),
     };
   }
 
@@ -387,7 +395,9 @@ Rules:
     // Drop web search for providers that don't support it (DeepSeek) — no
     // grounding tool, so don't append the web-search guidance/citation prompt.
     const ws = webSearch && supportsWebSearch(model);
-    const fullPrompt = ws ? `${prompt}\n\n${WEB_SEARCH_GUIDANCE}\n\n${CITATION_NOTE}` : prompt;
+    const isGlm = providerNameFor(model) === 'glm';
+    const citationNote = isGlm ? GLM_CITATION_NOTE : CITATION_NOTE;
+    const fullPrompt = ws ? `${prompt}\n\n${WEB_SEARCH_GUIDANCE}\n\n${citationNote}` : prompt;
     const provider = this.providerFor(model);
 
     // Output budget tiered by auth + answer style. A boosted retry (authed Retry
@@ -420,6 +430,18 @@ Rules:
           const cited = applyCitations(result.sections);
           result.sections = cited.sections;
           if (cited.sources.length) result.sources = cited.sources;
+        } else if (ws && isGlm) {
+          // GLM has no structured-source hook; it self-reports sources in its JSON,
+          // which we validate and then resolve its inline [N] markers against.
+          const sources = sanitizeGlmSources((result as { sources?: unknown }).sources);
+          if (sources.length) {
+            const cited = processGlmCitations(result.sections, sources);
+            result.sections = cited.sections;
+            // Fall back to the full list if GLM listed sources but didn't number inline.
+            result.sources = cited.sources.length ? cited.sources : sources;
+          } else {
+            delete (result as { sources?: unknown }).sources;
+          }
         }
         return result;
       } catch (err) {

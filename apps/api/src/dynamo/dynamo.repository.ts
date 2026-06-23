@@ -599,7 +599,7 @@ export class DynamoRepository {
       revenueUsd: 0,
       llmSpendUsd: 0,
       outstandingCreditUsd: 0,
-      llmSpendByProvider: { anthropic: 0, gemini: 0, deepseek: 0 } as ProviderSpend,
+      llmSpendByProvider: { anthropic: 0, gemini: 0, deepseek: 0, glm: 0 } as ProviderSpend,
     };
     const byDay = new Map<string, MetricsDay>();
     const day = (iso?: string): MetricsDay | null => {
@@ -607,7 +607,7 @@ export class DynamoRepository {
       const d = iso.slice(0, 10);
       let entry = byDay.get(d);
       if (!entry) {
-        entry = { date: d, users: 0, sessions: 0, nodes: 0, revenueUsd: 0, llmSpendUsd: 0, spendByProvider: { anthropic: 0, gemini: 0, deepseek: 0 } };
+        entry = { date: d, users: 0, sessions: 0, nodes: 0, revenueUsd: 0, llmSpendUsd: 0, spendByProvider: { anthropic: 0, gemini: 0, deepseek: 0, glm: 0 } };
         byDay.set(d, entry);
       }
       return entry;
@@ -735,6 +735,7 @@ export interface ProviderSpend {
   anthropic: number;
   gemini: number;
   deepseek: number;
+  glm: number;
 }
 
 export interface MetricsDay {

@@ -121,3 +121,58 @@ export function applyGeminiGrounding(
 
   return { sections: sections.map((s, i) => ({ ...s, body: bodies[i] })), sources };
 }
+
+// ── Z.ai GLM built-in web-search citations ──────────────────────────────────
+
+// GLM's v4 chat endpoint does not return a structured web-search results array, so
+// for web-search branches we instruct GLM to embed sources directly in its JSON
+// output: inline Markdown links plus a top-level `sources` array (see
+// GLM_CITATION_NOTE in llm.service). This validates that model-emitted array —
+// keeping only well-formed, de-duplicated http(s) entries — so a malformed or
+// hallucinated value can never reach the node's Sources list. Capped to keep the UI sane.
+export function sanitizeGlmSources(raw: unknown): CitationSource[] {
+  if (!Array.isArray(raw)) return [];
+  const out: CitationSource[] = [];
+  const seen = new Set<string>();
+  for (const r of raw) {
+    const url = r && typeof (r as { url?: unknown }).url === 'string' ? (r as { url: string }).url.trim() : '';
+    if (!/^https?:\/\//i.test(url) || seen.has(url)) continue;
+    const rawTitle = (r as { title?: unknown }).title;
+    const title = typeof rawTitle === 'string' && rawTitle.trim() ? rawTitle.trim() : url;
+    seen.add(url);
+    out.push({ title, url });
+    if (out.length >= 12) break;
+  }
+  return out;
+}
+
+// Resolve GLM's inline [N] markers against its self-reported `sources` (already
+// sanitized): [N] → the same superscript footnote used for Claude/Gemini, renumbered
+// sequentially by first appearance, returning only the cited sources. An [N] with no
+// matching source is dropped rather than left dangling. If GLM listed sources but
+// numbered nothing inline, this returns no cited sources and the caller shows the full list.
+export function processGlmCitations(
+  sections: LlmSection[],
+  sources: CitationSource[],
+): { sections: LlmSection[]; sources: CitationSource[] } {
+  const srcToFootnote = new Map<number, number>();
+  let nextFootnote = 1;
+
+  const processed = sections.map(s => ({
+    ...s,
+    body: s.body.replace(/\[(\d+)\]/g, (_match, numStr: string) => {
+      const n = parseInt(numStr, 10);
+      if (n < 1 || n > sources.length) return '';
+      if (!srcToFootnote.has(n)) srcToFootnote.set(n, nextFootnote++);
+      const fn = srcToFootnote.get(n)!;
+      return footnoteHtml(fn, sources[n - 1].url);
+    }),
+  }));
+
+  const citedSources: CitationSource[] = new Array(srcToFootnote.size);
+  srcToFootnote.forEach((footnoteNum, n) => {
+    citedSources[footnoteNum - 1] = sources[n - 1];
+  });
+
+  return { sections: processed, sources: citedSources };
+}

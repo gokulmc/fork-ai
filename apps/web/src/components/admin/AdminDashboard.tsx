@@ -33,6 +33,7 @@ const PROVIDERS: { key: keyof ProviderSpend; label: string; color: string }[] = 
   { key: 'anthropic', label: 'Claude', color: C.amber },
   { key: 'gemini', label: 'Gemini', color: C.sky },
   { key: 'deepseek', label: 'DeepSeek', color: C.green },
+  { key: 'glm', label: 'GLM', color: C.violet },
 ];
 const RANGES: { key: string; label: string; days: number }[] = [
   { key: 'today', label: 'Today', days: 1 },
