@@ -75,6 +75,7 @@ e2e/
 | Guest bounced to login on an authed 401 (`&& idToken` gate) | `guest-share.spec.ts` › sign-out-call guards on every guest test |
 | Users silently logged out hourly → `RefreshTokenExpired` handling | `auth-gate.spec.ts` › *RefreshTokenExpired forces sign-out* |
 | Intermittent forced login after ~1h (transient refresh failure logged users out) | `auth-refresh.spec.ts` › *a transient Cognito failure does NOT force logout* |
+| Forced logout mid-use (single stale-token 401 hard-signed-out, no retry) | `auth-gate.spec.ts` › *a stale-token 401 refreshes and retries instead of signing out* |
 | Stale `fork.ai.trial` → invalid-link → login bounce loop | `guest-share.spec.ts` › *invalid share link* |
 | Notion export staleness on new branches | `branching.spec.ts` › *branching invalidates a stale Notion export* |
 | Notion export 400'd on large pages (rich_text > 2000 chars) | `notion-export.spec.ts` › *no rich_text content exceeds Notion's 2000-char cap* |

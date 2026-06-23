@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import dynamic from 'next/dynamic';
-import { useSession, signOut } from 'next-auth/react';
+import { useSession, signOut, getSession as getAuthSession } from 'next-auth/react';
 import type { ForkNode, Annotation, HlMenuState, FollowUpState, ContextMenuState, PersistentHighlight, HighlightRecord } from '@/lib/types';
 import { uid, short5, stripMarkdown, stripCite, getRangeOffsets, modelDisplayName, cleanHeading } from '@/lib/utils';
 import { rangeToMarkdown } from '@/lib/htmlToMarkdown';
@@ -96,6 +96,7 @@ import {
   pushToNotion,
   updateSessionNotionUrl,
   setUnauthorizedHandler,
+  setSessionRefresher,
   shareApi,
   getMe,
   patchMe,
@@ -243,8 +244,12 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     if (refSlug) localStorage.setItem('fork.ai.referral', refSlug);
   }, []);
 
-  // Auto sign-out on any 401 (expired Cognito id_token)
+  // Auto sign-out on a 401 — but only after a token-refresh retry fails (see setSessionRefresher).
   useEffect(() => { setUnauthorizedHandler(() => void signOut()); }, []);
+  // On a 401, apiFetch first asks for a fresh id_token and retries. getSession() forces a
+  // /api/auth/session fetch → the jwt callback refreshes an expired token → returns the new one,
+  // so a stale-token 401 mid-use recovers silently instead of bouncing the user to login.
+  useEffect(() => { setSessionRefresher(async () => (await getAuthSession())?.idToken ?? null); }, []);
 
   // PostHog — no-op without NEXT_PUBLIC_POSTHOG_KEY
   useEffect(() => { initAnalytics(); }, []);
