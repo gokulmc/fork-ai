@@ -127,6 +127,32 @@ test('flowchart with unquoted parens in node labels still renders as a graph', a
   await expect(s1.locator('.mermaid-graph svg')).toContainText('2nd Time');
 });
 
+// Parens in a subgraph title (`subgraph Knowledge Base (Human & LLM)`) are the
+// same class of parse error; sanitizeFlowchart quotes the title on the retry.
+test('flowchart with parens in a subgraph title still renders as a graph', async ({ page }) => {
+  test.setTimeout(120_000);
+
+  const body = [
+    '```mermaid',
+    'graph TD',
+    '    subgraph Knowledge Base Management (Human & LLM)',
+    '        B --> C{Context Layer 1: Wiki (Major Context)}',
+    '        C --> D[Combined Context for LLM]',
+    '    end',
+    '```',
+  ].join('\n');
+
+  const api = baseApi();
+  await gotoWorkspace(page, api, {
+    session: fullSession({ nodes: [rootNode({ sections: [{ id: 's1', heading: 'Flow', body }] })] }),
+  });
+
+  const s1 = page.locator('.section-body[data-section-id="s1"]');
+  await s1.waitFor({ state: 'visible' });
+  await expect(s1.locator('.mermaid-block .mermaid-graph svg')).toBeVisible({ timeout: 60_000 });
+  await expect(s1.locator('.mermaid-graph svg')).toContainText('Human & LLM');
+});
+
 test('non-mermaid code blocks are still rendered as highlighted code', async ({ page }) => {
   const api = baseApi();
   await gotoWorkspace(page, api, { session: mermaidSession() });
