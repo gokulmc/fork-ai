@@ -12,6 +12,7 @@ env:
     NOTION_CLIENT_SECRET: forkai/notion-client-secret
     GEMINI_API_KEY: forkai/gemini-api-key
     DEEPSEEK_API_KEY: forkai/deepseek-api-key
+    GLM_API_KEY: forkai/glm-api-key
 
 phases:
   pre_build:
@@ -36,7 +37,7 @@ phases:
       # Create EB application version (no-op if this commit was already registered)
       - aws elasticbeanstalk create-application-version --application-name $EB_APP_NAME --version-label $IMAGE_TAG --source-bundle S3Bucket=$S3_BUCKET,S3Key=$IMAGE_TAG/app-bundle.zip --region $AWS_DEFAULT_REGION || true
       # Deploy new version and inject secrets in one call to avoid OperationInProgress conflict
-      - aws elasticbeanstalk update-environment --application-name $EB_APP_NAME --environment-name $EB_ENV_NAME --version-label $IMAGE_TAG --region $AWS_DEFAULT_REGION --option-settings "Namespace=aws:elasticbeanstalk:application:environment,OptionName=ANTHROPIC_API_KEY,Value=$ANTHROPIC_API_KEY" "Namespace=aws:elasticbeanstalk:application:environment,OptionName=NOTION_CLIENT_SECRET,Value=$NOTION_CLIENT_SECRET" "Namespace=aws:elasticbeanstalk:application:environment,OptionName=GEMINI_API_KEY,Value=$GEMINI_API_KEY" "Namespace=aws:elasticbeanstalk:application:environment,OptionName=DEEPSEEK_API_KEY,Value=$DEEPSEEK_API_KEY"
+      - aws elasticbeanstalk update-environment --application-name $EB_APP_NAME --environment-name $EB_ENV_NAME --version-label $IMAGE_TAG --region $AWS_DEFAULT_REGION --option-settings "Namespace=aws:elasticbeanstalk:application:environment,OptionName=ANTHROPIC_API_KEY,Value=$ANTHROPIC_API_KEY" "Namespace=aws:elasticbeanstalk:application:environment,OptionName=NOTION_CLIENT_SECRET,Value=$NOTION_CLIENT_SECRET" "Namespace=aws:elasticbeanstalk:application:environment,OptionName=GEMINI_API_KEY,Value=$GEMINI_API_KEY" "Namespace=aws:elasticbeanstalk:application:environment,OptionName=DEEPSEEK_API_KEY,Value=$DEEPSEEK_API_KEY" "Namespace=aws:elasticbeanstalk:application:environment,OptionName=GLM_API_KEY,Value=$GLM_API_KEY"
 
 artifacts:
   files:
