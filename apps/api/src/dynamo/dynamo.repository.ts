@@ -90,7 +90,7 @@ export class DynamoRepository {
     await this.userMetaModel.create(this.clean(data), { overwrite: true });
   }
 
-  async updateUserMeta(sub: string, updates: Partial<Pick<UserMetaItem, 'hasOnboarded' | 'creditUsd' | 'updatedAt' | 'referralSlug' | 'referredBy' | 'referralCreditAwarded'>>): Promise<void> {
+  async updateUserMeta(sub: string, updates: Partial<Pick<UserMetaItem, 'hasOnboarded' | 'creditUsd' | 'updatedAt' | 'referralSlug' | 'referredBy' | 'referralCreditAwarded' | 'persona'>>): Promise<void> {
     await this.userMetaModel.update(
       { PK: this.userPk(sub), SK: 'METADATA' },
       { updatedAt: new Date().toISOString(), ...updates },

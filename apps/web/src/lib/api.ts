@@ -227,6 +227,7 @@ export interface UserProfile {
   email: string;
   hasOnboarded?: boolean;
   creditUsd?: number;
+  persona?: string;
 }
 
 export interface UsageEvent {
@@ -248,6 +249,15 @@ export function patchMe(idToken: string, updates: { hasOnboarded: boolean }): Pr
   return apiFetch<void>('/users/me', idToken, {
     method: 'PATCH',
     body: JSON.stringify(updates),
+  });
+}
+
+// Saving a non-empty persona is what activates the feature — until then the
+// backend injects nothing into LLM prompts.
+export function updatePersona(idToken: string, persona: string): Promise<void> {
+  return apiFetch<void>('/users/me', idToken, {
+    method: 'PATCH',
+    body: JSON.stringify({ persona }),
   });
 }
 

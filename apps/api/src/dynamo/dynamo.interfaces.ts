@@ -47,6 +47,9 @@ export interface UserMetaItem {
   referralSlug?: string;
   referredBy?: string;
   referralCreditAwarded?: boolean;
+  // Free-text user persona prepended to every LLM prompt. Absent until the user
+  // first saves one — the feature is inert until then.
+  persona?: string;
 }
 
 export interface ReferralItem {
