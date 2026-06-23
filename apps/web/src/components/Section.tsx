@@ -123,11 +123,19 @@ function sanitizeMindmap(src: string): string {
 // errors because `(` opens a shape. Quote the interior of each node shape (and the
 // subgraph title) so the text is literal. The `\w` lookbehind means only shapes
 // attached to a node id are touched, leaving edge labels (`-- Yes (1st Time) -->`)
-// alone. Failure-gated, so valid diagrams are never rewritten.
+// alone. Dangling/truncated edges the LLM left mid-thought — `MR --> |Label|`
+// with no target, `MR --> |...`, or a bare trailing arrow — are an unrecoverable
+// parse error and can't be drawn, so they're dropped. Only runs on the
+// post-failure retry, so valid diagrams are never rewritten.
 function sanitizeFlowchart(src: string): string {
   const q = (x: string) => x.replace(/"/g, '');
+  // An edge with a label/arrow but no target node (never matches a valid
+  // `A -->|x| B`, whose target follows the closing pipe).
+  const isBrokenEdge = (t: string) =>
+    /(?:-->|---|-\.->|==>|--[ox])\s*\|[^|]*\|?\s*$/.test(t) || /(?:-->|-\.->|==>)\s*$/.test(t);
   return src
     .split('\n')
+    .filter(line => !isBrokenEdge(line.trim()))
     .map(line => {
       const t = line.trim();
       // Subgraph titles: quote a bare title with risky punctuation, or quote
