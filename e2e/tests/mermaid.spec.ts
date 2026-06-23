@@ -98,6 +98,35 @@ test('mindmap with unquoted parens/punctuation still renders as a graph', async 
   await expect(s1.locator('.mermaid-graph svg')).toContainText('even in concept');
 });
 
+// LLMs emit flowcharts with unquoted parens in node labels (e.g.
+// `J{Issue Persists (2nd Time)?}`), a mermaid parse error since `(` opens a
+// shape. sanitizeFlowchart quotes the node-label interiors on a failure-gated
+// retry so the graph renders instead of dropping to the code view.
+test('flowchart with unquoted parens in node labels still renders as a graph', async ({ page }) => {
+  test.setTimeout(120_000);
+
+  const body = [
+    '```mermaid',
+    'graph TD',
+    '    A[User Input] --> B(LLM - Sonnet Default)',
+    '    B --> G{Issue/Bug Detected?}',
+    '    G -- Yes (1st Time) --> H[LLM - Sonnet Retry]',
+    '    H --> J{Issue Persists (2nd Time)?}',
+    '    J --> P[Knowledge Base Update (Wiki, Graphify, Mem Palace)]',
+    '```',
+  ].join('\n');
+
+  const api = baseApi();
+  await gotoWorkspace(page, api, {
+    session: fullSession({ nodes: [rootNode({ sections: [{ id: 's1', heading: 'Flow', body }] })] }),
+  });
+
+  const s1 = page.locator('.section-body[data-section-id="s1"]');
+  await s1.waitFor({ state: 'visible' });
+  await expect(s1.locator('.mermaid-block .mermaid-graph svg')).toBeVisible({ timeout: 60_000 });
+  await expect(s1.locator('.mermaid-graph svg')).toContainText('2nd Time');
+});
+
 test('non-mermaid code blocks are still rendered as highlighted code', async ({ page }) => {
   const api = baseApi();
   await gotoWorkspace(page, api, { session: mermaidSession() });

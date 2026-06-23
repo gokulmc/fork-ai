@@ -117,6 +117,32 @@ function sanitizeMindmap(src: string): string {
     .join('\n');
 }
 
+// LLMs also emit flowcharts (`graph`/`flowchart`) with unquoted parens or other
+// punctuation inside node labels — e.g. `J{Issue Persists (2nd Time)?}` — which
+// is a parse error because `(` opens a shape. Quote the interior of each node
+// shape so the text is literal. The `\w` lookbehind means only shapes attached
+// to a node id are touched, leaving edge labels (`-- Yes (1st Time) -->`) alone.
+// Failure-gated, so valid diagrams are never rewritten.
+function sanitizeFlowchart(src: string): string {
+  const q = (x: string) => x.replace(/"/g, '');
+  return src
+    .split('\n')
+    .map(line => {
+      const t = line.trim();
+      if (!t || /^(graph|flowchart|subgraph|end|classDef|class|style|linkStyle|click|direction)\b/.test(t)) return line;
+      return line
+        .replace(/(?<=\w)\{\{([^"{}]*?)\}\}/g, (_m, x) => `{{"${q(x)}"}}`)
+        .replace(/(?<=\w)\(\(([^"()]*?)\)\)/g, (_m, x) => `(("${q(x)}"))`)
+        .replace(/(?<=\w)\(\[([^"\]]*?)\]\)/g, (_m, x) => `(["${q(x)}"])`)
+        .replace(/(?<=\w)\[\[([^"\]]*?)\]\]/g, (_m, x) => `[["${q(x)}"]]`)
+        .replace(/(?<=\w)\[\(([^"()]*?)\)\]/g, (_m, x) => `[("${q(x)}")]`)
+        .replace(/(?<=\w)\{([^"{}]*?)\}/g, (_m, x) => `{"${q(x)}"}`)
+        .replace(/(?<=\w)\[([^"[\]]*?)\]/g, (_m, x) => `["${q(x)}"]`)
+        .replace(/(?<=\w)\(([^"()]*?)\)/g, (_m, x) => `("${q(x)}")`);
+    })
+    .join('\n');
+}
+
 async function renderMermaidSvg(mermaid: MermaidApi, src: string): Promise<string | null> {
   // mermaid v11 render() resolves with an error SVG instead of rejecting on
   // parse errors — use parse() to validate first so failures fall through cleanly.
@@ -132,9 +158,14 @@ async function renderMermaidSvg(mermaid: MermaidApi, src: string): Promise<strin
   const svg = await tryRender(src);
   if (svg !== null) return svg;
 
+  // Failure-gated rescue for the common LLM mistake of unquoted punctuation in
+  // node labels — retry once with a sanitised copy of the source.
   if (/^\s*mindmap\b/.test(src)) {
-    const sanitized = await tryRender(sanitizeMindmap(src));
-    if (sanitized !== null) return sanitized;
+    const retry = await tryRender(sanitizeMindmap(src));
+    if (retry !== null) return retry;
+  } else if (/^\s*(graph|flowchart)\b/.test(src)) {
+    const retry = await tryRender(sanitizeFlowchart(src));
+    if (retry !== null) return retry;
   }
 
   console.warn('[mermaid] render failed — source:\n', src);

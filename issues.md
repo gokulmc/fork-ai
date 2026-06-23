@@ -6,6 +6,11 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
+### Mermaid flowcharts with unquoted parens in node labels fell back to code instead of rendering
+- **Symptom:** LLM-generated `graph`/`flowchart` diagrams whose node labels contained parentheses or other punctuation — e.g. `J{Issue Persists (2nd Time)?}` or `P[Knowledge Base Update (Wiki, Graphify, Mem Palace)]` — showed the raw code block instead of a rendered graph. Mindmaps with the same problem already had a rescue; flowcharts did not.
+- **Cause:** In mermaid flowchart grammar `(` opens a node shape, so unquoted parens inside a `[...]`/`{...}` label are a parse error (`Parse error … got 'PS'`). `renderMermaidSvg` only ran a sanitize-and-retry for `mindmap` sources, so flowcharts fell straight through to the `null` (code-block) fallback.
+- **Fix:** Added `sanitizeFlowchart()` — a failure-gated retry that quotes the interior of each node shape (`[...]`, `(...)`, `{...}` and the double-delimiter variants) so punctuation is literal; a `\w` lookbehind restricts it to shapes attached to a node id, leaving edge labels (`-- Yes (1st Time) -->`) untouched. Wired into `renderMermaidSvg` for `graph`/`flowchart` sources, parallel to the mindmap path. Only runs after a real render failure, so valid diagrams are never rewritten; genuinely-invalid diagrams (e.g. a hallucinated `sankey-beta`/flowchart hybrid) still fall back to code. `apps/web/src/components/Section.tsx`; regression: `e2e/tests/mermaid.spec.ts`. (commit: pending)
+
 ### Mind map node text from one card bled into an adjacent sibling card
 - **Symptom:** A mind map node card showed two overlapping text strings — the correct title for that node and a partial title ("eamlined" / "ntext") from the adjacent sibling node bleeding in from the left.
 - **Cause:** SVG `foreignObject` defaults to `overflow: hidden` per spec, but Safari/WebKit does not reliably honour this. The sibling node's label text (`.mm-label` with `word-break: break-word`) could overflow the declared 192×58 `foreignObject` bounds and paint into the 18px gap between siblings and into the next node's card area. Neither `.mm-fo` nor `.mm-card` had explicit `overflow: hidden` in CSS.
