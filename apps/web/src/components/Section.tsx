@@ -118,18 +118,32 @@ function sanitizeMindmap(src: string): string {
 }
 
 // LLMs also emit flowcharts (`graph`/`flowchart`) with unquoted parens or other
-// punctuation inside node labels — e.g. `J{Issue Persists (2nd Time)?}` — which
-// is a parse error because `(` opens a shape. Quote the interior of each node
-// shape so the text is literal. The `\w` lookbehind means only shapes attached
-// to a node id are touched, leaving edge labels (`-- Yes (1st Time) -->`) alone.
-// Failure-gated, so valid diagrams are never rewritten.
+// punctuation inside node labels — e.g. `J{Issue Persists (2nd Time)?}` — and in
+// subgraph titles — e.g. `subgraph Knowledge Base (Human & LLM)` — which are parse
+// errors because `(` opens a shape. Quote the interior of each node shape (and the
+// subgraph title) so the text is literal. The `\w` lookbehind means only shapes
+// attached to a node id are touched, leaving edge labels (`-- Yes (1st Time) -->`)
+// alone. Failure-gated, so valid diagrams are never rewritten.
 function sanitizeFlowchart(src: string): string {
   const q = (x: string) => x.replace(/"/g, '');
   return src
     .split('\n')
     .map(line => {
       const t = line.trim();
-      if (!t || /^(graph|flowchart|subgraph|end|classDef|class|style|linkStyle|click|direction)\b/.test(t)) return line;
+      // Subgraph titles: quote a bare title with risky punctuation, or quote
+      // inside the `id[Title]` form. Already-quoted / safe titles are left alone.
+      if (/^subgraph\b/.test(t)) {
+        const sg = t.match(/^subgraph\s+(.+?)\s*$/);
+        if (!sg) return line; // anonymous `subgraph`
+        const indent = line.match(/^\s*/)![0];
+        const title = sg[1];
+        if (title.startsWith('"')) return line;
+        const br = title.match(/^([\w-]+)\s*\[(.+)\]$/);
+        if (br) return `${indent}subgraph ${br[1]}["${q(br[2])}"]`;
+        if (/[^\w\s&-]/.test(title)) return `${indent}subgraph "${q(title)}"`;
+        return line;
+      }
+      if (!t || /^(graph|flowchart|end|classDef|class|style|linkStyle|click|direction)\b/.test(t)) return line;
       return line
         .replace(/(?<=\w)\{\{([^"{}]*?)\}\}/g, (_m, x) => `{{"${q(x)}"}}`)
         .replace(/(?<=\w)\(\(([^"()]*?)\)\)/g, (_m, x) => `(("${q(x)}"))`)
