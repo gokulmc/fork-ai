@@ -153,6 +153,34 @@ test('flowchart with parens in a subgraph title still renders as a graph', async
   await expect(s1.locator('.mermaid-graph svg')).toContainText('Human & LLM');
 });
 
+// LLMs sometimes leave an edge dangling/truncated — `MR --> |Label|` with no
+// target node, or `MR --> |...` — which is an unrecoverable parse error.
+// sanitizeFlowchart drops those lines on the retry so the rest still renders.
+test('flowchart with dangling/truncated edges still renders (broken edges dropped)', async ({ page }) => {
+  test.setTimeout(120_000);
+
+  const body = [
+    '```mermaid',
+    'graph TD',
+    '    A[Monorepo Root] --> B[Web App]',
+    '    A --> |Nested Context Files|',
+    '    B --> C[Backend (Service)]',
+    '    A --> |...',
+    '```',
+  ].join('\n');
+
+  const api = baseApi();
+  await gotoWorkspace(page, api, {
+    session: fullSession({ nodes: [rootNode({ sections: [{ id: 's1', heading: 'Flow', body }] })] }),
+  });
+
+  const s1 = page.locator('.section-body[data-section-id="s1"]');
+  await s1.waitFor({ state: 'visible' });
+  await expect(s1.locator('.mermaid-block .mermaid-graph svg')).toBeVisible({ timeout: 60_000 });
+  // the valid nodes survive; the broken edge label is gone
+  await expect(s1.locator('.mermaid-graph svg')).toContainText('Backend');
+});
+
 test('non-mermaid code blocks are still rendered as highlighted code', async ({ page }) => {
   const api = baseApi();
   await gotoWorkspace(page, api, { session: mermaidSession() });
