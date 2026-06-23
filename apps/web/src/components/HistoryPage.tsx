@@ -1,5 +1,6 @@
 'use client';
-import { ArrowLeft, Highlighter, GitBranch, Link as LinkIcon, ArrowUpRight } from './Icons';
+import { useState } from 'react';
+import { ArrowLeft, Highlighter, GitBranch, Link as LinkIcon, ArrowUpRight, Trash } from './Icons';
 import { HistoryBubbles } from './HistoryBubbles';
 import { ForkTraceGame } from './ForkTraceGame';
 import type { SessionSummary } from '@/lib/api';
@@ -9,6 +10,7 @@ interface HistoryPageProps {
   sessions: SessionSummary[];
   loading: boolean;
   onLoadSession: (sessionId: string) => void;
+  onDeleteSession: (sessionId: string) => void;
   onBack: () => void;
 }
 
@@ -31,7 +33,8 @@ function dividerLabel(dayIso: string): string {
   return d.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
-export function HistoryPage({ sessions, loading, onLoadSession, onBack }: HistoryPageProps) {
+export function HistoryPage({ sessions, loading, onLoadSession, onDeleteSession, onBack }: HistoryPageProps) {
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
   const groups: Array<{ day: string; items: SessionSummary[] }> = [];
   for (const s of sessions) {
     const day = dayKey(s.updatedAt);
@@ -82,12 +85,31 @@ export function HistoryPage({ sessions, loading, onLoadSession, onBack }: Histor
                     {group.items.map(s => {
                       const sharedByMe = !!s.shareToken;
                       const sharedWithMe = !!s.ownerSub;
+                      const isDeleting = deletingIds.has(s.sessionId);
                       return (
-                        <button
+                        <div
                           key={s.sessionId}
                           className="session-card"
+                          role="button"
+                          tabIndex={0}
                           onClick={() => onLoadSession(s.sessionId)}
+                          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') onLoadSession(s.sessionId); }}
                         >
+                          <button
+                            className="session-card-delete"
+                            aria-label="Delete session"
+                            title="Delete session"
+                            disabled={isDeleting}
+                            onClick={e => {
+                              e.stopPropagation();
+                              setDeletingIds(prev => new Set(prev).add(s.sessionId));
+                              onDeleteSession(s.sessionId);
+                            }}
+                          >
+                            {isDeleting
+                              ? <span className="spinner" style={{ width: 12, height: 12 }} />
+                              : <Trash size={13} />}
+                          </button>
                           <span className="session-card-emoji">{s.emoji}</span>
                           <div className="session-card-body">
                             <div className="session-card-title">{s.title}</div>
@@ -111,7 +133,7 @@ export function HistoryPage({ sessions, loading, onLoadSession, onBack }: Histor
                               )}
                             </div>
                           </div>
-                        </button>
+                        </div>
                       );
                     })}
                   </div>

@@ -90,6 +90,7 @@ import {
   toHlMap,
   toHighlightRecords,
   deleteHighlight,
+  deleteSession as apiDeleteSession,
   getNotionStatus,
   getNotionAuthUrl,
   searchNotionPages,
@@ -120,8 +121,9 @@ import { ShareButton } from './ShareButton';
 import { MindMapPill } from './MindMapPill';
 import {
   Search, Bookmark, ChevronRight, Sparkles, CornerDownRight, Hash,
-  Quote, AlertCircle, ArrowUpRight, Pencil, Trash, Clock, LogIn,
+  Quote, AlertCircle, ArrowUpRight, Pencil, Trash, Clock, LogIn, FileText, Home,
 } from './Icons';
+import { exportNodePdf } from '@/lib/sessionPdf';
 
 // Code-split the session-only heavyweights out of the initial bundle: Section
 // drags in marked + katex + highlight.js (~300KB) and MindMap the SVG engine —
@@ -277,7 +279,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   // Session list (shown on history page)
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
-
+  const [pdfExporting, setPdfExporting] = useState(false);
   // Active research session
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [nodes, setNodes] = useState<Record<string, ForkNode>>({});
@@ -817,6 +819,25 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       }
     }
   }, [sessionId, idToken, guestToken]);
+
+  const handleDeleteSession = useCallback(async (sid: string) => {
+    if (!idToken) return;
+    setSessions(prev => prev.filter(s => s.sessionId !== sid));
+    try {
+      await apiDeleteSession(idToken, sid);
+      if (sessionId === sid) {
+        setSessionId(null);
+        setNodes({});
+        setRootId(null);
+        setActiveId(null);
+        setView('landing');
+      }
+    } catch (err) {
+      console.error('Failed to delete session', err);
+      // Restore removed session by re-fetching
+      listSessions(idToken).then(setSessions).catch(() => undefined);
+    }
+  }, [idToken, sessionId]);
 
   const toggleStar = useCallback((node: ForkNode) => {
     if (node.loading || node.error) return;
@@ -1670,6 +1691,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         sessions={sessions}
         loading={loadingSessions}
         onLoadSession={loadSession}
+        onDeleteSession={handleDeleteSession}
         onBack={() => setView('landing')}
       />
     );
@@ -1718,6 +1740,11 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
           })}
         </div>
         <div className="tools">
+          {isNarrow && Object.keys(nodes).length > 0 && (
+            <button className="icon-btn" onClick={goHome} title="New research">
+              <Home size={14} /> Home
+            </button>
+          )}
           {idToken && (
             <button data-tour="tour-history" className="icon-btn" onClick={() => { setView('history'); setRootId(null); setNodes({}); setSessionId(null); }} title="Research history">
               <Clock size={14} /> History
@@ -1801,6 +1828,23 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
                 {active.sources?.length ? <span className="pill pill-search">🔍 Web search</span> : null}
                 {titleAskVisible && !active.loading && !active.error && active.sections.length > 0 && (
                   <button
+                    className="pill pill-pdf"
+                    title="Export to PDF"
+                    disabled={pdfExporting}
+                    onClick={async () => {
+                      setPdfExporting(true);
+                      try { await exportNodePdf(active); }
+                      catch (err) { console.error('PDF export failed', err); }
+                      finally { setPdfExporting(false); }
+                    }}
+                  >
+                    {pdfExporting
+                      ? <><span className="spinner" style={{ width: 10, height: 10 }} /> PDF</>
+                      : <><FileText size={11} className="ic" /> PDF</>}
+                  </button>
+                )}
+                {titleAskVisible && !active.loading && !active.error && active.sections.length > 0 && (
+                  <button
                     ref={titleAskBtnRef}
                     className="pill pill-ask"
                     onMouseEnter={() => { if (titleAskTimer.current) clearTimeout(titleAskTimer.current); }}
@@ -1840,7 +1884,15 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
               </div>
               {active.lede && <p className="ws-lede">{stripCite(active.lede)}</p>}
               {active.fromText && (
-                <div className="inline-callout" style={{ marginBottom: 24 }}>
+                <div
+                  className="inline-callout inline-callout--nav"
+                  style={{ marginBottom: 24, cursor: 'pointer' }}
+                  role="button"
+                  tabIndex={0}
+                  title="Go to parent node"
+                  onClick={() => active.parentId && setActiveId(active.parentId)}
+                  onKeyDown={e => { if ((e.key === 'Enter' || e.key === ' ') && active.parentId) setActiveId(active.parentId); }}
+                >
                   <Quote size={18} className="ic" />
                   <div className="body">
                     <div className="kicker">{active.kind === 'ASK' ? 'Branched from' : 'Expanded from'}</div>

@@ -10,6 +10,35 @@ function TweakSection({ label }: { label: string }) {
   return <div className="twk-sect">{label}</div>;
 }
 
+function TweakSubSection({ label }: { label: string }) {
+  return <div className="twk-subsect">{label}</div>;
+}
+
+function TweakAccordion({ label, open, onToggle, children }: { label: string; open: boolean; onToggle: () => void; children: React.ReactNode }) {
+  return (
+    <>
+      <button type="button" className="twk-accordion-hd" onClick={onToggle} aria-expanded={open}>
+        <span>{label}</span>
+        <svg
+          className="twk-accordion-chevron"
+          viewBox="0 0 24 24"
+          width="13"
+          height="13"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{ transform: open ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s ease' }}
+        >
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+      </button>
+      {open && <div className="twk-accordion-body">{children}</div>}
+    </>
+  );
+}
+
 function TweakRow({
   label,
   value,
@@ -217,6 +246,7 @@ interface TweaksPanelProps {
 
 export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, userEmail, userName }: TweaksPanelProps) {
   const [open, setOpen] = useState(false);
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [howToOpen, setHowToOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
   const [supportName, setSupportName] = useState(userName ?? '');
@@ -314,33 +344,34 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, 
             >✕</button>
           </div>
           <div className="twk-body">
-            <TweakSection label="Appearance" />
-            <TweakRadio
-              label="Theme"
-              value={tweaks.theme}
-              options={[{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }]}
-              onChange={v => setTweak('theme', v as Tweaks['theme'])}
-            />
-            <TweakRadio
-              label="Density"
-              value={tweaks.density}
-              options={[{ value: 'comfortable', label: 'Cozy' }, { value: 'compact', label: 'Compact' }]}
-              onChange={v => setTweak('density', v as Tweaks['density'])}
-            />
-            <TweakSection label="Typography" />
-            <TweakSelect
-              label="Font pairing"
-              value={tweaks.fontPair}
-              options={fontPairOptions}
-              onChange={v => setTweak('fontPair', v)}
-            />
-            <TweakSection label="Mind map" />
-            <TweakRadio
-              label="Layout"
-              value={tweaks.mapLayout}
-              options={[{ value: 'horizontal', label: 'Horizontal' }, { value: 'vertical', label: 'Vertical' }]}
-              onChange={v => setTweak('mapLayout', v as Tweaks['mapLayout'])}
-            />
+            <TweakAccordion label="Appearance" open={appearanceOpen} onToggle={() => setAppearanceOpen(o => !o)}>
+              <TweakRadio
+                label="Theme"
+                value={tweaks.theme}
+                options={[{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }]}
+                onChange={v => setTweak('theme', v as Tweaks['theme'])}
+              />
+              <TweakRadio
+                label="Density"
+                value={tweaks.density}
+                options={[{ value: 'comfortable', label: 'Cozy' }, { value: 'compact', label: 'Compact' }]}
+                onChange={v => setTweak('density', v as Tweaks['density'])}
+              />
+              <TweakSubSection label="Typography" />
+              <TweakSelect
+                label="Font pairing"
+                value={tweaks.fontPair}
+                options={fontPairOptions}
+                onChange={v => setTweak('fontPair', v)}
+              />
+              <TweakSubSection label="Mind Map" />
+              <TweakRadio
+                label="Layout"
+                value={tweaks.mapLayout}
+                options={[{ value: 'horizontal', label: 'Horizontal' }, { value: 'vertical', label: 'Vertical' }]}
+                onChange={v => setTweak('mapLayout', v as Tweaks['mapLayout'])}
+              />
+            </TweakAccordion>
             <TweakSection label="Content" />
             <TweakRadio
               label="Answer style"

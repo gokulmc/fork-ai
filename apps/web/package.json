@@ -16,6 +16,8 @@
     "@sentry/nextjs": "^10.56.0",
     "@types/mdx": "^2.0.14",
     "highlight.js": "^11.11.1",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
     "katex": "^0.17.0",
     "marked": "^15.0.12",
     "marked-katex-extension": "^5.1.10",
