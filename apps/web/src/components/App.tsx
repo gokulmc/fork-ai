@@ -508,8 +508,37 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
 
   // ── Rehydrate a session from the API ─────────────────────────────────────
 
+  // Tracks whether the workspace has already been painted from IndexedDB so
+  // loadSession can skip the loadingRoot flash when auth settles later.
+  const hasCachePaintedRef = useRef(false);
+
+  // Pre-auth cache paint: reads IndexedDB before useSession() settles (~1.5s delay).
+  // On a warm cache this makes the workspace visible in <300ms instead of ~2.5s.
+  // The auth-gated loadSession still runs afterwards to get the authoritative API data.
+  useEffect(() => {
+    const savedSession = localStorage.getItem('fork.ai.session');
+    if (!savedSession) return;
+    getCachedSession(savedSession).then(cached => {
+      if (!cached || !Object.keys(cached.nodes).length) return;
+      if (hasCachePaintedRef.current) return; // auth-gated path beat us
+      hasCachePaintedRef.current = true;
+      const savedNode = localStorage.getItem('fork.ai.node') ?? undefined;
+      const activeTarget = (savedNode && cached.nodes[savedNode]) ? savedNode : cached.rootId;
+      setSessionId(cached.sessionId);
+      setNodes(cached.nodes);
+      setRootId(cached.rootId);
+      setActiveId(activeTarget);
+      setAnnotations(cached.annotations);
+      setPersistentHl(cached.persistentHl);
+      setHighlightsList(cached.highlightsList);
+      setNotionSavedUrl(cached.notionPageUrl);
+      setLoadingRoot(false);
+    }).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps — intentionally once on mount
+
   const loadSession = useCallback(async (sid: string, targetNodeId?: string) => {
-    setLoadingRoot(true);
+    // Skip the loading overlay if the early-paint already showed the workspace.
+    if (!hasCachePaintedRef.current) setLoadingRoot(true);
     // Cache-first: paint the last local snapshot instantly (IndexedDB), then let
     // the network result below — always authoritative — replace it when it lands.
     let paintedFromCache = false;
@@ -517,6 +546,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       const cached = await getCachedSession(sid);
       if (cached && Object.keys(cached.nodes).length) {
         const activeTarget = (targetNodeId && cached.nodes[targetNodeId]) ? targetNodeId : cached.rootId;
+        hasCachePaintedRef.current = true;
         setSessionId(cached.sessionId);
         setNodes(cached.nodes);
         setRootId(cached.rootId);

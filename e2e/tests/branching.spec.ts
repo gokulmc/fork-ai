@@ -81,6 +81,8 @@ test.describe('Branching — Go deeper & Ask AI', () => {
     await page.locator('.hl-menu--visible button', { hasText: 'Ask AI' }).click();
     const pop = page.locator('.followup-pop');
     await pop.waitFor();
+    // hlIn takes 180ms — wait for it to finish so opacityBefore = 1.0 (not mid-open).
+    await expect(pop).toHaveCSS('opacity', '1');
     await pop.locator('textarea').fill('What pigments are involved?');
 
     const before = await pop.boundingBox();
