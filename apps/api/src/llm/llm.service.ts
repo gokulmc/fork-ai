@@ -1,7 +1,7 @@
 import { HttpException, Injectable, InternalServerErrorException, Logger, UnprocessableEntityException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
-import { LlmResponse, LlmSection, LlmUsage, CitationSource } from './llm.types';
+import { LlmResponse, LlmSection, LlmUsage, CitationSource, OutlineNode, DocumentOutline } from './llm.types';
 import { ROOT_MODEL, BRANCH_DEFAULT_MODEL, providerNameFor, ProviderName, supportsWebSearch, outputBudget, NON_STREAMING_MAX_TOKENS } from './models';
 import { LlmProvider } from './providers/provider.types';
 import { AnthropicProvider } from './providers/anthropic.provider';
@@ -324,6 +324,103 @@ You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase 
     return this.callJson(prompt + avoidEmojiNote(usedEmojis), webSearch, model, { authed, verbose, boost });
   }
 
+  // ── Document → mind-map ───────────────────────────────────────────────────
+  // Read the uploaded document ONCE and design the whole tree: a root overview
+  // plus descendant topics, each with an information-dense `description`. The
+  // per-node content pass (generateFromBrief) expands those descriptions without
+  // re-reading the document. Always runs on ROOT_MODEL (strong comprehension).
+  async extractDocumentOutline(
+    documentText: string,
+    maxNodes = 8,
+    model: string = ROOT_MODEL,
+  ): Promise<DocumentOutline> {
+    const prompt = `You are building a mind map from a document. Read it and design a TREE of topics.
+
+DOCUMENT:
+"""
+${documentText}
+"""
+
+Return ONLY valid JSON, no prose, no markdown fences. Shape:
+{
+  "title": "<=5 words naming the document's overall subject",
+  "emoji": "single emoji for the whole document",
+  "lede": "one sentence (max 25 words) framing the document",
+  "rootDescription": "3-5 sentence DENSE overview of the whole document: its thesis, scope, and main takeaways — enough to write an overview without re-reading",
+  "nodes": [
+    {
+      "tempId": "short id you assign, e.g. t1",
+      "parentTempId": "tempId of the parent topic, or null to attach directly under the root",
+      "title": "<=5 words naming this subtopic",
+      "emoji": "single distinct emoji",
+      "description": "2-4 sentence INFORMATION-DENSE brief of what the document says about THIS subtopic: key claims, terms, figures, facts — enough for a later step to expand it into full prose without re-reading the document"
+    }
+  ]
+}
+
+Rules:
+- Produce between 3 and ${maxNodes} subtopic nodes. Let the document's structure decide the count and shape — do not pad.
+- Build a real TREE up to 3 levels deep: nest a node under another by setting its parentTempId to that node's tempId; attach top-level themes directly under the root with parentTempId null. Not every node needs children.
+- Every emoji must be a single DISTINCT emoji — do not repeat one across nodes.
+- Descriptions must be self-contained and factual to the document; the expansion step will NOT see the document, only your description.`;
+
+    const { rawText, usage, truncated } = await this.providerFor(model).complete(prompt, {
+      model,
+      maxTokens: 4096,
+      webSearch: false,
+    });
+    if (truncated) {
+      throw new UnprocessableEntityException({
+        message: 'The document outline was cut off — the document may be too large',
+        code: 'OUTPUT_TRUNCATED',
+      });
+    }
+    return { ...this.parseOutline(rawText), usage };
+  }
+
+  // Expand one outline topic into a full sectioned note, grounded ONLY in its
+  // brief + ancestor briefs (the raw document is never re-sent). Reuses the
+  // shared callJson path so budgets, parsing, and citations behave like a branch.
+  async generateFromBrief(
+    ancestors: Array<{ title: string; description: string }>,
+    title: string,
+    description: string,
+    sectionCount = 4,
+    webSearch = false,
+    model: string = BRANCH_DEFAULT_MODEL,
+    verbose = false,
+    authed = false,
+    persona?: string,
+  ): Promise<LlmResponse> {
+    const trail = ancestors.length
+      ? `Context trail (document → parent topic):\n${ancestors
+          .map((a, i) => `${i === 0 ? 'Document' : 'Subtopic'}: "${a.title}" — ${a.description}`)
+          .join('\n')}\n\n`
+      : 'This is the ROOT overview note of a mind map built from a document.\n\n';
+
+    const intro = `${personaPreamble(persona)}You are writing one note in a mind map built from a document. ${trail}Write the note for the topic "${title}".
+Source brief — cover exactly this, expanding it faithfully into full prose; do NOT invent facts beyond it, and do NOT repeat what ancestor topics already covered:
+"${description}"`;
+
+    const prompt = verbose
+      ? `${intro}
+
+Write a thorough, well-structured note — like a chat assistant answering in depth. Use rich markdown (headings, lists, bold, code, tables) inside one continuous answer, NOT the app's section cards.
+
+${VERBOSE_SCHEMA}
+
+The "title" should be a 5-word-max phrase capturing the topic.`
+      : `${intro}
+
+Produce a focused note with as many sections as the brief warrants — no more than ${sectionCount}. Do not pad; fewer sections is better when the scope is narrow. Each section should be 80-180 words.
+
+${SECTIONS_SCHEMA}
+
+You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase capturing the topic. Escape double-quotes inside JSON strings.`;
+
+    return this.callJson(prompt, webSearch, model, { authed, verbose });
+  }
+
   async getTrendingTopics(): Promise<string[]> {
     const today = new Date().toISOString().slice(0, 10);
     const prompt = `Today is ${today}. Use web search to find 4 trending topics from RIGHT NOW in science, technology, or politics/world affairs.
@@ -468,5 +565,36 @@ Rules:
       throw new Error('Invalid LLM response shape — missing sections array');
     }
     return parsed;
+  }
+
+  private parseOutline(raw: string): Omit<DocumentOutline, 'usage'> {
+    let text = raw.trim();
+    text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '');
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start >= 0 && end > start) text = text.slice(start, end + 1);
+
+    const parsed = JSON.parse(text) as Partial<DocumentOutline>;
+    if (!parsed.title || !parsed.lede || !Array.isArray(parsed.nodes)) {
+      throw new Error('Invalid document outline shape — missing title/lede/nodes');
+    }
+    const nodes: OutlineNode[] = parsed.nodes
+      .filter((n): n is OutlineNode => !!n && typeof n.tempId === 'string' && typeof n.title === 'string')
+      .map((n) => ({
+        tempId: n.tempId,
+        parentTempId: n.parentTempId ?? null,
+        title: n.title,
+        emoji: n.emoji || '',
+        // Fall back to the title so a node never carries an empty brief into the expansion step.
+        description: n.description || n.title,
+      }));
+    if (!nodes.length) throw new Error('Document outline produced no topics');
+    return {
+      title: parsed.title,
+      emoji: parsed.emoji || '',
+      lede: parsed.lede,
+      rootDescription: parsed.rootDescription || parsed.lede,
+      nodes,
+    };
   }
 }

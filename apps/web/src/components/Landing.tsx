@@ -1,10 +1,12 @@
 'use client';
-import { useState } from 'react';
-import { Search, ArrowRight, ArrowUpRight, Clock } from './Icons';
+import { useRef, useState } from 'react';
+import { Search, ArrowRight, ArrowUpRight, Clock, FileText } from './Icons';
 import { CookiePreferencesLink } from './CookiePreferencesLink';
+import { extractText } from '@/lib/extractDocument';
 
 interface LandingProps {
   onSubmit: (query: string) => void;
+  onSubmitDocument?: (text: string, fileName: string) => void;
   loading: boolean;
   onShowHistory: () => void;
   outOfCredit?: boolean;
@@ -13,16 +15,48 @@ interface LandingProps {
   onLogin?: () => void;
 }
 
-export function Landing({ onSubmit, loading, onShowHistory, outOfCredit, initialTopics = [], loggedIn, onLogin }: LandingProps) {
+export function Landing({ onSubmit, onSubmitDocument, loading, onShowHistory, outOfCredit, initialTopics = [], loggedIn, onLogin }: LandingProps) {
   const [q, setQ] = useState('');
   const [leaving, setLeaving] = useState(false);
+  const [reading, setReading] = useState(false);
+  const [ocrProgress, setOcrProgress] = useState<{ msg: string; pct: number } | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const onGo = () => {
     if (!q.trim() || loading) return;
     setLeaving(true);
-    // Keep this in sync with the .landing transition in globals.css — it blocks
-    // the network request, so it must stay short (~animation + one paint).
     setTimeout(() => onSubmit(q.trim()), 100);
+  };
+
+  const onPickFile = () => {
+    if (loading || reading) return;
+    if (!loggedIn) { onLogin?.(); return; }
+    setFileError(null);
+    fileRef.current?.click();
+  };
+
+  const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setReading(true);
+    setOcrProgress(null);
+    setFileError(null);
+    try {
+      const { text } = await extractText(file, (msg, pct) => setOcrProgress({ msg, pct }));
+      if (text.trim().length < 200) {
+        setFileError("Couldn't extract readable text — try a clearer scan or a different file.");
+        return;
+      }
+      setLeaving(true);
+      setTimeout(() => onSubmitDocument?.(text, file.name), 100);
+    } catch (err) {
+      setFileError(err instanceof Error ? err.message : 'Could not read that file');
+    } finally {
+      setReading(false);
+      setOcrProgress(null);
+    }
   };
 
   return (
@@ -55,6 +89,23 @@ export function Landing({ onSubmit, loading, onShowHistory, outOfCredit, initial
             onChange={e => setQ(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && onGo()}
           />
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/pdf,text/plain,text/markdown,.pdf,.txt,.md,image/*"
+            hidden
+            onChange={onFileChange}
+          />
+          <button
+            type="button"
+            className="qb-file"
+            disabled={loading || reading}
+            onClick={onPickFile}
+            title="Build a mind map from a PDF, image, or text file"
+            aria-label="Upload a PDF, image, or text file"
+          >
+            {reading ? <span className="spinner" style={{ width: 14, height: 14 }} /> : <FileText size={18} />}
+          </button>
           <button className="submit" disabled={!q.trim() || loading} onClick={onGo}>
             {loading ? (
               <><span className="spinner" style={{ width: 11, height: 11 }} /> Thinking…</>
@@ -63,9 +114,23 @@ export function Landing({ onSubmit, loading, onShowHistory, outOfCredit, initial
             )}
           </button>
         </div>
-        {outOfCredit && (
+
+        {ocrProgress && (
+          <div className="ocr-progress">
+            <div className="ocr-progress-track">
+              <div className="ocr-progress-bar" style={{ width: `${Math.round(ocrProgress.pct * 100)}%` }} />
+            </div>
+            <div className="ocr-progress-label">{ocrProgress.msg}</div>
+          </div>
+        )}
+        {outOfCredit && !ocrProgress && (
           <div style={{ marginTop: 10, fontSize: 11, color: '#c0392b', letterSpacing: '0.04em', fontFamily: "ui-monospace,'JetBrains Mono','SF Mono',Menlo,monospace" }}>
             Out of credit — open Billing in account settings to recharge.
+          </div>
+        )}
+        {fileError && (
+          <div style={{ marginTop: 10, fontSize: 11, color: '#c0392b', letterSpacing: '0.04em', fontFamily: "ui-monospace,'JetBrains Mono','SF Mono',Menlo,monospace" }}>
+            {fileError}
           </div>
         )}
         <div className="examples">

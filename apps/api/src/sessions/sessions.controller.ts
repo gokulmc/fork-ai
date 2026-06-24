@@ -6,6 +6,7 @@ import { CurrentUser } from '@/auth/current-user.decorator';
 import { CognitoUser } from '@/auth/jwt.strategy';
 import { SessionsService } from './sessions.service';
 import { CreateSessionDto } from './dto/create-session.dto';
+import { CreateDocumentDto } from './dto/create-document.dto';
 import { UpdateSessionDto } from './dto/update-session.dto';
 
 @ApiTags('sessions')
@@ -35,6 +36,31 @@ export class SessionsController {
     } catch (err) {
       // Intentional HttpExceptions (out of credit, trial cap) pass through with
       // their status; anything else is sanitized so internals never reach the client.
+      const isHttp = err instanceof HttpException;
+      send({
+        type: 'error',
+        message: isHttp ? err.message : friendlyLlmError(err as Error),
+        status: isHttp ? err.getStatus() : 500,
+      });
+    } finally {
+      res.end();
+    }
+  }
+
+  @Post('document/stream')
+  @Header('Content-Type', 'text/event-stream')
+  @Header('Cache-Control', 'no-cache')
+  @Header('Connection', 'keep-alive')
+  @ApiOperation({ summary: 'Build a whole mind-map from an uploaded document — streaming SSE (init → skeleton → node-done… → done)' })
+  async createDocumentStream(
+    @CurrentUser() user: CognitoUser,
+    @Body() dto: CreateDocumentDto,
+    @Res() res: Response,
+  ) {
+    const send = (data: object) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+    try {
+      await this.sessionsService.createDocumentStreaming(user.sub, dto, send);
+    } catch (err) {
       const isHttp = err instanceof HttpException;
       send({
         type: 'error',

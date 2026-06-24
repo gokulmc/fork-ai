@@ -78,6 +78,7 @@ import {
   getSession,
   createSessionStream,
   createTrialSessionStream,
+  createDocumentSessionStream,
   createNode,
   renameNode as apiRenameNode,
   setNodeStar as apiSetNodeStar,
@@ -104,6 +105,7 @@ import {
   registerReferral,
   ApiError,
   type SessionSummary,
+  type DocumentStreamEvent,
   type NotionPage,
 } from '@/lib/api';
 import { OnboardingTour } from './OnboardingTour';
@@ -1012,6 +1014,138 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     }
   }, [idToken, guestToken]);
 
+  // ── Document upload: build a whole mind-map in one stream ──────────────────
+  // Authed-only (Landing routes guests to login). Mirrors submitRootQuery's
+  // optimistic/persist-first shape, but the backend streams the whole tree:
+  // init → skeleton (all nodes loading at once) → node-done (root→leaf) → done.
+  const submitDocument = useCallback(async (documentText: string, fileName: string) => {
+    if (!idToken) return;
+
+    const tempRootId = uid();
+    const optimisticRoot: ForkNode = {
+      id: tempRootId,
+      parentId: null,
+      kind: 'QUERY',
+      title: fileName.replace(/\.[^.]+$/, ''),
+      emoji: null,
+      query: fileName,
+      lede: '',
+      sections: [],
+      fromSection: null,
+      fromText: null,
+      createdAt: Date.now(),
+      loading: true,
+    };
+
+    setNodes({ [tempRootId]: optimisticRoot });
+    setRootId(tempRootId);
+    setActiveId(tempRootId);
+    setSessionId(null);
+    setAnnotations([]);
+    setPersistentHl({});
+    setHighlightsList([]);
+    setLoadingRoot(true);
+
+    let rootNodeId = tempRootId;
+    track('document_upload', { chars: documentText.length });
+
+    try {
+      await createDocumentSessionStream(
+        idToken,
+        documentText,
+        fileName,
+        tweaksRef.current.maxSections,
+        tweaksRef.current.webSearch,
+        tweaksRef.current.answerStyle === 'verbose',
+        tweaksRef.current.branchModel,
+        (event: DocumentStreamEvent) => {
+          if (event.type === 'init') {
+            // Session persisted up-front; adopt its id (URL hash) and swap the
+            // optimistic temp root for the real one so a refresh mid-extraction restores it.
+            rootNodeId = event.nodeId;
+            setSessionId(event.sessionId);
+            setNodes(prev => {
+              const node = prev[tempRootId];
+              if (!node) return prev;
+              const next: Record<string, ForkNode> = {};
+              for (const [k, v] of Object.entries(prev)) {
+                next[k === tempRootId ? event.nodeId : k] = k === tempRootId ? { ...node, id: event.nodeId } : v;
+              }
+              return next;
+            });
+            setRootId(event.nodeId);
+            setActiveId(event.nodeId);
+          } else if (event.type === 'skeleton') {
+            // Render the whole tree shape at once — every node loading.
+            const map: Record<string, ForkNode> = {};
+            event.nodes.forEach((n, i) => {
+              map[n.id] = {
+                id: n.id,
+                parentId: n.parentId,
+                kind: n.kind,
+                title: n.title,
+                emoji: n.emoji,
+                query: n.title,
+                lede: '',
+                sections: [],
+                fromSection: null,
+                fromText: null,
+                createdAt: Date.now() + i, // preserve server BFS order for sibling sort
+                loading: true,
+              };
+            });
+            setNodes(map);
+            setRootId(rootNodeId);
+            setActiveId(rootNodeId);
+          } else if (event.type === 'node-done') {
+            const node = toForkNode(event.node);
+            setNodes(prev => ({ ...prev, [node.id]: node }));
+          } else if (event.type === 'done') {
+            setSessionId(event.sessionId);
+            refreshCredit();
+            setSessions(s => {
+              if (s.some(x => x.sessionId === event.sessionId)) return s;
+              return [{
+                sessionId: event.sessionId,
+                title: event.title,
+                emoji: event.emoji,
+                lede: event.lede,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                nodeCount: event.nodeCount,
+                highlightCount: 0,
+              }, ...s];
+            });
+          }
+        },
+      );
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 402) {
+        setRootQueryOutOfCredit(true);
+        setNodes({});
+        setRootId(null);
+        setActiveId(null);
+      } else {
+        console.error('Failed to build session from document', err);
+        const { msg, status } = nodeErrorDisplay(err, false);
+        track('node_error', { kind: 'QUERY', status, message: msg });
+        setNodes(prev => prev[rootNodeId]
+          ? { ...prev, [rootNodeId]: { ...prev[rootNodeId], loading: false, error: msg, errorStatus: status } }
+          : prev);
+      }
+    } finally {
+      setLoadingRoot(false);
+      // Clear any lingering loading flags (e.g. a node that never streamed back).
+      setNodes(prev => {
+        const entries = Object.entries(prev);
+        if (!entries.some(([, v]) => v.loading)) return prev;
+        const next: Record<string, ForkNode> = {};
+        for (const [k, v] of entries) next[k] = v.loading ? { ...v, loading: false } : v;
+        return next;
+      });
+    }
+  }, [idToken]);
+
   // ── Branch: Go Deeper ─────────────────────────────────────────────────────
 
   const expandSectionAsChild = useCallback(async (parentNodeId: string, section: ForkNode['sections'][0], reuseNodeId?: string, boost?: boolean) => {
@@ -1698,6 +1832,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     else inner = (
       <Landing
         onSubmit={q => { setRootQueryOutOfCredit(false); submitRootQuery(q); }}
+        onSubmitDocument={(text, fileName) => { setRootQueryOutOfCredit(false); submitDocument(text, fileName); }}
         loading={loadingRoot}
         onShowHistory={() => setView('history')}
         outOfCredit={rootQueryOutOfCredit}
