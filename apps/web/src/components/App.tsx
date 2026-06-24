@@ -144,8 +144,8 @@ const TWEAK_DEFAULTS = {
   fontPair: 'newsreader-geist',
   answerStyle: 'verbose' as const,
   maxSections: 6,
-  webSearch: true,
-  branchModel: 'haiku' as const,
+  webSearch: false,
+  branchModel: 'gemini-flash-lite' as const,
 };
 
 const FONT_PAIRS: Record<string, { serif: string; sans: string; label: string }> = {
