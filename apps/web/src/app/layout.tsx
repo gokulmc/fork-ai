@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import Script from 'next/script';
 import './globals.css';
 import { Providers } from '@/components/Providers';
 import { InstallPrompt } from '@/components/InstallPrompt';
@@ -82,6 +83,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body>
+        <Script src="https://www.googletagmanager.com/gtag/js?id=AW-18267828347" strategy="afterInteractive" />
+        <Script id="gtag-init" strategy="afterInteractive">{`
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', 'AW-18267828347');
+        `}</Script>
         <JsonLd />
         <Providers>{children}</Providers>
         <InstallPrompt />
