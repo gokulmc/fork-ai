@@ -6,12 +6,13 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
-### PDF export captured only visible viewport, with sections rendered at opacity:0
-- **Symptom 1:** PDF export produced only the content visible on screen — sections below the fold were missing regardless of how many sections the node had.
-- **Symptom 2:** Sections that did appear in the PDF were partially or fully transparent (first section faded, sections 2-N invisible).
-- **Cause 1:** `.app` has `height: 100vh` as a CSS grid container and `.workspace` has `overflow-y: auto`. Both create overflow clipping contexts that html2canvas respects — it could only render the visible viewport portion even when `height: el.scrollHeight` was passed.
-- **Cause 2:** Every `.section` carries the `appear` class which drives `@keyframes secAppear { from { opacity: 0 } to { opacity: 1 } }` with `animation-fill-mode: both`. In the html2canvas cloned document, CSS animations restart from time 0, placing every section at the "from" state — `opacity: 0`.
-- **Fix:** Before calling html2canvas, temporarily set `app.style.height = 'auto'` and `ws.style.overflow = 'visible'` on the real DOM (reading `scrollHeight` synchronously forces a reflow), restored in a `finally` block. In the `onclone` callback, both unlock the cloned layout AND remove the `appear` class from all sections, explicitly setting `opacity: 1; transform: none`. `apps/web/src/lib/sessionPdf.ts`. (commit: pending)
+### PDF export: sections blank, words cut at page boundaries, no top margin
+- **Symptom 1:** Multi-page PDFs were mostly blank — sections rendered at `opacity: 0` — with only sources/lede visible at the bottom of the last page.
+- **Symptom 2:** Words were cut in half at page boundaries (equal-strip slicing with no awareness of content positions).
+- **Symptom 3:** Content flushed against the top edge of every page with no margin.
+- **Cause 1:** The original fix removed the `.appear` CSS class and set `style.opacity = '1'`. But CSS animations sit above inline styles in the cascade — `animation-fill-mode: both` freezing sections at `opacity: 0` overrides the inline `opacity: 1`. Class removal was also subject to lazy style recalculation in the html2canvas iframe.
+- **Cause 2:** Multi-page slicing divided the canvas into equal strips with no regard for content boundaries.
+- **Fix:** In `onclone`, set `style.animation = 'none'` first (kills the animation at the cascade level before `opacity: 1` is applied). For page breaks, measure block-level element tops from the DOM after layout mutations (`getBoundingClientRect` relative to workspace-inner), scale to canvas coords, and snap each page cut to the last safe break candidate ≤ the page boundary. Each page rendered with `y = MARGIN_TOP_PT` (40 pt) so content never flushes to the top edge. `apps/web/src/lib/sessionPdf.ts`. (commit: pending)
 
 ### Forced logout during Lambda deploy — refresh endpoint unavailable triggered signOut
 - **Symptom:** Logged out 1–3 minutes after a new Amplify deployment, even with a valid session and working Cognito refresh token.
