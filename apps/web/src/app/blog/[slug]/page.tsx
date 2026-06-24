@@ -90,6 +90,18 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
             { '@type': 'ListItem', position: 2, name: meta.title, item: `${SITE}/blog/${meta.slug}` },
           ],
         },
+        ...(meta.faq?.length
+          ? [
+              {
+                '@type': 'FAQPage',
+                mainEntity: meta.faq.map((f) => ({
+                  '@type': 'Question',
+                  name: f.q,
+                  acceptedAnswer: { '@type': 'Answer', text: f.a },
+                })),
+              },
+            ]
+          : []),
       ],
     };
 

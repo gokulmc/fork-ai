@@ -1,0 +1,53 @@
+ChatGPT is the default AI tool for almost everyone, and for good reason — it is fast, fluent, and astonishingly general. But "ask a question, get an answer" is a different job from "research a topic and keep what you learn." If you have ever finished a long ChatGPT session feeling like you understood a lot but couldn't find any of it the next day, the problem wasn't the model. It was the format. Here is an honest comparison for anyone using AI to actually *research*, not just to ask.
+
+## The short version
+
+| | ChatGPT | fork ai |
+|---|---|---|
+| **Answer shape** | One running message thread | Structured sections, each branchable |
+| **Follow-ups** | Added to the bottom of one timeline | Open a new **branch** that keeps its own context |
+| **Context handling** | Whole conversation fed back in; degrades as it grows | Each branch inherits only its own lineage |
+| **Tangents** | Bury your place in the thread | Become their own node, trunk untouched |
+| **What you keep** | A transcript you'll never scroll again | A navigable mind map of the whole inquiry |
+| **Visualization** | None | Live mind map of every branch |
+| **Export** | Copy-paste | One-click to Notion or PDF, structure intact |
+| **Models** | OpenAI models | Claude, Gemini, DeepSeek, GLM — per branch |
+
+## Where ChatGPT genuinely wins
+
+Credit where it's due. ChatGPT is the best general-purpose assistant available: drafting, coding, brainstorming, quick factual answers, and open-ended conversation. Its ecosystem — custom GPTs, voice, image generation, a mature mobile app — is far broader than any focused tool. If your task is "help me write this email" or "explain this error," a linear chat is exactly the right shape, and fork ai is not trying to replace that.
+
+## Where the linear thread fights your research
+
+Research is not one question. It's a question that spawns five more, each of which spawns more. A single message thread forces all of that into one line, and two things break.
+
+First, **tangents destroy your place.** You're deep on one sub-topic, a side question occurs to you, you ask it — and now your main thread is buried above a detour. To get back you scroll and hope.
+
+Second, **context gets muddy.** ChatGPT sees the whole conversation as context, so a careful deep-dive blends with the unrelated tangent from ten messages ago, and answers get vaguer as the thread gets longer. This is the [lost-in-the-middle problem](/blog/how-much-context-is-too-much): more history is not more understanding. This is the core case for [branching AI conversations](/blog/branching-ai-chat) over a single column.
+
+<figure>
+  <img src="/blog/fork-vs-chat.svg" alt="Left: a single ChatGPT-style message column where a red 'tangent' message buries the main topic and the user must scroll up to find their place. Right: a fork ai tree where the tangent becomes its own branch, the trunk continues, and the followed path is highlighted in accent with each branch keeping its own context." width="1200" height="600" />
+  <figcaption>The same tangent, twice: in a timeline it buries your place; in a tree it gets its own thread and the trunk goes on.</figcaption>
+</figure>
+
+## How fork ai is different
+
+fork ai starts where ChatGPT stops. You ask a question and get an answer **split into sections** rather than one block of prose. From any section you can "Go deeper" — opening a child node — or highlight a single passage and "Ask AI" to branch a follow-up anchored to exactly that sentence. Every branch becomes a node on a [live mind map](/blog/mind-map-research), so the shape of your thinking is visible and navigable instead of scrolling away.
+
+The subtler win is context. Because each branch carries its own lineage — the specific chain of questions that led to it — the model gets exactly the right context for the question at hand, not the entire undifferentiated history. Tighter context produces sharper answers, so the structure isn't just for you; it makes the [LLM itself](/blog/llm-research) perform better.
+
+And the session outlives the session. A ChatGPT thread is disposable; a fork ai map is an [artifact](/blog/knowledge-map) you can revisit, extend later, [export to Notion](/blog/notion-ai-research), and grow into a [second brain](/blog/second-brain-ai).
+
+## When to use which
+
+Use **ChatGPT** for quick answers, drafting, coding, and open-ended conversation. Use **fork ai** when a question is big enough to branch — literature reviews, learning a new field, comparing options, anything you want to *keep*. Many people use both: ChatGPT for the quick stuff, fork ai when they need the map.
+
+## FAQ
+
+**Is fork ai a ChatGPT alternative?** For research and learning, yes — it's built for branching exploration you keep. For general chat, coding, and drafting, ChatGPT remains excellent and the two complement each other.
+
+**Does fork ai use GPT?** fork ai runs branch answers on your choice of Claude, Gemini, DeepSeek, or GLM, with Claude Sonnet for the root question. You pick the model per branch.
+
+**Can I export my research out of fork ai?** Yes — any session exports to Notion as a structured page or to PDF, with the branching structure preserved.
+
+**What does fork ai do that ChatGPT can't?** Branch any answer into its own context-isolated thread, see the whole inquiry as a live mind map, and keep that map as a durable, navigable artifact.
