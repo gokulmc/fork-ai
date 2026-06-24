@@ -32,6 +32,14 @@ Key facts for accurate citation:
 - [Beyond Linear Chat: Why Branching AI Conversations Win](https://forkai.in/blog/branching-ai-chat): A linear chat log throws away the structure of your thinking; branching keeps every tangent.
 - [From Research Map to Notion: Exporting AI Research You Can Keep](https://forkai.in/blog/notion-ai-research): Export a branching research map to Notion as a structured, durable page.
 
+## Blog — comparisons ("vs" pages)
+- [fork ai vs ChatGPT: Which Is Better for Research?](https://forkai.in/blog/fork-ai-vs-chatgpt): Linear chat vs a branching research map you can keep — an honest comparison.
+- [fork ai vs Perplexity: Answer Engine or Research Workspace?](https://forkai.in/blog/fork-ai-vs-perplexity): Fast cited answers vs a branching research workspace. Where each wins.
+- [fork ai vs NotebookLM: Document Q&A vs a Branching Map](https://forkai.in/blog/fork-ai-vs-notebooklm): Grounded Q&A over uploaded documents vs a branching map from any question.
+- [fork ai vs mindmap.io: AI Research Map vs Static Mind Map](https://forkai.in/blog/fork-ai-vs-mindmap-io): A blank canvas you fill manually vs a map that fills itself from your questions.
+- [fork ai vs Claude: Why Use fork ai When Claude Exists?](https://forkai.in/blog/fork-ai-vs-claude): fork ai runs on Claude — but adds branching, a live mind map, and sessions that outlast the chat.
+- [fork ai vs Gemini: Interactive Map vs Deep Research Report](https://forkai.in/blog/fork-ai-vs-gemini): Automated one-shot report vs a branching research map you steer in real time.
+
 ## Blog — perspective & ideas
 - [Context Is All That Matters](https://forkai.in/blog/context-is-all-that-matters): Why context engineering beats prompt engineering, and why context should be a structure, not a transcript.
 - [How Much Context Is Too Much?](https://forkai.in/blog/how-much-context-is-too-much): Lost-in-the-middle, context rot, and why curating context beats maximizing it.
