@@ -26,6 +26,8 @@ const mockDb = {
 const mockLlm = {
   answerQuery: jest.fn(),
   streamAnswerQuery: jest.fn(),
+  extractDocumentOutline: jest.fn(),
+  generateFromBrief: jest.fn(),
 };
 
 // Mimics LlmService.streamAnswerQuery: meta first, then sections, then done.
@@ -39,6 +41,7 @@ async function* fakeStream() {
 const mockUsers = {
   checkCredit: jest.fn(),
   billUsage: jest.fn(),
+  getPersona: jest.fn(),
 };
 
 const mockCfg = { get: jest.fn() };
@@ -180,6 +183,103 @@ describe('SessionsService', () => {
       const [, , updates] = mockDb.updateSessionMeta.mock.calls[0];
       expect(updates).toEqual({ title: 'Neural Nets', emoji: '🧠', lede: 'How neural networks work.' });
       expect(mockUsers.billUsage).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('createDocumentStreaming', () => {
+    // Outline: root + 2 children (A, B) + 1 grandchild (A1 under A).
+    const outline = {
+      title: 'Quantum',
+      emoji: '⚛️',
+      lede: 'A document overview.',
+      rootDescription: 'Whole-document brief.',
+      nodes: [
+        { tempId: 't1', parentTempId: null, title: 'Child A', emoji: '🅰️', description: 'A brief' },
+        { tempId: 't2', parentTempId: null, title: 'Child B', emoji: '🅱️', description: 'B brief' },
+        { tempId: 't3', parentTempId: 't1', title: 'Grandchild A1', emoji: '🇦', description: 'A1 brief' },
+      ],
+      usage: { inputTokens: 500, outputTokens: 200 },
+    };
+
+    beforeEach(() => {
+      mockUsers.checkCredit.mockResolvedValue(undefined);
+      mockUsers.billUsage.mockResolvedValue(undefined);
+      mockUsers.getPersona.mockResolvedValue(undefined);
+      mockDb.putNode.mockResolvedValue(undefined);
+      mockDb.putSessionMeta.mockResolvedValue(undefined);
+      mockDb.updateSessionMeta.mockResolvedValue(undefined);
+      mockLlm.extractDocumentOutline.mockResolvedValue(outline);
+      mockLlm.generateFromBrief.mockImplementation((_ancestors: unknown, title: string) =>
+        Promise.resolve({ title, emoji: '✳️', lede: `${title} lede`, sections: [{ heading: '', body: `${title} body` }], usage: { inputTokens: 10, outputTokens: 20 } }));
+    });
+
+    function run(send: (d: object) => void) {
+      return service.createDocumentStreaming(SUB, { documentText: 'long document text', fileName: 'quantum.pdf' }, send);
+    }
+
+    it('persists session up-front and emits init BEFORE reading the document (persist-first)', async () => {
+      const order: string[] = [];
+      mockDb.putSessionMeta.mockImplementation(() => { order.push('putMeta'); return Promise.resolve(); });
+      mockLlm.extractDocumentOutline.mockImplementation(() => { order.push('extract'); return Promise.resolve(outline); });
+      const send = (d: object) => order.push(`send:${(d as { type: string }).type}`);
+
+      await run(send);
+
+      expect(order[0]).toBe('putMeta');
+      expect(order[1]).toBe('send:init');
+      expect(order.indexOf('send:init')).toBeLessThan(order.indexOf('extract'));
+    });
+
+    it('emits one node-done per node in root→leaf (BFS) order with correct parent wiring + kinds', async () => {
+      const events: Array<{ type: string; node?: { title: string; nodeId: string; parentId: string | null; kind: string } }> = [];
+      await run(d => events.push(d as never));
+
+      const done = events.filter(e => e.type === 'node-done');
+      expect(done.map(e => e.node!.title)).toEqual(['Quantum', 'Child A', 'Child B', 'Grandchild A1']);
+
+      const byTitle = Object.fromEntries(done.map(e => [e.node!.title, e.node!]));
+      expect(byTitle['Quantum'].parentId).toBeNull();
+      expect(byTitle['Quantum'].kind).toBe('QUERY');
+      expect(byTitle['Child A'].parentId).toBe(byTitle['Quantum'].nodeId);
+      expect(byTitle['Child A'].kind).toBe('DEEPER');
+      expect(byTitle['Child B'].parentId).toBe(byTitle['Quantum'].nodeId);
+      expect(byTitle['Grandchild A1'].parentId).toBe(byTitle['Child A'].nodeId);
+    });
+
+    it('bills the extraction pass (root, QUERY) plus one call per generated node', async () => {
+      await run(jest.fn());
+
+      // 1 extraction + 4 nodes = 5 usage events.
+      expect(mockUsers.billUsage).toHaveBeenCalledTimes(5);
+      const [, inTok, outTok, kind] = mockUsers.billUsage.mock.calls[0];
+      expect(inTok).toBe(500); // extraction usage
+      expect(outTok).toBe(200);
+      expect(kind).toBe('QUERY');
+    });
+
+    it('finishes with a done event carrying the real title and node count', async () => {
+      const events: Array<{ type: string; nodeCount?: number; title?: string }> = [];
+      await run(d => events.push(d as never));
+
+      const skeleton = events.find(e => e.type === 'skeleton') as { nodes: unknown[] } | undefined;
+      expect(skeleton!.nodes).toHaveLength(4);
+      const done = events.find(e => e.type === 'done');
+      expect(done!.nodeCount).toBe(4);
+      expect(done!.title).toBe('Quantum');
+    });
+
+    it('re-parents a node with an unknown parentTempId under the root (defensive)', async () => {
+      mockLlm.extractDocumentOutline.mockResolvedValue({
+        ...outline,
+        nodes: [{ tempId: 't1', parentTempId: 'does-not-exist', title: 'Orphan', emoji: '🛟', description: 'd' }],
+      });
+      const events: Array<{ type: string; node?: { nodeId: string; title: string; parentId: string | null } }> = [];
+      await run(d => events.push(d as never));
+
+      const done = events.filter(e => e.type === 'node-done');
+      const root = done.find(e => e.node!.title === 'Quantum')!.node!;
+      const orphan = done.find(e => e.node!.title === 'Orphan')!.node!;
+      expect(orphan.parentId).toBe(root.nodeId);
     });
   });
 

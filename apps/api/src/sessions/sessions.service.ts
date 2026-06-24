@@ -5,9 +5,10 @@ import { ConfigService } from '@nestjs/config';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
 import type { NodeItem, AnnotationItem, HighlightItem, SessionMetaItem } from '@/dynamo/dynamo.interfaces';
 import { LlmService } from '@/llm/llm.service';
-import { ROOT_MODEL } from '@/llm/models';
+import { ROOT_MODEL, resolveBranchModel } from '@/llm/models';
 import { UsersService } from '@/users/users.service';
 import { CreateSessionDto } from './dto/create-session.dto';
+import { CreateDocumentDto } from './dto/create-document.dto';
 import { UpdateSessionDto } from './dto/update-session.dto';
 
 export interface SessionSummary {
@@ -252,6 +253,177 @@ export class SessionsService {
         emit({ type: 'done', sessionId, nodeId, token, sections, sources: event.sources });
       }
     }
+  }
+
+  // Build a whole mind-map session from an uploaded document (authed-only).
+  // Two phases over one SSE stream: (1) read the document ONCE and design the
+  // tree; (2) generate each node's content from its brief, root→leaf. Follows the
+  // same persist-first contract as createStreaming (init up-front, incremental
+  // putNode, finalise at done) so a refresh mid-run restores progress.
+  async createDocumentStreaming(
+    sub: string,
+    dto: CreateDocumentDto,
+    send: (data: object) => void,
+  ): Promise<void> {
+    await this.users.checkCredit(sub);
+
+    const sessionId = ulid();
+    const rootNodeId = ulid();
+    const now = new Date().toISOString();
+    const emit = (data: object) => { try { send(data); } catch { /* client gone */ } };
+
+    const placeholderTitle = this.tempTitle(dto.fileName || dto.documentText);
+
+    // Persist-first: minimal session + loading root so a refresh during the slow
+    // extraction restores the session instead of dropping the user to Landing.
+    const initialRoot: NodeItem = {
+      PK: `SESSION#${sessionId}`,
+      SK: `NODE#${rootNodeId}`,
+      nodeId: rootNodeId,
+      parentId: null,
+      kind: 'QUERY',
+      title: placeholderTitle,
+      emoji: null,
+      query: dto.fileName || placeholderTitle,
+      lede: '',
+      sections: [],
+      fromSection: null,
+      fromText: null,
+      createdAt: now,
+      model: ROOT_MODEL,
+    };
+    const sessionMeta: SessionMetaItem = {
+      PK: this.userPk(sub),
+      SK: this.sessionSk(sessionId),
+      sessionId,
+      title: placeholderTitle,
+      emoji: '',
+      lede: '',
+      rootNodeId,
+      nodeCount: 1,
+      createdAt: now,
+      updatedAt: now,
+      gsi1pk: this.userPk(sub),
+      gsi1sk: `UPDATED#${now}`,
+    };
+    await Promise.all([this.db.putNode(initialRoot), this.db.putSessionMeta(sessionMeta)]);
+    emit({ type: 'init', sessionId, nodeId: rootNodeId });
+
+    // ── Phase 1: read the document once, design the tree (always Sonnet). ──
+    const outline = await this.llm.extractDocumentOutline(dto.documentText, dto.maxNodes ?? 8);
+
+    // Map outline tempIds → real ULIDs; the root is implicit (rootNodeId). An
+    // unknown/missing parentTempId re-parents under the root (defensive).
+    const idByTemp = new Map<string, string>();
+    for (const n of outline.nodes) idByTemp.set(n.tempId, ulid());
+    const parentRealId = (parentTempId: string | null): string =>
+      parentTempId && idByTemp.has(parentTempId) ? idByTemp.get(parentTempId)! : rootNodeId;
+
+    interface PlanNode { nodeId: string; parentId: string | null; title: string; emoji: string; description: string; }
+    const plans: PlanNode[] = [
+      { nodeId: rootNodeId, parentId: null, title: outline.title, emoji: outline.emoji, description: outline.rootDescription },
+      ...outline.nodes.map((n) => ({
+        nodeId: idByTemp.get(n.tempId)!,
+        parentId: parentRealId(n.parentTempId),
+        title: n.title,
+        emoji: n.emoji,
+        description: n.description,
+      })),
+    ];
+    const planById = new Map(plans.map((p) => [p.nodeId, p]));
+
+    // Order content calls root→leaf (BFS) so requirement 6 holds and the map
+    // lights up top-down. The BFS index also seeds createdAt so sibling order is stable.
+    const order: PlanNode[] = [];
+    const queue: string[] = [rootNodeId];
+    while (queue.length) {
+      const p = planById.get(queue.shift()!);
+      if (!p) continue;
+      order.push(p);
+      for (const c of plans) if (c.parentId === p.nodeId) queue.push(c.nodeId);
+    }
+
+    // Persist all node skeletons (loading, empty sections) and tell the client the
+    // full shape so the whole map renders at once. createdAt is offset by BFS index
+    // so the frontend's createdAt-sorted childMap keeps the intended order.
+    const baseMs = Date.parse(now);
+    const skeletons: NodeItem[] = order.map((p, i) => ({
+      PK: `SESSION#${sessionId}`,
+      SK: `NODE#${p.nodeId}`,
+      nodeId: p.nodeId,
+      parentId: p.parentId,
+      kind: p.parentId ? 'DEEPER' : 'QUERY',
+      title: p.title,
+      emoji: p.emoji || null,
+      query: p.title,
+      lede: '',
+      sections: [],
+      fromSection: null,
+      fromText: p.description,
+      createdAt: new Date(baseMs + i).toISOString(),
+      model: ROOT_MODEL,
+    }));
+    const skeletonById = new Map(skeletons.map((n) => [n.nodeId, n]));
+    await Promise.all([
+      ...skeletons.map((n) => this.db.putNode(n)),
+      this.db.updateSessionMeta(sub, sessionId, {
+        title: outline.title, emoji: outline.emoji, lede: outline.lede, nodeCount: skeletons.length,
+      }),
+      this.users.billUsage(sub, outline.usage.inputTokens, outline.usage.outputTokens, 'QUERY', sessionId, rootNodeId, ROOT_MODEL),
+    ]);
+    emit({
+      type: 'skeleton',
+      nodes: skeletons.map((n) => ({ id: n.nodeId, parentId: n.parentId ?? null, kind: n.kind, title: n.title, emoji: n.emoji ?? null })),
+    });
+
+    // ── Phase 2: generate content root→leaf, sequentially. ──
+    const contentModel = resolveBranchModel(dto.model, false);
+    const persona = await this.users.getPersona(sub);
+
+    for (const p of order) {
+      // Ancestor briefs (root → parent) ground the note and prevent repetition.
+      const ancestors: Array<{ title: string; description: string }> = [];
+      let cur = p.parentId;
+      while (cur) {
+        const a = planById.get(cur);
+        if (!a) break;
+        ancestors.unshift({ title: a.title, description: a.description });
+        cur = a.parentId;
+      }
+
+      const skeleton = skeletonById.get(p.nodeId)!;
+      try {
+        const result = await this.llm.generateFromBrief(
+          ancestors, p.title, p.description,
+          dto.sectionCount ?? 4, dto.webSearch ?? false, contentModel, dto.verbose ?? false, true, persona,
+        );
+        // Keep the outline title/emoji (stable on the map); take content's sections + lede.
+        const node: NodeItem = {
+          ...skeleton,
+          lede: result.lede,
+          sections: result.sections.map((s) => ({ id: ulid(), ...s })),
+          model: contentModel,
+          ...(result.sources?.length ? { sources: result.sources } : {}),
+        };
+        await this.db.putNode(node);
+        await this.users.billUsage(sub, result.usage.inputTokens, result.usage.outputTokens, node.kind, sessionId, node.nodeId, contentModel);
+        emit({ type: 'node-done', node });
+      } catch (err) {
+        // One node failing must not abort the tree — fall back to the brief as the
+        // node body so it never hangs as a perpetual loading skeleton, and continue.
+        this.logger.warn(`Document node ${p.nodeId} content failed: ${(err as Error).message}`);
+        const fallback: NodeItem = {
+          ...skeleton,
+          lede: p.description.slice(0, 200),
+          sections: [{ id: ulid(), heading: '', body: p.description }],
+          model: contentModel,
+        };
+        await this.db.putNode(fallback);
+        emit({ type: 'node-done', node: fallback });
+      }
+    }
+
+    emit({ type: 'done', sessionId, nodeCount: skeletons.length, title: outline.title, emoji: outline.emoji, lede: outline.lede });
   }
 
   async create(sub: string, dto: CreateSessionDto): Promise<FullSession> {

@@ -268,6 +268,49 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 }
 .query-box .submit:hover { transform: translateY(-1px); }
 .query-box .submit:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+.query-box .qb-file {
+  background: transparent;
+  border: 0;
+  color: var(--ink-3);
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  margin-right: 4px;
+  flex: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color .15s, background .15s;
+}
+.query-box .qb-file:hover { color: var(--ink); background: var(--accent-soft); }
+.query-box .qb-file:disabled { cursor: not-allowed; }
+
+.ocr-progress {
+  margin: 18px auto 0;
+  width: 100%;
+  max-width: 480px;
+}
+.ocr-progress-track {
+  height: 2px;
+  background: var(--line-strong);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.ocr-progress-bar {
+  height: 100%;
+  background: var(--ink-2);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+  min-width: 4px;
+}
+.ocr-progress-label {
+  margin-top: 5px;
+  font-size: 11px;
+  font-family: ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+}
 
 .examples {
   margin: 28px auto 0;
@@ -1693,7 +1736,12 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
   /* Text uses the full phone width — desktop --content-pad-x (80px) left a ~230px
      column. Tighten padding; extra bottom space clears the floating pill + home bar. */
   .workspace-inner { padding: 24px 18px calc(96px + env(safe-area-inset-bottom)); }
-  .section-body { padding-left: 20px; overflow-wrap: break-word; }
+  /* Align body text under the h2 (num min-width 22px + gap 12px = 34px). Top-align
+     the section number with the heading instead of baseline-aligning (baseline makes
+     the small 12px num drop to the middle of the larger h2 line on mobile). */
+  .section-body { padding-left: 34px; overflow-wrap: break-word; }
+  .section-head { align-items: flex-start; }
+  .section-num { margin-top: 3px; }
   .workspace-inner :is(img, table, pre) { max-width: 100%; }
 
   /* Landing query box: the input defaults to min-width:auto and won't shrink below

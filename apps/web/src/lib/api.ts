@@ -376,6 +376,17 @@ export type StreamEvent =
   | { type: 'done'; sessionId: string; nodeId: string; token?: string; sections?: Array<{ id: string; heading: string; body: string }>; sources?: CitationSource[] }
   | { type: 'error'; message: string; status?: number };
 
+// Document upload → mind-map stream. The whole tree is built server-side: `init`
+// (session persisted), then `skeleton` (full tree shape, all loading), then one
+// `node-done` per node in root→leaf order, then `done`. node-done carries the raw
+// NodeItem (nodeId, not id) — feed it through toForkNode like createNode does.
+export type DocumentStreamEvent =
+  | { type: 'init'; sessionId: string; nodeId: string }
+  | { type: 'skeleton'; nodes: Array<{ id: string; parentId: string | null; kind: 'QUERY' | 'DEEPER' | 'ASK'; title: string; emoji: string | null }> }
+  | { type: 'node-done'; node: ApiNode }
+  | { type: 'done'; sessionId: string; nodeCount: number; title: string; emoji: string; lede: string }
+  | { type: 'error'; message: string; status?: number };
+
 export async function createSessionStream(
   idToken: string,
   query: string,
@@ -403,7 +414,9 @@ export async function createSessionStream(
 
 // Shared SSE reader — an in-band `error` event becomes a thrown ApiError so
 // callers handle stream failures on the same catch path as HTTP failures.
-async function readSseStream(body: ReadableStream<Uint8Array>, onEvent: (event: StreamEvent) => void): Promise<void> {
+// Generic over the event union so both the query stream and the document stream
+// share it (every union carries the same `error` variant shape).
+async function readSseStream<T extends { type: string }>(body: ReadableStream<Uint8Array>, onEvent: (event: T) => void): Promise<void> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buf = '';
@@ -416,11 +429,12 @@ async function readSseStream(body: ReadableStream<Uint8Array>, onEvent: (event: 
     buf = lines.pop() ?? '';
     for (const line of lines) {
       if (!line.startsWith('data: ')) continue;
-      let event: StreamEvent;
+      let event: T;
       try {
-        event = JSON.parse(line.slice(6)) as StreamEvent;
+        event = JSON.parse(line.slice(6)) as T;
       } catch { continue; /* malformed line */ }
-      if (event.type === 'error') throw new ApiError(event.status ?? 500, event.message);
+      const err = event as unknown as { type: string; status?: number; message?: string };
+      if (err.type === 'error') throw new ApiError(err.status ?? 500, err.message ?? 'Stream error');
       onEvent(event);
     }
   }
@@ -445,6 +459,36 @@ export async function createTrialSessionStream(
   }
 
   await readSseStream(res.body, onEvent);
+}
+
+// Build a whole mind-map session from an uploaded document (authed-only). SSE
+// stream of DocumentStreamEvent; see createDocumentStreaming on the backend.
+export async function createDocumentSessionStream(
+  idToken: string,
+  documentText: string,
+  fileName: string | undefined,
+  sectionCount: number,
+  webSearch: boolean,
+  verbose: boolean,
+  model: CreateNodePayload['model'],
+  onEvent: (event: DocumentStreamEvent) => void,
+): Promise<void> {
+  const res = await fetch(`${base()}/sessions/document/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify({ documentText, fileName, sectionCount, webSearch, verbose, model }),
+  });
+
+  if (!res.ok || !res.body) {
+    const text = await res.text().catch(() => '');
+    const { message, code } = extractError(text, res.statusText);
+    throw new ApiError(res.status, message, code);
+  }
+
+  await readSseStream<DocumentStreamEvent>(res.body, onEvent);
 }
 
 // ── Nodes ─────────────────────────────────────────────────────────────────────
