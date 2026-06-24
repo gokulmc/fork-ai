@@ -1,0 +1,69 @@
+If you use fork ai, you are — under the hood — using Claude. The root question always runs on Claude Sonnet; branch questions can also run on Claude Opus or Haiku. So the obvious question is: why not just open Claude.ai directly?
+
+The answer is not about model quality. Claude.ai gives you the same underlying intelligence in a general-purpose chat interface. Fork ai wraps it in a workspace designed specifically for research: branching threads that keep their own context, a live mind map of the whole inquiry, and persistence that outlasts the session.
+
+## What Claude.ai is for
+
+Claude.ai is an excellent all-purpose AI assistant. Writing, editing, code, document analysis, reasoning — it handles nearly anything in a single scrolling thread. For tasks that are one-shot or short-lived, it is hard to beat: fast, general, and always open in your browser.
+
+The thread model starts to crack at research scale. Once you have asked 10 or more questions in a single chat, the earlier answers are buried and the context has become a mix of everything you asked about. The [linear thread](/blog/branching-ai-chat) does not scale for deep inquiry.
+
+## What fork ai adds
+
+Fork ai does not replace Claude — it is a research layer on top of it. The structural additions:
+
+**Branching:** Every section of an answer can spawn its own child thread, with only the relevant parent context passed in. Tangents do not pollute the main thread; they get their own branch.
+
+**Spatial map:** The whole inquiry renders as a navigable mind map. You can see all threads at once, jump between them, and understand how they connect.
+
+**Persistence:** Sessions save as structured maps. Come back next week and your inquiry is intact — not a scroll you will never find again.
+
+**Annotations and highlights:** Mark passages, save callouts, highlight text that matters — none of which exist in a chat interface.
+
+**Model mixing:** Use Gemini, DeepSeek, or GLM on branch questions while the root stays on Claude.
+
+<figure>
+  <img src="/blog/fork-vs-chat.svg" alt="Comparison: Claude chat has answers in a single scrolling thread vs fork ai which builds a branching research map" width="1200" height="600" />
+  <figcaption>The same Claude intelligence, two different shapes: a transcript vs a map you can navigate.</figcaption>
+</figure>
+
+## Where Claude.ai wins
+
+For anything that is not a multi-branch research session — writing a cover letter, debugging code, long document analysis, anything with attachments — Claude.ai is the right tool. It handles more file types and has no friction for general tasks.
+
+Fork ai is a focused tool. It does not handle general writing tasks or multi-file uploads. If you are working *from* documents you already have, Claude.ai Projects or NotebookLM are better fits.
+
+## Where fork ai wins
+
+Any session that starts with "I want to understand X deeply and keep what I learn" is where fork ai pulls ahead. The branching prevents the context muddle that hits long Claude threads. The map shows the shape of your inquiry. The export means the session outlives the chat window.
+
+In practice: open Claude, ask ten related questions, and you end up with a long scroll you will never read again. Open fork ai, ask ten questions across branches, and you have a [knowledge map](/blog/knowledge-map) with every thread in its place.
+
+| | Claude.ai | fork ai |
+|---|---|---|
+| Model quality | ✅ Claude-native | ✅ Same Claude + Gemini / DeepSeek / GLM |
+| Branching threads | ❌ | ✅ |
+| Live mind map | ❌ | ✅ |
+| File and image uploads | ✅ | Partial (session start only) |
+| Writing and code | ✅ | ❌ |
+| Export to Notion | ❌ | ✅ |
+| Persistent sessions | ✅ Projects | ✅ |
+| Free tier | ✅ | ✅ |
+
+## FAQ
+
+**Does fork ai use Claude?**
+
+Yes — the root question always runs on Claude Sonnet. Branch questions can run on Claude, Gemini, DeepSeek, or GLM depending on what you select.
+
+**Is fork ai better than Claude for research?**
+
+For multi-branch research sessions you want to keep as a structured map, yes. For general-purpose tasks — writing, code, document analysis — Claude.ai is the right tool.
+
+**Can I use fork ai and Claude together?**
+
+Yes — many people use fork ai for the exploration phase and Claude.ai for writing up the results. They complement each other well.
+
+**Is fork ai free?**
+
+Fork ai has a free tier. See the pricing page for credit details on heavier research sessions.

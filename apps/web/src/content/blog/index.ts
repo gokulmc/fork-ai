@@ -246,6 +246,99 @@ export const POSTS: Record<string, BlogPost> = {
   },
 
   // ── Comparison ("vs") pages — high-intent, low-competition search terms ──────
+  'fork-ai-vs-mindmap-io': {
+    meta: {
+      slug: 'fork-ai-vs-mindmap-io',
+      emoji: '🗺️',
+      title: 'fork ai vs mindmap.io: AI Research Map vs Static Mind Map',
+      description:
+        'fork ai vs mindmap.io — an AI that generates and fills a branching map from your questions vs a blank canvas you arrange yourself. What each does best.',
+      keywords: ['fork ai vs mindmap', 'mindmap alternative', 'ai mind map tool', 'mindmap io alternative'],
+      date: '2026-06-16',
+      readingMinutes: 5,
+      faq: [
+        {
+          q: 'Is fork ai a mindmap.io alternative?',
+          a: 'For AI-powered research and exploration, yes. For manual visual diagramming and team whiteboarding, mindmap.io is purpose-built for that and remains the better choice.',
+        },
+        {
+          q: 'Does fork ai generate real mind maps?',
+          a: "Every fork ai session builds a live branching map automatically from your questions and the AI's answers. Unlike a traditional mind map, every node contains generated content — not just a label you placed.",
+        },
+        {
+          q: 'Can I control the layout in fork ai?',
+          a: 'The layout is generated from the branching structure of your inquiry. For presentations requiring precise visual control, export your session to Notion and use a dedicated diagram tool for the final layout.',
+        },
+        {
+          q: 'What AI does fork ai use?',
+          a: 'Your choice of Claude, Gemini, DeepSeek, or GLM per branch, with Claude Sonnet for the root question.',
+        },
+      ],
+    },
+    load: () => import('./fork-ai-vs-mindmap-io.mdx'),
+  },
+  'fork-ai-vs-claude': {
+    meta: {
+      slug: 'fork-ai-vs-claude',
+      emoji: '🤝',
+      title: 'fork ai vs Claude: Why Use fork ai When Claude Exists?',
+      description:
+        'fork ai runs on Claude — so why use it instead of Claude.ai directly? The difference is structure: branching threads, a live mind map, and sessions that outlast the chat window.',
+      keywords: ['fork ai vs claude', 'claude alternative', 'claude for research', 'claude ai research tool'],
+      date: '2026-06-17',
+      readingMinutes: 5,
+      faq: [
+        {
+          q: 'Does fork ai use Claude?',
+          a: 'Yes — the root question always runs on Claude Sonnet. Branch questions can run on Claude, Gemini, DeepSeek, or GLM depending on what you select.',
+        },
+        {
+          q: 'Is fork ai better than Claude for research?',
+          a: 'For multi-branch research sessions you want to keep as a structured map, yes. For general-purpose tasks — writing, code, document analysis — Claude.ai is the right tool.',
+        },
+        {
+          q: 'Can I use fork ai and Claude together?',
+          a: 'Yes — many people use fork ai for the exploration phase and Claude.ai for writing up the results. They complement each other well.',
+        },
+        {
+          q: 'Is fork ai free?',
+          a: 'Fork ai has a free tier. See the pricing page for credit details on heavier research sessions.',
+        },
+      ],
+    },
+    load: () => import('./fork-ai-vs-claude.mdx'),
+  },
+  'fork-ai-vs-gemini': {
+    meta: {
+      slug: 'fork-ai-vs-gemini',
+      emoji: '🔷',
+      title: 'fork ai vs Gemini: Interactive Map vs Deep Research Report',
+      description:
+        'fork ai vs Gemini Deep Research compared — an automated one-shot report vs a branching research map you steer in real time. When to use which.',
+      keywords: ['fork ai vs gemini', 'gemini alternative', 'gemini deep research alternative', 'google gemini vs fork ai'],
+      date: '2026-06-18',
+      readingMinutes: 5,
+      faq: [
+        {
+          q: 'Is fork ai a Gemini alternative?',
+          a: 'For interactive, steerable research you want to keep as a structured map, yes. For automated, comprehensive deep research reports generated with minimal input, Gemini Deep Research is excellent and both tools are complementary.',
+        },
+        {
+          q: 'Does fork ai use Gemini?',
+          a: 'Yes — you can select Gemini Flash or Gemini Pro as the model for branch questions inside fork ai.',
+        },
+        {
+          q: 'Can I get cited sources in fork ai?',
+          a: 'When web search is enabled on a branch, answers include source footnotes. Web search can be toggled per branch in the tweaks panel.',
+        },
+        {
+          q: "What is fork ai's equivalent of Gemini Deep Research?",
+          a: 'The closest equivalent is a root query followed by multiple "Go deeper" branches — but the shape is a navigable map you steer rather than an automated report.',
+        },
+      ],
+    },
+    load: () => import('./fork-ai-vs-gemini.mdx'),
+  },
   'fork-ai-vs-chatgpt': {
     meta: {
       slug: 'fork-ai-vs-chatgpt',
