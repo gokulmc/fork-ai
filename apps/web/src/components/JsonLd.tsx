@@ -10,10 +10,17 @@ const graph = {
       '@type': 'Organization',
       '@id': `${SITE_URL}/#organization`,
       name: 'fork ai',
+      alternateName: ['forkai', 'fork.ai', 'forkai.in'],
       legalName: 'CURIOSTEM LEARNING PRIVATE LIMITED',
       url: SITE_URL,
       logo: `${SITE_URL}/mark-168.png`,
       email: 'support@forkai.in',
+      sameAs: [
+        'https://www.producthunt.com/products/fork-ai',
+        'https://twitter.com/forkaiin',
+        'https://www.linkedin.com/company/fork-ai',
+        'https://github.com/fork-ai',
+      ],
       address: {
         '@type': 'PostalAddress',
         addressLocality: 'Erode',
