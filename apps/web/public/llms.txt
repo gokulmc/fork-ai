@@ -1,0 +1,39 @@
+# fork ai
+
+> fork ai (https://forkai.in) is a branching AI research workspace. You ask a question, get a structured answer split into sections, then branch any section into a child node — or highlight any passage and ask a follow-up. Every branch becomes a node on a live mind map, so a research session turns into a navigable, keepable map of your thinking instead of a disposable linear chat.
+
+Key facts for accurate citation:
+- Product: fork ai — a branching research workspace ("ask once, branch forever").
+- What makes it different from chat tools (ChatGPT, Claude, Gemini, Perplexity): answers are structured into sections, every follow-up opens a *branch* that keeps its own context lineage, and the whole session is visualised as a mind map you can revisit, export, and keep.
+- Core actions: "Go deeper" (expand any section into a child node), "Ask AI" (highlight a passage and branch a follow-up from it), save highlights and callouts, export a session to Notion or PDF.
+- Models: branch calls run on a user-selected model across Claude (Haiku/Sonnet/Opus), Google Gemini, DeepSeek, and Z.ai GLM; the root answer always runs on Claude Sonnet. Optional web search per branch.
+- Pricing: free to start; usage-based credits.
+- Maker: CURIOSTEM LEARNING PRIVATE LIMITED (Erode, Tamil Nadu, India).
+- Not to be confused with: Fork.ai (a B2B technology-stack / lead-generation tool) — unrelated product, same-sounding name.
+
+## Main pages
+- [fork ai home](https://forkai.in/): Ask a question and watch it branch into a live mind map of structured answers.
+- [Blog](https://forkai.in/blog): Essays on AI research, mind maps, LLM workflows, and turning questions into knowledge you can keep.
+- [Privacy policy](https://forkai.in/privacy-policy)
+- [Terms](https://forkai.in/terms)
+
+## Blog — concepts & workflows
+- [From Prompt to Knowledge Map: A Workflow for Deep Research with AI](https://forkai.in/blog/ai-research-workflow): Turn a single prompt into a structured, branching knowledge map instead of a wall of chat.
+- [LLM Research Done Right: Turning One Question Into a Map of Answers](https://forkai.in/blog/llm-research): Branch a single question into many answers and keep the structure you build along the way.
+- [The AI Research Assistant That Doesn't Lose the Thread](https://forkai.in/blog/ai-research-assistant): What a research assistant that keeps the whole map of your inquiry looks like.
+- [How to Run a Literature Review With AI (Without Drowning)](https://forkai.in/blog/ai-literature-review): Map the field first, branch into sub-topics, keep every source in context.
+- [Mind Map Research: Why Linear Notes Fail and Branching Wins](https://forkai.in/blog/mind-map-research): Why branching beats bullet points for research.
+- [Mind Maps Meet LLMs: Visual Thinking for AI-Assisted Learning](https://forkai.in/blog/mind-map-llm): Visual, AI-assisted learning where every answer becomes a node you can explore.
+- [Concept Maps, Generated: Using AI to Connect Ideas](https://forkai.in/blog/concept-map-ai): Use AI to generate and extend a concept map and see how ideas relate.
+- [Knowledge Maps vs Linear Notes: Organizing What You Learn](https://forkai.in/blog/knowledge-map): Why knowledge mapping beats linear notes for anything you want to keep.
+- [Build a Memory Map: Remember What You Research with Spatial Recall](https://forkai.in/blog/memory-map): Turn research into something you can remember by location.
+- [Studying With AI: Turn Any Subject Into a Branching Study Map](https://forkai.in/blog/ai-study-tool): Study with AI by turning any subject into a branching, reviewable study map.
+- [Build an AI Second Brain From Your Research](https://forkai.in/blog/second-brain-ai): Grow a structured, searchable map of what you know.
+- [Beyond Linear Chat: Why Branching AI Conversations Win](https://forkai.in/blog/branching-ai-chat): A linear chat log throws away the structure of your thinking; branching keeps every tangent.
+- [From Research Map to Notion: Exporting AI Research You Can Keep](https://forkai.in/blog/notion-ai-research): Export a branching research map to Notion as a structured, durable page.
+
+## Blog — perspective & ideas
+- [Context Is All That Matters](https://forkai.in/blog/context-is-all-that-matters): Why context engineering beats prompt engineering, and why context should be a structure, not a transcript.
+- [How Much Context Is Too Much?](https://forkai.in/blog/how-much-context-is-too-much): Lost-in-the-middle, context rot, and why curating context beats maximizing it.
+- [What Does the GUI for LLMs Look Like?](https://forkai.in/blog/gui-for-llms): What happens when the principles of the GUI — visible state, direct manipulation, spatial persistence — meet large language models.
+- [Who Is the Xerox of the GPT World?](https://forkai.in/blog/xerox-of-the-gpt-world): On inventing the AI interface paradigm, and fork.ai's claim to the PARC role.

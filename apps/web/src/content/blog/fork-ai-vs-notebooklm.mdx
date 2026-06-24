@@ -1,0 +1,47 @@
+NotebookLM is one of the most genuinely useful AI tools Google has shipped: point it at your own documents and it answers questions grounded *only* in those sources, with citations back to the page. For making sense of material you already have — a stack of PDFs, a dense report, your own notes — it's excellent. But "answer questions about these documents" is a different job from "explore an open question and build a structure as you go." Here is an honest comparison for people deciding which one fits the work in front of them.
+
+## The short version
+
+| | NotebookLM | fork ai |
+|---|---|---|
+| **Core job** | Q&A grounded in your uploaded sources | Explore any question into a branching map |
+| **Starting point** | Documents you bring | A question you ask |
+| **Answer shape** | Cited answers from your sources | Sectioned answers, each section branchable |
+| **Follow-ups** | Linear chat over the sources | Open a **branch** with its own context lineage |
+| **Structure of the inquiry** | Notes / chat, not a map | Live mind map of every branch |
+| **Standout feature** | Source grounding, Audio Overviews | Branching exploration you keep |
+| **Export** | Copy / save notes | One-click to Notion or PDF, structure intact |
+| **Models** | Gemini | Claude, Gemini, DeepSeek, GLM — per branch |
+
+## Where NotebookLM genuinely wins
+
+If you already have the material, NotebookLM is superb. It grounds every answer in *your* sources and cites the exact passage, which makes it trustworthy for summarizing documents, querying a corpus, and avoiding hallucination. Its Audio Overview — a generated podcast-style discussion of your docs — is a legitimately novel way to absorb material. For "help me understand these specific documents," fork ai is not the tool.
+
+## Where document Q&A stops short
+
+NotebookLM's strength is also its boundary: it works *within the sources you give it*. Open-ended research often starts before you have any sources — you're trying to map a field you don't know yet, and the questions multiply faster than you can read. And even inside a notebook, the exploration itself is a linear chat: ask, answer, ask again. The *structure* of what you're learning — how the sub-topics relate, which thread you were chasing — isn't captured as anything navigable. You get grounded answers, but no map of the inquiry, and nothing that branches.
+
+<figure>
+  <img src="/blog/fork-vs-answers.svg" alt="Left: a stack of grounded answer cards from documents, each citing a source, where the structure of the inquiry scrolls away. Right: a fork ai branching tree where every answer is a node you can revisit, extend, and export, with the followed path highlighted in accent." width="1200" height="600" />
+  <figcaption>Grounded answers vs. a navigable map: NotebookLM answers about your sources; fork ai gives the exploration a shape you keep.</figcaption>
+</figure>
+
+## How fork ai is different
+
+fork ai is built for the *open* phase of research — before and beyond a fixed set of documents. You ask a question and get an answer **split into sections**; from any section you "Go deeper" into a child node, or highlight a passage and "Ask AI" to branch a follow-up anchored to that exact phrase. Every branch becomes a node on a [live mind map](/blog/mind-map-research), so a topic becomes a structure you can see and navigate — the difference between a [knowledge map and linear notes](/blog/knowledge-map).
+
+Because each branch carries its own lineage, [context stays clean](/blog/context-is-all-that-matters) and answers stay sharp as you go deeper. And the map is durable: a session [exports to Notion](/blog/notion-ai-research) or PDF and becomes part of a growing [second brain](/blog/second-brain-ai) — the kind of [research assistant that doesn't lose the thread](/blog/ai-research-assistant). When you *do* want sources, web search toggles on per branch with citations.
+
+## When to use which
+
+Use **NotebookLM** when you already have the documents and want grounded, cited answers about them (or a great audio summary). Use **fork ai** when you're starting from a question, mapping an unfamiliar field, and want the exploration to become something structured you keep. They pair well: explore and structure a topic in fork ai, then drop your gathered sources into NotebookLM to go deep on the specifics.
+
+## FAQ
+
+**Is fork ai a NotebookLM alternative?** For open-ended exploration you want to map and keep, yes. For grounded Q&A over documents you already have, NotebookLM is excellent — the two are complementary.
+
+**Does fork ai work with my own documents?** fork ai is built around exploring questions into a branching map rather than querying an uploaded corpus; for source-grounded document Q&A, NotebookLM is the better fit.
+
+**What does fork ai do that NotebookLM doesn't?** It branches each answer into its own context-isolated thread and renders the whole inquiry as a live, keepable mind map you can export.
+
+**Which models does fork ai use?** Your choice of Claude, Gemini, DeepSeek, or GLM per branch, with Claude Sonnet for the root question.

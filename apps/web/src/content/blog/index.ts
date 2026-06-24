@@ -9,6 +9,9 @@ export interface PostMeta {
   date: string; // ISO published date
   updated?: string; // ISO modified date
   readingMinutes: number;
+  // Optional Q&A pairs — when present, the post page emits FAQPage structured
+  // data so the questions are eligible for "People also ask" rich results.
+  faq?: { q: string; a: string }[];
 }
 
 export interface BlogPost {
@@ -240,6 +243,101 @@ export const POSTS: Record<string, BlogPost> = {
       readingMinutes: 6,
     },
     load: () => import('./notion-ai-research.mdx'),
+  },
+
+  // ── Comparison ("vs") pages — high-intent, low-competition search terms ──────
+  'fork-ai-vs-chatgpt': {
+    meta: {
+      slug: 'fork-ai-vs-chatgpt',
+      emoji: '⚔️',
+      title: 'fork ai vs ChatGPT: Which Is Better for Research?',
+      description:
+        'An honest comparison of fork ai and ChatGPT for research — linear chat vs a branching mind map you can keep. When to use which, and what each does best.',
+      keywords: ['fork ai vs chatgpt', 'chatgpt alternative', 'chatgpt for research', 'branching chatgpt'],
+      date: '2026-06-13',
+      readingMinutes: 6,
+      faq: [
+        {
+          q: 'Is fork ai a ChatGPT alternative?',
+          a: "For research and learning, yes — it's built for branching exploration you keep. For general chat, coding, and drafting, ChatGPT remains excellent and the two complement each other.",
+        },
+        {
+          q: 'Does fork ai use GPT?',
+          a: 'fork ai runs branch answers on your choice of Claude, Gemini, DeepSeek, or GLM, with Claude Sonnet for the root question. You pick the model per branch.',
+        },
+        {
+          q: 'Can I export my research out of fork ai?',
+          a: 'Yes — any session exports to Notion as a structured page or to PDF, with the branching structure preserved.',
+        },
+        {
+          q: "What does fork ai do that ChatGPT can't?",
+          a: 'Branch any answer into its own context-isolated thread, see the whole inquiry as a live mind map, and keep that map as a durable, navigable artifact.',
+        },
+      ],
+    },
+    load: () => import('./fork-ai-vs-chatgpt.mdx'),
+  },
+  'fork-ai-vs-perplexity': {
+    meta: {
+      slug: 'fork-ai-vs-perplexity',
+      emoji: '🔎',
+      title: 'fork ai vs Perplexity: Answer Engine or Research Workspace?',
+      description:
+        'fork ai vs Perplexity compared — a fast cited answer engine vs a branching research workspace you can keep. Where each wins and when to use which.',
+      keywords: ['fork ai vs perplexity', 'perplexity alternative', 'perplexity for research', 'ai answer engine alternative'],
+      date: '2026-06-14',
+      readingMinutes: 6,
+      faq: [
+        {
+          q: 'Is fork ai a Perplexity alternative?',
+          a: 'For open-ended research you want to keep and structure, yes. For quick web-sourced answers, Perplexity is excellent — many people use both.',
+        },
+        {
+          q: 'Does fork ai cite its sources?',
+          a: 'When web search is enabled on a branch, answers come back with sources/footnotes. Web search is optional per branch.',
+        },
+        {
+          q: "What does fork ai do that Perplexity doesn't?",
+          a: 'It branches each answer into its own thread, shows your whole inquiry as a live mind map, and keeps that map as a durable artifact you can export.',
+        },
+        {
+          q: 'Can I switch models in fork ai?',
+          a: 'Yes — pick Claude, Gemini, DeepSeek, or GLM per branch; the root question runs on Claude Sonnet.',
+        },
+      ],
+    },
+    load: () => import('./fork-ai-vs-perplexity.mdx'),
+  },
+  'fork-ai-vs-notebooklm': {
+    meta: {
+      slug: 'fork-ai-vs-notebooklm',
+      emoji: '📓',
+      title: 'fork ai vs NotebookLM: Document Q&A vs a Branching Map',
+      description:
+        'fork ai vs NotebookLM compared — grounded Q&A over your documents vs a branching research map you build from any question. What each does best.',
+      keywords: ['fork ai vs notebooklm', 'notebooklm alternative', 'notebooklm for research', 'ai research workspace'],
+      date: '2026-06-15',
+      readingMinutes: 6,
+      faq: [
+        {
+          q: 'Is fork ai a NotebookLM alternative?',
+          a: 'For open-ended exploration you want to map and keep, yes. For grounded Q&A over documents you already have, NotebookLM is excellent — the two are complementary.',
+        },
+        {
+          q: 'Does fork ai work with my own documents?',
+          a: 'fork ai is built around exploring questions into a branching map rather than querying an uploaded corpus; for source-grounded document Q&A, NotebookLM is the better fit.',
+        },
+        {
+          q: "What does fork ai do that NotebookLM doesn't?",
+          a: 'It branches each answer into its own context-isolated thread and renders the whole inquiry as a live, keepable mind map you can export.',
+        },
+        {
+          q: 'Which models does fork ai use?',
+          a: 'Your choice of Claude, Gemini, DeepSeek, or GLM per branch, with Claude Sonnet for the root question.',
+        },
+      ],
+    },
+    load: () => import('./fork-ai-vs-notebooklm.mdx'),
   },
 };
 
