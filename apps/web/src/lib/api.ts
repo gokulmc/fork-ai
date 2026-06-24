@@ -298,14 +298,14 @@ export interface RechargeOrder {
   orderId: string;
   amountInr: number;
   amountUsd: number;
-  currency: string;
+  currency: 'INR' | 'USD';
   keyId: string;
 }
 
-export function createRechargeOrder(idToken: string, amountUsd: number): Promise<RechargeOrder> {
+export function createRechargeOrder(idToken: string, amountUsd: number, currency?: 'INR' | 'USD'): Promise<RechargeOrder> {
   return apiFetch<RechargeOrder>('/billing/orders', idToken, {
     method: 'POST',
-    body: JSON.stringify({ amountUsd }),
+    body: JSON.stringify({ amountUsd, ...(currency ? { currency } : {}) }),
   });
 }
 

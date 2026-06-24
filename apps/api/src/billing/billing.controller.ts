@@ -28,7 +28,7 @@ export class BillingController {
     @CurrentUser() user: CognitoUser,
     @Body() dto: CreateOrderDto,
   ) {
-    return this.billing.createOrder(user.sub, dto.amountUsd);
+    return this.billing.createOrder(user.sub, dto.amountUsd, dto.currency);
   }
 
   @Post('verify')

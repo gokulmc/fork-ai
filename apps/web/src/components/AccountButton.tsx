@@ -28,6 +28,15 @@ declare global {
   }
 }
 
+function detectPaymentCurrency(): 'INR' | 'USD' {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return (tz === 'Asia/Calcutta' || tz === 'Asia/Kolkata') ? 'INR' : 'USD';
+  } catch {
+    return 'INR';
+  }
+}
+
 function loadRazorpayScript(): Promise<void> {
   return new Promise((resolve) => {
     if (document.getElementById('rzp-checkout-js')) { resolve(); return; }
@@ -199,19 +208,25 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
 
     try {
       await loadRazorpayScript();
-      const order = await createRechargeOrder(idToken, amountUsd);
-      const inrDisplay = (order.amountInr / 100).toLocaleString('en-IN', {
-        style: 'currency', currency: 'INR', maximumFractionDigits: 0,
-      });
+      const currency = detectPaymentCurrency();
+      const order = await createRechargeOrder(idToken, amountUsd, currency);
+
+      const rzpAmount = order.currency === 'USD'
+        ? Math.round(order.amountUsd * 100)
+        : order.amountInr;
+
+      const description = order.currency === 'USD'
+        ? `Add $${amountUsd.toFixed(2)} credit`
+        : `Add $${amountUsd.toFixed(2)} credit (${(order.amountInr / 100).toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })})`;
 
       await new Promise<void>((resolve, reject) => {
         const rzp = new window.Razorpay({
           key: order.keyId,
           order_id: order.orderId,
-          amount: order.amountInr,
-          currency: 'INR',
+          amount: rzpAmount,
+          currency: order.currency,
           name: 'fork ai',
-          description: `Add $${amountUsd.toFixed(2)} credit (${inrDisplay})`,
+          description,
           theme: { color: '#0a0a0a' },
           handler: async (response: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
             try {

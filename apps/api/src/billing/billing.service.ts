@@ -28,19 +28,27 @@ export class BillingService {
     return this._razorpay;
   }
 
-  async createOrder(sub: string, amountUsd: number): Promise<{
+  async createOrder(sub: string, amountUsd: number, currency: 'INR' | 'USD' = 'INR'): Promise<{
     orderId: string;
     amountInr: number;
     amountUsd: number;
     currency: string;
     keyId: string;
   }> {
-    const rate = await this.fetchUsdToInrRate();
-    const amountInr = Math.round(amountUsd * rate * 100); // paise
+    let orderAmount: number;
+    let amountInr = 0;
+
+    if (currency === 'USD') {
+      orderAmount = Math.round(amountUsd * 100); // cents
+    } else {
+      const rate = await this.fetchUsdToInrRate();
+      amountInr = Math.round(amountUsd * rate * 100); // paise
+      orderAmount = amountInr;
+    }
 
     const order = await this.razorpay.orders.create({
-      amount: amountInr,
-      currency: 'INR',
+      amount: orderAmount,
+      currency,
       notes: { sub, amountUsd: String(amountUsd) },
     });
 
@@ -48,7 +56,7 @@ export class BillingService {
       orderId: order.id,
       amountInr,
       amountUsd,
-      currency: 'INR',
+      currency,
       keyId: this.cfg.get<string>('razorpay.keyId') ?? '',
     };
   }
