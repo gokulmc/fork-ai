@@ -17,6 +17,9 @@ test-results/
 # TypeScript incremental build cache
 *.tsbuildinfo
 
+# pdfjs worker bundle (auto-wired by pdfjs-dist/webpack.mjs — not needed in public/)
+apps/web/public/pdf.worker.min.mjs
+
 # Environment — never commit secrets
 .env
 .env.local
