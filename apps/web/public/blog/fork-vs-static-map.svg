@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
+  <rect width="1200" height="600" fill="#fbfaf8"/>
+  <line x1="600" y1="58" x2="600" y2="548" stroke="#e3ded4" stroke-width="1.5" stroke-dasharray="3 7"/>
+
+  <text x="300" y="44" text-anchor="middle" fill="#8f897c" font-size="19" letter-spacing="1.5">BLANK CANVAS</text>
+  <text x="900" y="44" text-anchor="middle" fill="#7a4a12" font-size="19" letter-spacing="1.5">CONTENT MAP</text>
+
+  <!-- LEFT: static mind map — empty label nodes you fill yourself -->
+  <!-- Center oval -->
+  <ellipse cx="270" cy="295" rx="72" ry="38" fill="#f1eee8" stroke="#e3ded4" stroke-width="1.5"/>
+  <rect x="224" y="287" width="92" height="9" rx="4.5" fill="#d8d2c6"/>
+
+  <!-- Branch lines -->
+  <line x1="340" y1="270" x2="420" y2="188" stroke="#e3ded4" stroke-width="1.5"/>
+  <line x1="342" y1="295" x2="428" y2="295" stroke="#e3ded4" stroke-width="1.5"/>
+  <line x1="340" y1="320" x2="420" y2="402" stroke="#e3ded4" stroke-width="1.5"/>
+  <line x1="200" y1="270" x2="130" y2="195" stroke="#e3ded4" stroke-width="1.5"/>
+  <line x1="200" y1="320" x2="130" y2="395" stroke="#e3ded4" stroke-width="1.5"/>
+
+  <!-- Top-right branch node -->
+  <ellipse cx="476" cy="168" rx="56" ry="30" fill="#f1eee8" stroke="#e3ded4"/>
+  <rect x="436" y="161" width="80" height="9" rx="4.5" fill="#d8d2c6"/>
+
+  <!-- Right branch node -->
+  <ellipse cx="488" cy="295" rx="56" ry="30" fill="#f1eee8" stroke="#e3ded4"/>
+  <rect x="448" y="288" width="80" height="9" rx="4.5" fill="#d8d2c6"/>
+
+  <!-- Bottom-right branch node -->
+  <ellipse cx="476" cy="422" rx="56" ry="30" fill="#f1eee8" stroke="#e3ded4"/>
+  <rect x="436" y="415" width="80" height="9" rx="4.5" fill="#d8d2c6"/>
+
+  <!-- Top-left branch node -->
+  <ellipse cx="76" cy="168" rx="56" ry="30" fill="#f1eee8" stroke="#e3ded4"/>
+  <rect x="36" y="161" width="80" height="9" rx="4.5" fill="#d8d2c6"/>
+
+  <!-- Bottom-left branch node -->
+  <ellipse cx="76" cy="422" rx="56" ry="30" fill="#f1eee8" stroke="#e3ded4"/>
+  <rect x="36" y="415" width="80" height="9" rx="4.5" fill="#d8d2c6"/>
+
+  <text x="300" y="503" text-anchor="middle" fill="#b3ac9c" font-size="15">you arrange the structure — and fill every node yourself</text>
+
+  <!-- RIGHT: AI research map — content-rich nodes, generated from questions -->
+  <!-- Root card -->
+  <rect x="632" y="232" width="140" height="66" rx="12" fill="#fdf3e7" stroke="#b45309"/>
+  <rect x="650" y="248" width="104" height="9" rx="4.5" fill="#e3c49a"/>
+  <rect x="650" y="263" width="80" height="9" rx="4.5" fill="#e3c49a"/>
+  <rect x="650" y="278" width="92" height="9" rx="4.5" fill="#e3c49a"/>
+
+  <!-- Branch paths -->
+  <path d="M772 250 C 820 250, 820 150, 870 150" fill="none" stroke="#e3ded4" stroke-width="2"/>
+  <path d="M772 265 C 820 265, 820 295, 870 295" fill="none" stroke="#e3c49a" stroke-width="2.5"/>
+  <path d="M772 280 C 820 280, 820 435, 870 435" fill="none" stroke="#e3ded4" stroke-width="2"/>
+
+  <!-- Branch 1: top -->
+  <rect x="870" y="125" width="182" height="50" rx="12" fill="#f1eee8" stroke="#e3ded4"/>
+  <rect x="888" y="141" width="120" height="9" rx="4.5" fill="#d8d2c6"/>
+  <rect x="888" y="156" width="88" height="9" rx="4.5" fill="#d8d2c6"/>
+
+  <!-- Branch 2: middle (active amber) -->
+  <rect x="870" y="270" width="182" height="50" rx="12" fill="#fdf3e7" stroke="#b45309"/>
+  <rect x="888" y="286" width="120" height="9" rx="4.5" fill="#e3c49a"/>
+  <rect x="888" y="301" width="80" height="9" rx="4.5" fill="#e3c49a"/>
+
+  <!-- Sub-branch from branch 2 -->
+  <path d="M1052 295 C 1090 295, 1090 350, 1110 350" fill="none" stroke="#e3c49a" stroke-width="2.5"/>
+  <rect x="1110" y="326" width="70" height="48" rx="10" fill="#fdf3e7" stroke="#b45309"/>
+  <rect x="1122" y="342" width="46" height="9" rx="4.5" fill="#e3c49a"/>
+  <rect x="1122" y="357" width="36" height="9" rx="4.5" fill="#e3c49a"/>
+
+  <!-- Branch 3: bottom -->
+  <rect x="870" y="410" width="182" height="50" rx="12" fill="#f1eee8" stroke="#e3ded4"/>
+  <rect x="888" y="426" width="120" height="9" rx="4.5" fill="#d8d2c6"/>
+  <rect x="888" y="441" width="70" height="9" rx="4.5" fill="#d8d2c6"/>
+
+  <text x="900" y="503" text-anchor="middle" fill="#b3ac9c" font-size="15">AI fills every node — you steer where the map goes next</text>
+</svg>
