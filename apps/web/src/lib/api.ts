@@ -373,7 +373,7 @@ export type StreamEvent =
   | { type: 'init'; sessionId: string; nodeId: string; token?: string }
   | { type: 'meta'; title: string; emoji: string; lede: string }
   | { type: 'section'; id: string; heading: string; body: string }
-  | { type: 'done'; sessionId: string; nodeId: string; token?: string; sections?: Array<{ id: string; heading: string; body: string }>; sources?: CitationSource[] }
+  | { type: 'done'; sessionId: string; nodeId: string; token?: string; model?: string; sections?: Array<{ id: string; heading: string; body: string }>; sources?: CitationSource[] }
   | { type: 'error'; message: string; status?: number };
 
 // Document upload → mind-map stream. The whole tree is built server-side: `init`

@@ -31,7 +31,7 @@ test.describe('Root query (streaming)', () => {
     // The request carried the auth token and the tweak defaults
     const [call] = api.callsTo('POST /sessions/stream');
     expect(call.headers['authorization']).toMatch(/^Bearer .+/);
-    expect(call.body).toMatchObject({ query: 'how does photosynthesis work?', webSearch: true, sectionCount: 6 });
+    expect(call.body).toMatchObject({ query: 'how does photosynthesis work?', webSearch: false, sectionCount: 6 });
   });
 
   test('REGRESSION (e3b2c91): refresh mid-stream restores the session instead of dropping to Landing', async ({ page }) => {

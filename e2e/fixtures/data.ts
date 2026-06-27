@@ -31,7 +31,7 @@ export function rootNode(over: Record<string, unknown> = {}) {
     fromSection: null,
     fromText: null,
     createdAt: T0,
-    model: 'claude-sonnet-4-6',
+    model: 'gemini-2.5-flash',
     ...over,
   };
 }
@@ -115,6 +115,6 @@ export function rootStreamEvents(opts: { token?: string } = {}): StreamEvent[] {
     { type: 'init', sessionId: SID, nodeId: ROOT_ID, ...tok },
     { type: 'meta', title: root.title, emoji: root.emoji, lede: root.lede },
     ...root.sections.map(s => ({ type: 'section', ...s })),
-    { type: 'done', sessionId: SID, nodeId: ROOT_ID, sections: root.sections, ...tok },
+    { type: 'done', sessionId: SID, nodeId: ROOT_ID, model: root.model, sections: root.sections, ...tok },
   ];
 }

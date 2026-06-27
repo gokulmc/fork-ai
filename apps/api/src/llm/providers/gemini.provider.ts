@@ -2,7 +2,7 @@ import { GoogleGenAI } from '@google/genai';
 import { LlmProvider, CompleteOptions, CompleteResult } from './provider.types';
 import { applyGeminiGrounding, GeminiGroundingMetadata } from '../citations';
 
-// Wraps the Google GenAI SDK behind the provider interface (branch calls only).
+// Wraps the Google GenAI SDK behind the provider interface (branch calls + root query).
 export class GeminiProvider implements LlmProvider {
   private client?: GoogleGenAI;
 
@@ -21,9 +21,9 @@ export class GeminiProvider implements LlmProvider {
     return this.client;
   }
 
-  async complete(prompt: string, { model, maxTokens, webSearch }: CompleteOptions): Promise<CompleteResult> {
-    const ai = this.clientOrThrow();
-
+  // Shared config builder — keeps complete() and generateContentStream() in sync.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private buildConfig(model: string, maxTokens: number, webSearch: boolean): any {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const config: any = {
       // Generous headroom: Gemini 2.5 may spend output tokens on "thinking", and
@@ -40,6 +40,20 @@ export class GeminiProvider implements LlmProvider {
     } else {
       config.responseMimeType = 'application/json';
     }
+    return config;
+  }
+
+  // Streaming variant used by the root-query path. Each chunk carries incremental
+  // text; the final chunk carries usageMetadata and groundingMetadata (for citations).
+  async generateContentStream(prompt: string, { model, maxTokens, webSearch }: CompleteOptions) {
+    const ai = this.clientOrThrow();
+    const config = this.buildConfig(model, maxTokens, webSearch);
+    return ai.models.generateContentStream({ model, contents: prompt, config });
+  }
+
+  async complete(prompt: string, { model, maxTokens, webSearch }: CompleteOptions): Promise<CompleteResult> {
+    const ai = this.clientOrThrow();
+    const config = this.buildConfig(model, maxTokens, webSearch);
 
     const response = await ai.models.generateContent({ model, contents: prompt, config });
 

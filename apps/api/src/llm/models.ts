@@ -12,8 +12,11 @@ export type ModelAlias =
 
 export type ProviderName = 'anthropic' | 'gemini' | 'deepseek' | 'glm';
 
-// Root queries (kind QUERY) are always Claude Sonnet and not user-selectable.
-export const ROOT_MODEL = 'claude-sonnet-4-6';
+// The model for root queries (kind QUERY) — not user-selectable. Everything
+// root-related keys off this single constant (the streaming path dispatches on
+// providerNameFor(ROOT_MODEL)), so swapping it back to a Claude id is enough to
+// move the whole root flow — including streaming — back to Anthropic.
+export const ROOT_MODEL = 'gemini-2.5-flash';
 
 const ALIAS_TO_ID: Record<ModelAlias, string> = {
   haiku: 'claude-haiku-4-5-20251001',
