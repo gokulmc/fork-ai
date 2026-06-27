@@ -935,6 +935,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
           // (web search) only arrive at done — apply them over the raw streamed sections.
           const doneSections = event.sections;
           const doneSources = event.sources;
+          const doneModel = event.model;
           setNodes(prev => {
             const node = prev[tempId];
             if (!node) return prev;
@@ -942,6 +943,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
               ...node,
               id: realNodeId,
               loading: false,
+              ...(doneModel ? { model: doneModel } : {}),
               ...(doneSections ? { sections: doneSections } : {}),
               ...(doneSources?.length ? { sources: doneSources } : {}),
             };

@@ -8,7 +8,7 @@ import { AnthropicProvider } from './providers/anthropic.provider';
 import { GeminiProvider } from './providers/gemini.provider';
 import { DeepSeekProvider } from './providers/deepseek.provider';
 import { GlmProvider } from './providers/glm.provider';
-import { extractAnthropicSources, processCitations, sanitizeGlmSources, processGlmCitations } from './citations';
+import { extractAnthropicSources, processCitations, sanitizeGlmSources, processGlmCitations, applyGeminiGrounding, GeminiGroundingMetadata } from './citations';
 
 export type StreamEvent =
   | { type: 'meta'; title: string; emoji: string; lede: string }
@@ -126,15 +126,19 @@ Return EXACTLY ONE item in the "sections" array, with an empty "heading". Put th
 export class LlmService {
   private readonly client: Anthropic;
   private readonly providers: Record<ProviderName, LlmProvider>;
+  // Typed reference to the Gemini provider so the streaming root-query path can
+  // call generateContentStream() without going through the LlmProvider interface
+  // (which only exposes the non-streaming complete()). The same instance is also
+  // registered in providers for branch calls.
+  private readonly gemini: GeminiProvider;
   private readonly logger = new Logger(LlmService.name);
 
   constructor(private readonly cfg: ConfigService) {
-    // Direct Anthropic client is used by streamAnswerQuery (root query) and
-    // getTrendingTopics, which stay Anthropic-only. Branch calls go via providers.
     this.client = new Anthropic({ apiKey: cfg.get<string>('anthropic.apiKey') });
+    this.gemini = new GeminiProvider(() => cfg.get<string>('gemini.apiKey'));
     this.providers = {
       anthropic: new AnthropicProvider(this.client),
-      gemini: new GeminiProvider(() => cfg.get<string>('gemini.apiKey')),
+      gemini: this.gemini,
       deepseek: new DeepSeekProvider(() => cfg.get<string>('deepseek.apiKey')),
       glm: new GlmProvider(() => cfg.get<string>('glm.apiKey')),
     };
@@ -157,77 +161,144 @@ Each section "body" should be 80-180 words. You MAY use GitHub-flavored markdown
     let metaEmitted = false;
     let emittedCount = 0;
 
-    const streamParams: Parameters<typeof this.client.messages.stream>[0] = {
-      model: ROOT_MODEL,
-      max_tokens: 2048,
-      messages: [{ role: 'user', content: prompt }],
-    };
-    if (webSearch) {
+    // All root-query behaviour is controlled by ROOT_MODEL. Switching that constant
+    // back to a Claude id automatically re-routes streaming to the Anthropic branch.
+    if (providerNameFor(ROOT_MODEL) === 'gemini') {
+      // --- Gemini streaming path ---
+      const stream = await this.gemini.generateContentStream(prompt, {
+        model: ROOT_MODEL,
+        maxTokens: 4096,
+        webSearch,
+      });
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (streamParams as any).tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }];
-    }
+      let lastChunk: any;
+      for await (const chunk of stream) {
+        accumulated += chunk.text ?? '';
+        lastChunk = chunk;
 
-    const stream = this.client.messages.stream(streamParams);
-    const finalMsgPromise = stream.finalMessage();
-
-    for await (const chunk of stream) {
-      if (chunk.type !== 'content_block_delta') continue;
-      const delta = chunk.delta as { type: string; text?: string };
-      if (delta.type !== 'text_delta' || !delta.text) continue;
-      accumulated += delta.text;
-
-      if (!metaEmitted) {
-        const meta = extractMeta(accumulated);
-        if (meta) { metaEmitted = true; yield { type: 'meta', ...meta }; }
-      }
-
-      const sections = extractCompletedSections(accumulated);
-      while (emittedCount < sections.length) {
-        yield { type: 'section', ...sections[emittedCount++] };
-      }
-    }
-
-    // Fallback: parse full response and emit any sections not yet streamed
-    try {
-      const full = this.parseJson(accumulated);
-      while (emittedCount < full.sections.length) {
-        yield { type: 'section', ...full.sections[emittedCount++] };
-      }
-      if (!metaEmitted) {
-        yield { type: 'meta', title: full.title, emoji: full.emoji, lede: full.lede };
-      }
-    } catch (err) {
-      this.logger.warn(`Stream fallback parse failed: ${(err as Error).message}`);
-    }
-
-    const finalMsg = await finalMsgPromise;
-
-    // Citations can only be resolved once the full message (with web_search_tool_result
-    // blocks) is known. Sections streamed above still carry the raw <cite> tags; emit the
-    // processed bodies + cited sources here so the persist/UI layer can swap them in.
-    let processedSections: LlmSection[] | undefined;
-    let sources: CitationSource[] | undefined;
-    if (webSearch) {
-      const blocks = ((finalMsg as unknown as { content?: unknown[] }).content ?? []) as Array<{ type: string; content?: unknown[] }>;
-      const allSources = extractAnthropicSources(blocks);
-      if (allSources.length) {
-        try {
-          const full = this.parseJson(accumulated);
-          const cited = processCitations(full.sections, allSources);
-          processedSections = cited.sections;
-          if (cited.sources.length) sources = cited.sources;
-        } catch (err) {
-          this.logger.warn(`Citation post-processing failed: ${(err as Error).message}`);
+        if (!metaEmitted) {
+          const meta = extractMeta(accumulated);
+          if (meta) { metaEmitted = true; yield { type: 'meta', ...meta }; }
+        }
+        const sections = extractCompletedSections(accumulated);
+        while (emittedCount < sections.length) {
+          yield { type: 'section', ...sections[emittedCount++] };
         }
       }
-    }
 
-    yield {
-      type: 'done',
-      usage: { inputTokens: finalMsg.usage.input_tokens, outputTokens: finalMsg.usage.output_tokens },
-      sections: processedSections,
-      sources,
-    };
+      // Fallback: parse full response and emit any sections not yet streamed
+      try {
+        const full = this.parseJson(accumulated);
+        while (emittedCount < full.sections.length) {
+          yield { type: 'section', ...full.sections[emittedCount++] };
+        }
+        if (!metaEmitted) {
+          yield { type: 'meta', title: full.title, emoji: full.emoji, lede: full.lede };
+        }
+      } catch (err) {
+        this.logger.warn(`Stream fallback parse failed: ${(err as Error).message}`);
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const um = (lastChunk as any)?.usageMetadata;
+      const usage = {
+        inputTokens: (um?.promptTokenCount ?? 0) as number,
+        outputTokens: (um?.candidatesTokenCount ?? 0) as number,
+      };
+
+      // Citations: Gemini grounding metadata arrives on the final chunk.
+      let processedSections: LlmSection[] | undefined;
+      let sources: CitationSource[] | undefined;
+      if (webSearch) {
+        const groundingMeta = lastChunk?.candidates?.[0]?.groundingMetadata as GeminiGroundingMetadata | undefined;
+        if (groundingMeta?.groundingSupports?.length && groundingMeta?.groundingChunks?.length) {
+          try {
+            const full = this.parseJson(accumulated);
+            const cited = applyGeminiGrounding(full.sections, groundingMeta);
+            processedSections = cited.sections;
+            if (cited.sources.length) sources = cited.sources;
+          } catch (err) {
+            this.logger.warn(`Gemini citation post-processing failed: ${(err as Error).message}`);
+          }
+        }
+      }
+
+      yield { type: 'done', usage, sections: processedSections, sources };
+
+    } else {
+      // --- Anthropic streaming path (default when ROOT_MODEL is a Claude id) ---
+      const streamParams: Parameters<typeof this.client.messages.stream>[0] = {
+        model: ROOT_MODEL,
+        max_tokens: 2048,
+        messages: [{ role: 'user', content: prompt }],
+      };
+      if (webSearch) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (streamParams as any).tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }];
+      }
+
+      const stream = this.client.messages.stream(streamParams);
+      const finalMsgPromise = stream.finalMessage();
+
+      for await (const chunk of stream) {
+        if (chunk.type !== 'content_block_delta') continue;
+        const delta = chunk.delta as { type: string; text?: string };
+        if (delta.type !== 'text_delta' || !delta.text) continue;
+        accumulated += delta.text;
+
+        if (!metaEmitted) {
+          const meta = extractMeta(accumulated);
+          if (meta) { metaEmitted = true; yield { type: 'meta', ...meta }; }
+        }
+        const sections = extractCompletedSections(accumulated);
+        while (emittedCount < sections.length) {
+          yield { type: 'section', ...sections[emittedCount++] };
+        }
+      }
+
+      // Fallback: parse full response and emit any sections not yet streamed
+      try {
+        const full = this.parseJson(accumulated);
+        while (emittedCount < full.sections.length) {
+          yield { type: 'section', ...full.sections[emittedCount++] };
+        }
+        if (!metaEmitted) {
+          yield { type: 'meta', title: full.title, emoji: full.emoji, lede: full.lede };
+        }
+      } catch (err) {
+        this.logger.warn(`Stream fallback parse failed: ${(err as Error).message}`);
+      }
+
+      const finalMsg = await finalMsgPromise;
+
+      // Citations can only be resolved once the full message (with web_search_tool_result
+      // blocks) is known. Sections streamed above still carry the raw <cite> tags; emit the
+      // processed bodies + cited sources here so the persist/UI layer can swap them in.
+      let processedSections: LlmSection[] | undefined;
+      let sources: CitationSource[] | undefined;
+      if (webSearch) {
+        const blocks = ((finalMsg as unknown as { content?: unknown[] }).content ?? []) as Array<{ type: string; content?: unknown[] }>;
+        const allSources = extractAnthropicSources(blocks);
+        if (allSources.length) {
+          try {
+            const full = this.parseJson(accumulated);
+            const cited = processCitations(full.sections, allSources);
+            processedSections = cited.sections;
+            if (cited.sources.length) sources = cited.sources;
+          } catch (err) {
+            this.logger.warn(`Citation post-processing failed: ${(err as Error).message}`);
+          }
+        }
+      }
+
+      yield {
+        type: 'done',
+        usage: { inputTokens: finalMsg.usage.input_tokens, outputTokens: finalMsg.usage.output_tokens },
+        sections: processedSections,
+        sources,
+      };
+    }
   }
 
   async answerQuery(query: string, sectionCount = 4, webSearch = false, persona?: string): Promise<LlmResponse> {

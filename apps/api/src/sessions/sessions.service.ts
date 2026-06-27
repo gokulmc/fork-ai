@@ -151,7 +151,7 @@ export class SessionsService {
           this.db.updateSessionMeta(sub, sessionId, { title, emoji, lede }),
         ]);
         await this.users.billUsage(sub, event.usage.inputTokens, event.usage.outputTokens, 'QUERY', sessionId, nodeId, ROOT_MODEL);
-        emit({ type: 'done', sessionId, nodeId, sections, sources: event.sources });
+        emit({ type: 'done', sessionId, nodeId, model: ROOT_MODEL, sections, sources: event.sources });
       }
     }
   }
@@ -250,7 +250,7 @@ export class SessionsService {
           this.db.updateSessionMeta(houseSub, sessionId, { title, emoji, lede }),
         ]);
         await this.users.billUsage(houseSub, event.usage.inputTokens, event.usage.outputTokens, 'QUERY', sessionId, nodeId, ROOT_MODEL, true);
-        emit({ type: 'done', sessionId, nodeId, token, sections, sources: event.sources });
+        emit({ type: 'done', sessionId, nodeId, token, model: ROOT_MODEL, sections, sources: event.sources });
       }
     }
   }
