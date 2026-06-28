@@ -6,6 +6,12 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
+### MindMap root node showing `\claude` (or escape sequences) instead of emoji
+- **Symptom:** Root node emoji slot in the mind map sometimes shows `\claude` or a raw JSON escape sequence (e.g. `🌿`) as literal text instead of the intended emoji character.
+- **Cause 1:** `extractMeta` in `llm.service.ts` uses a regex to extract `title`/`emoji`/`lede` from the partially-streamed JSON. The regex captures the raw JSON-encoded string content verbatim (e.g. `\uXXXX` unicode escapes, `\\` backslash sequences) without JSON-decoding. `title` and `lede` had a minimal `replace(/\\"/g, '"')` fix but `emoji` was returned raw. When Gemini emits a surrogate-pair encoded emoji or an unexpected backslash-prefixed token, the literal escape sequence appeared in the node card.
+- **Cause 2:** No emoji validation on the display side — any truthy string in `n.emoji` was rendered directly in `<span className="mm-emoji">`.
+- **Fix:** Added `jsonDecodeCapture()` in `llm.service.ts` that wraps the regex capture in `JSON.parse` to decode all JSON escape sequences; applied it to `title`, `emoji`, and `lede` in `extractMeta`. Added `/\p{Emoji}/u` guard in `MindMap.tsx` (and the breadcrumb in `App.tsx`) so non-emoji strings fall back to the `<NodeIcon>`. (commit: pending)
+
 ### PDF export: sections blank, words cut at page boundaries, no top margin
 - **Symptom 1:** Multi-page PDFs were mostly blank — sections rendered at `opacity: 0` — with only sources/lede visible at the bottom of the last page.
 - **Symptom 2:** Words were cut in half at page boundaries (equal-strip slicing with no awareness of content positions).

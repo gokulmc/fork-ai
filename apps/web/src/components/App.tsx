@@ -2019,7 +2019,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     <div className="app" ref={appRef} data-map-open={mapOpen ? '1' : undefined}>
       <header className="topbar">
         <div className="crumbs">
-          {rootId && nodes[rootId]?.emoji && (
+          {rootId && nodes[rootId]?.emoji && /\p{Emoji}/u.test(nodes[rootId].emoji!) && (
             <span className="crumb-emoji" style={{ lineHeight: 1 }}>{nodes[rootId].emoji}</span>
           )}
           {/* On phones show only the root title (ellipsized in CSS) to avoid a long,
