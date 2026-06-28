@@ -80,6 +80,7 @@ import {
   createTrialSessionStream,
   createDocumentSessionStream,
   createNode,
+  createMixNode,
   renameNode as apiRenameNode,
   setNodeStar as apiSetNodeStar,
   deleteNode as apiDeleteNode,
@@ -111,7 +112,7 @@ import {
 import { OnboardingTour } from './OnboardingTour';
 import { SkeletonSections } from './SkeletonSections';
 import { HighlightMenu } from './HighlightMenu';
-import { FollowUpPop } from './FollowUpPop';
+import { FollowUpPop, SHORTHANDS } from './FollowUpPop';
 import { NotesDrawer } from './NotesDrawer';
 import { Landing } from './Landing';
 import { LandingHero } from './LandingHero';
@@ -124,6 +125,7 @@ import { MindMapPill } from './MindMapPill';
 import {
   Search, Bookmark, ChevronRight, Sparkles, CornerDownRight, Hash,
   Quote, AlertCircle, ArrowUpRight, Pencil, Trash, Clock, LogIn, FileText, Home,
+  Blend, Filter, X as XIcon,
 } from './Icons';
 import { exportNodePdf } from '@/lib/sessionPdf';
 
@@ -332,7 +334,24 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   const [notionSavedUrl, setNotionSavedUrl] = useState<string | null>(null);
   const [notionError, setNotionError] = useState<string | null>(null);
 
-  // Onboarding tour — default true to suppress flash before API responds
+  // ── Mixer state ─────────────────────────────────────────────────────────────
+  const [mixerMode, setMixerMode] = useState(false);
+  const [mixerSelectedIds, setMixerSelectedIds] = useState<string[]>([]);
+  const [mixerQuestion, setMixerQuestion] = useState('');
+  const [mixerAnimating, setMixerAnimating] = useState(false);
+  const [mixerCollapsing, setMixerCollapsing] = useState(false);
+  // Refs to each SVG node <g> element — used to compute ghost start positions
+  const nodeRefs = useRef<Map<string, SVGGElement>>(new Map());
+
+  const exitMixer = useCallback(() => {
+    setMixerMode(false);
+    setMixerSelectedIds([]);
+    setMixerQuestion('');
+    setMixerAnimating(false);
+    setMixerCollapsing(false);
+  }, []);
+
+  // ── Onboarding tour — default true to suppress flash before API responds
   const [hasOnboarded, setHasOnboarded] = useState(true);
   const [tourPhase, setTourPhase] = useState<'landing' | 'session'>('landing');
 
@@ -1420,6 +1439,14 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [activeId]);
 
+  // Escape exits mixer mode
+  useEffect(() => {
+    if (!mixerMode) return;
+    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') exitMixer(); };
+    document.addEventListener('keydown', onEsc);
+    return () => document.removeEventListener('keydown', onEsc);
+  }, [mixerMode, exitMixer]);
+
   // Native Cmd/Ctrl+C (and right-click → Copy) over section prose copies markdown,
   // matching the highlight-menu copy button. Only overrides selections inside a
   // section body — inputs (no window selection) and other panes fall through to
@@ -1586,6 +1613,143 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
 
   const onMapSelect = (id: string) => { setActiveId(id); scrollWsTop(); };
   const onMapContext = (id: string, x: number, y: number) => setContextMenu({ x, y, nodeId: id });
+
+  const onMixerSelect = useCallback((id: string) => {
+    setMixerSelectedIds(prev => {
+      if (prev.includes(id)) return prev.filter(x => x !== id);
+      if (prev.length >= 5) return prev;
+      return [...prev, id];
+    });
+  }, []);
+
+  const spawnMix = useCallback(async () => {
+    if (!activeId || !sessionId || !idToken || mixerSelectedIds.length === 0 || !mixerQuestion.trim()) return;
+
+    const trimmed = mixerQuestion.trim();
+    const expanded = SHORTHANDS[trimmed] ?? trimmed;
+    if (expanded !== trimmed) setMixerQuestion(expanded);
+
+    // Phase 1 (0–0.5s): collapse the input panel into the button
+    setMixerCollapsing(true);
+
+    // Measure positions for ghost animation
+    const baseEl = nodeRefs.current.get(activeId);
+    const ghostData = mixerSelectedIds.map(id => {
+      const el = nodeRefs.current.get(id);
+      if (!el) return null;
+      const rect = el.getBoundingClientRect();
+      const baseRect = baseEl?.getBoundingClientRect();
+      return { id, rect, baseRect };
+    }).filter(Boolean) as Array<{ id: string; rect: DOMRect; baseRect?: DOMRect }>;
+
+    // Phase 2 (0.5s): spawn ghost divs and animate them toward A
+    await new Promise<void>(resolve => setTimeout(resolve, 500));
+
+    const baseRect = baseEl?.getBoundingClientRect();
+    if (baseRect && ghostData.length > 0) {
+      const container = document.createElement('div');
+      container.className = 'mixer-ghost-container';
+      document.body.appendChild(container);
+
+      const ghosts = ghostData.map(({ id, rect }) => {
+        const gh = document.createElement('div');
+        gh.className = 'mixer-ghost';
+        gh.textContent = nodes[id]?.title ?? '';
+        gh.style.left = `${rect.left}px`;
+        gh.style.top = `${rect.top}px`;
+        gh.style.width = `${rect.width}px`;
+        gh.style.height = `${rect.height}px`;
+        container.appendChild(gh);
+        return gh;
+      });
+
+      // Trigger animation: scale down + translate to base node
+      requestAnimationFrame(() => {
+        ghosts.forEach(gh => {
+          const tx = baseRect.left + baseRect.width / 2 - (parseFloat(gh.style.left) + parseFloat(gh.style.width) / 2);
+          const ty = baseRect.top + baseRect.height / 2 - (parseFloat(gh.style.top) + parseFloat(gh.style.height) / 2);
+          gh.style.transform = `translate(${tx}px, ${ty}px) scale(0.3)`;
+          gh.style.opacity = '0';
+        });
+      });
+
+      // Phase 3 (2.1s): ghosts arrive, pulse A's card
+      await new Promise<void>(resolve => setTimeout(resolve, 2100));
+      container.remove();
+
+      if (baseEl) {
+        const cardEl = baseEl.querySelector<HTMLElement>('.mm-card');
+        if (cardEl) {
+          cardEl.classList.add('mixer-pulse');
+          setTimeout(() => cardEl.classList.remove('mixer-pulse'), 400);
+        }
+      }
+    }
+
+    // Phase 4: start shake animation + fire API call
+    setMixerAnimating(true);
+    const baseCardEl = baseEl?.querySelector<HTMLElement>('.mm-card');
+    if (baseCardEl) baseCardEl.classList.add('mixer-shaking');
+
+    const tempId = uid();
+    const optimisticNode: ForkNode = {
+      id: tempId,
+      parentId: activeId,
+      kind: 'MIX',
+      title: 'Synthesizing…',
+      emoji: null,
+      query: expanded,
+      lede: '',
+      sections: [],
+      fromSection: null,
+      fromText: null,
+      createdAt: Date.now(),
+      loading: true,
+    };
+    setNodes(prev => ({ ...prev, [tempId]: optimisticNode }));
+    setLoadingNodes(prev => new Set([...prev, tempId]));
+
+    try {
+      const result = await createMixNode(idToken, sessionId, {
+        parentNodeId: activeId,
+        sourceNodeIds: mixerSelectedIds,
+        query: expanded,
+        sectionCount: tweaksRef.current.maxSections,
+        model: tweaksRef.current.branchModel,
+      });
+
+      const realNode = toForkNode(result);
+      setNodes(prev => {
+        const next = { ...prev };
+        delete next[tempId];
+        next[realNode.id] = realNode;
+        return next;
+      });
+
+      // Pop-in animation on the new node (target .mm-card div inside foreignObject)
+      setTimeout(() => {
+        const el = nodeRefs.current.get(realNode.id);
+        const newCardEl = el?.querySelector<HTMLElement>('.mm-card');
+        if (newCardEl) {
+          newCardEl.classList.add('mixer-pop');
+          setTimeout(() => newCardEl.classList.remove('mixer-pop'), 400);
+        }
+      }, 50);
+
+      setActiveId(realNode.id);
+      scrollWsTop();
+    } catch (err) {
+      const { msg } = nodeErrorDisplay(err, false);
+      setNodes(prev => ({
+        ...prev,
+        [tempId]: { ...prev[tempId], loading: false, error: msg, errorStatus: err instanceof ApiError ? err.status : undefined },
+      }));
+    } finally {
+      setLoadingNodes(prev => { const n = new Set(prev); n.delete(tempId); return n; });
+      if (baseCardEl) baseCardEl.classList.remove('mixer-shaking');
+      exitMixer();
+    }
+  }, [activeId, sessionId, idToken, mixerSelectedIds, mixerQuestion, nodes, exitMixer, scrollWsTop]);
 
   const renameNodeLocal = (id: string) => {
     const name = prompt('Rename node (max 5 words)', nodes[id]?.title);
@@ -1927,9 +2091,68 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
             notionSavedUrl={notionSavedUrl}
             notionError={notionError}
             onClearNotionError={() => setNotionError(null)}
+            mixerMode={mixerMode}
+            mixerBaseId={activeId}
+            mixerSelectedIds={mixerSelectedIds}
+            onMixerSelect={onMixerSelect}
+            onMixerToggleMode={() => mixerMode ? exitMixer() : setMixerMode(true)}
+            showMixer={!!idToken && !guestToken}
+            nodeRefs={nodeRefs}
           />
         ) : (
           <div className="mm-empty">Mind map will populate as you branch</div>
+        )}
+
+        {/* ── Mixer overlay — floats over the mind map ─────────────────── */}
+        {mixerMode && (
+          <div className={`mixer-overlay${mixerCollapsing ? ' mixer-overlay--collapsing' : ''}`}>
+            {mixerSelectedIds.length === 0 ? (
+              <p className="mixer-hint">
+                <Filter size={13} className="ic" /> Click nodes to select them for synthesis (up to 5)
+              </p>
+            ) : (
+              <>
+                <div className="mixer-chips">
+                  {mixerSelectedIds.map(sid => (
+                    <span key={sid} className="mixer-chip">
+                      <span className="mixer-chip-label">{nodes[sid]?.title ?? sid}</span>
+                      <button
+                        className="mixer-chip-remove"
+                        onClick={() => setMixerSelectedIds(prev => prev.filter(x => x !== sid))}
+                        aria-label={`Remove ${nodes[sid]?.title}`}
+                      ><XIcon size={10} /></button>
+                    </span>
+                  ))}
+                </div>
+                <div className={`mixer-question-row${mixerCollapsing ? ' mixer-question-row--hidden' : ''}`}>
+                  <input
+                    className="mixer-question-input"
+                    type="text"
+                    placeholder="What should I synthesize?"
+                    value={mixerQuestion}
+                    onChange={e => setMixerQuestion(e.target.value)}
+                    autoFocus
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && mixerQuestion.trim() && !mixerAnimating) {
+                        e.preventDefault();
+                        void spawnMix();
+                      }
+                    }}
+                  />
+                  <button
+                    className="mixer-spawn-btn"
+                    disabled={!mixerQuestion.trim() || mixerAnimating}
+                    onClick={() => void spawnMix()}
+                  >
+                    {mixerAnimating
+                      ? <span className="spinner" style={{ width: 11, height: 11 }} />
+                      : <><Blend size={13} /> Mix &amp; Spawn</>}
+                  </button>
+                </div>
+                <span className="mixer-shortcut-hint">⌘ + ⏎ to mix · Esc to cancel</span>
+              </>
+            )}
+          </div>
         )}
       </section>
 
@@ -1956,7 +2179,9 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
                     ? <><Sparkles size={12} className="ic" /> Follow-up</>
                     : active.kind === 'DEEPER'
                       ? <><CornerDownRight size={12} className="ic" /> Deep dive</>
-                      : <><Search size={12} className="ic" /> Query</>}
+                      : active.kind === 'MIX'
+                        ? <><Blend size={12} className="ic" /> Synthesis</>
+                        : <><Search size={12} className="ic" /> Query</>}
                 </button>
                 {active.kind === 'QUERY' && (
                   <span className="pill"><Hash size={12} className="ic" /> {active.sections.length || '—'} sections</span>
@@ -2020,7 +2245,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
                 )}
               </div>
               {active.lede && <p className="ws-lede">{stripCite(active.lede)}</p>}
-              {active.fromText && (
+              {active.fromText && active.kind !== 'MIX' && (
                 <div
                   className="inline-callout inline-callout--nav"
                   style={{ marginBottom: 24, cursor: 'pointer' }}

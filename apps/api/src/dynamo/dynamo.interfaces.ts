@@ -91,7 +91,7 @@ export interface UsageEventItem {
   inputTokens: number;
   outputTokens: number;
   costUsd: number;
-  kind: 'QUERY' | 'DEEPER' | 'ASK';
+  kind: 'QUERY' | 'DEEPER' | 'ASK' | 'MIX';
   model: string;
   sessionId: string;
   nodeId: string;
@@ -136,7 +136,7 @@ export interface NodeItem {
   SK: string;
   nodeId: string;
   parentId?: string | null;
-  kind: 'QUERY' | 'DEEPER' | 'ASK';
+  kind: 'QUERY' | 'DEEPER' | 'ASK' | 'MIX';
   title: string;
   emoji?: string | null;
   query: string;

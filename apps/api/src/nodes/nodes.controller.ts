@@ -13,6 +13,7 @@ import { CurrentUser } from '@/auth/current-user.decorator';
 import { CognitoUser } from '@/auth/jwt.strategy';
 import { NodesService } from './nodes.service';
 import { CreateNodeDto } from './dto/create-node.dto';
+import { CreateMixNodeDto } from './dto/create-mix-node.dto';
 import { UpdateNodeDto } from './dto/update-node.dto';
 
 @ApiTags('nodes')
@@ -29,6 +30,17 @@ export class NodesController {
     @Body() dto: CreateNodeDto,
   ) {
     return this.nodesService.createNode(user.sub, sessionId, dto);
+  }
+
+  @Post('mix')
+  @ApiOperation({ summary: 'Create a MIX node — synthesizes content from multiple selected nodes' })
+  @ApiParam({ name: 'sessionId', description: 'ULID session ID' })
+  createMix(
+    @CurrentUser() user: CognitoUser,
+    @Param('sessionId') sessionId: string,
+    @Body() dto: CreateMixNodeDto,
+  ) {
+    return this.nodesService.createMixNode(user.sub, sessionId, dto);
   }
 
   @Patch(':nodeId')

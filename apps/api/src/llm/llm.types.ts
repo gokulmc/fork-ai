@@ -22,7 +22,7 @@ export interface LlmResponse {
   usage: LlmUsage;
 }
 
-export type NodeKind = 'QUERY' | 'DEEPER' | 'ASK';
+export type NodeKind = 'QUERY' | 'DEEPER' | 'ASK' | 'MIX';
 
 // ── Document upload → mind-map ──────────────────────────────────────────────
 // One topic in the mind-map extracted from an uploaded document. `description`

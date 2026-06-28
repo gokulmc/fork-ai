@@ -12,7 +12,7 @@ export interface CitationSource {
 export interface ForkNode {
   id: string;
   parentId: string | null;
-  kind: 'QUERY' | 'DEEPER' | 'ASK';
+  kind: 'QUERY' | 'DEEPER' | 'ASK' | 'MIX';
   title: string;
   emoji: string | null;
   query: string;

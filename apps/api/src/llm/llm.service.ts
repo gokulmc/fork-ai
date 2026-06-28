@@ -492,6 +492,68 @@ You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase 
     return this.callJson(prompt, webSearch, model, { authed, verbose });
   }
 
+  async mixNodes(
+    ancestors: Array<{ title: string; query: string }>,
+    sourceNodes: Array<{ title: string; sections: Array<{ heading: string; body: string }> }>,
+    question: string,
+    sectionCount = 4,
+    model: string = BRANCH_DEFAULT_MODEL,
+    authed = false,
+    usedEmojis: string[] = [],
+    persona?: string,
+  ): Promise<LlmResponse> {
+    const trail = ancestors
+      .map((a, i) => `${i === 0 ? 'Root query' : 'Sub-topic'}: "${a.query}" → "${a.title}"`)
+      .join('\n');
+
+    const nodeBlocks = sourceNodes
+      .map((n, i) => {
+        const sections = n.sections
+          .map((s) => `  ${s.heading ? `**${s.heading}**: ` : ''}${s.body.slice(0, 600)}`)
+          .join('\n');
+        return `Branch ${i + 1}: "${n.title}"\n${sections}`;
+      })
+      .join('\n\n');
+
+    const prompt = `${personaPreamble(persona)}You are a synthesis research assistant. Your task is to combine insights from multiple research branches into one coherent answer.
+
+Research trail (root → base node):
+${trail}
+
+The user selected ${sourceNodes.length} branch${sourceNodes.length > 1 ? 'es' : ''} to synthesize:
+
+${nodeBlocks}
+
+The user's synthesis question: "${question}"
+
+Synthesize a focused answer that weaves together the key insights from all branches above, drawing on their shared themes, contrasts, and connections. Stay grounded in the research trail context.
+
+Produce a focused synthesis with as many sections as the question warrants — no more than ${sectionCount}. Each section should be 80-180 words.
+
+${SECTIONS_SCHEMA}
+
+You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase capturing the synthesis. Escape double-quotes inside JSON strings.`;
+
+    // MIX calls always run at the non-streaming ceiling — they consume more input
+    // tokens (up to 6 nodes of content) and need room to produce a rich synthesis.
+    const provider = this.providerFor(model);
+    const { rawText, usage, truncated } = await provider.complete(
+      prompt + avoidEmojiNote(usedEmojis),
+      { model, maxTokens: NON_STREAMING_MAX_TOKENS, webSearch: false },
+    );
+
+    if (truncated) {
+      throw new UnprocessableEntityException({
+        message: 'The synthesis answer was cut off — it hit the length limit',
+        code: 'OUTPUT_TRUNCATED',
+      });
+    }
+
+    const result = this.parseJson(rawText);
+    result.usage = usage;
+    return result;
+  }
+
   async getTrendingTopics(): Promise<string[]> {
     const today = new Date().toISOString().slice(0, 10);
     const prompt = `Today is ${today}. Use web search to find 4 trending topics from RIGHT NOW in science, technology, or politics/world affairs.

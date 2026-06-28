@@ -104,7 +104,7 @@ export class UsersService {
     sub: string,
     inputTokens: number,
     outputTokens: number,
-    kind: 'QUERY' | 'DEEPER' | 'ASK',
+    kind: 'QUERY' | 'DEEPER' | 'ASK' | 'MIX',
     sessionId: string,
     nodeId: string,
     model: string,
