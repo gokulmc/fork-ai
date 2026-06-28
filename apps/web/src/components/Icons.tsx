@@ -56,3 +56,6 @@ export const Highlighter = make(<><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4
 export const Link = make(<><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></>);
 export const LinkOff = make(<><path d="m18.84 12.25 1.72-1.71h-.02a5.004 5.004 0 0 0-.12-7.07 5.006 5.006 0 0 0-6.95 0l-1.72 1.71"/><path d="m5.17 11.75-1.71 1.71a5.004 5.004 0 0 0 .12 7.07 5.006 5.006 0 0 0 6.95 0l1.71-1.71"/><line x1="8" y1="2" x2="2" y2="8"/><line x1="22" y1="16" x2="16" y2="22"/></>);
 export const Home = make(<><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></>);
+export const Filter = make(<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>);
+export const Blend = make(<><circle cx="9" cy="9" r="7"/><circle cx="15" cy="15" r="7"/></>);
+export const Check = make(<path d="M20 6 9 17l-5-5"/>);

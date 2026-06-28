@@ -19,7 +19,7 @@ interface FollowUpPopProps {
   onClose: () => void;
 }
 
-const SHORTHANDS: Record<string, string> = {
+export const SHORTHANDS: Record<string, string> = {
   '?': 'what',
   '!?': 'how',
   '/?': 'why',

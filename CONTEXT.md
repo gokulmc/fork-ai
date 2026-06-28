@@ -8,7 +8,10 @@
 A single research tree rooted at a user query. Contains a flat map of Nodes. Owned by one User (the creator). Can be shared via a Share Token.
 
 ## Node
-One piece of research content — a query result, a deep-dive, or a follow-up. Always belongs to exactly one Session. Kind is one of `QUERY` (root), `DEEPER` (Go Deeper branch), or `ASK` (Ask AI branch). An `ASK` branch has two origins: a **passage ask** (anchored on a Highlight the user selected) or a **topic ask** (triggered from the node's title with no selection, where the node's lede stands in as the anchor passage and the branch is filed under the node's first Section). Both are the same `ASK` kind and run the same LLM follow-up. Nodes are never queried independently of their Session.
+One piece of research content — a query result, a deep-dive, a follow-up, or a synthesis. Always belongs to exactly one Session. Kind is one of `QUERY` (root), `DEEPER` (Go Deeper branch), `ASK` (Ask AI branch), or `MIX` (Mixer synthesis). An `ASK` branch has two origins: a **passage ask** (anchored on a Highlight the user selected) or a **topic ask** (triggered from the node's title with no selection, where the node's lede stands in as the anchor passage and the branch is filed under the node's first Section). Both are the same `ASK` kind and run the same LLM follow-up. A `MIX` node is synthesized from 2–6 existing nodes selected by the user; its `parentId` is the active base node (A) at the time of spawning, and it carries the user's synthesis question as its `query`. Nodes are never queried independently of their Session.
+
+## Mixer
+An interactive mode on the mind map that lets the user select 2–6 nodes anywhere in the session tree and spawn a `MIX` child under the active node (A). Entered via the funnel icon in the mind map toolbar; cancelled via Escape or the red ×-icon. While active, selected nodes display a ✓ badge; A's content panel shows the selection list and a synthesis-question input. Available to authenticated users only (not Guests). Maximum 5 source nodes may be selected in addition to A.
 
 ## Section
 A heading + body block within a Node. All text content lives inside Sections. Sections are nested inside Nodes and never stored or queried independently.

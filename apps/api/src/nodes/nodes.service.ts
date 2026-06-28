@@ -7,6 +7,7 @@ import { resolveBranchModel } from '@/llm/models';
 import { SessionsService } from '@/sessions/sessions.service';
 import { UsersService } from '@/users/users.service';
 import { CreateNodeDto } from './dto/create-node.dto';
+import { CreateMixNodeDto } from './dto/create-mix-node.dto';
 import { UpdateNodeDto } from './dto/update-node.dto';
 
 @Injectable()
@@ -103,6 +104,98 @@ export class NodesService {
       // Works for both authed and guest writes (guest can't call PATCH /sessions/:id).
       this.db.updateSessionMeta(sub, sessionId, { notionPageUrl: null }),
       this.users.billUsage(sub, llmResult.usage.inputTokens, llmResult.usage.outputTokens, dto.kind, sessionId, node.nodeId, model, isTrial),
+    ]);
+
+    return node;
+  }
+
+  async createMixNode(sub: string, sessionId: string, dto: CreateMixNodeDto): Promise<NodeItem> {
+    await this.users.checkCredit(sub);
+
+    const model = resolveBranchModel(dto.model, false);
+
+    const session = await this.sessions.getSession(sub, sessionId);
+    const nodeById = new Map(session.nodes.map((n) => [n.nodeId, n]));
+
+    if (!nodeById.has(dto.parentNodeId)) {
+      throw new NotFoundException(`Parent node ${dto.parentNodeId} not found`);
+    }
+
+    if (dto.sourceNodeIds.includes(dto.parentNodeId)) {
+      throw new BadRequestException('sourceNodeIds must not include parentNodeId');
+    }
+
+    for (const id of dto.sourceNodeIds) {
+      if (!nodeById.has(id)) throw new NotFoundException(`Source node ${id} not found`);
+    }
+
+    // Collect sibling + ancestor emojis to avoid icon duplication
+    const usedEmojis = new Set(
+      session.nodes
+        .filter((n) => n.parentId === dto.parentNodeId && n.emoji)
+        .map((n) => n.emoji as string),
+    );
+
+    // Build ancestor context trail for A (root → parentNode)
+    const ancestors: Array<{ title: string; query: string }> = [];
+    let cur: string | null = dto.parentNodeId;
+    while (cur) {
+      const n = nodeById.get(cur);
+      if (!n) break;
+      ancestors.unshift({ title: n.title, query: n.query });
+      if (n.emoji) usedEmojis.add(n.emoji);
+      cur = n.parentId ?? null;
+    }
+
+    // Build source node content for LLM (title + sections, body capped to keep context size sane)
+    const sourceNodes = dto.sourceNodeIds.map((id) => {
+      const n = nodeById.get(id)!;
+      return {
+        title: n.title,
+        sections: n.sections.map((s) => ({ heading: s.heading, body: s.body })),
+      };
+    });
+
+    const persona = await this.users.getPersona(sub);
+
+    const llmResult = await this.llm.mixNodes(
+      ancestors,
+      sourceNodes,
+      dto.query,
+      dto.sectionCount ?? 4,
+      model,
+      true,
+      [...usedEmojis],
+      persona,
+    );
+
+    const nodeId = ulid();
+    const now = new Date().toISOString();
+    const sections = llmResult.sections.map((s) => ({ id: ulid(), ...s }));
+
+    const node: NodeItem = {
+      PK: `SESSION#${sessionId}`,
+      SK: `NODE#${nodeId}`,
+      nodeId,
+      parentId: dto.parentNodeId,
+      kind: 'MIX',
+      title: llmResult.title,
+      emoji: llmResult.emoji,
+      query: dto.query,
+      lede: llmResult.lede,
+      sections,
+      fromSection: null,
+      fromText: dto.sourceNodeIds.join(','),
+      createdAt: now,
+      model,
+    };
+
+    await this.db.putNode(node);
+    await Promise.all([
+      this.sessions.touchUpdatedAt(sub, sessionId),
+      this.sessions.incrementNodeCount(sub, sessionId, 1),
+      this.db.updateSessionMeta(sub, sessionId, { notionPageUrl: null }),
+      this.users.billUsage(sub, llmResult.usage.inputTokens, llmResult.usage.outputTokens, 'MIX', sessionId, node.nodeId, model, false),
     ]);
 
     return node;

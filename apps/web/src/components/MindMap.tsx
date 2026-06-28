@@ -1,8 +1,8 @@
 'use client';
-import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import type { ForkNode } from '@/lib/types';
 import { clamp } from '@/lib/utils';
-import { Hash, Sparkles, CornerDownRight, GitBranch, Map, Minus, Plus, Maximize, Copy } from './Icons';
+import { Hash, Sparkles, CornerDownRight, GitBranch, Map, Minus, Plus, Maximize, Copy, Filter, Blend, X } from './Icons';
 
 const NODE_W = 192;
 const NODE_H = 58;
@@ -110,6 +110,14 @@ interface MindMapProps {
   notionSavedUrl?: string | null;
   notionError?: string | null;
   onClearNotionError?: () => void;
+  // Mixer props
+  mixerMode?: boolean;
+  mixerBaseId?: string | null;
+  mixerSelectedIds?: string[];
+  onMixerSelect?: (id: string) => void;
+  onMixerToggleMode?: () => void;
+  showMixer?: boolean; // false for guests
+  nodeRefs?: React.MutableRefObject<Map<string, SVGGElement>>;
 }
 
 export function MindMap({
@@ -126,6 +134,13 @@ export function MindMap({
   notionSavedUrl = null,
   notionError = null,
   onClearNotionError,
+  mixerMode = false,
+  mixerBaseId = null,
+  mixerSelectedIds = [],
+  onMixerSelect,
+  onMixerToggleMode,
+  showMixer = false,
+  nodeRefs,
 }: MindMapProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [view, setView] = useState({ tx: 0, ty: 0, scale: 1 });
@@ -360,6 +375,7 @@ export function MindMap({
     if (isRoot) return Hash;
     if (kind === 'ASK') return Sparkles;
     if (kind === 'DEEPER') return CornerDownRight;
+    if (kind === 'MIX') return Blend;
     return GitBranch;
   }
 
@@ -370,12 +386,12 @@ export function MindMap({
       <div className="mindmap-header" data-tour="tour-mindmap">
         <span className="label">
           <Map size={13} />
-          {nodeCount} {nodeCount === 1 ? 'node' : 'nodes'}
+          {nodeCount}<span className="mm-node-label"> {nodeCount === 1 ? 'node' : 'nodes'}</span>
         </span>
         {onSaveToNotion && (
           <button
             data-tour="tour-notion"
-            className={`mm-copy-btn${notionSavedUrl ? ' mm-copy-btn--copied' : notionError ? ' mm-copy-btn--error' : ''}`}
+            className={`mm-copy-btn mm-copy-btn--center${notionSavedUrl ? ' mm-copy-btn--copied' : notionError ? ' mm-copy-btn--error' : ''}`}
             onClick={notionSavedUrl
               ? () => window.open(notionSavedUrl, '_blank')
               : notionError
@@ -386,14 +402,27 @@ export function MindMap({
             style={{ pointerEvents: 'auto' }}
           >
             <Copy size={13} />
-            {notionSaving ? 'Saving…' : notionSavedUrl ? 'Open in Notion ↗' : notionError ? notionError : 'Save to Notion'}
+            {notionSaving ? 'Saving…' : notionSavedUrl ? 'Open in Notion ↗' : notionError ? notionError : <><span className="mm-notion-long">Save to </span>Notion</>}
           </button>
         )}
-        <div className="zoom">
-          <button onClick={() => zoomBy(0.85)} title="Zoom out"><Minus size={13} /></button>
-          <span className="val">{Math.round(view.scale * 100)}%</span>
-          <button onClick={() => zoomBy(1.15)} title="Zoom in"><Plus size={13} /></button>
-          <button onClick={fitView} title="Fit to view"><Maximize size={13} /></button>
+        <div className="mm-right-controls">
+          {showMixer && onMixerToggleMode && (
+            <button
+              className={`mm-mixer-btn${mixerMode ? ' mm-mixer-btn--active' : ''}`}
+              onClick={onMixerToggleMode}
+              title={mixerMode ? 'Cancel mixer (Esc)' : 'Mixer — synthesize multiple nodes'}
+              style={{ pointerEvents: 'auto' }}
+            >
+              {mixerMode ? <X size={13} /> : <Filter size={13} />}
+              <span className="mm-mixer-label">{mixerMode ? 'Cancel' : 'Mixer'}</span>
+            </button>
+          )}
+          <div className="zoom">
+            <button className="zoom-step" onClick={() => zoomBy(0.85)} title="Zoom out"><Minus size={13} /></button>
+            <span className="val">{Math.round(view.scale * 100)}%</span>
+            <button className="zoom-step" onClick={() => zoomBy(1.15)} title="Zoom in"><Plus size={13} /></button>
+            <button onClick={fitView} title="Fit to view"><Maximize size={13} /></button>
+          </div>
         </div>
       </div>
       <svg
@@ -425,15 +454,33 @@ export function MindMap({
                 ? 'Branch'
                 : n.kind === 'DEEPER'
                   ? 'Deeper'
-                  : 'Branch';
+                  : n.kind === 'MIX'
+                    ? 'Synthesis'
+                    : 'Branch';
+
+            const isMixerBase = mixerMode && n.id === mixerBaseId;
+            const isMixerSelected = mixerMode && mixerSelectedIds.includes(n.id);
+            const isMixerSelectable = mixerMode && n.id !== mixerBaseId;
+
+            const handleClick = (e: React.MouseEvent) => {
+              e.stopPropagation();
+              if (mixerMode && isMixerSelectable && onMixerSelect) {
+                onMixerSelect(n.id);
+              } else if (!mixerMode) {
+                onSelect(n.id);
+              }
+            };
+
             return (
               <g
                 key={n.id}
-                className={`mm-node${isActive ? ' active' : ''}${isRoot ? ' root' : ''}${loading ? ' loading' : ''}${isRead ? ' read' : ''}${starred ? ' starred' : ''}`}
+                ref={el => { if (nodeRefs && el) nodeRefs.current.set(n.id, el); }}
+                className={`mm-node${isActive ? ' active' : ''}${isRoot ? ' root' : ''}${loading ? ' loading' : ''}${isRead ? ' read' : ''}${starred ? ' starred' : ''}${isMixerBase ? ' mixer-base' : ''}${isMixerSelected ? ' mixer-selected' : ''}${isMixerSelectable ? ' mixer-selectable' : ''}`}
                 data-depth={Math.min(depth, 6)}
                 transform={`translate(${p.x} ${p.y})`}
-                onClick={e => { e.stopPropagation(); onSelect(n.id); }}
+                onClick={handleClick}
                 onContextMenu={e => {
+                  if (mixerMode) { e.preventDefault(); return; }
                   e.preventDefault();
                   e.stopPropagation();
                   onContextMenu?.(n.id, e.clientX, e.clientY);
@@ -454,6 +501,7 @@ export function MindMap({
                       <div className="mm-label" title={n.title || 'Untitled'}>{n.title || 'Untitled'}</div>
                     </div>
                     {n.sources?.length ? <span className="mm-search-badge">🔍</span> : null}
+                    {n.kind === 'MIX' ? <span className="mm-mix-badge"><Filter size={11} /></span> : null}
                   </div>
                 </foreignObject>
               </g>

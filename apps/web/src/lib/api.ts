@@ -15,7 +15,7 @@ export function setSessionRefresher(fn: () => Promise<string | null>) { sessionR
 export interface ApiNode {
   id: string;
   parentId: string | null;
-  kind: 'QUERY' | 'DEEPER' | 'ASK';
+  kind: 'QUERY' | 'DEEPER' | 'ASK' | 'MIX';
   title: string;
   emoji: string | null;
   query: string;
@@ -239,7 +239,7 @@ export interface UsageEvent {
   usageId: string;
   costUsd: number;
   createdAt: string;
-  kind?: 'QUERY' | 'DEEPER' | 'ASK';
+  kind?: 'QUERY' | 'DEEPER' | 'ASK' | 'MIX';
   inputTokens?: number;
   outputTokens?: number;
   sessionId?: string;
@@ -382,7 +382,7 @@ export type StreamEvent =
 // NodeItem (nodeId, not id) — feed it through toForkNode like createNode does.
 export type DocumentStreamEvent =
   | { type: 'init'; sessionId: string; nodeId: string }
-  | { type: 'skeleton'; nodes: Array<{ id: string; parentId: string | null; kind: 'QUERY' | 'DEEPER' | 'ASK'; title: string; emoji: string | null }> }
+  | { type: 'skeleton'; nodes: Array<{ id: string; parentId: string | null; kind: 'QUERY' | 'DEEPER' | 'ASK' | 'MIX'; title: string; emoji: string | null }> }
   | { type: 'node-done'; node: ApiNode }
   | { type: 'done'; sessionId: string; nodeCount: number; title: string; emoji: string; lede: string }
   | { type: 'error'; message: string; status?: number };
@@ -549,6 +549,25 @@ export function deleteNode(
 ): Promise<void> {
   return apiFetch<void>(`/sessions/${sessionId}/nodes/${nodeId}`, idToken, {
     method: 'DELETE',
+  });
+}
+
+export interface CreateMixNodePayload {
+  parentNodeId: string;
+  sourceNodeIds: string[];
+  query: string;
+  sectionCount?: number;
+  model?: 'haiku' | 'sonnet' | 'opus' | 'gemini-pro' | 'gemini-flash' | 'gemini-flash-lite' | 'deepseek-pro' | 'deepseek-flash' | 'glm' | 'glm-air';
+}
+
+export function createMixNode(
+  idToken: string,
+  sessionId: string,
+  payload: CreateMixNodePayload,
+): Promise<ApiNode> {
+  return apiFetch<ApiNode>(`/sessions/${sessionId}/nodes/mix`, idToken, {
+    method: 'POST',
+    body: JSON.stringify(payload),
   });
 }
 
