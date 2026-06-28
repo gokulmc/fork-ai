@@ -281,6 +281,15 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, 
     return () => ro.disconnect();
   }, [open, clampToViewport]);
 
+  useEffect(() => {
+    if (!open || howToOpen || supportOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (dragRef.current && !dragRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open, howToOpen, supportOpen]);
+
   const onDragStart = (e: React.MouseEvent) => {
     const panel = dragRef.current;
     if (!panel) return;
