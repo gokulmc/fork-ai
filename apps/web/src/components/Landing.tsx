@@ -21,7 +21,9 @@ export function Landing({ onSubmit, onSubmitDocument, loading, onShowHistory, ou
   const [reading, setReading] = useState(false);
   const [ocrProgress, setOcrProgress] = useState<{ msg: string; pct: number } | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const dragCountRef = useRef(0);
 
   const onGo = () => {
     if (!q.trim() || loading) return;
@@ -29,17 +31,7 @@ export function Landing({ onSubmit, onSubmitDocument, loading, onShowHistory, ou
     setTimeout(() => onSubmit(q.trim()), 100);
   };
 
-  const onPickFile = () => {
-    if (loading || reading) return;
-    if (!loggedIn) { onLogin?.(); return; }
-    setFileError(null);
-    fileRef.current?.click();
-  };
-
-  const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
+  const processFile = async (file: File) => {
     setReading(true);
     setOcrProgress(null);
     setFileError(null);
@@ -59,6 +51,48 @@ export function Landing({ onSubmit, onSubmitDocument, loading, onShowHistory, ou
     }
   };
 
+  const onDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCountRef.current++;
+    if (e.dataTransfer.items[0]?.kind === 'file') setDragOver(true);
+  };
+
+  const onDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  };
+
+  const onDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCountRef.current--;
+    if (dragCountRef.current === 0) setDragOver(false);
+  };
+
+  const onDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCountRef.current = 0;
+    setDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    if (loading || reading) return;
+    if (!loggedIn) { onLogin?.(); return; }
+    await processFile(file);
+  };
+
+  const onPickFile = () => {
+    if (loading || reading) return;
+    if (!loggedIn) { onLogin?.(); return; }
+    setFileError(null);
+    fileRef.current?.click();
+  };
+
+  const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    await processFile(file);
+  };
+
   return (
     <div className={`landing${leaving ? ' leaving' : ''}`}>
       <nav className="landing-nav">
@@ -72,14 +106,20 @@ export function Landing({ onSubmit, onSubmitDocument, loading, onShowHistory, ou
         )}
       </nav>
 
-      <div className="landing-inner">
+      <div
+        className="landing-inner"
+        onDragEnter={onDragEnter}
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
+      >
         <div className="landing-mark">A branching research workspace</div>
         <h1>Ask once. <em>Branch</em> forever.</h1>
         <p className="landing-sub">
           Type a question. Get an answer split into sections you can dive deeper into, highlight,
           and branch from. Every detour becomes a node on your mind map.
         </p>
-        <div className="query-box" data-tour="tour-query">
+        <div className={`query-box${dragOver ? ' drag-over' : ''}`} data-tour="tour-query">
           <span className="icon"><Search size={20} /></span>
           <input
             type="text"
@@ -115,6 +155,9 @@ export function Landing({ onSubmit, onSubmitDocument, loading, onShowHistory, ou
           </button>
         </div>
 
+        {dragOver && (
+          <div className="drop-hint">Drop to build a mind map from this file</div>
+        )}
         {ocrProgress && (
           <div className="ocr-progress">
             <div className="ocr-progress-track">

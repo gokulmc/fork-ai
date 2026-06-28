@@ -285,6 +285,19 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 }
 .query-box .qb-file:hover { color: var(--ink); background: var(--accent-soft); }
 .query-box .qb-file:disabled { cursor: not-allowed; }
+.query-box.drag-over {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface, #fff));
+}
+.drop-hint {
+  font-size: 11px;
+  color: var(--accent);
+  letter-spacing: 0.06em;
+  margin-top: 8px;
+  font-family: ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+  text-align: center;
+}
 
 .ocr-progress {
   margin: 18px auto 0;
