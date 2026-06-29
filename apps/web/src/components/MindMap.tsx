@@ -492,7 +492,7 @@ export function MindMap({
                 <foreignObject x="0" y="0" width={NODE_W} height={NODE_H} className="mm-fo" overflow="hidden">
                   <div className="mm-card">
                     <div className="mm-card-ic">
-                      {n.emoji
+                      {n.emoji && /\p{Emoji}/u.test(n.emoji)
                         ? <span className="mm-emoji">{n.emoji}</span>
                         : <NodeIcon size={16} />}
                     </div>

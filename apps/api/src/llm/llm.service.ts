@@ -29,15 +29,22 @@ export function friendlyLlmError(err?: Error): string {
   return 'The AI request failed';
 }
 
+// Decode the raw regex capture (which preserves JSON escape sequences verbatim)
+// back to the actual string value. Example: the regex captures ✨ (6 chars)
+// but JSON.parse turns it into ✨ (1 char). Falls back to the raw value on error.
+function jsonDecodeCapture(s: string): string {
+  try { return JSON.parse(`"${s}"`); } catch { return s; }
+}
+
 function extractMeta(text: string): { title: string; emoji: string; lede: string } | null {
   const title = text.match(/"title"\s*:\s*"((?:[^"\\]|\\.)*)"/)?.[1];
   const emoji = text.match(/"emoji"\s*:\s*"((?:[^"\\]|\\.)*)"/)?.[1];
   const lede  = text.match(/"lede"\s*:\s*"((?:[^"\\]|\\.)*)"/)?.[1];
   if (!title || !emoji || !lede) return null;
   return {
-    title: title.replace(/\\"/g, '"'),
-    emoji,
-    lede: lede.replace(/\\"/g, '"'),
+    title: jsonDecodeCapture(title),
+    emoji: jsonDecodeCapture(emoji),
+    lede:  jsonDecodeCapture(lede),
   };
 }
 
