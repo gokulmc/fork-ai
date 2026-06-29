@@ -6,6 +6,11 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
+### Login graph animation incomplete in Safari — rings/particles/node blow-out never moved
+- **Symptom:** The post-login graph animation played fully in Chrome but was "not complete" in Safari/WebKit (and the installed PWA): the breakthrough rings didn't expand, the particle burst didn't fly out, and the blow-out nodes didn't move — only the opacity fades happened.
+- **Cause:** The animation drove **SVG geometry attributes** (`r`, `cx`, `cy`) as Web Animations API keyframes. Blink (Chrome) registers these as animatable CSS properties; **WebKit does not**, so those keyframes were silently ignored. `opacity`/`stroke-width` are real CSS properties so the fades still ran — hence "partially" complete.
+- **Fix:** In `breakthrough()` and `blowOut()` (`apps/web/src/components/LoginPage.tsx`), replaced every geometry-attribute keyframe with a CSS `transform`: rings now `scale()` about their own centre (`transform-box: fill-box; transform-origin: center`, plus `vector-effect: non-scaling-stroke` on the stroked ring to preserve the thinning), and particles + nodes now `translate(...px)` instead of animating `cx`/`cy` (explicit `px` units — Safari rejects unitless translate). `opacity`/`stroke-width` keyframes and the rAF trace head are unchanged. (commit: pending)
+
 ### MindMap root node showing `\claude` (or escape sequences) instead of emoji
 - **Symptom:** Root node emoji slot in the mind map sometimes shows `\claude` or a raw JSON escape sequence (e.g. `🌿`) as literal text instead of the intended emoji character.
 - **Cause 1:** `extractMeta` in `llm.service.ts` uses a regex to extract `title`/`emoji`/`lede` from the partially-streamed JSON. The regex captures the raw JSON-encoded string content verbatim (e.g. `\uXXXX` unicode escapes, `\\` backslash sequences) without JSON-decoding. `title` and `lede` had a minimal `replace(/\\"/g, '"')` fix but `emoji` was returned raw. When Gemini emits a surrogate-pair encoded emoji or an unexpected backslash-prefixed token, the literal escape sequence appeared in the node card.

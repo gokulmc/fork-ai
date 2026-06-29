@@ -635,22 +635,26 @@ export function LoginPage({ onEnter }: LoginPageProps) {
     function breakthrough(end: GNode, head: SVGCircleElement) {
       const { W, H } = graph!;
 
+      // Safari (WebKit) doesn't animate the SVG geometry attrs r/cx/cy — only transform/opacity.
+      // Scale (about each circle's own centre) replaces growing r; translate replaces moving cx/cy.
       const flash = document.createElementNS(SVG_NS, 'circle');
       flash.setAttribute('cx', String(end.x)); flash.setAttribute('cy', String(end.y));
       flash.setAttribute('r', '4'); flash.setAttribute('fill', pal.soft);
       flash.setAttribute('opacity', '0.85'); flash.setAttribute('filter', 'url(#lp-bigglow)');
+      flash.style.transformBox = 'fill-box'; flash.style.transformOrigin = 'center';
       gFX!.appendChild(flash);
       flash.animate(
-        [{ r: '4', opacity: '0.85' }, { r: String(Math.max(W, H) * 0.95), opacity: '0' }] as Keyframe[],
+        [{ transform: 'scale(1)', opacity: '0.85' }, { transform: `scale(${(Math.max(W, H) * 0.95) / 4})`, opacity: '0' }] as Keyframe[],
         { duration: 1600, easing: 'cubic-bezier(.2,.7,.2,1)', fill: 'forwards' },
       );
 
       const flash2 = document.createElementNS(SVG_NS, 'circle');
       flash2.setAttribute('cx', String(end.x)); flash2.setAttribute('cy', String(end.y));
       flash2.setAttribute('r', '2'); flash2.setAttribute('fill', pal.soft);
+      flash2.style.transformBox = 'fill-box'; flash2.style.transformOrigin = 'center';
       gFX!.appendChild(flash2);
       flash2.animate(
-        [{ r: '2', opacity: '1' }, { r: '70', opacity: '0' }] as Keyframe[],
+        [{ transform: 'scale(1)', opacity: '1' }, { transform: 'scale(35)', opacity: '0' }] as Keyframe[],
         { duration: 900, easing: 'cubic-bezier(.2,.7,.2,1)', fill: 'forwards' },
       );
 
@@ -658,10 +662,11 @@ export function LoginPage({ onEnter }: LoginPageProps) {
       ring.setAttribute('cx', String(end.x)); ring.setAttribute('cy', String(end.y));
       ring.setAttribute('r', '4'); ring.setAttribute('fill', 'none');
       ring.setAttribute('stroke', pal.soft); ring.setAttribute('stroke-width', '2');
-      ring.setAttribute('opacity', '0.8');
+      ring.setAttribute('opacity', '0.8'); ring.setAttribute('vector-effect', 'non-scaling-stroke');
+      ring.style.transformBox = 'fill-box'; ring.style.transformOrigin = 'center';
       gFX!.appendChild(ring);
       ring.animate(
-        [{ r: '4', opacity: '0.8', strokeWidth: '2' }, { r: String(Math.max(W, H) * 0.7), opacity: '0', strokeWidth: '0.2' }] as Keyframe[],
+        [{ transform: 'scale(1)', opacity: '0.8', strokeWidth: '2' }, { transform: `scale(${(Math.max(W, H) * 0.7) / 4})`, opacity: '0', strokeWidth: '0.2' }] as Keyframe[],
         { duration: 1800, easing: 'cubic-bezier(.18,.7,.2,1)', fill: 'forwards' },
       );
 
@@ -673,10 +678,11 @@ export function LoginPage({ onEnter }: LoginPageProps) {
         gFX!.appendChild(p);
         const angle = (Math.PI * 2) * (i / 26) + Math.random() * 0.4;
         const dist = 110 + Math.random() * 260;
+        const ox = Math.cos(angle) * dist, oy = Math.sin(angle) * dist;
         p.animate(
           [
-            { cx: String(end.x), cy: String(end.y), opacity: '1' },
-            { cx: String(end.x + Math.cos(angle) * dist), cy: String(end.y + Math.sin(angle) * dist), opacity: '0' },
+            { transform: 'translate(0px, 0px)', opacity: '1' },
+            { transform: `translate(${ox}px, ${oy}px)`, opacity: '0' },
           ] as Keyframe[],
           { duration: 1300 + Math.random() * 500, easing: 'cubic-bezier(.2,.7,.2,1)', fill: 'forwards' },
         );
@@ -703,8 +709,8 @@ export function LoginPage({ onEnter }: LoginPageProps) {
         els.forEach(el =>
           el.animate(
             [
-              { opacity: '1', cx: String(n.x), cy: String(n.y) },
-              { opacity: '0', cx: String(n.x + tx), cy: String(n.y + ty) },
+              { opacity: '1', transform: 'translate(0px, 0px)' },
+              { opacity: '0', transform: `translate(${tx}px, ${ty}px)` },
             ] as Keyframe[],
             { duration: 1500 + Math.random() * 400, easing: 'cubic-bezier(.32,.0,.4,1)', fill: 'forwards' },
           ),
