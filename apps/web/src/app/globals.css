@@ -1766,6 +1766,10 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
      the section number with the heading instead of baseline-aligning (baseline makes
      the small 12px num drop to the middle of the larger h2 line on mobile). */
   .section-body { padding-left: 34px; overflow-wrap: break-word; }
+  /* Verbose branch answers carry one headingless section (no .section-head/.section-num),
+     so the 34px indent — which only exists to align body text under the number — just
+     wastes left width. Flow that prose to the full column. Sectioned answers keep it. */
+  .section:not(:has(.section-head)) .section-body { padding-left: 17px; }
   .section-head { align-items: flex-start; }
   .section-num { margin-top: 3px; }
   .workspace-inner :is(img, table, pre) { max-width: 100%; }
