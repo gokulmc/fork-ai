@@ -6,7 +6,7 @@ import { DynamoRepository } from '@/dynamo/dynamo.repository';
 import type { NodeItem, AnnotationItem, HighlightItem, SessionMetaItem } from '@/dynamo/dynamo.interfaces';
 import { LlmService } from '@/llm/llm.service';
 import { ROOT_MODEL, resolveBranchModel } from '@/llm/models';
-import { UsersService } from '@/users/users.service';
+import { UsersService, isPrivateIp } from '@/users/users.service';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { CreateDocumentDto } from './dto/create-document.dto';
 import { UpdateSessionDto } from './dto/update-session.dto';
@@ -159,6 +159,7 @@ export class SessionsService {
   async createTrialSessionStreaming(
     dto: CreateSessionDto,
     send: (data: object) => void,
+    ip?: string,
   ): Promise<void> {
     const houseSub = this.cfg.get<string>('TRIAL_HOUSE_SUB') ?? process.env.TRIAL_HOUSE_SUB;
     if (!houseSub) throw new Error('TRIAL_HOUSE_SUB not configured');
@@ -216,6 +217,8 @@ export class SessionsService {
       this.db.putShareToken(token, sessionId, houseSub),
     ]);
     emit({ type: 'init', sessionId, nodeId, token });
+    // Fire-and-forget — geo enrichment must never block or slow the LLM stream.
+    void this.enrichTrialLocation(houseSub, sessionId, ip);
 
     let title = '';
     let emoji = '';
@@ -252,6 +255,27 @@ export class SessionsService {
         await this.users.billUsage(houseSub, event.usage.inputTokens, event.usage.outputTokens, 'QUERY', sessionId, nodeId, ROOT_MODEL, true);
         emit({ type: 'done', sessionId, nodeId, token, model: ROOT_MODEL, sections, sources: event.sources });
       }
+    }
+  }
+
+  // Best-effort geo lookup of a trial/guest's IP, for the admin world map.
+  // Mirrors UsersService.enrichLocation. Swallows all errors.
+  private async enrichTrialLocation(houseSub: string, sessionId: string, ip?: string): Promise<void> {
+    if (!ip || isPrivateIp(ip)) return;
+    try {
+      const res = await fetch(`http://ip-api.com/json/${encodeURIComponent(ip)}?fields=status,country,city,lat,lon`);
+      if (!res.ok) return;
+      const data = (await res.json()) as { status?: string; country?: string; city?: string; lat?: number; lon?: number };
+      if (data.status !== 'success') return;
+      await this.db.setTrialSessionLocation(houseSub, sessionId, {
+        trialIp: ip,
+        trialCountry: data.country,
+        trialCity: data.city,
+        trialLat: data.lat,
+        trialLon: data.lon,
+      });
+    } catch (err) {
+      this.logger.warn(`Trial location enrichment failed for ${sessionId}: ${String(err)}`);
     }
   }
 
@@ -614,6 +638,10 @@ export class SessionsService {
     if (!ownerMeta) throw new ForbiddenException('Invalid or revoked share token');
 
     await this.db.putClaimedSessionMeta(guestSub, ownerMeta);
+    // Mark the original trial row converted, for the admin world map.
+    if (ownerMeta.isTrial) {
+      await this.db.updateSessionMeta(share.ownerSub, share.sessionId, { claimed: true });
+    }
     const claimed = await this.db.getSessionMeta(guestSub, share.sessionId);
     return this.toSummary(claimed!);
   }

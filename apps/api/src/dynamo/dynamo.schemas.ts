@@ -91,6 +91,12 @@ export const SessionMetaSchema = new dynamoose.Schema({
   shareToken: { type: String, required: false },
   ownerSub: { type: String, required: false },
   isTrial: { type: Boolean, required: false },
+  trialIp: { type: String, required: false },
+  trialCountry: { type: String, required: false },
+  trialCity: { type: String, required: false },
+  trialLat: { type: Number, required: false },
+  trialLon: { type: Number, required: false },
+  claimed: { type: Boolean, required: false },
   createdAt: String,
   updatedAt: String,
   gsi1pk: {
@@ -210,4 +216,12 @@ export const TrialSpendSchema = new dynamoose.Schema({
   PK: { type: String, hashKey: true },
   SK: { type: String, rangeKey: true },
   spentUsd: { type: Number, required: false },
+});
+
+// Single-row landing-page view counter (PK='PAGEVIEW', SK='TOTAL'), incremented
+// atomically with $ADD. Mirrors BlogViewSchema's per-slug counter pattern.
+export const PageViewSchema = new dynamoose.Schema({
+  PK: { type: String, hashKey: true },
+  SK: { type: String, rangeKey: true },
+  views: { type: Number, required: false },
 });

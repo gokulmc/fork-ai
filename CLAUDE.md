@@ -478,6 +478,32 @@ The `webSearch` param is optional everywhere and defaults to `false`, so all exi
 
 ---
 
+## Admin — trial world map & conversion funnel
+
+Two admin-only tabs (`/admin` → **Map** / **Funnel**) built entirely on existing DynamoDB data plus one new lightweight counter — no PostHog/external analytics dependency was added, per an explicit call to keep this feature self-contained like the rest of the admin dashboard.
+
+**Trial geolocation.** Trial/guest sessions never captured the visitor's IP before this — only signed-up users got `signupIp/Country/City` at signup (`UsersService.enrichLocation`). `share.controller.ts`'s `createTrialSession` now forwards `req.ip` through `ShareService` → `SessionsService.createTrialSessionStreaming`, which fires a fire-and-forget `enrichTrialLocation` (same `ip-api.com` lookup and `isPrivateIp` guard as the signup path, now `export`ed from `users.service.ts`) that writes `trialIp/trialCountry/trialCity/trialLat/trialLon` onto the trial `SessionMetaItem` via `DynamoRepository.setTrialSessionLocation`. **Only trial sessions created after this shipped have a location — there is no IP to backfill retroactively for older ones.** `SessionsService.claimSession` additionally flags the original (house-account) row `claimed: true` when a guest converts, so the map can distinguish converted from unconverted visits. See **[[Trial Location]]** / **[[Trial World Map]]** in `CONTEXT.md`.
+
+**Page views.** A new single-row atomic counter (`PageViewItem`, `PK: PAGEVIEW / SK: TOTAL`) mirrors the existing per-slug `BlogViewItem` pattern exactly. `Landing.tsx` fires a fire-and-forget `POST /analytics/pageview` (new `@Public()` `AnalyticsModule`) once per mount (`useRef` guard against StrictMode double-invoke). This is a raw page-load counter, **not deduplicated unique visitors** — PostHog's `$pageview` autocapture already tracks the latter if that's ever needed instead.
+
+**`GET /admin/trial-locations`** (`admin.service.ts`) reads `DynamoRepository.listSessionMeta(TRIAL_HOUSE_SUB)` — a cheap GSI-1 query, not a scan, since every trial session already lives under the one house-account partition — and returns geolocated rows + a converted count.
+
+**`GET /admin/funnel`** computes six **independent** stage counts (not a strict per-visitor cohort funnel — a user can appear in a later stage without appearing in an earlier one, since an anonymous page view can't be tied to a specific later account):
+- `views` — the Page View counter
+- `firstQuery` — distinct `trialIp` values among trial sessions
+- `accounts` — `scanUsers()` count, **excluding `TRIAL_HOUSE_SUB`**
+- `shareOrNotion` — distinct owners among `scanSessions()` (new: a full table scan of every `SessionMetaItem`, mirroring `scanPayments`) whose `shareToken` or `notionPageUrl` is set, excluding trial rows
+- `recharges` — distinct `sub` among `scanPayments()`
+- `referrals` — distinct `sub` among `scanCreditEvents('REFERRAL')` (new scan method) — i.e. users who **earned** referral credit, not users who were referred
+
+**Frontend rendering — both hand-rolled, no chart library added for either:**
+- `Funnel.tsx` renders `FunnelChart` (`charts.tsx`) — a literal funnel shape (stacked SVG trapezoids tapering from each stage's width to the next stage's), **not a bar chart**. Each stage has a width floor (`FN_MIN_FRAC`) so a huge drop-off (e.g. views≫referrals) never fully vanishes a segment. Labels/counts are printed beside each trapezoid, not inside — segments get too narrow for legible inline text when stages span orders of magnitude.
+- `WorldMap.tsx` renders country borders via `@visx/geo`'s `<Mercator>` + `topojson-client`, fed by `world-atlas`'s `countries-110m.json` copied to `apps/web/public/world-atlas-110m.json` (fetched client-side — kept out of the JS bundle). **`react-simple-maps` was considered and rejected**: it's unmaintained (last publish 2023) and its peer-deps don't declare React 19, unlike `@visx/geo` which does and is actively maintained. `@visx/geo`'s `fitSize` prop is typed as a single `ExtendedFeature` even though d3-geo's underlying `fitSize` genuinely accepts a `FeatureCollection` at runtime — hence the `as unknown as ExtendedFeature` cast in `WorldMap.tsx`.
+  - **Clustering is pixel-space, not geo-index-based** (no `supercluster`): points are grouped by on-screen distance in the map's own *un-zoomed* coordinate space, with the clustering radius divided by the current zoom scale — so clusters naturally split apart as you zoom in, without needing to recompute the projection or tie into a geo library's zoom-level semantics. A cluster renders as a `donutArc` (exported from `charts.tsx`, shared with `PieChart`) showing the converted/not-converted split, sized by `√count`.
+  - **Zoom/pan is hand-rolled** (wheel-to-zoom toward cursor, drag-to-pan, +/−/reset buttons, click-a-cluster-to-zoom-in) via a `<g transform="translate(x,y) scale(s)">` wrapping the whole map, using `svg.getScreenCTM()` to convert client coordinates into the SVG's own viewBox space. A `draggedRef` guards the `onClick` handlers on markers so a pan gesture ending over a dot doesn't also fire a spurious zoom-to-point (the browser still emits a `click` after `pointerup` regardless of how far the pointer moved).
+
+---
+
 ## Email — OTP verification
 
 Cognito sends OTP verification emails via **Amazon SES** (`ap-south-1`, `EmailSendingAccount: DEVELOPER`) from `fork ai <verify@forkai.in>`.

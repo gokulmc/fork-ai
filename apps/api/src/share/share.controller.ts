@@ -1,10 +1,10 @@
 import {
   Controller, Get, Post, Patch, Delete,
-  Body, Param, HttpCode, HttpStatus, Res, Header, HttpException,
+  Body, Param, HttpCode, HttpStatus, Res, Req, Header, HttpException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiParam } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { Public } from '@/auth/public.decorator';
 import { CurrentUser } from '@/auth/current-user.decorator';
 import { CognitoUser } from '@/auth/jwt.strategy';
@@ -28,10 +28,10 @@ export class ShareController {
   @Header('Cache-Control', 'no-cache')
   @Header('Connection', 'keep-alive')
   @ApiOperation({ summary: 'Create a trial session — streams root node, returns token in done event (public)' })
-  async createTrialSession(@Body() dto: CreateSessionDto, @Res() res: Response) {
+  async createTrialSession(@Body() dto: CreateSessionDto, @Res() res: Response, @Req() req: Request) {
     const send = (data: object) => res.write(`data: ${JSON.stringify(data)}\n\n`);
     try {
-      await this.shareService.createTrialSession(dto, send);
+      await this.shareService.createTrialSession(dto, send, req.ip);
     } catch (err) {
       const isHttp = err instanceof HttpException;
       send({

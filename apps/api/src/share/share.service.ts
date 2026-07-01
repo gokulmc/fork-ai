@@ -27,8 +27,8 @@ export class ShareService {
     return { sessionId: share.sessionId, ownerSub: share.ownerSub };
   }
 
-  async createTrialSession(dto: CreateSessionDto, send: (data: object) => void): Promise<void> {
-    return this.sessions.createTrialSessionStreaming(dto, send);
+  async createTrialSession(dto: CreateSessionDto, send: (data: object) => void, ip?: string): Promise<void> {
+    return this.sessions.createTrialSessionStreaming(dto, send, ip);
   }
 
   async getSession(token: string): Promise<FullSession> {

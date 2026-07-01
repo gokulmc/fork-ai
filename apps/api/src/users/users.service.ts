@@ -233,7 +233,7 @@ function utcDay(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function isPrivateIp(ip: string): boolean {
+export function isPrivateIp(ip: string): boolean {
   if (ip === '::1' || ip.startsWith('127.') || ip === 'localhost') return true;
   if (ip.startsWith('10.') || ip.startsWith('192.168.') || ip.startsWith('::ffff:')) return true;
   const m = ip.match(/^172\.(\d+)\./);

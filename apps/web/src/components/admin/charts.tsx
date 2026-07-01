@@ -280,7 +280,7 @@ export function PieChart({ slices, size = 132, fmt = (n: number) => n.toLocaleSt
   );
 }
 
-function donutArc(rO: number, rI: number, f0: number, f1: number): string {
+export function donutArc(rO: number, rI: number, f0: number, f1: number): string {
   const a0 = 2 * Math.PI * f0 - Math.PI / 2;
   const a1 = 2 * Math.PI * f1 - Math.PI / 2;
   const large = f1 - f0 > 0.5 ? 1 : 0;
@@ -292,6 +292,58 @@ function donutArc(rO: number, rI: number, f0: number, f1: number): string {
     `A ${rI} ${rI} 0 ${large} 0 ${pt(rI, a0)}`,
     'Z',
   ].join(' ');
+}
+
+export interface FunnelStage { label: string; value: number; color: string }
+
+const FN_SEG_H = 56;
+const FN_GAP = 6;
+const FN_WIDTH = 380;
+const FN_MIN_FRAC = 0.1; // narrowest a segment can shrink to, so it never fully vanishes
+const FN_LABEL_X = FN_WIDTH + 36;
+
+// A real funnel shape — stacked trapezoids tapering from each stage's width down
+// to the next stage's width, not a bar chart. Counts + drop-off % from the
+// previous stage are printed beside each segment (not inside it — segments can
+// get too narrow for legible text when stages span orders of magnitude).
+export function FunnelChart({ stages }: { stages: FunnelStage[] }) {
+  const max = Math.max(1, ...stages.map((s) => s.value));
+  const widthFor = (v: number) => Math.max(FN_WIDTH * FN_MIN_FRAC, (v / max) * FN_WIDTH);
+  const height = stages.length * (FN_SEG_H + FN_GAP) - FN_GAP;
+  const svgWidth = FN_LABEL_X + 220;
+  const cx = FN_WIDTH / 2;
+
+  return (
+    <svg viewBox={`0 0 ${svgWidth} ${height}`} width="100%" height={height} style={{ display: 'block' }}>
+      {stages.map((s, i) => {
+        const topW = widthFor(s.value);
+        const botW = i < stages.length - 1 ? widthFor(stages[i + 1].value) : topW * 0.88;
+        const y0 = i * (FN_SEG_H + FN_GAP);
+        const y1 = y0 + FN_SEG_H;
+        const d = [
+          `M ${cx - topW / 2} ${y0}`,
+          `L ${cx + topW / 2} ${y0}`,
+          `L ${cx + botW / 2} ${y1}`,
+          `L ${cx - botW / 2} ${y1}`,
+          'Z',
+        ].join(' ');
+        const prev = i > 0 ? stages[i - 1].value : null;
+        const dropPct = prev != null ? (prev > 0 ? Math.round((s.value / prev) * 100) : 0) : null;
+        return (
+          <g key={s.label}>
+            <path d={d} fill={s.color} />
+            <text x={FN_LABEL_X} y={y0 + FN_SEG_H / 2 - 7} fontSize="13" fontWeight="600" fill="var(--admin-text)">
+              {s.label}
+            </text>
+            <text x={FN_LABEL_X} y={y0 + FN_SEG_H / 2 + 12} fontSize="12" fill="var(--admin-muted)">
+              {s.value.toLocaleString()}
+              {dropPct !== null ? `  ·  ${dropPct}% of prev.` : ''}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
 }
 
 export function Sparkline({ points, color, width = 96, height = 32 }: { points: number[]; color: string; width?: number; height?: number }) {

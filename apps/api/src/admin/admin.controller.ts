@@ -101,6 +101,18 @@ export class AdminController {
     return this.admin.listAudit(clampLimit(q.limit));
   }
 
+  @Get('trial-locations')
+  @ApiOperation({ summary: 'Geolocated trial/guest sessions + conversion status, for the world map' })
+  getTrialLocations() {
+    return this.admin.getTrialLocations();
+  }
+
+  @Get('funnel')
+  @ApiOperation({ summary: 'Top-of-funnel counts: views, first query, account, share/Notion, recharges, referral' })
+  getFunnel() {
+    return this.admin.getFunnel();
+  }
+
   @Post('users/:sub/credit')
   @ApiOperation({ summary: 'Grant or set a user credit balance (USD)' })
   adjustCredit(

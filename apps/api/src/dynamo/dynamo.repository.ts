@@ -15,6 +15,7 @@ import {
   BLOG_SUBMISSION_MODEL,
   BLOG_VIEW_MODEL,
   TRIAL_SPEND_MODEL,
+  PAGE_VIEW_MODEL,
   DYNAMO_TABLE,
 } from './dynamo.constants';
 import type {
@@ -32,6 +33,7 @@ import type {
   BlogSubmissionItem,
   BlogViewItem,
   TrialSpendItem,
+  PageViewItem,
 } from './dynamo.interfaces';
 
 @Injectable()
@@ -52,6 +54,7 @@ export class DynamoRepository {
     @Inject(BLOG_SUBMISSION_MODEL) private readonly blogSubmissionModel: any,
     @Inject(BLOG_VIEW_MODEL) private readonly blogViewModel: any,
     @Inject(TRIAL_SPEND_MODEL) private readonly trialSpendModel: any,
+    @Inject(PAGE_VIEW_MODEL) private readonly pageViewModel: any,
   ) {}
 
   // ── Key helpers ─────────────────────────────────────────────────────────────
@@ -189,7 +192,7 @@ export class DynamoRepository {
   async updateSessionMeta(
     sub: string,
     sessionId: string,
-    updates: Partial<Pick<SessionMetaItem, 'title' | 'emoji' | 'lede' | 'nodeCount' | 'notionPageUrl' | 'shareToken' | 'updatedAt' | 'gsi1sk'>>,
+    updates: Partial<Pick<SessionMetaItem, 'title' | 'emoji' | 'lede' | 'nodeCount' | 'notionPageUrl' | 'shareToken' | 'updatedAt' | 'gsi1sk' | 'claimed'>>,
   ): Promise<void> {
     // Dynamoose v4 rejects null for typed fields. Translate null → $REMOVE so
     // callers can clear optional fields (shareToken, notionPageUrl) by passing null.
@@ -417,6 +420,20 @@ export class DynamoRepository {
     );
   }
 
+  // Best-effort geo lookup of a trial/guest session's IP (mirrors setUserLocation).
+  async setTrialSessionLocation(
+    sub: string,
+    sessionId: string,
+    loc: { trialIp?: string; trialCountry?: string; trialCity?: string; trialLat?: number; trialLon?: number },
+  ): Promise<void> {
+    const updates = this.clean(loc);
+    if (!Object.keys(updates).length) return;
+    await this.sessionMetaModel.update(
+      { PK: this.userPk(sub), SK: this.sessionSk(sessionId) },
+      updates,
+    );
+  }
+
   // ── Referrals ────────────────────────────────────────────────────────────────
 
   async getReferralBySlug(slug: string): Promise<ReferralItem | null> {
@@ -539,6 +556,21 @@ export class DynamoRepository {
     return item ? this.toPlain<BlogViewItem>(item) : null;
   }
 
+  // ── Landing page views (admin funnel "views" stage) ─────────────────────────
+
+  async incrementPageView(): Promise<number> {
+    const updated = await this.pageViewModel.update(
+      { PK: 'PAGEVIEW', SK: 'TOTAL' },
+      { $ADD: { views: 1 } },
+    );
+    return this.toPlain<PageViewItem>(updated).views ?? 0;
+  }
+
+  async getPageViews(): Promise<number> {
+    const item = await this.pageViewModel.get({ PK: 'PAGEVIEW', SK: 'TOTAL' });
+    return item ? (this.toPlain<PageViewItem>(item).views ?? 0) : 0;
+  }
+
   // ── Admin: cross-user reads ────────────────────────────────────────────────
   // These use table Scans (no GSI spans all users). Callers MUST paginate and
   // cache — an unbounded scan competes for read capacity with live traffic.
@@ -573,6 +605,21 @@ export class DynamoRepository {
   async scanPayments(): Promise<PaymentItem[]> {
     const items = await this.paymentModel.scan('SK').beginsWith('PAYMENT#').all().exec();
     return this.toPlainArray<PaymentItem>(items);
+  }
+
+  // Full scan of all session rows across users — used by the admin funnel's
+  // share/Notion stage (no GSI spans every owner's sessions at once).
+  async scanSessions(): Promise<SessionMetaItem[]> {
+    const items = await this.sessionMetaModel.scan('SK').beginsWith('SESSION#').all().exec();
+    return this.toPlainArray<SessionMetaItem>(items);
+  }
+
+  // Full filtered scan of credit events, optionally by type — used by the
+  // admin funnel's referral stage (distinct referrers who earned credit).
+  async scanCreditEvents(type?: 'REFERRAL' | 'TOPUP'): Promise<CreditEventItem[]> {
+    const scan = this.creditEventModel.scan('SK').beginsWith('CREDITEVT#');
+    const items = await (type ? scan.and().where('type').eq(type) : scan).all().exec();
+    return this.toPlainArray<CreditEventItem>(items);
   }
 
   // One projected full-table scan → totals + a daily time-series for charts.

@@ -103,6 +103,18 @@ A synthetic `UserMetaItem` in DynamoDB (not a real Cognito identity) whose sub i
 ## Trial Limit Overlay
 A blocking UI overlay shown when a trial user hits the 5-node limit. Displays "Limit reached — login or signup to continue (your session will be saved)" with a single CTA that triggers the standard login/signup flow. On successful login, the Trial Session is Claimed and attached to the new user's account.
 
+## Trial Location
+Best-effort IP → geolocation lookup performed once, asynchronously, when a Trial Session is created — mirrors the signup-time lookup used for regular Users. Adds `trialIp`, `trialCountry`, `trialCity`, `trialLat`, `trialLon` to the Trial Session's SessionMeta record via `ip-api.com` (skipped for private/loopback IPs, so local dev traffic never resolves). The originating House Account row is also flagged `claimed: true` when the Trial Session is later Claimed into a real account, so the Trial World Map can distinguish converted visitors from ones who never signed up. Only Trial Sessions created after this feature shipped carry a Trial Location — there is no stored IP to retroactively backfill for older ones.
+
+## Trial World Map
+An admin-only visualization (`GET /admin/trial-locations`, rendered on the admin dashboard's Map tab) plotting every geolocated Trial Location on a zoomable, pannable world map. Nearby points cluster into a single bubble — the clustering radius shrinks as you zoom in, so clusters split apart into individual points — showing a converted/not-converted donut ring and a count; ungrouped points render as a single coloured dot. Used to see where trial traffic originates and how much of it converts into a real account.
+
+## Page View
+A single-row atomic counter (`PK: PAGEVIEW, SK: TOTAL`) incremented once per Landing page load via a public, unauthenticated `POST /analytics/pageview` call — mirrors the existing per-post Blog View counter. Feeds the "views" stage of the Conversion Funnel. Counts page loads, not deduplicated unique visitors.
+
+## Conversion Funnel
+An admin-only view (`GET /admin/funnel`, rendered on the Funnel tab) of six independent counts across the user journey: Page Views → first Trial Session query (distinct trial IPs) → Accounts created (excludes the House Account) → Share Token generated or Notion export used at least once → Recharge Order completed → Referral Credit earned. Each stage is computed independently from existing DynamoDB records rather than a strict per-visitor cohort funnel — a user can appear in a later stage without appearing in an earlier one, since an anonymous Page View can't be tied to a specific later Account. Rendered as a literal funnel shape (tapering trapezoids stacked top to bottom), not a bar chart.
+
 ## Referral Slug
 A URL-safe identifier derived from a User's email local-part (lowercase, non-alphanumeric stripped). Used to construct the User's personal Referral Link. Generated lazily the first time the User clicks "Refer". Stored at `PK: REFERRAL#{slug}, SK: METADATA` in DynamoDB. Unique — collisions resolved by appending an incrementing numeric suffix (e.g. `johndoe` → `johndoe1`).
 

@@ -31,6 +31,14 @@ export interface TrialSpendItem {
   spentUsd?: number;
 }
 
+// Single-row counter of total landing-page loads, for the admin funnel's
+// top-of-funnel "views" stage. Mirrors BlogViewItem's $ADD counter pattern.
+export interface PageViewItem {
+  PK: string; // 'PAGEVIEW'
+  SK: string; // 'TOTAL'
+  views: number;
+}
+
 export interface UserMetaItem {
   PK: string;
   SK: string;
@@ -111,6 +119,16 @@ export interface SessionMetaItem {
   shareToken?: string | null;
   ownerSub?: string | null;
   isTrial?: boolean;
+  // Best-effort geo lookup of the guest's IP at trial-session creation (mirrors
+  // UserMetaItem.signupIp/Country/City for signed-up users).
+  trialIp?: string;
+  trialCountry?: string;
+  trialCity?: string;
+  trialLat?: number;
+  trialLon?: number;
+  // Set on the original (house-account) trial row when a guest claims it into
+  // a real account — lets the admin map distinguish converted vs not.
+  claimed?: boolean;
   createdAt: string;
   updatedAt: string;
   gsi1pk: string;

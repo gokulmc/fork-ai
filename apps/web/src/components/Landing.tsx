@@ -1,8 +1,9 @@
 'use client';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Search, ArrowRight, ArrowUpRight, Clock, FileText } from './Icons';
 import { CookiePreferencesLink } from './CookiePreferencesLink';
 import { extractText } from '@/lib/extractDocument';
+import { pingPageview } from '@/lib/api';
 
 interface LandingProps {
   onSubmit: (query: string) => void;
@@ -24,6 +25,13 @@ export function Landing({ onSubmit, onSubmitDocument, loading, onShowHistory, ou
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const dragCountRef = useRef(0);
+  const pingedRef = useRef(false);
+
+  useEffect(() => {
+    if (pingedRef.current) return;
+    pingedRef.current = true;
+    pingPageview();
+  }, []);
 
   const onGo = () => {
     if (!q.trim() || loading) return;
@@ -185,6 +193,7 @@ export function Landing({ onSubmit, onSubmitDocument, loading, onShowHistory, ou
       <div className="landing-foot">
         FORK AI · V0.1 · BRANCHING RESEARCH, BY YOU
         <span className="landing-foot-links">
+          <a href="/welcome">How it works</a>
           <a href="/blog">Blog</a>
           <a href="/privacy-policy">Privacy</a>
           <a href="/terms">Terms</a>

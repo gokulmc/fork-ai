@@ -225,6 +225,12 @@ async function apiFetch<T>(
   return JSON.parse(text) as T;
 }
 
+// Fire-and-forget landing-page view ping (public endpoint, no auth) — feeds the
+// admin funnel's "views" stage. Best-effort: never blocks or throws.
+export function pingPageview(): void {
+  fetch(`${base()}/analytics/pageview`, { method: 'POST' }).catch(() => {});
+}
+
 // ── Users ─────────────────────────────────────────────────────────────────────
 
 export interface UserProfile {
@@ -866,6 +872,31 @@ export interface DayMetrics {
   topics: DayTopic[];
 }
 
+export interface TrialLocation {
+  sessionId: string;
+  city?: string;
+  country?: string;
+  lat: number;
+  lon: number;
+  claimed: boolean;
+  createdAt: string;
+}
+
+export interface TrialLocationsResult {
+  locations: TrialLocation[];
+  total: number;
+  converted: number;
+}
+
+export interface FunnelMetrics {
+  views: number;
+  firstQuery: number;
+  accounts: number;
+  shareOrNotion: number;
+  recharges: number;
+  referrals: number;
+}
+
 export const adminApi = {
   getConfig(idToken: string): Promise<{ signupCreditUsd: number; referralCreditUsd: number; creditMultiplier: number }> {
     return apiFetch<{ signupCreditUsd: number; referralCreditUsd: number; creditMultiplier: number }>('/admin/config', idToken);
@@ -917,6 +948,14 @@ export const adminApi = {
 
   listAudit(idToken: string, limit = 50): Promise<AdminAuditEntry[]> {
     return apiFetch<AdminAuditEntry[]>(`/admin/audit?limit=${limit}`, idToken);
+  },
+
+  getTrialLocations(idToken: string): Promise<TrialLocationsResult> {
+    return apiFetch<TrialLocationsResult>('/admin/trial-locations', idToken);
+  },
+
+  getFunnel(idToken: string): Promise<FunnelMetrics> {
+    return apiFetch<FunnelMetrics>('/admin/funnel', idToken);
   },
 
   listBlogSubmissions(idToken: string): Promise<BlogSubmission[]> {

@@ -20,6 +20,7 @@ import { SupportModule } from '@/support/support.module';
 import { TopicsModule } from '@/topics/topics.module';
 import { BlogSubmissionsModule } from '@/blog-submissions/blog-submissions.module';
 import { BlogViewsModule } from '@/blog-views/blog-views.module';
+import { AnalyticsModule } from '@/analytics/analytics.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -48,6 +49,7 @@ import { HealthController } from './health.controller';
     TopicsModule,
     BlogSubmissionsModule,
     BlogViewsModule,
+    AnalyticsModule,
   ],
   controllers: [HealthController],
   providers: [

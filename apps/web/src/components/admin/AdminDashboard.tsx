@@ -18,8 +18,10 @@ import {
   type BlogSubmission,
 } from '@/lib/api';
 import { LineChart, BarChart, Sparkline, PieChart, type PieSlice } from './charts';
+import { WorldMap } from './WorldMap';
+import { Funnel } from './Funnel';
 
-type Tab = 'overview' | 'users' | 'payments' | 'audit' | 'submissions' | 'analytics';
+type Tab = 'overview' | 'users' | 'payments' | 'audit' | 'submissions' | 'analytics' | 'map' | 'funnel';
 
 const C = { accent: '#6366f1', green: '#22c55e', sky: '#38bdf8', amber: '#f59e0b', pink: '#ec4899', violet: '#8b5cf6' };
 const PIE_COLORS = [C.violet, C.sky, C.amber, C.green, C.pink, C.accent, '#14b8a6', '#f97316'];
@@ -103,6 +105,8 @@ export function AdminDashboard() {
       {tab === 'audit' && <Audit idToken={idToken} />}
       {tab === 'submissions' && <Submissions idToken={idToken} />}
       {tab === 'analytics' && <Analytics />}
+      {tab === 'map' && <WorldMap idToken={idToken} />}
+      {tab === 'funnel' && <Funnel idToken={idToken} />}
     </ShellLive>
   );
 }
@@ -149,7 +153,7 @@ function ShellLive({ idToken, tab, setTab, children }: { idToken: string; tab: T
   return (
     <Shell health={health} authed email={email}>
       <nav className="ad-tabs">
-        {(['overview', 'users', 'payments', 'audit', 'submissions', 'analytics'] as Tab[]).map((t) => (
+        {(['overview', 'users', 'payments', 'audit', 'submissions', 'analytics', 'map', 'funnel'] as Tab[]).map((t) => (
           <button key={t} className={`ad-tab ${tab === t ? 'on' : ''}`} onClick={() => setTab(t)}>
             {t[0].toUpperCase() + t.slice(1)}
           </button>
@@ -753,7 +757,7 @@ const STYLE = `
 .ad-logo { color: var(--admin-accent); font-size: 18px; }
 .ad-headright { display: flex; align-items: center; gap: 16px; }
 .ad-main { max-width: 1100px; margin: 0 auto; padding: 24px; }
-.ad-tabs { display: flex; gap: 6px; margin-bottom: 22px; }
+.ad-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 22px; }
 .ad-tab { padding: 8px 16px; border-radius: 9px; border: 1px solid transparent; background: transparent; color: var(--admin-muted);
   cursor: pointer; font-size: 14px; font-weight: 500; transition: all .15s; }
 .ad-tab:hover { color: var(--admin-text); background: rgba(255,255,255,0.04); }

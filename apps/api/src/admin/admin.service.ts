@@ -15,6 +15,31 @@ export interface Actor {
   email: string;
 }
 
+export interface TrialLocation {
+  sessionId: string;
+  city?: string;
+  country?: string;
+  lat: number;
+  lon: number;
+  claimed: boolean;
+  createdAt: string;
+}
+
+export interface TrialLocationsResult {
+  locations: TrialLocation[];
+  total: number;
+  converted: number;
+}
+
+export interface FunnelMetrics {
+  views: number;
+  firstQuery: number;
+  accounts: number;
+  shareOrNotion: number;
+  recharges: number;
+  referrals: number;
+}
+
 // Captured once at module load — process start time for uptime reporting.
 const PROCESS_STARTED_AT = new Date().toISOString();
 
@@ -119,6 +144,58 @@ export class AdminService {
 
   async listAudit(limit: number): Promise<AdminAuditItem[]> {
     return this.db.listAuditLog(limit);
+  }
+
+  private houseSub(): string | undefined {
+    return this.cfg.get<string>('TRIAL_HOUSE_SUB') ?? process.env.TRIAL_HOUSE_SUB;
+  }
+
+  // Every trial/guest session lives under the one house-account partition, so
+  // this is a cheap GSI query, not a table scan.
+  async getTrialLocations(): Promise<TrialLocationsResult> {
+    const houseSub = this.houseSub();
+    if (!houseSub) return { locations: [], total: 0, converted: 0 };
+
+    const sessions = await this.db.listSessionMeta(houseSub);
+    const locations: TrialLocation[] = sessions
+      .filter((s) => s.trialLat != null && s.trialLon != null)
+      .map((s) => ({
+        sessionId: s.sessionId,
+        city: s.trialCity,
+        country: s.trialCountry,
+        lat: s.trialLat!,
+        lon: s.trialLon!,
+        claimed: !!s.claimed,
+        createdAt: s.createdAt,
+      }));
+    return { locations, total: locations.length, converted: locations.filter((l) => l.claimed).length };
+  }
+
+  // Independent stage counts (not a strict per-visitor cohort funnel) across the
+  // whole conversion journey: views → first trial query → account → share/Notion
+  // → recharge → referral.
+  async getFunnel(): Promise<FunnelMetrics> {
+    const houseSub = this.houseSub();
+    const [views, trialSessions, users, allSessions, payments, referralEvents] = await Promise.all([
+      this.db.getPageViews(),
+      houseSub ? this.db.listSessionMeta(houseSub) : Promise.resolve([]),
+      this.db.scanUsers(),
+      this.db.scanSessions(),
+      this.db.scanPayments(),
+      this.db.scanCreditEvents('REFERRAL'),
+    ]);
+
+    const firstQuery = new Set(
+      trialSessions.map((s) => s.trialIp).filter((ip): ip is string => !!ip),
+    ).size;
+    const accounts = users.filter((u) => u.sub !== houseSub).length;
+    const shareOrNotion = new Set(
+      allSessions.filter((s) => !s.isTrial && (s.shareToken || s.notionPageUrl)).map((s) => s.PK),
+    ).size;
+    const recharges = new Set(payments.map((p) => p.sub)).size;
+    const referrals = new Set(referralEvents.map((e) => e.sub)).size;
+
+    return { views, firstQuery, accounts, shareOrNotion, recharges, referrals };
   }
 
   getConfig(): { signupCreditUsd: number; referralCreditUsd: number; creditMultiplier: number } {
