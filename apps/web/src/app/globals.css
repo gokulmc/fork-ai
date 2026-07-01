@@ -1082,6 +1082,9 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 .mindmap-svg .branch.active { stroke: var(--accent); stroke-opacity: 0.9; stroke-width: 1.5; }
 
 .mm-node { cursor: pointer; user-select: none; }
+/* fill-box/center: mixer-shake/pulse/pop scale or translate this group about the node's own
+   centre, not the SVG viewport's default origin (see MindMap.tsx for the Safari foreignObject note). */
+.mm-node-anim { transform-box: fill-box; transform-origin: center; }
 .mm-node .pill { fill: #fafafa; stroke: var(--line-strong); stroke-width: 1; transition: stroke .12s, fill .12s; }
 .mm-node[data-depth="0"] .pill { fill: #ffffff; stroke: #2d2d2d; stroke-width: 1.5; }
 .mm-node[data-depth="1"] .pill { fill: #f4f4f4; }
@@ -2055,7 +2058,7 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
 }
 .mixer-shaking {
   animation: mixer-shake 0.4s ease-in-out infinite;
-  box-shadow: 0 0 14px 3px rgba(99,102,241,0.4);
+  filter: drop-shadow(0 0 8px rgba(99,102,241,0.5));
 }
 
 @keyframes mixer-pulse {

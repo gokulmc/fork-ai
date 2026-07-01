@@ -97,6 +97,12 @@ interface Section {
 
 No child-pointer arrays are stored. The tree is reconstructed at read time by grouping all nodes by `parentId`. This is how the mind map builds its `childMap` and how breadcrumbs walk upward via `parentId`.
 
+### MindMap node animations — Safari `foreignObject` transform quirk
+
+Each node in `MindMap.tsx` is an SVG `<g className="mm-node" transform="translate(${p.x} ${p.y})">` (positioned via the SVG **attribute**) wrapping an inner `<g className="mm-node-anim">` that contains the `<rect className="pill">` and the `<foreignObject>` (which holds the HTML `.mm-card`). Any CSS `transform`-driven animation (mixer shake/pulse/pop, future node animations) **must** target `.mm-node-anim`, never `.mm-card` directly.
+
+**Why:** Safari/WebKit doesn't reliably compose a CSS `transform` *animation* on HTML content nested inside a `foreignObject` with an ancestor `<g>`'s attribute-based `transform` — the animated element renders near the SVG's own origin instead of the node's translated position (Chrome/Firefox render it correctly). Animating a native SVG `<g>` instead composes correctly in all browsers (same fix pattern as the Safari login-graph animation below). `.mm-node-anim` carries `transform-box: fill-box; transform-origin: center` so `scale()`-based animations (`mixer-pulse`, `mixer-pop`) anchor on the node's own centre rather than the SVG viewport. `box-shadow` doesn't apply to SVG elements — glow effects on `.mm-node-anim` use `filter: drop-shadow(...)` instead.
+
 ### Highlights
 
 ```ts

@@ -486,24 +486,30 @@ export function MindMap({
                   onContextMenu?.(n.id, e.clientX, e.clientY);
                 }}
               >
-                <rect className="pill" x="0" y="0" width={NODE_W} height={NODE_H} rx={RX} />
-                {isRead && <path className="pill-read" d={READ_CORNERS} />}
-                {starred && <path className="pill-star" d={STAR_EDGE} />}
-                <foreignObject x="0" y="0" width={NODE_W} height={NODE_H} className="mm-fo" overflow="hidden">
-                  <div className="mm-card">
-                    <div className="mm-card-ic">
-                      {n.emoji && /\p{Emoji}/u.test(n.emoji)
-                        ? <span className="mm-emoji">{n.emoji}</span>
-                        : <NodeIcon size={16} />}
+                {/* mixer-shaking/pulse/pop animate this inner group, not `.mm-card` directly — Safari
+                    doesn't compose a CSS `transform` on HTML content inside a `foreignObject` with the
+                    ancestor `<g>`'s SVG "transform" attribute, so the animated card renders at the SVG
+                    origin instead of the node's real position. A nested SVG `<g>` composes correctly. */}
+                <g className="mm-node-anim">
+                  <rect className="pill" x="0" y="0" width={NODE_W} height={NODE_H} rx={RX} />
+                  {isRead && <path className="pill-read" d={READ_CORNERS} />}
+                  {starred && <path className="pill-star" d={STAR_EDGE} />}
+                  <foreignObject x="0" y="0" width={NODE_W} height={NODE_H} className="mm-fo" overflow="hidden">
+                    <div className="mm-card">
+                      <div className="mm-card-ic">
+                        {n.emoji && /\p{Emoji}/u.test(n.emoji)
+                          ? <span className="mm-emoji">{n.emoji}</span>
+                          : <NodeIcon size={16} />}
+                      </div>
+                      <div className="mm-card-text">
+                        <div className="mm-kicker">{kicker}</div>
+                        <div className="mm-label" title={n.title || 'Untitled'}>{n.title || 'Untitled'}</div>
+                      </div>
+                      {n.sources?.length ? <span className="mm-search-badge">🔍</span> : null}
+                      {n.kind === 'MIX' ? <span className="mm-mix-badge"><Filter size={11} /></span> : null}
                     </div>
-                    <div className="mm-card-text">
-                      <div className="mm-kicker">{kicker}</div>
-                      <div className="mm-label" title={n.title || 'Untitled'}>{n.title || 'Untitled'}</div>
-                    </div>
-                    {n.sources?.length ? <span className="mm-search-badge">🔍</span> : null}
-                    {n.kind === 'MIX' ? <span className="mm-mix-badge"><Filter size={11} /></span> : null}
-                  </div>
-                </foreignObject>
+                  </foreignObject>
+                </g>
               </g>
             );
           })}

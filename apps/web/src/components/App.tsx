@@ -1678,7 +1678,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       container.remove();
 
       if (baseEl) {
-        const cardEl = baseEl.querySelector<HTMLElement>('.mm-card');
+        const cardEl = baseEl.querySelector<SVGGElement>('.mm-node-anim');
         if (cardEl) {
           cardEl.classList.add('mixer-pulse');
           setTimeout(() => cardEl.classList.remove('mixer-pulse'), 400);
@@ -1688,7 +1688,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
 
     // Phase 4: start shake animation + fire API call
     setMixerAnimating(true);
-    const baseCardEl = baseEl?.querySelector<HTMLElement>('.mm-card');
+    const baseCardEl = baseEl?.querySelector<SVGGElement>('.mm-node-anim');
     if (baseCardEl) baseCardEl.classList.add('mixer-shaking');
 
     const tempId = uid();
@@ -1726,10 +1726,11 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         return next;
       });
 
-      // Pop-in animation on the new node (target .mm-card div inside foreignObject)
+      // Pop-in animation on the new node (target the inner .mm-node-anim group, not the
+      // foreignObject's .mm-card div — see the Safari note on .mm-node-anim in MindMap.tsx)
       setTimeout(() => {
         const el = nodeRefs.current.get(realNode.id);
-        const newCardEl = el?.querySelector<HTMLElement>('.mm-card');
+        const newCardEl = el?.querySelector<SVGGElement>('.mm-node-anim');
         if (newCardEl) {
           newCardEl.classList.add('mixer-pop');
           setTimeout(() => newCardEl.classList.remove('mixer-pop'), 400);

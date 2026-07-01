@@ -6,6 +6,11 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
+### Mixer shake/pulse/pop animated the wrong spot in Safari — node snapped near the SVG origin
+- **Symptom:** During "Mixer" synthesis, the base node's shake animation (and the pulse/pop on new nodes) rendered near the top-left of the mind map's SVG canvas instead of shaking in place at the node's actual position. Chrome/Firefox were unaffected.
+- **Cause:** `spawnMix` (`App.tsx`) added `mixer-shaking`/`mixer-pulse`/`mixer-pop` to `.mm-card` — an HTML `<div>` rendered inside a `<foreignObject>`, itself nested inside SVG `<g>` elements positioned via the "transform" **attribute** (`translate(${p.x} ${p.y})`). Safari/WebKit doesn't compose a CSS `transform` *animation* on `foreignObject`-nested HTML content with an ancestor `<g>`'s attribute-based transform, so the animated card painted relative to the SVG's own origin instead of the node's translated position.
+- **Fix:** Wrapped the node's pill/foreignObject in a new inner `<g className="mm-node-anim">` (`MindMap.tsx`) — a native SVG group, which composes correctly with the ancestor `<g>`'s transform attribute (same class of fix as the login-graph animation below). `spawnMix` now targets `.mm-node-anim` instead of `.mm-card` for all three classes. Added `transform-box: fill-box; transform-origin: center` on `.mm-node-anim` so `mixer-pulse`/`mixer-pop`'s `scale()` still anchors on the node's own centre rather than the SVG viewport, and swapped `.mixer-shaking`'s `box-shadow` (invalid on SVG elements) for an equivalent `filter: drop-shadow(...)`. (commit: pending)
+
 ### Login graph animation incomplete in Safari — rings/particles/node blow-out never moved
 - **Symptom:** The post-login graph animation played fully in Chrome but was "not complete" in Safari/WebKit (and the installed PWA): the breakthrough rings didn't expand, the particle burst didn't fly out, and the blow-out nodes didn't move — only the opacity fades happened.
 - **Cause:** The animation drove **SVG geometry attributes** (`r`, `cx`, `cy`) as Web Animations API keyframes. Blink (Chrome) registers these as animatable CSS properties; **WebKit does not**, so those keyframes were silently ignored. `opacity`/`stroke-width` are real CSS properties so the fades still ran — hence "partially" complete.
