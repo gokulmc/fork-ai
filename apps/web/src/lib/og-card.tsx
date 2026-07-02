@@ -1,6 +1,5 @@
 import { ImageResponse } from 'next/og';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { LOGO_DATA_URL } from './og-logo';
 
 // Shared 1200×630 social card. Palette + layout mirror the OTP verification
 // email (infra/lambda/cognito-custom-email/index.js) so share previews and
@@ -9,25 +8,25 @@ import { join } from 'node:path';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
-const BG = '#f5f5f4';
-const CARD = '#ffffff';
-const BORDER = '#e7e5e4';
-const INK = '#1c1917';
-const SUB = '#78716c';
-const MUTED = '#a8a29e';
-const PANEL = '#fafaf9';
-const DIVIDER = '#f0efee';
+export const OG_BG = '#f5f5f4';
+export const OG_CARD = '#ffffff';
+export const OG_BORDER = '#e7e5e4';
+export const OG_INK = '#1c1917';
+export const OG_SUB = '#78716c';
+export const OG_MUTED = '#a8a29e';
+export const OG_PANEL = '#fafaf9';
+export const OG_DIVIDER = '#f0efee';
 
-let logoCache: string | null = null;
+const BG = OG_BG, CARD = OG_CARD, BORDER = OG_BORDER, INK = OG_INK;
+const SUB = OG_SUB, MUTED = OG_MUTED, PANEL = OG_PANEL, DIVIDER = OG_DIVIDER;
+
 function logo(): string {
-  if (!logoCache) {
-    const buf = readFileSync(join(process.cwd(), 'public', 'mark-168.png'));
-    logoCache = `data:image/png;base64,${buf.toString('base64')}`;
-  }
-  return logoCache;
+  return LOGO_DATA_URL;
 }
 
-export function brandCard({ eyebrow, title, subtitle }: { eyebrow?: string; title: string; subtitle?: string }) {
+export function brandCard({
+  eyebrow, title, subtitle, headers,
+}: { eyebrow?: string; title: string; subtitle?: string; headers?: Record<string, string> }) {
   // Scale the headline down for longer (blog) titles so they fit the card.
   const titleSize = title.length > 70 ? 42 : title.length > 45 ? 50 : 62;
   return new ImageResponse(
@@ -68,6 +67,6 @@ export function brandCard({ eyebrow, title, subtitle }: { eyebrow?: string; titl
         </div>
       </div>
     ),
-    size,
+    { ...size, ...(headers ? { headers } : {}) },
   );
 }

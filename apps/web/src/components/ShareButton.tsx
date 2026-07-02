@@ -39,15 +39,45 @@ export function ShareButton({ sessionId, idToken }: Props) {
     }
 
     setState('loading');
+    let mintedToken = '';
     try {
-      const { token: newToken } = await shareApi.generateShareToken(idToken, sessionId);
-      setToken(newToken);
-      const url = `${window.location.origin}/?sk=${newToken}`;
-      await navigator.clipboard.writeText(url).catch(() => {});
+      // navigator.clipboard.write() must be invoked synchronously within the
+      // click's user-activation window. Safari (and modern Chrome) revoke that
+      // window the instant an `await` yields back to the event loop — which
+      // happens here while the token is minted over the network — so a plain
+      // `await ... ; await navigator.clipboard.writeText(url)` silently fails
+      // on the first click and only succeeds on a second click (no network
+      // delay before the write on the already-active fast path above).
+      // Passing a Promise<Blob> to ClipboardItem is the documented workaround:
+      // the write() call itself stays inside the gesture while the promise
+      // (which mints the token) resolves asynchronously.
+      if (typeof ClipboardItem !== 'undefined') {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            'text/plain': (async () => {
+              const { token: newToken } = await shareApi.generateShareToken(idToken, sessionId);
+              mintedToken = newToken;
+              return new Blob([`${window.location.origin}/?sk=${newToken}`], { type: 'text/plain' });
+            })(),
+          }),
+        ]);
+      } else {
+        const { token: newToken } = await shareApi.generateShareToken(idToken, sessionId);
+        mintedToken = newToken;
+        await navigator.clipboard.writeText(`${window.location.origin}/?sk=${newToken}`);
+      }
+      setToken(mintedToken);
       setState('copied');
       setTimeout(() => setState('active'), 1500);
     } catch {
-      setState('idle');
+      if (mintedToken) {
+        // Token minted fine; only the clipboard write failed — the link still
+        // works, it just wasn't auto-copied.
+        setToken(mintedToken);
+        setState('active');
+      } else {
+        setState('idle');
+      }
     }
   }, [state, token, idToken, sessionId]);
 

@@ -34,6 +34,9 @@ const ALIAS_TO_ID: Record<ModelAlias, string> = {
 // Default branch model when the client sends nothing / something invalid (cheapest Claude tier).
 export const BRANCH_DEFAULT_MODEL = ALIAS_TO_ID.haiku;
 
+// Cheap, fast model for the share OG hook generation (not user-selectable).
+export const SHARE_HOOK_MODEL = ALIAS_TO_ID['gemini-flash-lite'];
+
 // Hard output-token ceiling for branch calls. The branch path is non-streaming
 // (provider.complete), and the Anthropic SDK risks HTTP timeouts above ~16K
 // max_tokens non-streamed — so this is the most we can ever ask for here, and

@@ -2,7 +2,7 @@ import { HttpException, Injectable, InternalServerErrorException, Logger, Unproc
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
 import { LlmResponse, LlmSection, LlmUsage, CitationSource, OutlineNode, DocumentOutline } from './llm.types';
-import { ROOT_MODEL, BRANCH_DEFAULT_MODEL, providerNameFor, ProviderName, supportsWebSearch, outputBudget, NON_STREAMING_MAX_TOKENS } from './models';
+import { ROOT_MODEL, BRANCH_DEFAULT_MODEL, SHARE_HOOK_MODEL, providerNameFor, ProviderName, supportsWebSearch, outputBudget, NON_STREAMING_MAX_TOKENS } from './models';
 import { LlmProvider } from './providers/provider.types';
 import { AnthropicProvider } from './providers/anthropic.provider';
 import { GeminiProvider } from './providers/gemini.provider';
@@ -83,7 +83,7 @@ const personaPreamble = (persona?: string): string =>
   persona && persona.trim()
     ? `The person you are helping has described how they'd like you to respond:
 "${persona.trim()}"
-Keep this in mind throughout — match the requested tone and tailor depth, examples, and framing to them. Still obey all formatting and JSON-shape rules below.
+Use this ONLY to silently calibrate tone, depth, examples, and framing. Never mention, quote, or allude to their persona, profession, or background in the output; never address them by their role (e.g. "as a lawyer, you..."). The reader should not be able to tell a persona was provided. Still obey all formatting and JSON-shape rules below.
 
 `
     : '';
@@ -619,6 +619,61 @@ Rules:
     } catch (err) {
       this.logger.warn(`pickEmoji failed: ${(err as Error).message}`);
       return '📝';
+    }
+  }
+
+  // One scroll-stopping hook sentence for a session's share OG card. Cheap
+  // (Gemini Flash Lite), best-effort — a share must never fail because of
+  // this, so any parse/provider error returns null and the caller falls back
+  // to the lede.
+  async generateShareHook(input: {
+    title: string;
+    query: string;
+    lede: string;
+    nodeTitles: string[];
+    excerpts: string[];
+  }): Promise<string | null> {
+    const prompt = `You write scroll-stopping one-line hooks for social media link previews.
+
+Below is a research session from fork.ai, a branching AI research tool. Write ONE
+hook sentence for its link preview: the single most surprising, counterintuitive,
+or provocative fact or claim found in this research. It must make a reader
+scrolling LinkedIn stop and click.
+
+Rules:
+- Exactly one sentence, maximum 140 characters.
+- Lead with the surprise itself — a concrete fact, number, or reversal.
+- Never start with "Did you know". No hashtags, no emojis, no surrounding quotes.
+- No clickbait withholding ("you won't believe...") — state the fact.
+- It must be true to the content below. Do not invent anything.
+
+Research session:
+Title: ${input.title}
+Original question: ${input.query}
+Summary: ${input.lede}
+Branches explored: ${input.nodeTitles.slice(0, 30).join(' · ')}
+Excerpts:
+${input.excerpts.join('\n\n')}
+
+Return ONLY valid JSON, no prose, no markdown fences: {"hook": "..."}`;
+
+    try {
+      const provider = this.providerFor(SHARE_HOOK_MODEL);
+      const { rawText } = await provider.complete(prompt, {
+        model: SHARE_HOOK_MODEL,
+        maxTokens: 200,
+        webSearch: false,
+      });
+      let text = rawText.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '');
+      const start = text.indexOf('{');
+      const end = text.lastIndexOf('}');
+      if (start >= 0 && end > start) text = text.slice(start, end + 1);
+      const parsed = JSON.parse(text) as { hook: unknown };
+      if (typeof parsed.hook !== 'string' || !parsed.hook.trim()) throw new Error('Invalid hook response shape');
+      return parsed.hook.trim().slice(0, 200);
+    } catch (err) {
+      this.logger.warn(`generateShareHook failed: ${(err as Error).message}`);
+      return null;
     }
   }
 

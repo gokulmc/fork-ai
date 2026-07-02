@@ -28,6 +28,7 @@ const mockLlm = {
   streamAnswerQuery: jest.fn(),
   extractDocumentOutline: jest.fn(),
   generateFromBrief: jest.fn(),
+  generateShareHook: jest.fn(),
 };
 
 // Mimics LlmService.streamAnswerQuery: meta first, then sections, then done.
@@ -319,6 +320,24 @@ describe('SessionsService', () => {
       expect(result.highlightCount).toBe(1);
     });
 
+    it('passes shareHook through toSummary', async () => {
+      mockDb.getSessionMeta.mockResolvedValue({ ...sessionMeta, shareHook: 'A wild fact.' });
+      mockDb.queryNodes.mockResolvedValue([]);
+      mockDb.queryAnnotations.mockResolvedValue([]);
+      mockDb.queryHighlights.mockResolvedValue([]);
+      const result = await service.getSession(SUB, SESSION_ID);
+      expect(result.shareHook).toBe('A wild fact.');
+    });
+
+    it('defaults shareHook to null when absent', async () => {
+      mockDb.getSessionMeta.mockResolvedValue(sessionMeta);
+      mockDb.queryNodes.mockResolvedValue([]);
+      mockDb.queryAnnotations.mockResolvedValue([]);
+      mockDb.queryHighlights.mockResolvedValue([]);
+      const result = await service.getSession(SUB, SESSION_ID);
+      expect(result.shareHook).toBeNull();
+    });
+
     it('warns only when the loaded session crosses the multi-page size threshold', async () => {
       const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
       mockDb.getSessionMeta.mockResolvedValue(sessionMeta);
@@ -413,6 +432,48 @@ describe('SessionsService', () => {
       mockDb.getSessionMeta.mockResolvedValue(null);
       await service.incrementNodeCount(SUB, SESSION_ID, 1);
       expect(mockDb.updateSessionMeta).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('generateShareToken', () => {
+    const rootNode = { nodeId: 'n1', parentId: null, title: 'Root', query: 'What is ML?', sections: [{ body: 'Some **body** text' }] };
+
+    beforeEach(() => {
+      mockDb.getSessionMeta.mockResolvedValue(sessionMeta);
+      mockDb.queryNodes.mockResolvedValue([rootNode]);
+      mockDb.putShareToken.mockResolvedValue(undefined);
+      mockDb.updateSessionMeta.mockResolvedValue(undefined);
+    });
+
+    it('persists a fresh shareHook alongside the share token', async () => {
+      mockLlm.generateShareHook.mockResolvedValue('A shocking fact.');
+      await service.generateShareToken(SUB, SESSION_ID);
+      const [, , updates] = mockDb.updateSessionMeta.mock.calls[0];
+      expect(updates.shareToken).toEqual(expect.any(String));
+      expect(updates.shareHook).toBe('A shocking fact.');
+    });
+
+    it('still shares successfully when generateShareHook resolves null', async () => {
+      mockLlm.generateShareHook.mockResolvedValue(null);
+      const result = await service.generateShareToken(SUB, SESSION_ID);
+      expect(result.token).toEqual(expect.any(String));
+      const [, , updates] = mockDb.updateSessionMeta.mock.calls[0];
+      expect(updates.shareHook).toBeUndefined();
+    });
+
+    it('still shares successfully when queryNodes rejects', async () => {
+      mockDb.queryNodes.mockRejectedValue(new Error('ddb blip'));
+      const result = await service.generateShareToken(SUB, SESSION_ID);
+      expect(result.token).toEqual(expect.any(String));
+      expect(mockDb.putShareToken).toHaveBeenCalled();
+    });
+
+    it('keeps the previous shareHook when regeneration fails', async () => {
+      mockDb.getSessionMeta.mockResolvedValue({ ...sessionMeta, shareHook: 'Previous hook.' });
+      mockDb.queryNodes.mockRejectedValue(new Error('ddb blip'));
+      await service.generateShareToken(SUB, SESSION_ID);
+      const [, , updates] = mockDb.updateSessionMeta.mock.calls[0];
+      expect(updates.shareHook).toBe('Previous hook.');
     });
   });
 });

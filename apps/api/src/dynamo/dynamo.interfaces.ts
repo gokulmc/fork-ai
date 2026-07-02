@@ -117,6 +117,9 @@ export interface SessionMetaItem {
   nodeCount: number;
   notionPageUrl?: string | null;
   shareToken?: string | null;
+  // LLM-generated "shocking fact" hook line for the share OG image, regenerated
+  // on every share. Absent for trial sessions (never shared via generateShareToken).
+  shareHook?: string | null;
   ownerSub?: string | null;
   isTrial?: boolean;
   // Best-effort geo lookup of the guest's IP at trial-session creation (mirrors

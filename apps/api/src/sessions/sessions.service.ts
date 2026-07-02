@@ -22,6 +22,7 @@ export interface SessionSummary {
   highlightCount: number;
   notionPageUrl?: string | null;
   shareToken?: string | null;
+  shareHook?: string | null;
   ownerSub?: string | null;
   isTrial?: boolean;
 }
@@ -588,9 +589,37 @@ export class SessionsService {
     }
 
     const token = randomBytes(32).toString('base64url');
+
+    // Regenerate the share OG hook on every share — the session has usually
+    // grown since the last share, and a fresh token means a fresh image URL
+    // anyway (busts LinkedIn's per-URL cache). Must NEVER fail the share:
+    // keep the previous hook (if any) on any error, letting the OG layer
+    // fall back further to `lede`.
+    let hook: string | null = meta.shareHook ?? null;
+    try {
+      const nodes = await this.db.queryNodes(sessionId);
+      const root = nodes.find(n => !n.parentId) ?? nodes[0];
+      const excerpts = (root?.sections ?? [])
+        .slice(0, 3)
+        .map(s => s.body.replace(/[#*_`>[\]]/g, '').slice(0, 400));
+      const fresh = await this.llm.generateShareHook({
+        title: meta.title,
+        query: root?.query ?? meta.title,
+        lede: meta.lede,
+        nodeTitles: nodes.map(n => n.title),
+        excerpts,
+      });
+      if (fresh) hook = fresh;
+    } catch (err) {
+      this.logger.warn(`share hook generation failed for session ${sessionId}: ${(err as Error).message}`);
+    }
+
     await Promise.all([
       this.db.putShareToken(token, sessionId, sub),
-      this.db.updateSessionMeta(sub, sessionId, { shareToken: token }),
+      this.db.updateSessionMeta(sub, sessionId, {
+        shareToken: token,
+        ...(hook ? { shareHook: hook } : {}),
+      }),
     ]);
     return { token };
   }
@@ -658,6 +687,7 @@ export class SessionsService {
       highlightCount: 0,
       notionPageUrl: item.notionPageUrl || null,
       shareToken: item.shareToken || null,
+      shareHook: item.shareHook || null,
       ownerSub: item.ownerSub || null,
       isTrial: item.isTrial ?? false,
     };

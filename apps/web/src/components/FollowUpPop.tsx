@@ -85,8 +85,8 @@ export function FollowUpPop({ rect, sourceText, loading, onSubmit, onClose }: Fo
     };
   }, [rect.left, rect.top, rect.width, rect.height, rect.bottom]);
 
-  const handleSubmit = () => {
-    const trimmed = q.trim();
+  const submitQuestion = (question: string) => {
+    const trimmed = question.trim();
     if (!trimmed) return;
     const expanded = SHORTHANDS[trimmed] ?? trimmed;
     setQ(expanded);
@@ -95,6 +95,8 @@ export function FollowUpPop({ rect, sourceText, loading, onSubmit, onClose }: Fo
     // slide-left exit; desktop closes instantly (both handled inside requestClose).
     requestClose();
   };
+
+  const handleSubmit = () => submitQuestion(q);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -116,7 +118,21 @@ export function FollowUpPop({ rect, sourceText, loading, onSubmit, onClose }: Fo
         disabled={loading}
       />
       <div className="actions">
-        <span className="hint">⌘ + ⏎ to send · Esc to close</span>
+        <span className="hint hint-desktop">⌘ + ⏎ to send · Esc to close</span>
+        <div className="shortcut-row hint-mobile">
+          {Object.entries(SHORTHANDS).map(([sym, word]) => (
+            <button
+              key={sym}
+              type="button"
+              className="shortcut-btn"
+              disabled={loading}
+              title={word}
+              onClick={() => submitQuestion(sym)}
+            >
+              {sym}
+            </button>
+          ))}
+        </div>
         <div className="actions-right">
           <button className="btn-close" onClick={requestClose} title="Close" aria-label="Close">
             <X size={14} />

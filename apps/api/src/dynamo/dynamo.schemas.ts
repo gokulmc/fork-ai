@@ -89,6 +89,7 @@ export const SessionMetaSchema = new dynamoose.Schema({
   nodeCount: Number,
   notionPageUrl: { type: String, required: false },
   shareToken: { type: String, required: false },
+  shareHook: { type: String, required: false },
   ownerSub: { type: String, required: false },
   isTrial: { type: Boolean, required: false },
   trialIp: { type: String, required: false },

@@ -31,11 +31,13 @@ export const metadata: Metadata = {
     description: DESCRIPTION,
     url: 'https://forkai.in',
     locale: 'en_US',
+    images: [{ url: '/api/og', width: 1200, height: 630, alt: 'fork ai — a branching AI research workspace' }],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'fork ai — a branching AI research workspace',
     description: DESCRIPTION,
+    images: ['/api/og'],
   },
   // Standalone PWA on iOS (no Safari chrome once added to the Home Screen).
   appleWebApp: { capable: true, statusBarStyle: 'default', title: 'fork ai' },

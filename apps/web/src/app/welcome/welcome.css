@@ -1,8 +1,11 @@
 /* ============================================================
-   /welcome — scoped stylesheet. Reuses globals.css design tokens
-   (bg, paper, panel, ink, accent, serif, sans, mono, shadow, radius
-   custom properties) — no new tokens, no new libraries. All classes
-   are wp-prefixed to avoid collisions with the app shell's classes.
+   /welcome — "Terminal Dawn" story page. Deliberately paper-white even
+   in app dark mode: every color below is a literal #fff/#111/rgba(17,17,17,x)
+   value scoped to .wp-td, NOT the app's --bg/--ink custom properties (those
+   flip under [data-theme="dark"] and would produce white-on-white text).
+   Fonts reuse the app's already-loaded --serif/--mono/--sans vars from
+   globals.css. All classes are wp-prefixed to avoid collisions with the
+   app shell's classes.
    ============================================================ */
 
 /* globals.css locks <html>/<body> to a non-scrolling app shell for the
@@ -19,640 +22,2200 @@ html.wp-scroll body {
   max-width: none;
 }
 
+/* ---------- tokens (scoped, literal — do not use app --bg/--ink) ---------- */
+.wp-td {
+  --wp-paper: #ffffff;
+  --wp-ink: #111111;
+  --wp-ink-90: rgba(17, 17, 17, 0.9);
+  --wp-ink-70: rgba(17, 17, 17, 0.7);
+  --wp-ink-50: rgba(17, 17, 17, 0.5);
+  --wp-ink-30: rgba(17, 17, 17, 0.3);
+  --wp-ink-15: rgba(17, 17, 17, 0.15);
+  --wp-ink-10: rgba(17, 17, 17, 0.1);
+  --wp-ink-06: rgba(17, 17, 17, 0.06);
+  --wp-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+
+  background: var(--wp-paper);
+  color: var(--wp-ink);
+}
+
 .wp-root {
-  font-family: var(--sans);
-  color: var(--ink);
-  background: var(--bg);
+  font-family: var(--sans, sans-serif);
   width: 100%;
   overflow-x: hidden;
+  position: relative;
 }
 
-.wp-section {
-  padding: 88px 24px;
-  border-top: 1px solid var(--line);
+.wp-root * {
+  box-sizing: border-box;
 }
 
-.wp-reveal {
-  max-width: 720px;
+.wp-root ::selection {
+  background: var(--wp-ink);
+  color: var(--wp-paper);
+}
+
+.wp-wrap {
+  max-width: 1280px;
   margin: 0 auto;
-  opacity: 0;
-  transform: translateY(14px);
-  transition: opacity .6s cubic-bezier(.2,.7,.2,1), transform .6s cubic-bezier(.2,.7,.2,1);
+  padding: 0 64px;
 }
-.wp-reveal.wp-in-view { opacity: 1; transform: translateY(0); }
 
-.wp-eyebrow, .wp-kicker {
-  font-family: var(--mono);
+@media (max-width: 600px) {
+  .wp-wrap {
+    padding: 0 22px;
+  }
+}
+
+/* ---------- chapter stamp ---------- */
+.wp-stamp {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 64px 0 56px;
+}
+
+.wp-scene:first-of-type .wp-stamp {
+  margin-top: 96px;
+}
+
+.wp-stamp-rule {
+  flex: 1;
+  height: 1px;
+  background: var(--wp-ink-15);
+  transform-origin: left center;
+  transform: scaleX(0);
+  animation: wp-draw-rule 900ms var(--wp-ease) forwards;
+  animation-delay: 0.15s;
+}
+
+.wp-stamp-label {
+  font-family: var(--mono, monospace);
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-  margin-bottom: 14px;
+  letter-spacing: 0.14em;
+  color: var(--wp-ink-50);
+  white-space: nowrap;
+  opacity: 0;
+  animation: wp-fade-in 700ms var(--wp-ease) forwards;
+  animation-delay: 0.5s;
 }
 
+@keyframes wp-draw-rule {
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes wp-fade-in {
+  to {
+    opacity: 1;
+  }
+}
+
+/* ---------- reveal wipe ---------- */
+.wp-reveal {
+  clip-path: inset(0 0 100% 0);
+  animation: wp-wipe-up 900ms var(--wp-ease) forwards;
+  animation-delay: 0.12s;
+}
+
+@keyframes wp-wipe-up {
+  to {
+    clip-path: inset(0 0 0% 0);
+  }
+}
+
+h1.wp-h1,
+h2.wp-h2 {
+  margin: 0;
+  font-weight: 300;
+}
+
+.wp-scene {
+  position: relative;
+  padding-bottom: 14vh;
+}
+
+.wp-scene:last-of-type {
+  padding-bottom: 26vh;
+}
+
+/* ---------- type scale ---------- */
 .wp-h1 {
-  font-family: var(--serif);
-  font-weight: 400;
-  font-size: clamp(30px, 4.4vw, 46px);
-  line-height: 1.16;
-  letter-spacing: -0.01em;
-  margin: 0 0 18px;
-  text-wrap: balance;
-}
-.wp-h2 {
-  font-family: var(--serif);
-  font-weight: 400;
-  font-size: clamp(24px, 3.2vw, 32px);
-  line-height: 1.2;
-  margin: 0 0 14px;
-  text-wrap: balance;
-}
-.wp-lede {
-  font-size: 16px;
-  line-height: 1.65;
-  color: var(--ink-2);
-  margin: 0 0 28px;
-  max-width: 62ch;
-}
-.wp-compare-note {
-  font-size: 14px;
-  line-height: 1.6;
-  color: var(--ink-2);
-  margin: 24px 0 0;
-  max-width: 62ch;
+  font-family: var(--serif, serif);
+  font-weight: 300;
+  font-size: clamp(56px, 9vw, 120px);
+  line-height: 1.02;
+  letter-spacing: -0.02em;
+  max-width: 1180px;
 }
 
-/* Buttons */
-.wp-btn {
+.wp-h2 {
+  font-family: var(--serif, serif);
+  font-weight: 300;
+  font-size: clamp(40px, 5.4vw, 68px);
+  letter-spacing: -0.015em;
+  margin-top: 6px;
+}
+
+.wp-sub {
+  font-family: var(--sans, sans-serif);
+  font-weight: 300;
+  font-size: clamp(17px, 1.6vw, 21px);
+  line-height: 1.55;
+  color: var(--wp-ink-70);
+  max-width: 640px;
+  margin-top: 36px;
+}
+
+/* ---------- prologue: chat burial ---------- */
+.wp-scene-prologue {
+  padding-bottom: 9vh;
+}
+
+.wp-chat {
+  margin: 14vh auto 0;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.wp-bubble {
+  border: 1px solid var(--wp-ink-15);
+  border-radius: 14px;
+  padding: 14px 20px;
+  font-size: 14.5px;
+  line-height: 1.5;
+  background: var(--wp-paper);
+  max-width: 82%;
+  opacity: 0;
+  transform: translateY(10px);
+  animation: wp-bubble-in 700ms var(--wp-ease) forwards;
+  transition: margin-top 200ms linear, filter 200ms linear, opacity 200ms linear;
+}
+
+.wp-bubble-user {
+  align-self: flex-end;
+  border-bottom-right-radius: 3px;
+  text-align: right;
+}
+
+.wp-bubble-ai {
+  align-self: flex-start;
+  border-bottom-left-radius: 3px;
+  color: var(--wp-ink-70);
+}
+
+.wp-bubble:nth-child(1) {
+  animation-delay: 0.1s;
+}
+.wp-bubble:nth-child(2) {
+  animation-delay: 0.22s;
+}
+.wp-bubble:nth-child(3) {
+  animation-delay: 0.34s;
+  z-index: 2;
+}
+.wp-bubble:nth-child(4) {
+  animation-delay: 0.46s;
+  z-index: 3;
+}
+.wp-bubble:nth-child(5) {
+  animation-delay: 0.58s;
+  z-index: 4;
+}
+
+@keyframes wp-bubble-in {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* burial: --wp-progress (0→1, written by useSceneProgress) crushes the
+   bubbles together and grays out the earlier ones as the visitor scrolls
+   through the prologue. Later bubbles get progressively more negative
+   margin + blur/fade the deeper the progress goes. */
+.wp-bubble:nth-child(2) {
+  margin-top: calc(-2px - var(--wp-progress, 0) * 4px);
+}
+.wp-bubble:nth-child(3) {
+  margin-top: calc(-10px - var(--wp-progress, 0) * 14px);
+  filter: blur(calc(var(--wp-progress, 0) * 0.4px));
+  opacity: calc(1 - var(--wp-progress, 0) * 0.15);
+}
+.wp-bubble:nth-child(4) {
+  margin-top: calc(-16px - var(--wp-progress, 0) * 22px);
+  filter: blur(calc(var(--wp-progress, 0) * 0.7px));
+  opacity: calc(1 - var(--wp-progress, 0) * 0.3);
+}
+.wp-bubble:nth-child(5) {
+  margin-top: calc(-24px - var(--wp-progress, 0) * 32px);
+  filter: blur(calc(var(--wp-progress, 0) * 1px));
+  opacity: calc(1 - var(--wp-progress, 0) * 0.45);
+}
+.wp-bubble:nth-child(1) {
+  filter: blur(calc(var(--wp-progress, 0) * 1.2px));
+  opacity: calc(1 - var(--wp-progress, 0) * 0.55);
+}
+
+.wp-fade-line {
+  text-align: center;
+  font-family: var(--mono, monospace);
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  color: var(--wp-ink-30);
+  margin: 2px 0 -8px;
+  z-index: 5;
+  position: relative;
+  opacity: 0;
+  animation: wp-fade-in 900ms var(--wp-ease) forwards;
+  animation-delay: 0.72s;
+}
+
+.wp-closing-line {
+  font-family: var(--serif, serif);
+  font-style: italic;
+  font-weight: 400;
+  font-size: clamp(19px, 2vw, 24px);
+  text-align: center;
+  margin: 9vh auto 0;
+  color: var(--wp-ink-90);
+  opacity: 0;
+  animation: wp-fade-in 900ms var(--wp-ease) forwards;
+  animation-delay: 0.95s;
+}
+
+/* ---------- shared: generic scroll-triggered entrance ----------
+   Bodies gated by useInView mount immediately but stay invisible until
+   the wp-in-view class lands (IntersectionObserver), then rise+fade in.
+   Distinct from .wp-reveal, which self-animates unconditionally on mount. */
+.wp-qbox-wrap,
+.wp-models-body,
+.wp-sources-body,
+.wp-morning-body,
+.wp-calc-section,
+.wp-faq-wrap {
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 700ms var(--wp-ease), transform 700ms var(--wp-ease);
+}
+
+.wp-qbox-wrap.wp-in-view,
+.wp-models-body.wp-in-view,
+.wp-sources-body.wp-in-view,
+.wp-morning-body.wp-in-view,
+.wp-calc-section.wp-in-view,
+.wp-faq-wrap.wp-in-view {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ---------- shared: kicker / lede / compare-note / branch cards / btn ---------- */
+.wp-h3 {
+  font-family: var(--serif, serif);
+  font-weight: 300;
+  font-size: clamp(24px, 3vw, 32px);
+  letter-spacing: -0.01em;
+  margin: 0 0 24px;
+}
+
+.wp-compare-note {
+  font-family: var(--mono, monospace);
+  font-size: 12.5px;
+  letter-spacing: 0.02em;
+  color: var(--wp-ink-50);
+  max-width: 480px;
+  margin-top: 28px;
+  line-height: 1.6;
+}
+
+/* ---------- .wp-why: named value-prop callout ---------- */
+.wp-why {
+  margin-top: 32px;
+  max-width: 480px;
+  border-left: 3px solid var(--wp-ink-15);
+  padding-left: 14px;
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  color: var(--wp-ink-70);
+  line-height: 1.6;
+  text-transform: none;
+  opacity: 0;
+  animation: wp-fade-in 700ms var(--wp-ease) forwards;
+}
+
+.wp-btn-outline {
+  font-family: var(--sans, sans-serif);
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--wp-ink);
+  background: none;
+  border: 1px solid var(--wp-ink);
+  padding: 12px 22px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 220ms var(--wp-ease), color 220ms var(--wp-ease);
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  height: 44px;
-  padding: 0 22px;
-  border-radius: 999px;
-  font-family: var(--sans);
-  font-size: 14px;
-  font-weight: 500;
-  text-decoration: none;
-  cursor: pointer;
-  border: 1px solid transparent;
-  transition: transform .15s, opacity .15s, background .15s;
+  gap: 6px;
 }
-.wp-btn:hover { transform: translateY(-1px); }
-.wp-btn-primary { background: var(--ink); color: var(--bg); }
-.wp-btn-ghost { background: transparent; color: var(--ink-2); border-color: var(--line-strong); }
-.wp-btn-ghost:hover { color: var(--ink); background: var(--hover); }
 
-/* ---------------- Hero ---------------- */
-.wp-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 420px);
-  gap: 48px;
-  align-items: center;
-  max-width: 1080px;
-  margin: 0 auto;
-  padding: 96px 24px 88px;
+.wp-btn-outline:hover {
+  background: var(--wp-ink);
+  color: var(--wp-paper);
 }
-.wp-hero-copy { min-width: 0; }
-.wp-hero-sub {
-  font-size: 17px;
-  color: var(--ink-2);
-  margin: 0 0 30px;
-  max-width: 44ch;
-}
-.wp-hero-ctas { display: flex; gap: 12px; flex-wrap: wrap; }
-.wp-hero-foot {
-  margin-top: 18px;
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  color: var(--ink-3);
-}
-.wp-hero-visual { display: flex; justify-content: center; }
-.wp-hero-svg { width: 100%; max-width: 420px; height: auto; }
 
-.wp-hero-edge {
-  fill: none;
-  stroke: var(--ink-3);
-  stroke-width: 1.25px;
-  opacity: 0.4;
-  stroke-dasharray: 300;
-  stroke-dashoffset: 300;
-  animation: wpDraw .7s cubic-bezier(.2,.7,.2,1) forwards;
+.wp-btn-outline:disabled {
+  opacity: 0.35;
+  cursor: default;
+  background: none;
+  color: var(--wp-ink);
 }
-.wp-hero-node {
-  stroke: var(--ink-3);
-  stroke-width: 1px;
-  opacity: 0;
-  animation: wpNodeIn .5s cubic-bezier(.2,.7,.2,1) forwards;
-}
-.wp-hero-node[data-depth="0"] { fill: var(--ink); }
-.wp-hero-node[data-depth="1"] { fill: var(--ink-2); }
-.wp-hero-node[data-depth="2"] { fill: var(--ink-3); }
 
-@keyframes wpDraw { to { stroke-dashoffset: 0; } }
-@keyframes wpNodeIn { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: scale(1); } }
-
-/* ---------------- PersonaIntro: compare ---------------- */
-.wp-compare {
+.wp-branch-cards {
+  margin-top: 40px;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 28px;
-  margin-top: 8px;
 }
-.wp-compare-col { min-width: 0; }
-.wp-compare-fade { opacity: 0.55; }
-.wp-compare-label {
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-  margin-bottom: 10px;
-}
-.wp-chat-mock {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  background: var(--panel);
-  border-radius: var(--radius-lg);
-  padding: 14px;
-  border: 1px solid var(--line);
-}
-.wp-chat-bubble {
-  font-size: 12.5px;
-  line-height: 1.4;
-  padding: 8px 11px;
-  border-radius: var(--radius);
-  max-width: 92%;
-}
-.wp-chat-user { align-self: flex-end; background: var(--accent-soft); color: var(--ink); }
-.wp-chat-ai { align-self: flex-start; background: var(--paper); color: var(--ink-2); border: 1px solid var(--line); }
-.wp-chat-ellipsis {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--ink-faint);
-  text-align: center;
-  margin-top: 4px;
-}
-.wp-branch-mock {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  background: var(--panel);
-  border-radius: var(--radius-lg);
-  padding: 14px;
-  border: 1px solid var(--line);
-}
-.wp-branch-node {
-  font-size: 12.5px;
-  padding: 9px 12px;
-  border-radius: var(--radius);
-  background: var(--paper);
-  border: 1px solid var(--line-strong);
-  color: var(--ink-2);
-}
-.wp-branch-root { background: var(--ink); color: var(--bg); border-color: var(--ink); font-weight: 500; }
 
-/* ---------------- BranchingDemo ---------------- */
-.wp-demo-card {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-1);
-  padding: 22px 24px;
+@media (max-width: 900px) {
+  .wp-branch-cards {
+    grid-template-columns: 1fr;
+  }
 }
-.wp-demo-card-compact { padding: 16px 18px; }
-.wp-demo-query {
-  font-family: var(--serif);
-  font-size: 17px;
-  color: var(--ink);
-  margin-bottom: 18px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--line);
-}
-.wp-demo-section { padding: 16px 0; border-top: 1px solid var(--line-2); }
-.wp-demo-section:first-of-type { border-top: 0; padding-top: 0; }
-.wp-demo-section-heading {
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-  margin-bottom: 8px;
-}
-.wp-demo-section p { font-size: 14.5px; line-height: 1.6; color: var(--ink-2); margin: 0; }
-.wp-demo-section-highlight { position: relative; }
-
-.wp-godeeper-btn {
-  margin-top: 12px;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  background: var(--paper);
-  border: 1px solid var(--line-strong);
-  color: var(--ink-2);
-  font-size: 12.5px;
-  font-family: var(--sans);
-  padding: 7px 13px;
-  border-radius: var(--radius);
-  cursor: pointer;
-  transition: all .12s;
-}
-.wp-godeeper-btn:hover { color: var(--ink); background: var(--accent-soft); }
 
 .wp-branch-card {
-  margin-top: 14px;
-  background: var(--paper);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius);
-  padding: 14px 16px;
+  border: 1px solid var(--wp-ink-15);
+  padding: 30px 32px;
+  opacity: 0;
+  max-height: 0;
+  overflow: hidden;
+  transition: opacity 500ms var(--wp-ease), max-height 600ms var(--wp-ease), padding 500ms var(--wp-ease);
 }
-.wp-branch-card-in { animation: wpCardIn .4s cubic-bezier(.2,.7,.2,1) both; }
-.wp-branch-card-kicker {
-  font-family: var(--mono);
+
+.wp-branch-card-show {
+  opacity: 1;
+  max-height: 420px;
+  padding: 30px 32px;
+}
+
+.wp-branch-card[data-model-tier='2'] {
+  border-width: 1.3px;
+  box-shadow: 0 6px 18px rgba(17, 17, 17, 0.06);
+  letter-spacing: -0.002em;
+}
+
+.wp-branch-card[data-model-tier='3'] {
+  border-width: 1.5px;
+  box-shadow: 0 10px 28px rgba(17, 17, 17, 0.1);
+  letter-spacing: -0.006em;
+}
+
+.wp-branch-kicker {
+  font-family: var(--mono, monospace);
   font-size: 10.5px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-  margin-bottom: 8px;
+  letter-spacing: 0.1em;
+  color: var(--wp-ink-50);
+  margin-bottom: 14px;
+  display: block;
 }
-.wp-branch-card p { font-size: 13.5px; line-height: 1.55; color: var(--ink-2); margin: 0; }
 
-@keyframes wpCardIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-
-/* ---------------- HighlightAskAIMock ---------------- */
-.wp-highlight-demo { position: relative; }
-.wp-highlight-text {
-  font-size: 14.5px;
+.wp-branch-body {
+  font-family: var(--serif, serif);
+  font-size: 16.5px;
   line-height: 1.6;
-  color: var(--ink-2);
+  color: var(--wp-ink-90);
   margin: 0;
+}
+
+/* ---------- SceneQuestion: query box + streaming sections ---------- */
+.wp-qbox-wrap {
+  margin-top: 8vh;
+}
+
+.wp-qbox {
+  border: 1px solid var(--wp-ink-15);
+  border-radius: 999px;
+  padding: 16px 26px;
+  font-family: var(--serif, serif);
+  font-size: clamp(17px, 1.9vw, 21px);
+  color: var(--wp-ink-90);
+  min-height: 1.4em;
+  display: flex;
+  align-items: center;
+  max-width: 720px;
+}
+
+.wp-qbox-text {
+  white-space: pre-wrap;
+}
+
+.wp-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  background: var(--wp-ink);
+  margin-left: 3px;
+  animation: wp-caret-blink 900ms steps(1) infinite;
+}
+
+@keyframes wp-caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.wp-demo-card {
+  margin-top: 6vh;
+  border: 1px solid var(--wp-ink-15);
+  padding: 8px 0;
+}
+
+.wp-demo-card-compact {
+  padding: 30px 32px;
+}
+
+.wp-demo-section {
+  padding: 26px 40px;
+  border-top: 1px solid var(--wp-ink-10);
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.wp-demo-section:first-child {
+  border-top: none;
+}
+
+.wp-demo-section-in {
+  animation: wp-section-in 600ms var(--wp-ease) forwards;
+}
+
+@keyframes wp-section-in {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.wp-demo-section-heading {
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--wp-ink-50);
+  margin-bottom: 10px;
+}
+
+.wp-demo-section p {
+  font-family: var(--serif, serif);
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--wp-ink-90);
+  margin: 0;
+}
+
+.wp-thinking-dots {
+  padding: 26px 40px;
+  display: flex;
+  gap: 5px;
+  border-top: 1px solid var(--wp-ink-10);
+}
+
+.wp-thinking-dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--wp-ink-30);
+  animation: wp-dot-pulse 1200ms var(--wp-ease) infinite;
+}
+
+.wp-thinking-dots span:nth-child(2) {
+  animation-delay: 150ms;
+}
+.wp-thinking-dots span:nth-child(3) {
+  animation-delay: 300ms;
+}
+
+@keyframes wp-dot-pulse {
+  0%, 100% {
+    opacity: 0.25;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+.wp-replay-btn {
+  margin-top: 32px;
+}
+
+/* ---------- SceneFork ---------- */
+.wp-fork-grid {
+  display: grid;
+  grid-template-columns: 1fr 260px;
+  gap: 56px;
+  margin-top: 8vh;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .wp-fork-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.wp-passage-card {
+  border: 1px solid var(--wp-ink-15);
+  padding: 44px 48px;
+  position: relative;
+}
+
+.wp-passage-wrap {
+  position: relative;
+}
+
+.wp-passage {
+  font-family: var(--serif, serif);
+  font-weight: 400;
+  font-size: clamp(20px, 2.1vw, 26px);
+  line-height: 1.55;
+  letter-spacing: -0.005em;
+  color: var(--wp-ink-90);
   cursor: text;
   user-select: text;
+  margin: 0;
 }
-.wp-highlight-hint {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.04em;
-  color: var(--ink-faint);
-  margin-top: 6px;
+
+.wp-fork-mark {
+  background: none;
+  color: var(--wp-ink);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
 }
-mark.wp-demo-mark { background: var(--highlight-strong); color: inherit; border-radius: 2px; }
+
 .wp-ask-chip {
   position: absolute;
   transform: translateX(-50%);
+  background: var(--wp-ink);
+  color: var(--wp-paper);
+  font-family: var(--mono, monospace);
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  padding: 8px 14px;
+  border: none;
+  border-radius: 999px;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  background: var(--ink);
-  color: var(--bg);
-  border: 0;
-  border-radius: 999px;
-  padding: 6px 12px;
-  font-size: 12px;
-  font-family: var(--sans);
+  gap: 6px;
   cursor: pointer;
-  box-shadow: var(--shadow-2);
-  z-index: 5;
-  animation: wpChipIn .15s cubic-bezier(.2,.7,.2,1) both;
+  white-space: nowrap;
+  z-index: 20;
+  box-shadow: 0 6px 18px rgba(17, 17, 17, 0.22);
+  animation: wp-chip-pop 260ms var(--wp-ease);
 }
-@keyframes wpChipIn { from { opacity: 0; transform: translateX(-50%) translateY(4px) scale(.95); } to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); } }
 
-/* ---------------- MindMapDemo ---------------- */
-.wp-map-demo { display: flex; justify-content: center; margin: 8px 0 0; }
-.wp-map-demo svg { width: 100%; max-width: 420px; height: auto; }
-.wp-map-edge {
-  fill: none;
-  stroke: var(--ink-3);
-  stroke-width: 1.25px;
-  opacity: 0.4;
-  stroke-dasharray: 260;
-  stroke-dashoffset: 260;
-  animation: wpDraw .6s cubic-bezier(.2,.7,.2,1) forwards;
-  animation-play-state: paused;
+@keyframes wp-chip-pop {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
 }
-.wp-map-node {
-  stroke: var(--ink-3);
-  stroke-width: 1px;
-  opacity: 0;
-  animation: wpNodeIn .5s cubic-bezier(.2,.7,.2,1) forwards;
-  animation-play-state: paused;
-}
-.wp-map-node[data-depth="0"] { fill: var(--ink); }
-.wp-map-node[data-depth="1"] { fill: var(--ink-2); }
-.wp-map-node-faint { fill: var(--line-strong) !important; }
-.wp-map-label {
-  font-family: var(--mono);
-  font-size: 10px;
-  fill: var(--ink-2);
-  opacity: 0;
-  animation: wpNodeIn .5s cubic-bezier(.2,.7,.2,1) forwards;
-  animation-play-state: paused;
-}
-.wp-map-label-faint { fill: var(--ink-faint); }
-.wp-in-view .wp-map-edge,
-.wp-in-view .wp-map-node,
-.wp-in-view .wp-map-label { animation-play-state: running; }
 
-/* ---------------- ModelPickerDemo ---------------- */
-.wp-model-demo { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+.wp-godeeper-row {
+  margin-top: 36px;
+  padding-top: 28px;
+  border-top: 1px solid var(--wp-ink-10);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.wp-side-note {
+  font-family: var(--mono, monospace);
+  font-size: 12px;
+  line-height: 1.7;
+  letter-spacing: 0.01em;
+  color: var(--wp-ink-50);
+  padding-top: 10px;
+  max-width: 230px;
+}
+
+.wp-side-note::before {
+  content: '—';
+  display: block;
+  margin-bottom: 10px;
+  color: var(--wp-ink-30);
+}
+
+/* ---------- SceneModels ---------- */
+.wp-models-body {
+  margin-top: 8vh;
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 40px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .wp-models-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.wp-model-picker-label {
+  display: block;
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--wp-ink-50);
+  margin-bottom: 10px;
+}
+
 .wp-model-select {
-  font-family: var(--sans);
-  font-size: 13.5px;
-  color: var(--ink);
-  background: var(--paper);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius);
-  padding: 10px 12px;
-  min-width: 220px;
+  width: 100%;
+  font-family: var(--sans, sans-serif);
+  font-size: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--wp-ink-15);
+  border-radius: 6px;
+  background: var(--wp-paper);
+  color: var(--wp-ink);
 }
-.wp-model-card {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 10px 16px;
-}
-.wp-model-card-pill { font-size: 13px; font-weight: 500; color: var(--ink); }
-.wp-model-card-cost { font-family: var(--mono); font-size: 11px; color: var(--ink-3); margin-top: 3px; }
 
-/* ---------------- WebSearchDemo ---------------- */
-.wp-websearch-demo { display: flex; flex-direction: column; gap: 16px; }
+.wp-meter {
+  margin-top: 22px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.wp-meter-track {
+  flex: 1;
+  height: 4px;
+  background: var(--wp-ink-10);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.wp-meter-fill {
+  height: 100%;
+  background: var(--wp-ink);
+  border-radius: 2px;
+  transition: width 420ms var(--wp-ease);
+}
+
+.wp-meter-label {
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--wp-ink-50);
+  min-width: 34px;
+  text-align: right;
+}
+
+/* ---------- SceneSources ---------- */
+.wp-sources-body {
+  margin-top: 8vh;
+  max-width: 640px;
+}
+
 .wp-toggle {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  font-size: 13px;
-  color: var(--ink-2);
+  font-family: var(--mono, monospace);
+  font-size: 12.5px;
+  letter-spacing: 0.03em;
+  color: var(--wp-ink-70);
   cursor: pointer;
-  width: fit-content;
+  user-select: none;
 }
-.wp-toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+
+.wp-toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .wp-toggle-track {
-  position: relative;
-  width: 36px;
-  height: 20px;
+  width: 34px;
+  height: 18px;
+  border: 1px solid var(--wp-ink-30);
   border-radius: 999px;
-  background: var(--line-strong);
-  transition: background .15s;
-  flex: none;
+  position: relative;
+  transition: background 200ms var(--wp-ease);
 }
+
+.wp-toggle input:checked + .wp-toggle-track {
+  background: var(--wp-ink);
+}
+
 .wp-toggle-thumb {
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 16px;
-  height: 16px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
-  background: var(--paper);
-  box-shadow: var(--shadow-1);
-  transition: transform .15s;
+  background: var(--wp-ink);
+  transition: transform 200ms var(--wp-ease), background 200ms var(--wp-ease);
 }
-.wp-toggle input:checked + .wp-toggle-track { background: var(--ink); }
-.wp-toggle input:checked + .wp-toggle-track .wp-toggle-thumb { transform: translateX(16px); }
-.wp-toggle input:focus-visible + .wp-toggle-track { outline: 2px solid var(--accent); outline-offset: 2px; }
-.wp-cite { color: var(--ink-3); font-size: 10px; margin: 0 1px; }
-.wp-sources { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
-.wp-sources-label {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-  margin-bottom: 6px;
-}
-.wp-sources-list { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--ink-2); }
 
-/* ---------------- NotionExportDemo ---------------- */
-.wp-notion-demo { display: flex; flex-direction: column; gap: 20px; }
-.wp-notion-diagram {
+.wp-toggle input:checked + .wp-toggle-track .wp-toggle-thumb {
+  transform: translateX(16px);
+  background: var(--wp-paper);
+}
+
+.wp-sources-body .wp-demo-card {
+  margin-top: 20px;
+}
+
+.wp-sources-body .wp-demo-card p {
+  font-family: var(--serif, serif);
+  font-size: 16.5px;
+  line-height: 1.65;
+  color: var(--wp-ink-90);
+  margin: 0;
+}
+
+.wp-cite {
   position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  padding: 28px 20px 34px;
+  font-family: var(--mono, monospace);
+  font-size: 0.7em;
+  color: var(--wp-ink-70);
+  padding: 0 1px;
+  opacity: 0;
 }
-.wp-notion-chip {
-  background: var(--paper);
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  padding: 6px 14px;
-  font-size: 12.5px;
-  color: var(--ink);
+
+.wp-cite a {
+  color: inherit;
+  cursor: pointer;
+  text-decoration: none;
+  border-bottom: 1px dotted var(--wp-ink-30);
 }
-.wp-notion-arrow { color: var(--ink-3); font-size: 14px; }
-.wp-notion-diagram-label {
+
+.wp-sources-list ol a {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px dotted var(--wp-ink-30);
+}
+
+.wp-cite-in {
+  animation: wp-fade-in 400ms var(--wp-ease) forwards;
+}
+
+.wp-source-card {
   position: absolute;
-  bottom: 10px;
-  left: 0;
-  right: 0;
-  text-align: center;
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 8px;
+  background: var(--wp-ink);
+  color: var(--wp-paper);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 10;
 }
-.wp-notion-toggles { display: flex; flex-direction: column; gap: 2px; }
-.wp-notion-toggle { border-bottom: 1px solid var(--line-2); }
-.wp-notion-toggle:last-child { border-bottom: 0; }
-.wp-notion-toggle-head {
+
+.wp-source-card-title {
+  font-weight: 500;
+}
+
+.wp-source-card-year {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.wp-sources-list {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--wp-ink-10);
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+}
+
+.wp-sources-list-in {
+  animation: wp-sources-open 500ms var(--wp-ease) forwards;
+}
+
+@keyframes wp-sources-open {
+  to {
+    max-height: 200px;
+    opacity: 1;
+  }
+}
+
+.wp-sources-label {
+  font-family: var(--mono, monospace);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  color: var(--wp-ink-50);
+  margin-bottom: 10px;
+}
+
+.wp-sources-list ol {
+  margin: 0;
+  padding-left: 18px;
+  font-family: var(--mono, monospace);
+  font-size: 12px;
+  color: var(--wp-ink-70);
+  line-height: 1.8;
+}
+
+/* ---------- ScenePullback ---------- */
+.wp-pullback-map-wrap {
+  margin-top: 8vh;
+  border: 1px solid var(--wp-ink-15);
+}
+
+/* Scroll-driven zoom/fade-in is ScenePullback's own beat (--wp-progress is
+   written onto the section by useSceneProgress there) — BigMap itself must
+   stay scale-neutral so SceneMix, which doesn't track scroll progress,
+   renders at full scale instead of being stuck at the 0.6x starting point. */
+.wp-scene-pullback .wp-pullback-map-wrap {
+  transform: scale(calc(0.6 + var(--wp-progress, 0) * 0.4));
+  opacity: calc(0.4 + var(--wp-progress, 0) * 0.6);
+  transition: transform 60ms linear, opacity 60ms linear;
+  transform-origin: center;
+}
+
+.wp-pullback-svg {
+  display: block;
+  width: 100%;
+  height: 56vh;
+  min-height: 340px;
+  cursor: grab;
+}
+
+.wp-pullback-svg:active {
+  cursor: grabbing;
+}
+
+.wp-pullback-caption {
+  padding: 10px 16px;
+  border-top: 1px solid var(--wp-ink-10);
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  color: var(--wp-ink-50);
+}
+
+/* ---------- real-product node card (BigMap + Constellation) ----------
+   Mirrors apps/web/src/components/MindMap.tsx's .mm-* classes (see root
+   CLAUDE.md) — a pill + foreignObject card, not a plain circle. Any
+   transform-driven animation targets .wp-mm-anim only, never the
+   foreignObject/HTML content or the outer .wp-mm-node (that one is
+   positioned via the SVG transform attribute, not CSS) — Safari doesn't
+   reliably composite a CSS transform animation on HTML content nested in a
+   foreignObject under an attribute-transformed ancestor <g>. */
+.wp-mm-node {
+  cursor: default;
+  user-select: none;
+}
+
+.wp-mm-node-selectable {
+  cursor: crosshair;
+}
+
+.wp-mm-anim {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 180ms var(--wp-ease);
+  /* every node pops in on mount — new ids (e.g. the mix node landing after
+     ConvergingEdges) naturally trigger this since React mounts a fresh <g>
+     keyed by id; existing nodes don't remount so they're unaffected */
+  animation: wp-mixer-pop 300ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.wp-mm-node .wp-pill {
+  fill: #fafafa;
+  stroke: var(--wp-ink-30);
+  stroke-width: 1;
+  transition: stroke 120ms, fill 120ms;
+}
+
+.wp-mm-node[data-depth='0'] .wp-pill {
+  fill: #ffffff;
+  stroke: var(--wp-ink);
+  stroke-width: 1.5;
+}
+
+.wp-mm-node[data-depth='1'] .wp-pill {
+  fill: #f4f4f4;
+}
+
+.wp-mm-node[data-depth='2'] .wp-pill {
+  fill: #ebebeb;
+}
+
+.wp-mm-node[data-guest='true'] .wp-pill {
+  stroke-dasharray: 4 3;
+}
+
+/* brief "just touched" emphasis (e.g. the model picker retouching the Go
+   Deeper node) — box-shadow doesn't apply to SVG, so a drop-shadow filter
+   on .wp-mm-anim stands in for a glow ring around the whole card. */
+.wp-mm-node[data-ring='true'] .wp-mm-anim {
+  filter: drop-shadow(0 0 0 1.5px var(--wp-ink-30));
+}
+
+.wp-mm-node-selectable:hover .wp-pill {
+  stroke: var(--wp-ink-50);
+}
+
+.wp-mm-node-selected .wp-pill {
+  stroke: #22c55e !important;
+  stroke-width: 2.5;
+}
+
+.wp-mm-node-selected .wp-mm-anim {
+  animation: wp-mixer-pulse 300ms ease-in-out;
+}
+
+.wp-pill-streaming {
+  stroke-dasharray: 4 3;
+  animation: wp-dashspin 1.6s linear infinite;
+}
+
+@keyframes wp-dashspin {
+  to {
+    stroke-dashoffset: -28;
+  }
+}
+
+@keyframes wp-mixer-pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+@keyframes wp-mixer-pop {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.05);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.wp-mm-fo {
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.wp-mm-card {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
-  text-align: left;
-  background: transparent;
-  border: 0;
-  padding: 12px 2px;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--ink);
-  cursor: pointer;
-}
-.wp-notion-toggle-head svg { transition: transform .15s; color: var(--ink-3); flex: none; }
-.wp-notion-toggle-head svg.wp-chevron-open { transform: rotate(90deg); }
-.wp-notion-toggle-body {
-  margin: 0 0 14px 22px;
-  font-size: 13.5px;
-  line-height: 1.55;
-  color: var(--ink-2);
-  max-width: 60ch;
+  height: 100%;
+  padding: 7px 12px;
+  box-sizing: border-box;
+  overflow: hidden;
+  font-family: var(--sans, sans-serif);
 }
 
-/* ---------------- SharingDemo ---------------- */
-.wp-share-demo { display: flex; flex-direction: column; gap: 18px; }
-.wp-share-row { display: flex; gap: 10px; }
-.wp-share-input {
-  flex: 1;
-  font-family: var(--mono);
-  font-size: 13px;
-  color: var(--ink-2);
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 10px 14px;
-  min-width: 0;
-}
-.wp-share-copy { height: auto; padding: 0 16px; }
-.wp-share-avatars { display: flex; align-items: center; gap: 10px; }
-.wp-avatar {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  background: var(--ink);
-  color: var(--bg);
+.wp-mm-card-ic {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
-  font-weight: 600;
-  flex: none;
 }
-.wp-avatar-guest { background: var(--accent-soft); color: var(--ink-2); border: 1px dashed var(--line-strong); }
-.wp-share-avatars-label { font-size: 12.5px; color: var(--ink-3); }
 
-/* ---------------- UseCaseCards ---------------- */
-.wp-usecase-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 18px;
+.wp-mm-emoji {
+  font-size: 18px;
+  line-height: 1;
+  display: inline-block;
 }
-.wp-usecase-card {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  padding: 22px;
-  transition: box-shadow .15s, transform .15s;
-}
-.wp-usecase-card:hover { box-shadow: var(--shadow-2); transform: translateY(-2px); }
-.wp-usecase-card svg { color: var(--ink); margin-bottom: 12px; }
-.wp-usecase-card h3 { font-family: var(--sans); font-size: 15px; font-weight: 600; margin: 0 0 8px; color: var(--ink); }
-.wp-usecase-card p { font-size: 13.5px; line-height: 1.55; color: var(--ink-2); margin: 0; }
 
-/* ---------------- PricingCalculator ---------------- */
-.wp-calc {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-1);
-  padding: 26px 28px;
+.wp-mm-card-text {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 2px;
 }
-.wp-calc-row { display: flex; flex-direction: column; gap: 8px; }
-.wp-calc-label { font-size: 13.5px; font-weight: 500; color: var(--ink); }
-.wp-calc-value { font-family: var(--mono); color: var(--ink-2); font-weight: 400; }
-.wp-calc-slider { width: 100%; accent-color: var(--ink); }
-.wp-calc-segmented { display: inline-flex; border: 1px solid var(--line-strong); border-radius: var(--radius); overflow: hidden; width: fit-content; }
-.wp-calc-seg-btn {
-  background: var(--paper);
-  border: 0;
-  padding: 8px 16px;
-  font-size: 13px;
-  color: var(--ink-2);
+
+.wp-mm-kicker {
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--wp-ink-50);
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wp-mm-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--wp-ink-90);
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.wp-mm-mix-badge {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  color: var(--wp-ink-50);
+  pointer-events: none;
+}
+
+.wp-mm-edge {
+  fill: none;
+  stroke: var(--wp-ink-30);
+  stroke-width: 1.25;
+  opacity: 0.4;
+}
+
+/* generous invisible hit-area covering the full card so mobile taps land
+   reliably without inflating the visible pill */
+.wp-mm-hit {
+  fill: transparent;
   cursor: pointer;
-  border-right: 1px solid var(--line-strong);
 }
-.wp-calc-seg-btn:last-child { border-right: 0; }
-.wp-calc-seg-active { background: var(--ink); color: var(--bg); }
-.wp-calc-hint { font-size: 12px; color: var(--ink-3); }
+
+/* Mixer selection checkmark — sits in the card's top-right corner alongside
+   the green stroke (both cues together read clearer than the stroke alone
+   at a glance, especially at the dock's ~0.45x scale). */
+.wp-mm-check {
+  font-family: var(--mono, monospace);
+  font-size: 12px;
+  font-weight: 700;
+  fill: #22c55e;
+  pointer-events: none;
+}
+
+/* dot-grid backdrop matching the real product's map canvas (globals.css) */
+.wp-pullback-map-wrap {
+  background-image: radial-gradient(circle at 1px 1px, var(--wp-ink-06) 1px, transparent 0);
+  background-size: 24px 24px;
+}
+
+/* ---------- SceneMix ---------- */
+.wp-mix-instruction {
+  margin-top: 6vh;
+  font-family: var(--mono, monospace);
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  color: var(--wp-ink-50);
+}
+
+.wp-mix-controls {
+  margin-top: 20px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.wp-mix-counter {
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--wp-ink-50);
+}
+
+.wp-mix-btn {
+  font-family: var(--sans, sans-serif);
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--wp-paper);
+  background: var(--wp-ink);
+  border: 1px solid var(--wp-ink);
+  padding: 12px 24px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: opacity 220ms var(--wp-ease), transform 160ms var(--wp-ease);
+}
+
+.wp-mix-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.wp-mix-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* converging edges overlay the same viewBox as BigMap's own svg, positioned
+   absolutely so it draws on top of the static map during the ~funnel beat
+   between click and the mix node actually landing in the layout */
+.wp-pullback-map-wrap {
+  position: relative;
+}
+
+.wp-mix-converge-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.wp-mix-converge-edge {
+  fill: none;
+  stroke: var(--wp-ink);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-dasharray: 340;
+  stroke-dashoffset: 340;
+  opacity: 0;
+  animation: wp-mix-converge 640ms var(--wp-ease) forwards;
+}
+
+@keyframes wp-mix-converge {
+  0% {
+    opacity: 0;
+    stroke-dashoffset: 340;
+  }
+  12% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.85;
+    stroke-dashoffset: 0;
+  }
+}
+
+/* landing-point pulse: a ring that blooms at the mix node's future position
+   as the first edge arrives, then a solid dot snaps in once all edges have
+   landed — makes the convergence read as things arriving somewhere, not
+   just lines fading in. Delay is set inline per-instance so it starts once
+   the LAST staggered edge is expected to land. */
+.wp-mix-converge-landing {
+  fill: none;
+  stroke: var(--wp-ink-50);
+  stroke-width: 1.4;
+  opacity: 0;
+  animation: wp-mix-landing-ring 700ms var(--wp-ease) forwards;
+}
+
+.wp-mix-converge-landing-dot {
+  fill: var(--wp-ink);
+  opacity: 0;
+  animation: wp-mix-landing-dot 360ms var(--wp-ease) forwards;
+}
+
+@keyframes wp-mix-landing-ring {
+  0% {
+    opacity: 0.8;
+    r: 2;
+  }
+  100% {
+    opacity: 0;
+    r: 26;
+  }
+}
+
+@keyframes wp-mix-landing-dot {
+  0% {
+    opacity: 0;
+    transform: scale(0);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1.4);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.wp-mix-answer-card {
+  margin-top: 6vh;
+  max-width: 720px;
+  padding: 8px 0;
+}
+
+.wp-mix-answer-sentence {
+  padding: 18px 40px;
+  border-top: 1px solid var(--wp-ink-10);
+  margin: 0;
+  font-family: var(--serif, serif);
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--wp-ink-90);
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.wp-mix-answer-sentence:first-child {
+  border-top: none;
+}
+
+.wp-mix-answer-sentence-in {
+  animation: wp-section-in 500ms var(--wp-ease) forwards;
+}
+
+/* ---------- SceneMorning ---------- */
+.wp-morning-body {
+  margin-top: 8vh;
+  max-width: 640px;
+}
+
+.wp-notion-toggles {
+  border: 1px solid var(--wp-ink-15);
+}
+
+.wp-notion-toggle {
+  border-top: 1px solid var(--wp-ink-10);
+}
+
+.wp-notion-toggle:first-child {
+  border-top: none;
+}
+
+.wp-notion-toggle-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 18px 22px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--sans, sans-serif);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--wp-ink-90);
+}
+
+.wp-chevron-open {
+  transform: rotate(90deg);
+}
+
+.wp-notion-toggle-head svg {
+  transition: transform 200ms var(--wp-ease);
+  flex-shrink: 0;
+}
+
+.wp-notion-toggle-body {
+  margin: 0;
+  padding: 0 22px 20px 44px;
+  font-family: var(--serif, serif);
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--wp-ink-70);
+}
+
+.wp-share-row {
+  margin-top: 32px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--wp-ink-15);
+  padding: 14px 18px;
+  border-radius: 999px;
+}
+
+.wp-share-link {
+  flex: 1;
+  font-family: var(--mono, monospace);
+  font-size: 12.5px;
+  color: var(--wp-ink-70);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wp-share-copy {
+  padding: 8px 16px;
+  flex-shrink: 0;
+}
+
+.wp-morning-caption {
+  margin-top: 20px;
+  font-family: var(--mono, monospace);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--wp-ink-50);
+}
+
+.wp-fade-in-el {
+  opacity: 0;
+  animation: wp-fade-in 700ms var(--wp-ease) forwards;
+}
+
+/* ---------- Epilogue: receipt ---------- */
+.wp-receipt-outer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 32px;
+  margin-top: 10vh;
+}
+
+.wp-receipt {
+  width: 340px;
+  background: var(--wp-paper);
+  border: 1px solid var(--wp-ink-15);
+  padding: 38px 30px 30px;
+  font-family: var(--mono, monospace);
+  font-size: 12.5px;
+  line-height: 1.9;
+  color: var(--wp-ink-90);
+  position: relative;
+}
+
+.wp-receipt-mini {
+  align-self: flex-start;
+}
+
+.wp-perf {
+  height: 1px;
+  width: 100%;
+  background-image: radial-gradient(circle, var(--wp-ink-30) 1.1px, transparent 1.1px);
+  background-size: 9px 1px;
+  background-repeat: repeat-x;
+}
+
+.wp-perf-top {
+  margin-bottom: 24px;
+}
+
+.wp-perf-bottom {
+  margin-top: 24px;
+}
+
+.wp-r-title {
+  text-align: center;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  font-size: 12.5px;
+  margin-bottom: 2px;
+}
+
+.wp-r-sub {
+  text-align: center;
+  color: var(--wp-ink-50);
+  font-size: 11px;
+  margin-bottom: 22px;
+}
+
+.wp-r-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  white-space: nowrap;
+  opacity: 0;
+}
+
+.wp-r-dots {
+  flex: 1;
+  border-bottom: 1px dotted var(--wp-ink-30);
+  margin-bottom: 5px;
+}
+
+.wp-r-rule {
+  border: none;
+  border-top: 1px dashed var(--wp-ink-15);
+  margin: 12px 0;
+}
+
+.wp-r-total {
+  font-weight: 600;
+}
+
+.wp-r-note {
+  text-align: center;
+  font-style: italic;
+  font-family: var(--serif, serif);
+  font-size: 13px;
+  margin-top: 20px;
+  color: var(--wp-ink-70);
+  opacity: 0;
+}
+
+.wp-r-footnote {
+  text-align: center;
+  font-size: 10px;
+  color: var(--wp-ink-30);
+  margin-top: 14px;
+  line-height: 1.5;
+  opacity: 0;
+}
+
+.wp-receipt-play .wp-r-line,
+.wp-receipt-play .wp-r-note,
+.wp-receipt-play .wp-r-footnote {
+  animation: wp-print-line 500ms var(--wp-ease) forwards;
+}
+
+@keyframes wp-print-line {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ---------- Epilogue: calculator ---------- */
+.wp-calc-section {
+  margin-top: 16vh;
+  max-width: 640px;
+}
+
+.wp-calc {
+  border: 1px solid var(--wp-ink-15);
+  padding: 36px 40px;
+}
+
+.wp-calc-row {
+  margin-bottom: 28px;
+}
+
+.wp-calc-row:last-child {
+  margin-bottom: 0;
+}
+
+.wp-calc-label {
+  display: block;
+  font-family: var(--mono, monospace);
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  color: var(--wp-ink-70);
+  margin-bottom: 10px;
+}
+
+.wp-calc-value {
+  color: var(--wp-ink);
+  font-weight: 600;
+}
+
+.wp-calc-slider {
+  width: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 1px;
+  background: var(--wp-ink-30);
+  outline: none;
+}
+
+.wp-calc-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--wp-ink);
+  cursor: pointer;
+}
+
+.wp-calc-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--wp-ink);
+  border: none;
+  cursor: pointer;
+}
+
+.wp-calc-segmented {
+  display: inline-flex;
+  border: 1px solid var(--wp-ink-15);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.wp-calc-seg-btn {
+  font-family: var(--sans, sans-serif);
+  font-size: 12.5px;
+  padding: 8px 18px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--wp-ink-70);
+  border-right: 1px solid var(--wp-ink-15);
+}
+
+.wp-calc-seg-btn:last-child {
+  border-right: none;
+}
+
+.wp-calc-seg-active {
+  background: var(--wp-ink);
+  color: var(--wp-paper);
+}
+
+.wp-calc-hint {
+  margin-top: 8px;
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  color: var(--wp-ink-50);
+  line-height: 1.5;
+}
+
 .wp-calc-flat-input {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  background: var(--paper);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius);
-  padding: 6px 12px;
-  width: fit-content;
-  font-size: 13.5px;
-  color: var(--ink);
+  gap: 6px;
+  border: 1px solid var(--wp-ink-15);
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-family: var(--mono, monospace);
+  font-size: 13px;
 }
+
 .wp-calc-flat-input input {
-  border: 0;
-  background: transparent;
-  outline: 0;
+  border: none;
+  outline: none;
   width: 60px;
-  font-family: var(--mono);
-  font-size: 13.5px;
-  color: var(--ink);
+  font-family: var(--mono, monospace);
+  font-size: 13px;
+  color: var(--wp-ink);
+  background: none;
 }
+
 .wp-calc-result {
-  border-top: 1px solid var(--line);
-  padding-top: 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  border-top: 1px solid var(--wp-ink-10);
+  padding-top: 24px;
 }
-.wp-calc-result-main { font-size: 15px; color: var(--ink); }
-.wp-calc-result-savings { font-size: 14px; }
-.wp-calc-win { color: #1f7a4d; }
-[data-theme="dark"] .wp-calc-win { color: #4fd68f; }
-.wp-calc-even { color: var(--ink-3); }
-.wp-calc-result-aside { font-size: 12.5px; color: var(--ink-3); }
-.wp-calc-disclaimer { font-size: 11.5px; color: var(--ink-faint); line-height: 1.5; margin: 0; }
 
-/* ---------------- FAQ ---------------- */
-.wp-faq { display: flex; flex-direction: column; }
-.wp-faq-item { border-bottom: 1px solid var(--line); }
-.wp-faq-q {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  text-align: left;
-  background: transparent;
-  border: 0;
-  padding: 16px 2px;
+.wp-calc-result-main {
+  font-family: var(--sans, sans-serif);
   font-size: 14.5px;
-  font-weight: 500;
-  color: var(--ink);
-  cursor: pointer;
+  line-height: 1.6;
+  color: var(--wp-ink-90);
 }
-.wp-faq-q svg { transition: transform .15s; color: var(--ink-3); flex: none; }
-.wp-faq-q svg.wp-chevron-open { transform: rotate(90deg); }
-.wp-faq-a { margin: 0 0 16px 22px; font-size: 13.5px; line-height: 1.6; color: var(--ink-2); max-width: 60ch; }
 
-/* ---------------- FinalCTA ---------------- */
-.wp-final {
-  text-align: center;
-  padding: 100px 24px;
-  border-top: 1px solid var(--line);
+.wp-calc-result-savings {
+  margin-top: 10px;
+  font-family: var(--sans, sans-serif);
+  font-size: 13.5px;
+  line-height: 1.5;
 }
-.wp-final-h2 { margin: 0 0 26px; }
-.wp-final-cta { margin: 0 auto; }
-.wp-final-foot {
-  margin-top: 56px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
+
+.wp-calc-win {
+  color: var(--wp-ink);
+}
+
+.wp-calc-even {
+  color: var(--wp-ink-50);
+}
+
+.wp-calc-result-aside {
+  margin-top: 14px;
+  font-family: var(--mono, monospace);
+  font-size: 11.5px;
+  color: var(--wp-ink-50);
+  line-height: 1.6;
+}
+
+.wp-calc-disclaimer {
+  margin-top: 24px;
+  font-family: var(--mono, monospace);
+  font-size: 10.5px;
+  color: var(--wp-ink-30);
+  line-height: 1.6;
+}
+
+.wp-vignettes {
+  margin-top: 8vh;
+}
+
+.wp-vignette-row {
+  padding: 16px 0;
+  border-top: 1px solid var(--wp-ink-10);
+  font-family: var(--mono, monospace);
   font-size: 12px;
-  color: var(--ink-3);
+  color: var(--wp-ink-50);
+  line-height: 1.6;
 }
-.wp-final-back { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); text-decoration: none; }
-.wp-final-back:hover { color: var(--ink); }
-.wp-final-links { display: flex; gap: 16px; }
-.wp-final-links a { color: var(--ink-3); text-decoration: none; }
-.wp-final-links a:hover { color: var(--ink); }
 
-/* ---------------- Responsive ---------------- */
-@media (max-width: 860px) {
-  .wp-hero { grid-template-columns: 1fr; padding: 72px 20px 56px; text-align: left; }
-  .wp-hero-visual { order: -1; max-width: 340px; margin: 0 auto 12px; }
-  .wp-compare { grid-template-columns: 1fr; }
-  .wp-usecase-grid { grid-template-columns: 1fr; }
-  .wp-section { padding: 64px 20px; }
+/* ---------- Epilogue: fine print / FAQ ---------- */
+.wp-faq-wrap {
+  margin-top: 12vh;
+  max-width: 640px;
 }
+
+.wp-fine-print summary {
+  cursor: pointer;
+  font-family: var(--mono, monospace);
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  color: var(--wp-ink-50);
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--wp-ink-15);
+}
+
+.wp-faq {
+  margin-top: 24px;
+}
+
+.wp-faq-item {
+  border-top: 1px solid var(--wp-ink-10);
+}
+
+.wp-faq-item:first-child {
+  border-top: none;
+}
+
+.wp-faq-q {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--sans, sans-serif);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--wp-ink-90);
+}
+
+.wp-faq-q svg {
+  transition: transform 200ms var(--wp-ease);
+  flex-shrink: 0;
+}
+
+.wp-faq-a {
+  margin: 0 0 18px 22px;
+  font-family: var(--serif, serif);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--wp-ink-70);
+  max-width: 560px;
+}
+
+/* ---------- Epilogue: "what the night proved" index ---------- */
+.wp-proved {
+  margin-top: 14vh;
+  max-width: 480px;
+}
+
+.wp-proved-title {
+  font-family: var(--mono, monospace);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  color: var(--wp-ink-30);
+  margin-bottom: 10px;
+}
+
+.wp-proved-row {
+  padding: 10px 0;
+  border-top: 1px solid var(--wp-ink-10);
+  font-family: var(--mono, monospace);
+  font-size: 11.5px;
+  color: var(--wp-ink-70);
+  line-height: 1.5;
+}
+
+/* ---------- Epilogue: closing CTA ---------- */
+.wp-cta-block {
+  text-align: center;
+  margin-top: 16vh;
+}
+
+.wp-cta-serif {
+  font-family: var(--serif, serif);
+  font-weight: 300;
+  font-style: italic;
+  font-size: clamp(34px, 4.4vw, 54px);
+  letter-spacing: -0.01em;
+}
+
+.wp-cta-pill {
+  margin: 38px auto 0;
+  display: inline-block;
+  font-family: var(--sans, sans-serif);
+  font-size: 15px;
+  font-weight: 500;
+  background: var(--wp-ink);
+  color: var(--wp-paper);
+  padding: 17px 40px;
+  border-radius: 999px;
+  border: none;
+  cursor: pointer;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  transition: transform 260ms var(--wp-ease), box-shadow 260ms var(--wp-ease);
+}
+
+.wp-cta-pill:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 26px rgba(17, 17, 17, 0.25);
+}
+
+.wp-cta-tagline {
+  margin-top: 26px;
+  font-family: var(--sans, sans-serif);
+  font-size: 14px;
+  color: var(--wp-ink-50);
+}
+
+.wp-cta-mono {
+  margin-top: 8px;
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  color: var(--wp-ink-30);
+}
+
+.wp-cta-secondary {
+  margin-top: 14px;
+}
+
+.wp-cta-secondary-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono, monospace);
+  font-size: 11.5px;
+  color: var(--wp-ink-50);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.wp-footer-links {
+  margin-top: 12vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  color: var(--wp-ink-30);
+}
+
+.wp-footer-links a,
+.wp-footer-links button {
+  color: var(--wp-ink-50);
+  text-decoration: none;
+  background: none;
+  border: none;
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.wp-footer-links a:hover,
+.wp-footer-links button:hover {
+  color: var(--wp-ink);
+}
+
+.wp-footer-sep {
+  color: var(--wp-ink-15);
+}
+
+.wp-foot-space {
+  height: 12vh;
+}
+
+/* ---------- chapter clock (fixed) ---------- */
+.wp-clock {
+  position: fixed;
+  top: 24px;
+  right: 28px;
+  z-index: 60;
+  width: 190px;
+  text-align: right;
+  pointer-events: none;
+}
+
+.wp-clock-text {
+  display: block;
+  font-family: var(--mono, monospace);
+  font-size: 11.5px;
+  letter-spacing: 0.12em;
+  color: var(--wp-ink-70);
+  white-space: nowrap;
+}
+
+.wp-clock-rule {
+  margin-top: 8px;
+  height: 1px;
+  width: 100%;
+  background: var(--wp-ink-10);
+  position: relative;
+}
+
+.wp-clock-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 1px;
+  width: 0%;
+  background: var(--wp-ink);
+  transition: width 80ms linear;
+}
+
+@media (max-width: 768px) {
+  .wp-clock {
+    top: 12px;
+    right: 0;
+    left: 0;
+    width: auto;
+    text-align: center;
+    padding: 0 16px;
+  }
+}
+
+/* ---------- constellation dock (fixed, persistent) ---------- */
+.wp-const {
+  position: fixed;
+  right: 28px;
+  bottom: 28px;
+  width: 260px;
+  z-index: 55;
+  touch-action: none;
+  opacity: 1;
+  transition: opacity 320ms var(--wp-ease);
+}
+
+/* toggled on <html> by ScenePullback while the big inline map is ≥40% in
+   view, so the fixed dock isn't fighting the climax for attention */
+html.wp-dock-hidden .wp-const {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.wp-const-cap {
+  position: absolute;
+  top: -9px;
+  left: 12px;
+  background: var(--wp-paper);
+  padding: 0 6px;
+  font-family: var(--mono, monospace);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  color: var(--wp-ink-50);
+  z-index: 1;
+}
+
+.wp-const-frame {
+  border: 1px solid var(--wp-ink-30);
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 1px 0 rgba(17, 17, 17, 0.04), 0 12px 28px rgba(17, 17, 17, 0.05);
+}
+
+.wp-const-svg {
+  display: block;
+  width: 100%;
+  height: 160px;
+  cursor: grab;
+}
+
+.wp-const-svg:active {
+  cursor: grabbing;
+}
+
+.wp-const-caption {
+  margin-top: 6px;
+  font-family: var(--mono, monospace);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--wp-ink-50);
+  text-align: right;
+  min-height: 14px;
+}
+
+.wp-const-edge {
+  fill: none;
+  stroke: var(--wp-ink);
+  stroke-width: 1;
+  stroke-dasharray: 200;
+  stroke-dashoffset: 200;
+}
+
+.wp-const-edge-drawn {
+  animation: wp-draw-edge 700ms var(--wp-ease) forwards;
+}
+
+@keyframes wp-draw-edge {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* card hover-grow lives on .wp-mm-anim (a real SVG <g>, not the
+   attribute-transformed outer node) — see the top-of-file note on the
+   Safari foreignObject transform quirk */
+.wp-const-node-g:hover .wp-mm-anim {
+  transform: scale(1.12);
+}
+
+.wp-const-pulse {
+  fill: none;
+  stroke: var(--wp-ink-50);
+  stroke-width: 1;
+  animation: wp-pulse 1800ms var(--wp-ease) infinite;
+}
+
+@keyframes wp-pulse {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.9;
+  }
+  70% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+@media (max-width: 768px) {
+  .wp-const {
+    width: 150px;
+    right: 10px;
+    bottom: 10px;
+  }
+  .wp-const-svg {
+    height: 100px;
+  }
+  .wp-const-cap {
+    font-size: 8px;
+    left: 8px;
+    top: -7px;
+  }
+  .wp-const-caption {
+    font-size: 9px;
+  }
+  /* scenes need enough bottom padding that the fixed dock never collides
+     with the last lines of body content on short viewports */
+  .wp-scene {
+    padding-bottom: 22vh;
+  }
+}
+
 @media (max-width: 480px) {
-  .wp-share-row { flex-direction: column; }
-  .wp-model-demo { flex-direction: column; align-items: flex-start; }
+  .wp-const {
+    width: 128px;
+  }
+  .wp-const-svg {
+    height: 84px;
+  }
+}
+
+/* ---------- mobile ≤768px ---------- */
+@media (max-width: 768px) {
+  .wp-h1 {
+    font-size: clamp(38px, 11vw, 56px);
+  }
+  .wp-h2 {
+    font-size: clamp(30px, 9vw, 44px);
+  }
+  .wp-sub {
+    font-size: 16px;
+  }
+  .wp-chat {
+    margin-right: 96px;
+  }
+  .wp-bubble {
+    max-width: 100%;
+    font-size: 13.5px;
+  }
+}
+
+@media (max-width: 480px) {
+  .wp-wrap {
+    padding: 0 16px;
+  }
+  .wp-stamp {
+    margin: 48px 0 40px;
+  }
+}
+
+/* ---------- prefers-reduced-motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .wp-stamp-rule {
+    animation: none;
+    transform: scaleX(1);
+  }
+  .wp-stamp-label,
+  .wp-fade-line,
+  .wp-closing-line {
+    animation-duration: 300ms;
+    transform: none;
+  }
+  .wp-reveal {
+    animation: none;
+    clip-path: none;
+  }
+  .wp-bubble {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+  .wp-const-edge-drawn {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+  .wp-mm-anim {
+    animation: none;
+    transition: none;
+    transform: scale(1);
+  }
+  .wp-const-pulse {
+    animation: none;
+    opacity: 0.5;
+  }
+  .wp-const-node-g:hover .wp-mm-anim {
+    transform: none;
+  }
+  .wp-pill-streaming {
+    animation: none;
+  }
+  .wp-clock-bar {
+    transition: none;
+  }
+  /* burial becomes a static crushed state instead of a scroll-driven one */
+  .wp-bubble:nth-child(2) {
+    margin-top: -4px;
+  }
+  .wp-bubble:nth-child(3) {
+    margin-top: -18px;
+    filter: none;
+    opacity: 0.92;
+  }
+  .wp-bubble:nth-child(4) {
+    margin-top: -30px;
+    filter: none;
+    opacity: 0.85;
+  }
+  .wp-bubble:nth-child(5) {
+    margin-top: -44px;
+    filter: none;
+    opacity: 0.75;
+  }
+  .wp-bubble:nth-child(1) {
+    filter: none;
+    opacity: 0.8;
+  }
+
+  .wp-caret {
+    animation: none;
+  }
+  .wp-demo-section-in {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+  .wp-thinking-dots span {
+    animation: none;
+    opacity: 0.6;
+  }
+  .wp-ask-chip {
+    animation: none;
+  }
+  .wp-cite-in {
+    animation: none;
+    opacity: 1;
+  }
+  .wp-sources-list-in {
+    animation: none;
+    max-height: none;
+    opacity: 1;
+  }
+  .wp-pullback-map-wrap {
+    transform: none;
+    opacity: 1;
+    transition: none;
+  }
+  .wp-fade-in-el {
+    animation: none;
+    opacity: 1;
+  }
+  .wp-receipt-play .wp-r-line,
+  .wp-receipt-play .wp-r-note,
+  .wp-receipt-play .wp-r-footnote {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+  .wp-qbox-wrap,
+  .wp-models-body,
+  .wp-sources-body,
+  .wp-morning-body,
+  .wp-calc-section,
+  .wp-faq-wrap {
+    transition: none;
+    opacity: 1;
+    transform: none;
+  }
+  .wp-meter-fill {
+    transition: none;
+  }
+  .wp-const {
+    transition: none;
+  }
+  .wp-why {
+    animation: none;
+    opacity: 1;
+  }
+  .wp-mix-converge-edge {
+    animation: none;
+    opacity: 0.85;
+    stroke-dashoffset: 0;
+  }
+  .wp-mix-converge-landing {
+    animation: none;
+    opacity: 0;
+  }
+  .wp-mix-converge-landing-dot {
+    animation: none;
+    opacity: 1;
+    transform: scale(1);
+  }
+  .wp-mix-answer-sentence-in {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+  .wp-mix-btn {
+    transition: none;
+  }
+  .wp-mix-btn:hover:not(:disabled) {
+    transform: none;
+  }
 }
