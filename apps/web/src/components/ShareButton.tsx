@@ -1,16 +1,25 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { shareApi } from '@/lib/api';
-import { Link, LinkOff } from './Icons';
+import { Link, LinkOff, ImageIcon } from './Icons';
 
 interface Props {
   sessionId: string;
   idToken: string;
+  sessionTitle?: string;
+}
+
+// Filesystem-unsafe characters stripped from the session title for the
+// downloaded image's filename; falls back to a generic name if that leaves
+// nothing (e.g. an emoji-only or still-loading title).
+function filenameFor(title: string | undefined): string {
+  const cleaned = (title ?? '').replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, '-').trim();
+  return `${cleaned || 'fork-ai-share'}.png`;
 }
 
 type State = 'idle' | 'loading' | 'active' | 'copied' | 'revoking';
 
-export function ShareButton({ sessionId, idToken }: Props) {
+export function ShareButton({ sessionId, idToken, sessionTitle }: Props) {
   const [state, setState] = useState<State>('idle');
   const [token, setToken] = useState<string | null>(null);
 
@@ -93,6 +102,50 @@ export function ShareButton({ sessionId, idToken }: Props) {
     }
   }, [idToken, sessionId]);
 
+  // Downloads the session's share OG card (mind map + hook) directly — the
+  // route is same-origin, so a plain <a download> forces a save instead of
+  // navigating. Only ever called while a share token exists.
+  const handleDownloadImage = useCallback(() => {
+    if (!token) return;
+    const a = document.createElement('a');
+    a.href = `/api/og/share/${token}`;
+    a.download = filenameFor(sessionTitle);
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }, [token, sessionTitle]);
+
+  // Shared by the "active" and "copied" states — both mean a share token
+  // exists, so the download-image affordance is available in either: a
+  // hover dropdown on desktop, a standalone icon to the left on mobile.
+  const shareControl = (label: string, showStop: boolean) => (
+    <span className="share-btn-group">
+      <button
+        className="icon-btn share-dl-mobile"
+        onClick={handleDownloadImage}
+        title="Download share image"
+        aria-label="Download share image"
+      >
+        <ImageIcon size={14} />
+      </button>
+      <span className="share-hover-target">
+        <button className="icon-btn share-btn--active" onClick={handleShare} title="Copy share link">
+          <Link size={14} /> {label}
+        </button>
+        <div className="share-dl-dropdown">
+          <button type="button" onClick={handleDownloadImage}>
+            <ImageIcon size={14} /> Download image
+          </button>
+        </div>
+      </span>
+      {showStop && (
+        <button className="icon-btn share-btn--stop" onClick={handleRevoke} title="Stop sharing">
+          <LinkOff size={14} />
+        </button>
+      )}
+    </span>
+  );
+
   if (state === 'loading' || state === 'revoking') {
     return (
       <button className="icon-btn" disabled title="Share">
@@ -101,26 +154,8 @@ export function ShareButton({ sessionId, idToken }: Props) {
     );
   }
 
-  if (state === 'copied') {
-    return (
-      <button className="icon-btn share-btn--active" title="Link copied">
-        <Link size={14} /> Copied!
-      </button>
-    );
-  }
-
-  if (state === 'active') {
-    return (
-      <span className="share-btn-group">
-        <button className="icon-btn share-btn--active" onClick={handleShare} title="Copy share link">
-          <Link size={14} /> Shared
-        </button>
-        <button className="icon-btn share-btn--stop" onClick={handleRevoke} title="Stop sharing">
-          <LinkOff size={14} />
-        </button>
-      </span>
-    );
-  }
+  if (state === 'copied') return shareControl('Copied!', false);
+  if (state === 'active') return shareControl('Shared', true);
 
   return (
     <button className="icon-btn" onClick={handleShare} title="Share this session">
