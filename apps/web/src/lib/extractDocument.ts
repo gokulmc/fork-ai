@@ -83,6 +83,9 @@ async function extractPdf(
 ): Promise<ExtractResult> {
   // pdfjs-dist/webpack.mjs is the bundler entry: sets up the module worker
   // automatically via new Worker(new URL(...), { type:'module' }).
+  // pdfjs-dist is pinned to 5.4.624: from 5.5 getTextContent() iterates a
+  // ReadableStream with for-await, which NO released Safari supports — every
+  // PDF upload from Safari throws "undefined is not a function (near 't of e')".
   const pdfjs = await import('pdfjs-dist/webpack.mjs');
   const data = new Uint8Array(await file.arrayBuffer());
   const pdf = await pdfjs.getDocument({ data }).promise;
