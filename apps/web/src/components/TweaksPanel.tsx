@@ -218,19 +218,21 @@ export function TweakColor({
 const PAD = 16;
 
 // Branch-model choices (Claude / Gemini / DeepSeek / GLM). Shared by the Model dropdown
-// and the status chip so the name stays in sync. `cost` is an approximate price
-// multiplier relative to Claude Haiku (1×), blended input+output — shown only in
-// the dropdown. Update if MODEL_PRICING (backend) changes.
+// and the status chip so the name stays in sync. `cost` is the actual average cost
+// multiplier relative to Claude Haiku (1×) — measured from real branch-call billing
+// history (ASK/DEEPER/MIX usage events), not a list-price estimate, since real prompts
+// per model don't carry the same token volume. Re-derive periodically as usage grows;
+// glm/glm-air were computed from very small samples (n=3 / n=7) and may shift.
 const MODEL_OPTIONS: { value: Tweaks['branchModel']; label: string; cost: string; note?: string }[] = [
   { value: 'haiku', label: 'Claude Haiku', cost: '1×' },
-  { value: 'sonnet', label: 'Claude Sonnet', cost: '3×' },
-  { value: 'opus', label: 'Claude Opus', cost: '15×' },
-  { value: 'gemini-flash-lite', label: 'Gemini 2.5 Flash-Lite', cost: '0.08×' },
-  { value: 'gemini-flash', label: 'Gemini 2.5 Flash', cost: '0.5×' },
-  { value: 'gemini-pro', label: 'Gemini 2.5 Pro', cost: '1.9×' },
-  { value: 'deepseek-flash', label: 'DeepSeek V4 Flash', cost: '0.07×' },
-  { value: 'deepseek-pro', label: 'DeepSeek V4 Pro', cost: '0.9×' },
-  { value: 'glm-air', label: 'GLM 4.5 Air', cost: '0.2×' },
+  { value: 'sonnet', label: 'Claude Sonnet', cost: '5×' },
+  { value: 'opus', label: 'Claude Opus', cost: '40×' },
+  { value: 'gemini-flash-lite', label: 'Gemini 2.5 Flash-Lite', cost: '0.04×' },
+  { value: 'gemini-flash', label: 'Gemini 2.5 Flash', cost: '0.2×' },
+  { value: 'gemini-pro', label: 'Gemini 2.5 Pro', cost: '1×' },
+  { value: 'deepseek-flash', label: 'DeepSeek V4 Flash', cost: '0.03×', note: '2x peak' },
+  { value: 'deepseek-pro', label: 'DeepSeek V4 Pro', cost: '0.3×', note: '2x peak' },
+  { value: 'glm-air', label: 'GLM 4.5 Air', cost: '0.07×' },
   { value: 'glm', label: 'GLM 5.2', cost: '1×', note: 'slow' },
 ];
 const modelLabel = (v: string) => MODEL_OPTIONS.find(o => o.value === v)?.label ?? v;
@@ -402,7 +404,7 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, 
               options={MODEL_OPTIONS.map(o => ({ value: o.value, label: `${o.label} · ${o.cost}${o.note ? ` · ${o.note}` : ''}` }))}
               onChange={v => setTweak('branchModel', v as Tweaks['branchModel'])}
             />
-            <p className="twk-note">Model for Go Deeper &amp; Ask AI (Claude, Gemini or DeepSeek). The ×N is approximate cost relative to Claude Haiku (1×).</p>
+            <p className="twk-note">Model for Go Deeper &amp; Ask AI (Claude, Gemini or DeepSeek). The ×N is the measured average cost relative to Claude Haiku (1×). DeepSeek prices are 2x during its peak hours (1-4am &amp; 6-10am UTC).</p>
             <TweakRadio
               label="Web search"
               value={tweaks.webSearch ? 'on' : 'off'}
@@ -699,7 +701,7 @@ function HowToContent() {
         <li style={li}><strong>Font pairing</strong> — change the heading and body typeface</li>
         <li style={li}><strong>Mind map layout</strong> — Horizontal (default) or Vertical</li>
         <li style={li}><strong>Max sections</strong> — 4 to 8 sections per answer</li>
-        <li style={li}><strong>Model</strong> — Claude (Haiku/Sonnet/Opus), Gemini (2.5 Flash-Lite/Flash/Pro), DeepSeek (V4 Flash/Pro), or GLM (4.5 Air/5.2) for Go Deeper &amp; Ask AI. The ×N shows approximate cost vs Claude Haiku. (DeepSeek has no web search.)</li>
+        <li style={li}><strong>Model</strong> — Claude (Haiku/Sonnet/Opus), Gemini (2.5 Flash-Lite/Flash/Pro), DeepSeek (V4 Flash/Pro), or GLM (4.5 Air/5.2) for Go Deeper &amp; Ask AI. The ×N shows measured average cost vs Claude Haiku. DeepSeek is 2x during its peak hours (1-4am &amp; 6-10am UTC) and has no web search.</li>
         <li style={li}><strong>Web search</strong> — On or Off (see above)</li>
       </ul>
 

@@ -53,15 +53,36 @@ describe('models', () => {
   });
 
   describe('priceFor', () => {
+    const offPeak = new Date('2026-07-15T12:00:00Z'); // noon UTC — outside both DeepSeek peak windows
+
     it('returns per-model rates across providers', () => {
-      expect(priceFor('claude-opus-4-8')).toEqual({ input: 15, output: 75 });
-      expect(priceFor('gemini-2.5-flash-lite')).toEqual({ input: 0.10, output: 0.40 });
-      expect(priceFor('deepseek-v4-flash')).toEqual({ input: 0.14, output: 0.28 });
-      expect(priceFor('glm-5.2')).toEqual({ input: 1.4, output: 4.4 });
+      expect(priceFor('claude-opus-4-8', offPeak)).toEqual({ input: 15, output: 75 });
+      expect(priceFor('gemini-2.5-flash-lite', offPeak)).toEqual({ input: 0.10, output: 0.40 });
+      expect(priceFor('deepseek-v4-flash', offPeak)).toEqual({ input: 0.14, output: 0.28 });
+      expect(priceFor('glm-5.2', offPeak)).toEqual({ input: 1.4, output: 4.4 });
     });
 
     it('falls back to Sonnet rates for an unknown id', () => {
-      expect(priceFor('made-up-model')).toEqual({ input: 3, output: 15 });
+      expect(priceFor('made-up-model', offPeak)).toEqual({ input: 3, output: 15 });
+    });
+
+    it('doubles DeepSeek rates during both peak windows (1-4am and 6-10am UTC)', () => {
+      expect(priceFor('deepseek-v4-flash', new Date('2026-07-15T02:00:00Z')))
+        .toEqual({ input: 0.28, output: 0.56 });
+      expect(priceFor('deepseek-v4-pro', new Date('2026-07-15T08:00:00Z')))
+        .toEqual({ input: 3.48, output: 6.96 });
+    });
+
+    it('treats peak windows as [start, end) — boundary hours are off-peak', () => {
+      expect(priceFor('deepseek-v4-flash', new Date('2026-07-15T04:00:00Z')))
+        .toEqual({ input: 0.14, output: 0.28 });
+      expect(priceFor('deepseek-v4-flash', new Date('2026-07-15T10:00:00Z')))
+        .toEqual({ input: 0.14, output: 0.28 });
+    });
+
+    it('does not apply the DeepSeek peak multiplier to other providers', () => {
+      expect(priceFor('glm-5.2', new Date('2026-07-15T08:00:00Z'))).toEqual({ input: 1.4, output: 4.4 });
+      expect(priceFor('claude-opus-4-8', new Date('2026-07-15T02:00:00Z'))).toEqual({ input: 15, output: 75 });
     });
   });
 
