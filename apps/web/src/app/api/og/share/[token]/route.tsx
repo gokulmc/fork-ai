@@ -15,9 +15,15 @@ function fallbackCard() {
   });
 }
 
-export async function GET(_req: Request, { params }: { params: Promise<{ token: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   if (!TOKEN_RE.test(token)) return fallbackCard();
+
+  // Crawlers get the standard 1200×630; the Share button's download link asks
+  // for scale=2 so the saved file looks crisp used elsewhere (LinkedIn post,
+  // print). Clamped to keep render cost/output size bounded.
+  const requestedScale = Number(new URL(req.url).searchParams.get('scale'));
+  const scale = Number.isFinite(requestedScale) ? Math.min(3, Math.max(1, Math.round(requestedScale))) : 1;
 
   try {
     const res = await fetch(`${API_BASE}/share/${token}`, {
@@ -26,7 +32,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     });
     if (!res.ok) return fallbackCard();
     const session = (await res.json()) as ShareSession;
-    return shareCard(session);
+    return shareCard(session, scale);
   } catch {
     return fallbackCard();
   }

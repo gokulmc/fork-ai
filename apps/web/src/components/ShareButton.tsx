@@ -108,7 +108,7 @@ export function ShareButton({ sessionId, idToken, sessionTitle }: Props) {
   const handleDownloadImage = useCallback(() => {
     if (!token) return;
     const a = document.createElement('a');
-    a.href = `/api/og/share/${token}`;
+    a.href = `/api/og/share/${token}?scale=2`;
     a.download = filenameFor(sessionTitle);
     document.body.appendChild(a);
     a.click();
