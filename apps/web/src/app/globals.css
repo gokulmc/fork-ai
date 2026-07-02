@@ -234,8 +234,12 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
   transition: border-color .15s, box-shadow .15s;
 }
 .query-box:focus-within {
-  border-color: var(--ink-2);
-  box-shadow: var(--shadow-3), 0 0 0 4px var(--accent-soft);
+  border-color: rgba(0, 0, 0, 0.2);
+  box-shadow: var(--shadow-3), 0 0 0 3px rgba(0, 0, 0, 0.05);
+}
+[data-theme="dark"] .query-box:focus-within {
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow: var(--shadow-3), 0 0 0 3px rgba(255, 255, 255, 0.05);
 }
 .query-box .icon { color: var(--ink-3); margin-right: 10px; display: inline-flex; }
 .query-box input {
@@ -1440,6 +1444,14 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 .followup-pop textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 .followup-pop .actions { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
 .followup-pop .hint { font-family: var(--sans); font-size: 11px; color: var(--ink-3); }
+.followup-pop .shortcut-row { display: none; gap: 6px; }
+.followup-pop .shortcut-btn {
+  display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px;
+  font-family: var(--sans); font-size: 12px; color: var(--ink-2); background: transparent;
+  border: 1px solid var(--line-strong); border-radius: 5px; cursor: pointer;
+}
+.followup-pop .shortcut-btn:hover:not(:disabled) { background: var(--panel); color: var(--ink); }
+.followup-pop .shortcut-btn:disabled { opacity: .4; cursor: not-allowed; }
 .followup-pop .actions-right { display: flex; align-items: center; gap: 6px; }
 .followup-pop .btn-close { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 1px solid var(--line-strong); border-radius: 5px; background: transparent; color: var(--ink-2); cursor: pointer; }
 .followup-pop .btn-close:hover { background: var(--panel); color: var(--ink); }
@@ -1705,6 +1717,12 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
      whole page can't scroll past its content or rubber-band, and there is never a
      horizontal scroll. */
   html, body { overflow: hidden; max-width: 100%; height: 100dvh; overscroll-behavior: none; }
+
+  /* Ask AI popup: swap the desktop keyboard-shortcut hint for tappable shorthand
+     buttons — cmd+enter is meaningless on a touch keyboard, and typing "?"/"!?"
+     requires a keyboard-mode switch that a single tap avoids. */
+  .followup-pop .hint-desktop { display: none; }
+  .followup-pop .hint-mobile { display: flex; }
 
   /* Single column; the map and workspace share row 2 and are swapped by display.
      100dvh (not 100vh) keeps the topbar + bottom pill inside the visible area as

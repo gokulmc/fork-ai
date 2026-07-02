@@ -14,6 +14,7 @@ export const metadata: Metadata = {
     title: 'fork ai blog',
     description: 'Essays on AI research, mind maps, and LLM workflows.',
     url: 'https://forkai.in/blog',
+    images: ['/api/og'],
   },
 };
 
