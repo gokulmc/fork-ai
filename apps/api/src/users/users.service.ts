@@ -111,12 +111,12 @@ export class UsersService {
     isTrial = false,
   ): Promise<void> {
     const multiplier = this.cfg.get<number>('billing.creditMultiplier') ?? 1.5;
-    const rate = priceFor(model);
+    const now = new Date();
+    const rate = priceFor(model, now);
     const rawCost = (inputTokens * rate.input / 1_000_000) + (outputTokens * rate.output / 1_000_000);
     const costUsd = Math.round(rawCost * multiplier * 1_000_000) / 1_000_000;
 
     const usageId = ulid();
-    const now = new Date().toISOString();
     const event: UsageEventItem = {
       PK: `USER#${sub}`,
       SK: `USAGE#${usageId}`,
@@ -129,7 +129,7 @@ export class UsersService {
       model,
       sessionId,
       nodeId,
-      createdAt: now,
+      createdAt: now.toISOString(),
     };
 
     await Promise.all([

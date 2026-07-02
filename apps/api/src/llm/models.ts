@@ -109,8 +109,21 @@ export function resolveBranchModel(alias: string | undefined, isGuest = false): 
   return ALIAS_TO_ID[a];
 }
 
+// DeepSeek peak-valley pricing, effective mid-July 2026: peak-hour rates are 2x
+// list price, applied to all billing items (input + output). Peak windows are
+// 1:00-4:00 and 6:00-10:00 UTC; everything else is off-peak at list price.
+function isDeepseekPeakHour(now: Date): boolean {
+  const h = now.getUTCHours();
+  return (h >= 1 && h < 4) || (h >= 6 && h < 10);
+}
+
 // Per-MTok rates for a concrete model id; falls back to Sonnet if unknown so a
-// stale model id can never bill at zero.
-export function priceFor(modelId: string): { input: number; output: number } {
-  return MODEL_PRICING[modelId] ?? MODEL_PRICING[ROOT_MODEL];
+// stale model id can never bill at zero. `now` defaults to the real clock —
+// tests pass an explicit Date to hit/avoid DeepSeek's peak window deterministically.
+export function priceFor(modelId: string, now: Date = new Date()): { input: number; output: number } {
+  const rate = MODEL_PRICING[modelId] ?? MODEL_PRICING[ROOT_MODEL];
+  if (providerNameFor(modelId) === 'deepseek' && isDeepseekPeakHour(now)) {
+    return { input: rate.input * 2, output: rate.output * 2 };
+  }
+  return rate;
 }
