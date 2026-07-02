@@ -44,7 +44,9 @@ export async function generateMetadata({
     const s = await res.json();
     const hook: string = s.shareHook || s.lede || '';
     const title = `${s.emoji ? `${s.emoji} ` : ''}${s.title}`;
-    const ogImage = `/api/og/share/${encodeURIComponent(sk)}`;
+    // scale=2 (2400x1260) for a crisper preview on retina displays — still
+    // well under every platform's OG image size limit (~50-120KB either way).
+    const ogImage = `/api/og/share/${encodeURIComponent(sk)}?scale=2`;
     return {
       title,
       description: hook || undefined,
@@ -59,7 +61,7 @@ export async function generateMetadata({
         locale: 'en_US',
         title,
         description: hook || undefined,
-        images: [{ url: ogImage, width: 1200, height: 630, alt: title }],
+        images: [{ url: ogImage, width: 2400, height: 1260, alt: title }],
       },
       twitter: {
         card: 'summary_large_image',

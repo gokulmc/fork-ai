@@ -119,86 +119,94 @@ function layoutMap(session: ShareSession): { pills: MapPill[]; edges: MapEdge[] 
   return { pills, edges };
 }
 
-export function shareCard(session: ShareSession) {
+// scale > 1 renders a crisper version for downloads (LinkedIn/print use) without
+// touching the 1200×630 the OG crawlers get. Every element below still lays out
+// at the original size — a `transform: scale()` wrapper blows the whole card up
+// uniformly (positions, fonts, the absolutely-positioned mind-map pills, all of
+// it) rather than needing every literal pixel value in the card doubled by hand.
+export function shareCard(session: ShareSession, scale = 1) {
   const hook = (session.shareHook || session.lede || session.title || '').trim();
   const hookSize = hook.length <= 90 ? 46 : hook.length <= 140 ? 38 : 32;
   const eyebrow = `${session.emoji ? `${session.emoji} ` : ''}${truncate(session.title, 48)}`;
   const { pills, edges } = layoutMap(session);
   const branchLabel = session.nodeCount === 1 ? '1 branch' : `${session.nodeCount} branches`;
+  const outputSize = scale === 1 ? size : { width: size.width * scale, height: size.height * scale };
 
   return new ImageResponse(
     (
-      <div style={{ display: 'flex', width: '100%', height: '100%', background: OG_BG, padding: 48 }}>
-        <div
-          style={{
-            display: 'flex', flexDirection: 'column', width: '100%', height: '100%',
-            background: OG_CARD, border: `1px solid ${OG_BORDER}`, borderRadius: 28, overflow: 'hidden',
-          }}
-        >
-          {/* Header */}
+      <div style={{ display: 'flex', width: size.width, height: size.height, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
+        <div style={{ display: 'flex', width: '100%', height: '100%', background: OG_BG, padding: 48 }}>
           <div
             style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '28px 48px', borderBottom: `1px solid ${OG_DIVIDER}`,
+              display: 'flex', flexDirection: 'column', width: '100%', height: '100%',
+              background: OG_CARD, border: `1px solid ${OG_BORDER}`, borderRadius: 28, overflow: 'hidden',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center' }}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={LOGO_DATA_URL} width={48} height={48} style={{ borderRadius: 10 }} alt="" />
-              <div style={{ marginLeft: 14, fontSize: 26, fontWeight: 700, color: OG_INK, letterSpacing: -0.5 }}>fork ai</div>
+            {/* Header */}
+            <div
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '28px 48px', borderBottom: `1px solid ${OG_DIVIDER}`,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={LOGO_DATA_URL} width={48} height={48} style={{ borderRadius: 10 }} alt="" />
+                <div style={{ marginLeft: 14, fontSize: 26, fontWeight: 700, color: OG_INK, letterSpacing: -0.5 }}>fork ai</div>
+              </div>
+              <div style={{ display: 'flex', fontSize: 18, color: OG_MUTED, letterSpacing: 2, textTransform: 'uppercase' }}>research map</div>
             </div>
-            <div style={{ display: 'flex', fontSize: 18, color: OG_MUTED, letterSpacing: 2, textTransform: 'uppercase' }}>research map</div>
-          </div>
 
-          {/* Body */}
-          <div style={{ display: 'flex', flex: 1 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'center', padding: '0 32px 0 48px' }}>
-              <div style={{ display: 'flex', fontSize: 24, color: OG_SUB, marginBottom: 18, lineHeight: 1.3 }}>{eyebrow}</div>
-              <div style={{ display: 'flex', fontSize: hookSize, fontWeight: 600, color: OG_INK, lineHeight: 1.2 }}>{truncate(hook, 200)}</div>
-            </div>
-            <div style={{ display: 'flex', width: MAP_W, height: MAP_H, position: 'relative', margin: 'auto 40px' }}>
-              <svg width={MAP_W} height={MAP_H} style={{ position: 'absolute', top: 0, left: 0 }}>
-                {edges.map((e, i) => (
-                  <path
-                    key={i}
-                    d={`M ${e.x1} ${e.y1} C ${(e.x1 + e.x2) / 2} ${e.y1}, ${(e.x1 + e.x2) / 2} ${e.y2}, ${e.x2} ${e.y2}`}
-                    stroke="#d6d3d1"
-                    strokeWidth={2}
-                    fill="none"
-                  />
+            {/* Body */}
+            <div style={{ display: 'flex', flex: 1 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'center', padding: '0 32px 0 48px' }}>
+                <div style={{ display: 'flex', fontSize: 24, color: OG_SUB, marginBottom: 18, lineHeight: 1.3 }}>{eyebrow}</div>
+                <div style={{ display: 'flex', fontSize: hookSize, fontWeight: 600, color: OG_INK, lineHeight: 1.2 }}>{truncate(hook, 200)}</div>
+              </div>
+              <div style={{ display: 'flex', width: MAP_W, height: MAP_H, position: 'relative', margin: 'auto 40px' }}>
+                <svg width={MAP_W} height={MAP_H} style={{ position: 'absolute', top: 0, left: 0 }}>
+                  {edges.map((e, i) => (
+                    <path
+                      key={i}
+                      d={`M ${e.x1} ${e.y1} C ${(e.x1 + e.x2) / 2} ${e.y1}, ${(e.x1 + e.x2) / 2} ${e.y2}, ${e.x2} ${e.y2}`}
+                      stroke="#d6d3d1"
+                      strokeWidth={2}
+                      fill="none"
+                    />
+                  ))}
+                </svg>
+                {pills.map(p => (
+                  <div
+                    key={p.key}
+                    style={{
+                      display: 'flex', position: 'absolute', left: p.x, top: p.cy - PILL_H / 2, height: PILL_H,
+                      maxWidth: p.width, alignItems: 'center', justifyContent: 'center', padding: '0 12px',
+                      borderRadius: 999, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 15,
+                      background: p.variant === 'root' ? OG_INK : p.variant === 'ghost' ? 'transparent' : OG_PANEL,
+                      color: p.variant === 'root' ? '#ffffff' : p.variant === 'ghost' ? OG_MUTED : OG_INK,
+                      border: p.variant === 'branch' ? `1px solid ${OG_BORDER}` : p.variant === 'ghost' ? `2px dashed ${OG_BORDER}` : 'none',
+                    }}
+                  >
+                    {p.label}
+                  </div>
                 ))}
-              </svg>
-              {pills.map(p => (
-                <div
-                  key={p.key}
-                  style={{
-                    display: 'flex', position: 'absolute', left: p.x, top: p.cy - PILL_H / 2, height: PILL_H,
-                    maxWidth: p.width, alignItems: 'center', justifyContent: 'center', padding: '0 12px',
-                    borderRadius: 999, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 15,
-                    background: p.variant === 'root' ? OG_INK : p.variant === 'ghost' ? 'transparent' : OG_PANEL,
-                    color: p.variant === 'root' ? '#ffffff' : p.variant === 'ghost' ? OG_MUTED : OG_INK,
-                    border: p.variant === 'branch' ? `1px solid ${OG_BORDER}` : p.variant === 'ghost' ? `2px dashed ${OG_BORDER}` : 'none',
-                  }}
-                >
-                  {p.label}
-                </div>
-              ))}
+              </div>
             </div>
-          </div>
 
-          {/* Footer */}
-          <div
-            style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '22px 48px', background: OG_PANEL, borderTop: `1px solid ${OG_DIVIDER}`, fontSize: 20, color: OG_MUTED,
-            }}
-          >
-            <div style={{ display: 'flex' }}>{branchLabel}</div>
-            <div style={{ display: 'flex' }}>forkai.in</div>
+            {/* Footer */}
+            <div
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '22px 48px', background: OG_PANEL, borderTop: `1px solid ${OG_DIVIDER}`, fontSize: 20, color: OG_MUTED,
+              }}
+            >
+              <div style={{ display: 'flex' }}>{branchLabel}</div>
+              <div style={{ display: 'flex' }}>forkai.in</div>
+            </div>
           </div>
         </div>
       </div>
     ),
-    { ...size, emoji: 'twemoji', headers: { 'Cache-Control': SHARE_OG_CACHE_CONTROL } },
+    { ...outputSize, emoji: 'twemoji', headers: { 'Cache-Control': SHARE_OG_CACHE_CONTROL } },
   );
 }
