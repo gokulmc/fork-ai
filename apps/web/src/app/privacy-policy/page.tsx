@@ -110,7 +110,7 @@ export default function PrivacyPolicyPage() {
         longer period.
       </p>
 
-      <h2>Your rights</h2>
+      <h2 id="data-deletion">Your rights</h2>
       <p>
         You can request access to, correction of, or deletion of your personal data by emailing us. We will
         respond within a reasonable time. To delete your account and all associated research content, contact{' '}
