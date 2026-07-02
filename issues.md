@@ -6,6 +6,11 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
+### Share button's "Download image" dropdown was unreachable on hover
+- **Symptom:** Hovering the "Shared" button revealed the "Download image" dropdown, but moving the cursor down toward it made the dropdown disappear before it could be clicked — the option was effectively unreachable.
+- **Cause:** `.share-dl-dropdown` (`globals.css`) was positioned `top: 100%` with a `margin-top: 4px` gap below `.share-hover-target`, the `:hover`-tracked wrapper. That 4px gap sits outside the wrapper's hoverable box, so moving the pointer from the button toward the dropdown crossed a dead zone where neither element was hovered — `:hover` dropped and `display: none` re-applied to the dropdown an instant before the cursor arrived.
+- **Fix:** Added `padding-bottom: 8px` to `.share-hover-target` (extending its real, hoverable box down through the visual gap) offset by `margin-bottom: -8px` so the extra height doesn't push the surrounding topbar row taller. The dropdown now sits flush against the end of that padded box, so the hover state stays continuous from the button all the way into the dropdown. Verified with a Playwright test that moves the pointer along the actual path a user's cursor takes (not a teleporting hover) and confirms the click registers. (commit: pending)
+
 ### Share button required two clicks to copy the link on the first-ever share
 - **Symptom:** Clicking "Share" on a session that had never been shared before minted a token and flipped the UI to "Copied!", but the link was not actually on the clipboard — the user had to click the button a second time for the copy to work.
 - **Cause:** `handleShare` (`ShareButton.tsx`) called `await shareApi.generateShareToken(...)` (a network round-trip) before `await navigator.clipboard.writeText(url)`. Browsers only allow clipboard writes within the "user activation" window of the triggering click; that window is revoked the instant an `await` yields back to the event loop, so the write silently failed (swallowed by `.catch(() => {})`) while the UI optimistically showed "Copied!" anyway. The second click worked because it hit the already-`active` fast path, calling `writeText` with no preceding network `await`.

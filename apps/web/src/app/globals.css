@@ -920,6 +920,24 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 .icon-btn.share-btn--stop { padding: 4px 6px; opacity: .65; }
 .icon-btn.share-btn--stop:hover { opacity: 1; color: var(--danger, #dc2626); }
 
+/* Download-share-image affordance: a hover dropdown under the Share button
+   on desktop, a standalone icon to its left on mobile (no hover there).
+   padding-bottom/margin-bottom bridge the visual gap below the button with
+   actual hoverable box — without it, moving the pointer from the button down
+   toward the dropdown crosses a dead zone where neither element is hovered,
+   so :hover drops and the dropdown closes before it can be reached. */
+.share-hover-target { position: relative; display: inline-flex; padding-bottom: 8px; margin-bottom: -8px; }
+.share-dl-dropdown { display: none; position: absolute; top: 100%; left: 0; z-index: 20; }
+.share-hover-target:hover .share-dl-dropdown { display: flex; }
+.share-dl-dropdown button {
+  display: flex; align-items: center; gap: 6px; white-space: nowrap;
+  background: var(--paper); border: 1px solid var(--line-strong); border-radius: 6px;
+  box-shadow: var(--shadow-2); color: var(--ink-2); font-size: 13px;
+  padding: 6px 10px; cursor: pointer;
+}
+.share-dl-dropdown button:hover { background: var(--hover); color: var(--ink); }
+.share-dl-mobile { display: none; }
+
 /* Inline spinner for loading states inside buttons */
 .spinner-sm {
   display: inline-block;
@@ -1723,6 +1741,11 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
      requires a keyboard-mode switch that a single tap avoids. */
   .followup-pop .hint-desktop { display: none; }
   .followup-pop .hint-mobile { display: flex; }
+
+  /* Share button: no hover on touch, so the download-image dropdown would
+     never be reachable — swap it for a standalone icon to the left instead. */
+  .share-dl-dropdown { display: none !important; }
+  .share-dl-mobile { display: inline-flex; }
 
   /* Single column; the map and workspace share row 2 and are swapped by display.
      100dvh (not 100vh) keeps the topbar + bottom pill inside the visible area as

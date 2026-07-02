@@ -2063,7 +2063,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
           )}
           {sessionId && idToken && (
             <span data-tour="tour-share">
-              <ShareButton sessionId={sessionId} idToken={idToken} />
+              <ShareButton sessionId={sessionId} idToken={idToken} sessionTitle={rootId ? nodes[rootId]?.title : undefined} />
             </span>
           )}
           {/* Notes is hidden on phones (mobile nav stays minimal) — desktop keeps it. */}
