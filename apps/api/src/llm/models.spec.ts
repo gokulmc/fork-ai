@@ -62,8 +62,9 @@ describe('models', () => {
       expect(priceFor('glm-5.2', offPeak)).toEqual({ input: 1.4, output: 4.4 });
     });
 
-    it('falls back to Sonnet rates for an unknown id', () => {
-      expect(priceFor('made-up-model', offPeak)).toEqual({ input: 3, output: 15 });
+    it('falls back to ROOT_MODEL rates for an unknown id', () => {
+      // ROOT_MODEL is gemini-2.5-flash (see models.ts) — fallback tracks whatever it's set to.
+      expect(priceFor('made-up-model', offPeak)).toEqual({ input: 0.30, output: 2.50 });
     });
 
     it('doubles DeepSeek rates during both peak windows (1-4am and 6-10am UTC)', () => {

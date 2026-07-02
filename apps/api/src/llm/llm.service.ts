@@ -104,6 +104,31 @@ const GLM_CITATION_NOTE = `When you use web search results, cite them. Mark each
 
 const WEB_SEARCH_GUIDANCE = `You have access to a web search tool. Use it only when the question genuinely requires information that may have changed after your training cutoff — current events, recent developments, live prices, newly released products, or breaking news. For foundational concepts, historical facts, established science, or explanations you already know well, answer directly from your knowledge without searching.`;
 
+// Explicit, imperative search requests only — "search engines" / "web development"
+// style mentions must NOT match. Intentionally simple; extend the list as needed.
+// The (do|run|perform) branch requires the article "a" (unlike "use") so that a
+// question like "how do search engines work" — where "do" is an auxiliary verb,
+// not the imperative "do a search" — doesn't false-positive.
+const EXPLICIT_WEB_SEARCH_RE = new RegExp(
+  [
+    '\\buse\\s+(the\\s+)?(web|internet)\\b',
+    '\\buse\\s+(a\\s+)?(web\\s*)?search\\b',
+    '\\b(do|run|perform)\\s+a\\s+(web\\s*)?search\\b',
+    '\\bsearch\\s+(the\\s+)?(web|internet)\\b',
+    '\\bsearch\\s+online\\b',
+    '\\blook\\s+(it|this)\\s+up\\s+online\\b',
+    '\\bgoogle\\s+(it|this)\\b',
+    '\\bcheck\\s+online\\b',
+    '\\bbrowse\\s+the\\s+web\\b',
+  ].join('|'),
+  'i',
+);
+export const explicitlyRequestsWebSearch = (text: string): boolean =>
+  EXPLICIT_WEB_SEARCH_RE.test(text);
+
+// Provider-neutral: works whether search runs as Claude's tool, Gemini grounding, or GLM's web_search.
+const FORCED_WEB_SEARCH_GUIDANCE = `The user has explicitly asked you to search the web for this. You MUST search the web before answering — base your answer on what you find, not solely on your training knowledge.`;
+
 const SECTIONS_SCHEMA = `Return ONLY valid JSON, no prose, no markdown fences. Shape:
 {
   "title": "<=5 words capturing topic",
@@ -156,13 +181,14 @@ export class LlmService {
   }
 
   async *streamAnswerQuery(query: string, sectionCount = 5, webSearch = false, persona?: string): AsyncGenerator<StreamEvent> {
+    const searchGuidance = explicitlyRequestsWebSearch(query) ? FORCED_WEB_SEARCH_GUIDANCE : WEB_SEARCH_GUIDANCE;
     const prompt = `${personaPreamble(persona)}You are a research assistant. Answer this query as a structured study note with ${sectionCount} sections.
 
 Query: "${query}"
 
 ${SECTIONS_SCHEMA}
 
-Each section "body" should be 80-180 words. You MAY use GitHub-flavored markdown when it strengthens the explanation: paragraphs, **bold**, *italic*, \`inline code\`, fenced code blocks, tables, ordered/unordered lists, and > blockquotes. Use prose by default. Escape any double-quotes inside JSON strings.${webSearch ? `\n\n${WEB_SEARCH_GUIDANCE}\n\n${CITATION_NOTE}` : ''}`;
+Each section "body" should be 80-180 words. You MAY use GitHub-flavored markdown when it strengthens the explanation: paragraphs, **bold**, *italic*, \`inline code\`, fenced code blocks, tables, ordered/unordered lists, and > blockquotes. Use prose by default. Escape any double-quotes inside JSON strings.${webSearch ? `\n\n${searchGuidance}\n\n${CITATION_NOTE}` : ''}`;
 
     let accumulated = '';
     let metaEmitted = false;
@@ -317,7 +343,7 @@ ${SECTIONS_SCHEMA}
 
 Each section "body" should be 80-180 words. You MAY use GitHub-flavored markdown when it strengthens the explanation: paragraphs, **bold**, *italic*, \`inline code\`, fenced code blocks, tables, ordered/unordered lists, and > blockquotes. Use prose by default. Escape any double-quotes inside JSON strings.`;
 
-    return this.callJson(prompt, webSearch);
+    return this.callJson(prompt, webSearch, ROOT_MODEL, { forceSearch: explicitlyRequestsWebSearch(query) });
   }
 
   async expandSection(
@@ -399,7 +425,9 @@ ${SECTIONS_SCHEMA}
 
 You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase capturing the answer topic. Escape double-quotes inside JSON strings.`;
 
-    return this.callJson(prompt + avoidEmojiNote(usedEmojis), webSearch, model, { authed, verbose, boost });
+    // Detect on the user's typed question only — never the highlighted passage,
+    // which is document text, not user intent.
+    return this.callJson(prompt + avoidEmojiNote(usedEmojis), webSearch, model, { authed, verbose, boost, forceSearch: explicitlyRequestsWebSearch(question) });
   }
 
   // ── Document → mind-map ───────────────────────────────────────────────────
@@ -681,7 +709,7 @@ Return ONLY valid JSON, no prose, no markdown fences: {"hook": "..."}`;
     prompt: string,
     webSearch = false,
     model: string = ROOT_MODEL,
-    opts: { authed?: boolean; verbose?: boolean; boost?: boolean } = {},
+    opts: { authed?: boolean; verbose?: boolean; boost?: boolean; forceSearch?: boolean } = {},
     retries = 1,
   ): Promise<LlmResponse> {
     // Drop web search for providers that don't support it (DeepSeek) — no
@@ -689,7 +717,8 @@ Return ONLY valid JSON, no prose, no markdown fences: {"hook": "..."}`;
     const ws = webSearch && supportsWebSearch(model);
     const isGlm = providerNameFor(model) === 'glm';
     const citationNote = isGlm ? GLM_CITATION_NOTE : CITATION_NOTE;
-    const fullPrompt = ws ? `${prompt}\n\n${WEB_SEARCH_GUIDANCE}\n\n${citationNote}` : prompt;
+    const guidance = ws && opts.forceSearch ? FORCED_WEB_SEARCH_GUIDANCE : WEB_SEARCH_GUIDANCE;
+    const fullPrompt = ws ? `${prompt}\n\n${guidance}\n\n${citationNote}` : prompt;
     const provider = this.providerFor(model);
 
     // Output budget tiered by auth + answer style. A boosted retry (authed Retry
