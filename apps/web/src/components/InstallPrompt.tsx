@@ -34,7 +34,10 @@ export function InstallPrompt() {
 
   useEffect(() => {
     // Register the service worker (required for the Android install prompt).
-    if ('serviceWorker' in navigator) {
+    // Production only — in dev the cache-first /_next/static/* strategy can
+    // serve a stale JS bundle across recompiles, since dev chunk URLs don't
+    // change the way content-hashed prod URLs do.
+    if (process.env.NODE_ENV === 'production' && 'serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => {});
     }
 
