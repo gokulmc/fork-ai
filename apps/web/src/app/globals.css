@@ -1897,7 +1897,6 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
 
   /* Landing and History don't have a .topbar, so they need their own safe-area
      compensation to keep content below the Android/iOS status bar. */
-  .landing-inner { padding-top: calc(72px + env(safe-area-inset-top)); }
   .history-topbar {
     padding-top: env(safe-area-inset-top);
     height: calc(52px + env(safe-area-inset-top));
@@ -1909,7 +1908,7 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
    hits exactly 40px at the 400px edge, so it joins the original size seamlessly and
    larger phones (Plus/Max, 414px+) stay untouched. */
 @media (max-width: 400px) {
-  .landing-inner { padding: calc(60px + env(safe-area-inset-top)) 10px 16px; }
+  .landing-inner { padding: 60px 10px 16px; }
   .landing-mark { margin-bottom: 22px; }
   .landing h1 { font-size: clamp(28px, 10vw, 40px); margin-bottom: 14px; }
   .landing-sub { font-size: 14px; margin-bottom: 28px; line-height: 1.5; }
