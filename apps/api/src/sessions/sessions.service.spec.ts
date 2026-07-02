@@ -103,7 +103,7 @@ describe('SessionsService', () => {
     it('calls LLM and persists root node + session meta', async () => {
       mockLlm.answerQuery.mockResolvedValue(llmResult);
       const result = await service.create(SUB, { query: 'What is ML?' });
-      expect(mockLlm.answerQuery).toHaveBeenCalledWith('What is ML?', 4, false);
+      expect(mockLlm.answerQuery).toHaveBeenCalledWith('What is ML?', 4, false, undefined);
       expect(mockDb.putNode).toHaveBeenCalledTimes(1);
       expect(mockDb.putSessionMeta).toHaveBeenCalledTimes(1);
       expect(result.title).toBe('Neural Nets');
@@ -114,7 +114,7 @@ describe('SessionsService', () => {
     it('uses custom sectionCount when provided', async () => {
       mockLlm.answerQuery.mockResolvedValue(llmResult);
       await service.create(SUB, { query: 'Q', sectionCount: 3 });
-      expect(mockLlm.answerQuery).toHaveBeenCalledWith('Q', 3, false);
+      expect(mockLlm.answerQuery).toHaveBeenCalledWith('Q', 3, false, undefined);
     });
 
     it('forwards webSearch flag to LLM and stores sources on root node', async () => {
@@ -124,7 +124,7 @@ describe('SessionsService', () => {
       };
       mockLlm.answerQuery.mockResolvedValue(llmWithSources);
       const result = await service.create(SUB, { query: 'Q', webSearch: true });
-      expect(mockLlm.answerQuery).toHaveBeenCalledWith('Q', 4, true);
+      expect(mockLlm.answerQuery).toHaveBeenCalledWith('Q', 4, true, undefined);
       expect(result.nodes[0]['sources']).toHaveLength(1);
     });
 

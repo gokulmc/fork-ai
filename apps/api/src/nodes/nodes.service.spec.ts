@@ -34,6 +34,7 @@ const mockSessions = {
 const mockUsers = {
   checkCredit: jest.fn(),
   billUsage: jest.fn(),
+  getPersona: jest.fn(),
 };
 
 const SUB = 'user-sub-123';
@@ -115,6 +116,7 @@ describe('NodesService', () => {
         true,  // authed (non-guest createNode)
         false, // boost
         [],    // avoidEmojis (parent has no emoji, no siblings)
+        undefined, // persona (none set for this user)
       );
     });
 
@@ -131,10 +133,11 @@ describe('NodesService', () => {
         expect.anything(),
         expect.anything(),
         expect.anything(),
+        undefined, // persona (none set for this user)
       );
     });
 
-    it('passes ancestor + sibling emojis to avoid as the last arg', async () => {
+    it('passes ancestor + sibling emojis to avoid as the second-to-last arg', async () => {
       mockSessions.getSession.mockResolvedValueOnce({
         ...fullSession,
         nodes: [
@@ -143,8 +146,8 @@ describe('NodesService', () => {
         ],
       });
       await service.createNode(SUB, SESSION_ID, dto);
-      const lastArg = mockLlm.expandSection.mock.calls[0].at(-1);
-      expect(lastArg).toEqual(expect.arrayContaining(['🌳', '🍃']));
+      const avoidEmojisArg = mockLlm.expandSection.mock.calls[0].at(-2); // last arg is now persona
+      expect(avoidEmojisArg).toEqual(expect.arrayContaining(['🌳', '🍃']));
     });
 
     it('persists node and updates session metadata', async () => {
@@ -216,6 +219,7 @@ describe('NodesService', () => {
         true,  // authed (non-guest createNode)
         false, // boost
         [],    // avoidEmojis (parent has no emoji, no siblings)
+        undefined, // persona (none set for this user)
       );
     });
 

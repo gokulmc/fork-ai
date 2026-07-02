@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { InternalServerErrorException, UnprocessableEntityException } from '@nestjs/common';
-import { LlmService } from './llm.service';
+import { LlmService, explicitlyRequestsWebSearch } from './llm.service';
 
 const mockCreate = jest.fn();
 const mockStream = jest.fn();
@@ -65,8 +65,10 @@ describe('LlmService', () => {
   });
 
   describe('answerQuery', () => {
+    // answerQuery always runs on ROOT_MODEL (gemini-2.5-flash), so it dispatches
+    // to the Gemini SDK (mockGenerate), not the Anthropic client.
     it('parses a clean JSON response', async () => {
-      mockCreate.mockResolvedValue(sdkResponse(validResponse));
+      mockGenerate.mockResolvedValue(geminiResponse(validResponse));
       const result = await service.answerQuery('What is ML?');
       expect(result.title).toBe('Test Title');
       expect(result.sections).toHaveLength(2);
@@ -74,23 +76,48 @@ describe('LlmService', () => {
 
     it('strips markdown code fences', async () => {
       const fenced = '```json\n' + JSON.stringify(validResponse) + '\n```';
-      mockCreate.mockResolvedValue({ content: [{ type: 'text', text: fenced }], usage: USAGE });
+      mockGenerate.mockResolvedValue({
+        text: fenced,
+        usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 50 },
+        candidates: [{}],
+      });
       const result = await service.answerQuery('test');
       expect(result.emoji).toBe('🧠');
     });
 
     it('retries once on failure then throws', async () => {
-      mockCreate.mockRejectedValue(new Error('network error'));
+      mockGenerate.mockRejectedValue(new Error('network error'));
       await expect(service.answerQuery('test')).rejects.toBeInstanceOf(InternalServerErrorException);
-      expect(mockCreate).toHaveBeenCalledTimes(2);
+      expect(mockGenerate).toHaveBeenCalledTimes(2);
     });
 
     it('succeeds on second attempt after first failure', async () => {
-      mockCreate
+      mockGenerate
         .mockRejectedValueOnce(new Error('transient'))
-        .mockResolvedValueOnce(sdkResponse(validResponse));
+        .mockResolvedValueOnce(geminiResponse(validResponse));
       const result = await service.answerQuery('test');
       expect(result.lede).toBe('One sentence.');
+    });
+  });
+
+  describe('explicitlyRequestsWebSearch', () => {
+    it.each([
+      'use web',
+      'use search',
+      'please search the web for X',
+      'search online',
+      'Use the internet to check',
+    ])('detects explicit search phrase: %s', (text) => {
+      expect(explicitlyRequestsWebSearch(text)).toBe(true);
+    });
+
+    it.each([
+      'how do search engines work',
+      'web development basics',
+      'what is a binary search tree',
+      'What is the capital of France?',
+    ])('does not flag ordinary text: %s', (text) => {
+      expect(explicitlyRequestsWebSearch(text)).toBe(false);
     });
   });
 
@@ -105,6 +132,18 @@ describe('LlmService', () => {
       const prompt = mockCreate.mock.calls[0][0].messages[0].content as string;
       expect(prompt).toContain('What is ML?');
       expect(prompt).toContain('Section heading');
+    });
+
+    // DEEPER never forces — the "query" here is an LLM-generated section heading,
+    // not user intent, so a heading like "Using Web Search" must not trigger it.
+    it('never forces web search based on the section heading', async () => {
+      mockCreate.mockResolvedValue(sdkResponse(validResponse));
+      await service.expandSection(
+        [{ title: 'T', query: 'Q' }], 'Using Web Search', 'Section body.', 4, true,
+      );
+      const prompt = mockCreate.mock.calls[0][0].messages[0].content as string;
+      expect(prompt).toContain('Use it only when');
+      expect(prompt).not.toContain('You MUST search the web');
     });
   });
 
@@ -128,25 +167,75 @@ describe('LlmService', () => {
       const prompt = mockCreate.mock.calls[0][0].messages[0].content as string;
       expect(prompt).not.toContain('x'.repeat(801));
     });
+
+    it('forces web search guidance when the question explicitly asks for it', async () => {
+      mockCreate.mockResolvedValue(sdkResponse(validResponse));
+      await service.followUpFromHighlight(
+        [{ title: 'T', query: 'Q' }], 'some passage', 'search the web for the latest news', 4, true,
+      );
+      const prompt = mockCreate.mock.calls[0][0].messages[0].content as string;
+      expect(prompt).toContain('You MUST search the web');
+      expect(prompt).not.toContain('Use it only when');
+    });
+
+    // The highlighted passage is document text, not user intent — only the
+    // typed question should ever trigger forcing.
+    it('never forces based on the highlighted passage, only the question', async () => {
+      mockCreate.mockResolvedValue(sdkResponse(validResponse));
+      await service.followUpFromHighlight(
+        [{ title: 'T', query: 'Q' }], 'you should use the web to verify this', 'What does this mean?', 4, true,
+      );
+      const prompt = mockCreate.mock.calls[0][0].messages[0].content as string;
+      expect(prompt).toContain('Use it only when');
+      expect(prompt).not.toContain('You MUST search the web');
+    });
   });
 
   describe('web search / citations', () => {
-    it('injects web_search tool when webSearch=true', async () => {
-      mockCreate.mockResolvedValue(sdkResponse(validResponse));
+    // answerQuery always runs on ROOT_MODEL (gemini-2.5-flash) — its tool/grounding
+    // config lives on Gemini's request, not Anthropic's.
+    it('enables Gemini grounding when webSearch=true', async () => {
+      mockGenerate.mockResolvedValue(geminiResponse(validResponse));
       await service.answerQuery('test', 4, true);
-      const params = mockCreate.mock.calls[0][0];
-      expect(params.tools).toEqual(
-        expect.arrayContaining([expect.objectContaining({ type: 'web_search_20250305' })]),
-      );
+      const { config } = mockGenerate.mock.calls[0][0];
+      expect(config.tools).toEqual([{ googleSearch: {} }]);
     });
 
     it('does not inject tool when webSearch=false', async () => {
-      mockCreate.mockResolvedValue(sdkResponse(validResponse));
+      mockGenerate.mockResolvedValue(geminiResponse(validResponse));
       await service.answerQuery('test', 4, false);
-      const params = mockCreate.mock.calls[0][0];
-      expect(params.tools).toBeUndefined();
+      const { config } = mockGenerate.mock.calls[0][0];
+      expect(config.tools).toBeUndefined();
     });
 
+    it('forces web search guidance in the prompt when the query explicitly requests it', async () => {
+      mockGenerate.mockResolvedValue(geminiResponse(validResponse));
+      await service.answerQuery('search the web for RTX 5090 prices', 4, true);
+      const { contents } = mockGenerate.mock.calls[0][0];
+      expect(contents).toContain('You MUST search the web');
+      expect(contents).not.toContain('Use it only when');
+    });
+
+    it('keeps the default soft guidance for a plain query, even with webSearch=true', async () => {
+      mockGenerate.mockResolvedValue(geminiResponse(validResponse));
+      await service.answerQuery('What is machine learning?', 4, true);
+      const { contents } = mockGenerate.mock.calls[0][0];
+      expect(contents).toContain('Use it only when');
+      expect(contents).not.toContain('You MUST search the web');
+    });
+
+    it('adds no guidance and no tool when webSearch=false, even with an explicit phrase (toggle is master)', async () => {
+      mockGenerate.mockResolvedValue(geminiResponse(validResponse));
+      await service.answerQuery('search the web for RTX 5090 prices', 4, false);
+      const { contents, config } = mockGenerate.mock.calls[0][0];
+      expect(contents).not.toContain('You MUST search the web');
+      expect(contents).not.toContain('Use it only when');
+      expect(config.tools).toBeUndefined();
+    });
+
+    // The <cite>/pause_turn/error-object regression tests below exercise Anthropic-
+    // specific citation handling in callJson + AnthropicProvider, so they're driven
+    // through followUpFromHighlight (default model = Claude Haiku), not answerQuery.
     it('processes <cite> tags into numbered superscripts and returns cited sources', async () => {
       const responseWithCite = {
         ...validResponse,
@@ -166,7 +255,7 @@ describe('LlmService', () => {
         { type: 'text', text: JSON.stringify(responseWithCite) },
       ];
       mockCreate.mockResolvedValue({ content: blocks, usage: USAGE });
-      const result = await service.answerQuery('test', 4, true);
+      const result = await service.followUpFromHighlight([{ title: 'T', query: 'Q' }], 'highlight', 'question', 4, true);
       expect(result.sections[0].body).toContain('cite-ref');
       expect(result.sections[0].body).toContain('[1]');
       expect(result.sections[1].body).toContain('[2]');
@@ -191,7 +280,7 @@ describe('LlmService', () => {
         { type: 'text', text: JSON.stringify(responseOneCite) },
       ];
       mockCreate.mockResolvedValue({ content: blocks, usage: USAGE });
-      const result = await service.answerQuery('test', 4, true);
+      const result = await service.followUpFromHighlight([{ title: 'T', query: 'Q' }], 'highlight', 'question', 4, true);
       expect(result.sources).toHaveLength(1);
       expect(result.sources![0].url).toBe('https://used.com');
     });
@@ -222,7 +311,7 @@ describe('LlmService', () => {
       };
       mockCreate.mockResolvedValueOnce(paused).mockResolvedValueOnce(finished);
 
-      const result = await service.answerQuery('latest news?', 4, true);
+      const result = await service.followUpFromHighlight([{ title: 'T', query: 'Q' }], 'highlight', 'latest news?', 4, true);
 
       expect(mockCreate).toHaveBeenCalledTimes(2);
       // The second call carries the paused assistant turn so the model can resume.
@@ -244,7 +333,7 @@ describe('LlmService', () => {
         { type: 'text', text: JSON.stringify(validResponse) },
       ];
       mockCreate.mockResolvedValue({ content: blocks, usage: USAGE, stop_reason: 'end_turn' });
-      const result = await service.answerQuery('latest?', 4, true);
+      const result = await service.followUpFromHighlight([{ title: 'T', query: 'Q' }], 'highlight', 'latest?', 4, true);
       expect(result.title).toBe('Test Title');
       expect(result.sections).toHaveLength(2);
       expect(result.sources).toBeUndefined(); // no usable sources from a failed search
@@ -263,7 +352,7 @@ describe('LlmService', () => {
         { type: 'text', text: JSON.stringify(responseWithCite) },
       ];
       mockCreate.mockResolvedValue({ content: blocks, usage: USAGE });
-      const result = await service.answerQuery('test', 4, true);
+      const result = await service.followUpFromHighlight([{ title: 'T', query: 'Q' }], 'highlight', 'question', 4, true);
       expect(result.sections[0].body).toContain('href="https://ref.example.com"');
     });
   });
@@ -391,7 +480,11 @@ describe('LlmService', () => {
 
     it('extracts JSON embedded in surrounding prose', async () => {
       const text = 'Here is the answer: ' + JSON.stringify(validResponse) + ' Hope that helps!';
-      mockCreate.mockResolvedValue({ content: [{ type: 'text', text: text }], usage: USAGE });
+      mockGenerate.mockResolvedValue({
+        text,
+        usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 50 },
+        candidates: [{}],
+      });
       const result = await service.answerQuery('test');
       expect(result.sections).toHaveLength(2);
     });
