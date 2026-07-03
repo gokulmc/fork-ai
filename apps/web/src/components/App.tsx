@@ -268,10 +268,15 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   // Sign out when the refresh token itself has expired (30-day limit reached)
   useEffect(() => { if (authSession?.error === 'RefreshTokenExpired') void signOut(); }, [authSession?.error]);
 
-  // Keep ?view=history in the URL so refresh lands on the right page
+  // Keep ?view=history in the URL so refresh lands on the right page. Push a
+  // real entry the first time we enter history (so back can return to where
+  // we came from); replace when we're already there — page load straight on
+  // ?view=history, or popping back into it — to avoid a redundant duplicate.
   useEffect(() => {
     if (view === 'history') {
-      history.replaceState(null, '', '?view=history');
+      const alreadyThere = new URLSearchParams(window.location.search).get('view') === 'history';
+      if (alreadyThere) history.replaceState(null, '', '?view=history');
+      else history.pushState(null, '', '?view=history');
     } else {
       const params = new URLSearchParams(window.location.search);
       params.delete('view');
@@ -645,11 +650,32 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   // Track whether we've ever had a session this mount — only clear storage on
   // explicit navigation away (not on cold mount where sessionId starts as null).
   const hadSessionRef = useRef(false);
+  // Captures whether the URL already had a session hash at the moment this
+  // component mounted — read synchronously during render, so it runs before
+  // the `view` effect's mount-time replaceState (above) has a chance to strip
+  // it. That effect always rewrites the URL to drop any hash whenever `view`
+  // isn't 'history', which fires on every cold mount — including a reload on
+  // a `#sessionId` URL — well before auth settles and this effect's own
+  // `window.location.hash` check below would otherwise run. Without this,
+  // reloading on a session hash would look identical to a fresh landing→
+  // session transition (hash empty) and incorrectly push instead of replace.
+  const hadHashAtLoadRef = useRef(typeof window !== 'undefined' && !!window.location.hash);
   useEffect(() => {
     if (sessionId) {
       hadSessionRef.current = true;
       const hash = `${sessionId}${activeId && activeId !== rootId ? `/${activeId}` : ''}`;
-      history.replaceState(null, '', `#${hash}`);
+      // Empty hash means this is an entry transition (landing → session, a
+      // cold restore from localStorage, or opening a session from History) —
+      // push a real history entry so back can return to where the user came
+      // from instead of leaving the app. A non-empty hash (or one that was
+      // present at load, see hadHashAtLoadRef above) means we're already
+      // inside a session (reload-with-hash, or navigating between nodes) —
+      // replace in place, as before. A relative '#...' URL keeps the current
+      // path + query string (e.g. a guest's ?sk=), only the hash changes.
+      const hadHash = hadHashAtLoadRef.current || !!window.location.hash;
+      hadHashAtLoadRef.current = false; // one-shot — later runs rely on the live hash only
+      if (hadHash) history.replaceState(null, '', `#${hash}`);
+      else history.pushState(null, '', `#${hash}`);
       localStorage.setItem('fork.ai.session', sessionId);
       if (activeId) localStorage.setItem('fork.ai.node', activeId);
     } else if (hadSessionRef.current) {
@@ -726,6 +752,32 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   useEffect(() => {
     if (status === 'unauthenticated' && !guestToken) setLoadingRoot(false);
   }, [status, guestToken]);
+
+  // ── Hardware/browser back navigates in-app instead of exiting ────────────
+  // Paired with the pushState calls above (session entry, history-view entry):
+  // once those give the page a real history depth > 1, NativeShell's
+  // backButton handler calls history.back() instead of always minimizing.
+  useEffect(() => {
+    const onPopState = () => {
+      const hash = window.location.hash.slice(1);
+      if (hash) {
+        const [sid] = hash.split('/');
+        // Only the authed restore path can re-fetch an arbitrary session by
+        // id — a guest's one shared session isn't addressable this way.
+        if (idToken && sid && sid !== sessionId) loadSession(sid);
+        return;
+      }
+      // A guest popping back past their session has nothing to restore into —
+      // the share-load effect only ever fetches once (hasLoadedShareRef), so
+      // resetting state here would strand them on a permanent ResearchingScreen
+      // spinner. Leave their session on screen; only the URL changed.
+      if (guestToken && !idToken) return;
+      setRootId(null); setNodes({}); setSessionId(null); setActiveId(null);
+      setView(new URLSearchParams(window.location.search).get('view') === 'history' ? 'history' : 'landing');
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [sessionId, idToken, guestToken, loadSession]);
 
   // ── Guest mode: load shared session via ?sk= token ───────────────────────
   // The ?sk= token stays in the URL so refresh keeps the guest in the session.

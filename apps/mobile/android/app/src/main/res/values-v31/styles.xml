@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- API 31+ override: set the framework splash attrs directly instead of
+         relying on Theme.SplashScreen's ?attr indirection (some OEM skins drop
+         it), and use the transparent-glyph foreground as the splash icon so no
+         white adaptive-icon circle can appear on a tinted background. -->
+    <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <item name="android:windowSplashScreenBackground">@color/splash_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+        <item name="android:windowBackground">@drawable/splash_layered</item>
+    </style>
+</resources>

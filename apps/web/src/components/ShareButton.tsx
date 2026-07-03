@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { shareApi } from '@/lib/api';
+import { nativeDownload } from '@/lib/native';
 import { Link, LinkOff, ImageIcon } from './Icons';
 
 interface Props {
@@ -105,16 +106,28 @@ export function ShareButton({ sessionId, idToken, sessionTitle }: Props) {
   // Downloads the session's share OG card (mind map + hook). Only ever called
   // while a share token exists.
   //
-  // iOS has no real "save a file" path for <a download> — Safari/WKWebView
-  // opens a QuickLook file-preview page instead of saving. On touch devices
-  // the native share sheet (Web Share Level 2) is the way to reach "Save
-  // Image", so fetch the PNG and share it as a File there; desktop keeps the
-  // plain same-origin <a download>, which is also the fallback if the share
-  // sheet is unavailable or the fetch/share fails.
+  // Android's Capacitor WebView has neither a DownloadListener (so blob/
+  // same-origin <a download> is silently dropped) nor the Web Share API — the
+  // native Filesystem+Share bridge is the only way to save the file there.
+  // iOS has no real "save a file" path for <a download> either — Safari/
+  // WKWebView opens a QuickLook file-preview page instead of saving. On touch
+  // devices the native share sheet (Web Share Level 2) is the way to reach
+  // "Save Image", so fetch the PNG and share it as a File there; desktop
+  // keeps the plain same-origin <a download>, which is also the fallback if
+  // the share sheet is unavailable or the fetch/share fails.
   const handleDownloadImage = useCallback(async () => {
     if (!token) return;
     const url = `/api/og/share/${token}?scale=2`;
     const filename = filenameFor(sessionTitle);
+
+    if (window.Capacitor?.Plugins?.Filesystem && window.Capacitor?.Plugins?.Share) {
+      try {
+        const blob = await (await fetch(url)).blob();
+        if (await nativeDownload(blob, filename)) return;
+      } catch {
+        // fetch or the native bridge failed — fall through to the web paths below.
+      }
+    }
 
     if (typeof navigator.canShare === 'function' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
       try {

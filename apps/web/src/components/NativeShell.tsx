@@ -1,17 +1,6 @@
 'use client';
 import { useEffect } from 'react';
-
-interface PluginListenerHandle { remove: () => Promise<void>; }
-interface CapacitorAppPlugin {
-  addListener: (
-    eventName: 'backButton',
-    cb: (event: { canGoBack: boolean }) => void,
-  ) => Promise<PluginListenerHandle>;
-  minimizeApp: () => Promise<void>;
-}
-declare global {
-  interface Window { Capacitor?: { Plugins?: { App?: CapacitorAppPlugin } }; }
-}
+import type { PluginListenerHandle } from '@/lib/native';
 
 export function NativeShell() {
   useEffect(() => {
