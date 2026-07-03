@@ -2,6 +2,7 @@
 import { useEffect } from 'react';
 import '../welcome.css';
 import { StoryProvider } from './StoryContext';
+import { WelcomeNav } from './WelcomeNav';
 import { ChapterClock } from './ChapterClock';
 import { Constellation } from './Constellation';
 import { Prologue } from './scenes/Prologue';
@@ -28,6 +29,7 @@ export function StoryPage() {
   return (
     <StoryProvider>
       <main className="wp-root wp-td">
+        <WelcomeNav />
         <ChapterClock />
         <Constellation />
         <Prologue />

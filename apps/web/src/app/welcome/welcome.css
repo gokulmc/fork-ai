@@ -1847,10 +1847,31 @@ h2.wp-h2 {
   height: 12vh;
 }
 
+/* ---------- top nav (fixed) ---------- */
+.wp-nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 70;   /* above .wp-clock (60) */
+  height: calc(56px + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) 28px 0 24px;
+  display: flex; align-items: center; justify-content: space-between;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--wp-ink-10);
+}
+.wp-nav-brand { display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--sans, sans-serif); font-weight: 600; font-size: 15px;
+  letter-spacing: -0.01em; color: var(--wp-ink); text-decoration: none; }
+.wp-nav-logo { width: 22px; height: 22px; flex-shrink: 0;
+  background: url('/mark-t-48.png') center / contain no-repeat; }
+.wp-nav-cta { font-family: var(--sans, sans-serif); font-size: 13px; font-weight: 500;
+  background: var(--wp-ink); color: var(--wp-paper);
+  padding: 9px 18px; border-radius: 999px; text-decoration: none;
+  letter-spacing: 0.01em; transition: transform 220ms var(--wp-ease); }
+.wp-nav-cta:hover { transform: translateY(-1px); }
+
 /* ---------- chapter clock (fixed) ---------- */
 .wp-clock {
   position: fixed;
-  top: 24px;
+  top: calc(56px + env(safe-area-inset-top) + 16px);
   right: 28px;
   z-index: 60;
   width: 190px;
@@ -1887,7 +1908,7 @@ h2.wp-h2 {
 
 @media (max-width: 768px) {
   .wp-clock {
-    top: 12px;
+    top: calc(56px + env(safe-area-inset-top) + 10px);
     right: 0;
     left: 0;
     width: auto;
@@ -2063,6 +2084,10 @@ html.wp-dock-hidden .wp-const {
   }
   .wp-stamp {
     margin: 48px 0 40px;
+  }
+  .wp-nav {
+    padding-left: 16px;
+    padding-right: 16px;
   }
 }
 
