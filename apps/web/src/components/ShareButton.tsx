@@ -102,14 +102,37 @@ export function ShareButton({ sessionId, idToken, sessionTitle }: Props) {
     }
   }, [idToken, sessionId]);
 
-  // Downloads the session's share OG card (mind map + hook) directly — the
-  // route is same-origin, so a plain <a download> forces a save instead of
-  // navigating. Only ever called while a share token exists.
-  const handleDownloadImage = useCallback(() => {
+  // Downloads the session's share OG card (mind map + hook). Only ever called
+  // while a share token exists.
+  //
+  // iOS has no real "save a file" path for <a download> — Safari/WKWebView
+  // opens a QuickLook file-preview page instead of saving. On touch devices
+  // the native share sheet (Web Share Level 2) is the way to reach "Save
+  // Image", so fetch the PNG and share it as a File there; desktop keeps the
+  // plain same-origin <a download>, which is also the fallback if the share
+  // sheet is unavailable or the fetch/share fails.
+  const handleDownloadImage = useCallback(async () => {
     if (!token) return;
+    const url = `/api/og/share/${token}?scale=2`;
+    const filename = filenameFor(sessionTitle);
+
+    if (typeof navigator.canShare === 'function' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+      try {
+        const blob = await (await fetch(url)).blob();
+        const file = new File([blob], filename, { type: 'image/png' });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file] });
+          return;
+        }
+      } catch (err) {
+        // User dismissed the share sheet — not a failure, don't re-prompt.
+        if ((err as DOMException)?.name === 'AbortError') return;
+      }
+    }
+
     const a = document.createElement('a');
-    a.href = `/api/og/share/${token}?scale=2`;
-    a.download = filenameFor(sessionTitle);
+    a.href = url;
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     a.remove();

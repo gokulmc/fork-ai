@@ -6,6 +6,11 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
+### "Download image" on iPhone opened a file-preview page instead of saving the image
+- **Symptom:** Tapping the Share button's "Download image" on an iPhone didn't save the PNG — Safari/WKWebView navigated to a QuickLook-style file-preview screen ("Effective-Weight-Loss-Strategies.png · Open in Preview / More…"), leaving the user to figure out what to do with the file. In the Android Capacitor app the button silently did nothing (WebView has no download listener).
+- **Cause:** `handleDownloadImage` (`ShareButton.tsx`) only ever fired a programmatic `<a download>` click on `/api/og/share/:token?scale=2`. iOS has no "download a file to disk" path for the `download` attribute — it opens the preview page instead — and the Capacitor Android WebView drops downloads entirely.
+- **Fix:** On touch devices (iPhone/iPad/Android UA) that support Web Share Level 2, fetch the PNG, wrap it in a `File`, and call `navigator.share({ files })` — the native share sheet offers "Save Image" straight to Photos. Desktop keeps the plain `<a download>`, which is also the fallback if `canShare` is unavailable or the fetch/share throws; a dismissed share sheet (`AbortError`) is treated as done, not a failure. (commit: pending)
+
 ### Android launch screen showed a stretched, ugly logo for the 2–3 s cold-start load
 - **Symptom:** Cold-starting the Android app showed the fork mark distorted/blurry in the centre of the launch screen for the 2–3 seconds the remote forkai.in page takes to load. Warm resume was unaffected.
 - **Cause:** The launch theme (`AppTheme.NoActionBarLaunch` in `apps/mobile/android/.../values/styles.xml`) set `android:background="@drawable/splash"` — a 480×320 opaque PNG. A theme-level `android:background` is scaled to fill the window (and leaks onto child views), so the small landscape bitmap was stretched to the full portrait screen.
