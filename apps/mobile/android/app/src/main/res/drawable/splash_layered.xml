@@ -1,0 +1,7 @@
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/splash_background"/>
+    <!-- 108dp adaptive canvas, mark in inner ~66% => 192dp item ≈ 120dp visible mark,
+         matching the system-splash icon size. Tune on device. -->
+    <item android:width="192dp" android:height="192dp" android:gravity="center"
+          android:drawable="@mipmap/ic_launcher_foreground"/>
+</layer-list>

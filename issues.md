@@ -6,6 +6,11 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
+### Android launch screen showed a stretched, ugly logo for the 2–3 s cold-start load
+- **Symptom:** Cold-starting the Android app showed the fork mark distorted/blurry in the centre of the launch screen for the 2–3 seconds the remote forkai.in page takes to load. Warm resume was unaffected.
+- **Cause:** The launch theme (`AppTheme.NoActionBarLaunch` in `apps/mobile/android/.../values/styles.xml`) set `android:background="@drawable/splash"` — a 480×320 opaque PNG. A theme-level `android:background` is scaled to fill the window (and leaks onto child views), so the small landscape bitmap was stretched to the full portrait screen.
+- **Fix:** Replaced it with `windowSplashScreenBackground=@color/splash_background` (white, new `values/colors.xml`) + `android:windowBackground=@drawable/splash_layered` — a new layer-list (white + `@mipmap/ic_launcher_foreground` at a fixed 192dp, `gravity="center"`), so the mark renders at its natural size and matches the Android 12+ system-splash icon for a continuous handoff. Deleted the 11 obsolete `splash.png` density variants. Regression tell: any reappearance of `android:background` (not `windowBackground`) in the launch theme re-breaks it. (commit: pending)
+
 ### Android back gesture exited the app from /welcome instead of returning to Landing
 - **Symptom:** In the Android app (Capacitor shell), navigating Landing → "How it works" → `/welcome` and then using the hardware back gesture/button exited (backgrounded) the app instead of going back to Landing. `/welcome` itself had no nav chrome either — the only way back was the "Try fork ai free" link at the very bottom of the story.
 - **Cause:** The shell had no `@capacitor/app` plugin and no `backButton` listener, so back events fell through to the activity default (finish/minimize) rather than navigating WebView history. On the web side, the `/welcome` StoryPage rendered no header/back affordance at all.
