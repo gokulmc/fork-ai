@@ -693,7 +693,7 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
   gap: 8px;
   font-family: var(--sans);
   font-weight: 700;
-  font-size: 15px;
+  font-size: 19px;
   letter-spacing: -0.01em;
   color: var(--ink);
   cursor: pointer;
@@ -701,21 +701,22 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
   user-select: none;
 }
 .app-brand .brand-logo {
-  width: 24px;
-  height: 24px;
+  width: 30px;
+  height: 30px;
   border-radius: 5px;
   flex-shrink: 0;
   background-position: center;
   background-size: contain;
   background-repeat: no-repeat;
-  /* Exact-resolution raster (rendered from the SVG with its filters applied).
-     The raster-in-SVG was downscaled ~45× live and went blurry in Safari; serving
-     1x/2x/3x lets each display use its native size with no in-browser scaling. */
+  /* Raster rendered from the SVG with its filters applied — the raster-in-SVG
+     was downscaled ~45× live and went blurry in Safari. At the 30px box each
+     density picks the nearest raster at or above its native size (48→30 at 1x,
+     72→60 at 2x); moderate downscales stay crisp, only huge ones blurred. */
   /* Transparent glyph (white chip knocked out) so it sits cleanly on any
      surface; dark mode just inverts the black glyph to white below. */
   background-image: url('/mark-t-48.png'); /* fallback for engines without image-set */
-  background-image: -webkit-image-set(url('/mark-t-24.png') 1x, url('/mark-t-48.png') 2x, url('/mark-t-72.png') 3x);
-  background-image: image-set(url('/mark-t-24.png') 1x, url('/mark-t-48.png') 2x, url('/mark-t-72.png') 3x);
+  background-image: -webkit-image-set(url('/mark-t-48.png') 1x, url('/mark-t-72.png') 2x);
+  background-image: image-set(url('/mark-t-48.png') 1x, url('/mark-t-72.png') 2x);
 }
 /* Match the in-app theme toggle (data-theme), not the OS colour scheme. */
 [data-theme="dark"] .app-brand .brand-logo {
