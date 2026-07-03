@@ -1,4 +1,4 @@
-# Mobile release plan — shipping the Android app
+# Mobile release plan — shipping the Android and iOS apps
 
 Companion to [ADR-0008](adr/0008-mobile-via-remote-capacitor-webview.md). The app is a
 thin Capacitor shell (`apps/mobile`, appId `in.forkai.app`) whose `server.url` points at
@@ -70,12 +70,31 @@ thin Capacitor shell (`apps/mobile`, appId `in.forkai.app`) whose `server.url` p
 
 ---
 
-## Deferred — iOS native app
+---
 
-Not in scope. iPhone users stay on the PWA. If/when we revisit:
-Apple Developer Program ($99/yr), Guideline 4.2 "web wrapper" rejection risk (would need a
-native feature like push/share/haptics), plus the Google-OAuth-in-webview problem would
-return if we ever enable Google login natively.
+## Phase 4 — iOS native shell
+
+Apple Developer Program enrolled (Jul 2026). Account activation pending.
+
+- [x] `CFBundleDisplayName = "fork ai"` in Info.plist.
+- [x] App icon: replaced Capacitor default blue-X (`AppIcon-512@2x.png`) with fork.ai mark
+      (1024×1024, sips-resized from `apps/web/public/icon-512.png`).
+- [x] Splash screen: replaced Capacitor default with white 2732×2732 PNG, fork.ai mark
+      centered at 512×512 (Swift/NSImage script, all three scale slots in `Splash.imageset`).
+- [x] `@capacitor/share` wired into iOS SPM via `cap sync ios` (was in `package.json` but not
+      in `Package.swift`). Provides `UIActivityViewController` — satisfies Guideline 4.2.
+- [x] iPhone orientations restricted to portrait-only; iPad keeps all four.
+- [x] `capacitor.config.ts` — added `ios: { backgroundColor: '#ffffff', limitsNavigationsToAppBoundDomains: true }`.
+- [x] `Info.plist` — added `WKAppBoundDomains: [forkai.in]` (required alongside the limits flag;
+      signals to App Review that the webview is purpose-locked to one domain).
+- [x] `MARKETING_VERSION = 1.0.0`, `CURRENT_PROJECT_VERSION = 1`.
+- [ ] Build: `xcodebuild archive -workspace App.xcworkspace -scheme App -destination 'generic/platform=iOS' -archivePath /tmp/forkai-ios.xcarchive`
+- [ ] Export: `xcodebuild -exportArchive` with `method = app-store` export-options plist.
+- [ ] Upload: `xcrun altool --upload-app` (or Transporter).
+- [ ] App Store Connect listing: screenshots (6.7" iPhone), description, privacy URL, keywords.
+
+**Build note:** run `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` once
+in Terminal before building (xcode-select must point at Xcode.app, not the CLI tools package).
 
 ## What ships how (consequence of ADR-0008)
 

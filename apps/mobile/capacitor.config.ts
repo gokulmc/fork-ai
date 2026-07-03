@@ -13,6 +13,10 @@ const config: CapacitorConfig = {
     url: 'https://forkai.in',
     cleartext: false,
   },
+  ios: {
+    backgroundColor: '#ffffff',
+    limitsNavigationsToAppBoundDomains: true,
+  },
 };
 
 export default config;
