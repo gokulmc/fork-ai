@@ -32,30 +32,41 @@ thin Capacitor shell (`apps/mobile`, appId `in.forkai.app`) whose `server.url` p
 
 ## Phase 1 — Android native shell
 
-- [ ] Set `versionCode` / `versionName` scheme in `apps/mobile/android/app/build.gradle`.
-- [ ] Confirm `targetSdkVersion` meets the current Play requirement (Play enforces a
-      rolling minimum — check the console when uploading).
-- [ ] Verify app icons + adaptive icon + splash render on hdpi→xxxhdpi (already added —
-      eyeball on device).
-- [ ] `cd apps/mobile && npm run sync` after any native change.
-- [ ] Generate a **release keystore** and store it safely (lose it = can't update the app).
-      Enroll in **Play App Signing**.
+- [x] Set `versionCode` / `versionName` scheme in `apps/mobile/android/app/build.gradle`
+      (v1 = versionCode 1 / 1.0.0 uploaded; bumped to versionCode 2 / 1.0.1 for the
+      icon-fix build).
+- [x] Confirm `targetSdkVersion` meets the current Play requirement (accepted by the
+      console at upload).
+- [x] App icons: the Capacitor default blue-X icons were still in `mipmap-*` at v1 —
+      replaced all densities (`ic_launcher`, `ic_launcher_round`, `ic_launcher_foreground`,
+      mdpi→xxxhdpi) with the fork.ai icon resized from `apps/web/public/icon-512.png`;
+      adaptive background `#FFFFFF`. Ships in the versionCode 2 AAB.
+- [x] Generate a **release keystore** (`~/forkai-keystore/forkai-upload.jks`) + enrolled in
+      **Play App Signing**. Build steps in the `project-android-build` memory.
 
 ## Phase 2 — Play Console listing
 
-- [x] **Privacy policy URL** (mandatory — we collect email/auth). Page created at
-      `forkai.in/privacy-policy` (`apps/web/src/app/privacy-policy/page.tsx`). Goes live on
-      the next web deploy. Review the copy before submitting.
-- [ ] Data-safety form (what's collected: email, usage; how it's used/shared).
-- [ ] Screenshots: phone (required) + 7"/10" tablet if we declare tablet support.
-- [ ] App title, short + full description, category, contact email, support URL.
-- [ ] Content rating questionnaire.
+- [x] **Privacy policy URL** — live at `forkai.in/privacy-policy`; the Play data-deletion
+      link points at `forkai.in/privacy-policy#data-deletion`.
+- [x] Data-safety form (email/password login only; Email address is the only collected
+      data type declared).
+- [x] Screenshots (phone) + feature graphic 1024×500 (`apps/mobile/store-assets/`).
+- [x] App title, short + full description, category, contact email. NOTE: the store
+      listing "App name" field is separate from the binary's `strings.xml` — set it to
+      "fork ai" in the console (it initially showed as `in.forkai.app`).
+- [x] Content rating questionnaire.
 
 ## Phase 3 — Build & ship Android
 
-- [ ] Build a signed **AAB** (Android App Bundle, not APK) via Android Studio.
-- [ ] Upload to **Internal testing** track → smoke test on real devices.
-- [ ] Promote to **Production** (or Closed/Open testing first).
+- [x] Build a signed **AAB** via Gradle CLI (see `project-android-build` memory).
+- [x] Upload to **Internal testing** track (v1.0.0), tester added, smoke-tested on device.
+      Findings fixed: status-bar overlap on Landing/History (CSS-only — shipped via web
+      deploy, no AAB needed) and default Capacitor icons (needs the versionCode 2 AAB).
+- [ ] Build + upload the **versionCode 2 / 1.0.1 AAB** (carries the icon fix).
+- [ ] Complete the Play Console requirements that unlock the **Production** track
+      (console currently offers Closed testing only — new personal accounts must run
+      a closed test with ≥12 testers for 14 days before Production access).
+- [ ] Promote to **Production**.
 
 ---
 

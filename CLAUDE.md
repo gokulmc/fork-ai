@@ -13,8 +13,9 @@ fork-ai/                         ← Nx monorepo root
 ├── apps/
 │   ├── api/                     ← NestJS API server (port 3000)
 │   │   └── CLAUDE.md            ← backend-specific context
-│   └── web/                     ← Next.js 15 app (port 3001)
-│       └── CLAUDE.md            ← frontend-specific context
+│   ├── web/                     ← Next.js 15 app (port 3001)
+│   │   └── CLAUDE.md            ← frontend-specific context
+│   └── mobile/                  ← Capacitor shell (Android/iOS) — loads live forkai.in (ADR-0008)
 ├── _prototype/                  ← original vanilla prototype (reference only, do not edit)
 ├── nx.json                      ← Nx task orchestration
 ├── tsconfig.base.json           ← shared TS base config
@@ -342,6 +343,21 @@ aws codebuild start-build --project-name forkai-api-deploy \
   1. `secret: process.env.NEXTAUTH_SECRET` — next-auth v5 reads `AUTH_SECRET` internally (in node_modules, not webpack-transformed). Pass it explicitly so the constructor receives the build-time-inlined value.
   2. `AUTH_SECRET: process.env.NEXTAUTH_SECRET` in the `next.config.ts` `env` block — belt-and-suspenders so it's also available as a real env var.
   3. `trustHost: true` — next-auth v5 validates the request host against `AUTH_URL`; without this it rejects all requests at non-localhost URLs. Required for any CDN/serverless deployment.
+
+---
+
+### Mobile — Capacitor remote-webview shell (`apps/mobile`)
+
+The Android/iOS app is a **thin Capacitor shell** (appId `in.forkai.app`, appName `fork ai`) whose `server.url` points at `https://forkai.in` — no web code is bundled (ADR-0008). Consequences:
+
+- **Web/CSS/JS changes ship via a normal web deploy** — installed apps pick them up on next launch. No AAB rebuild, no store review.
+- **Native-shell changes** (icons, splash, plugins, `build.gradle`, manifest) require a new signed AAB + Play Console upload. Bump `versionCode`/`versionName` in `apps/mobile/android/app/build.gradle` for every upload.
+- Build toolchain, keystore, and AAB steps: see the `project-android-build` memory and `docs/mobile-release-plan.md`. Signing keystore lives at `~/forkai-keystore/forkai-upload.jks` (gitignored `keystore.properties`).
+- **Launcher icons**: all `mipmap-*/ic_launcher*.png` + `ic_launcher_foreground.png` densities are the fork.ai icon (sips-resized from `apps/web/public/icon-512.png`); the adaptive icon background is `#FFFFFF`. Don't regenerate from Capacitor templates — that restores the default blue-X icon.
+- **Play Store assets** live in `apps/mobile/store-assets/` (feature graphic 1024×500 etc.).
+- **The app name shown on the device comes from `strings.xml` (`app_name = "fork ai"`); the name on the Play Store listing comes from the Play Console "App name" field** — they are set independently.
+
+**Safe-area rule (status bar overlap):** the Capacitor WebView renders edge-to-edge on Android, so the page starts *behind* the status bar and `env(safe-area-inset-top)` is non-zero. Any `position: fixed/absolute` element near the top of the viewport that renders on mobile **must** offset its `top`/`padding-top` by `env(safe-area-inset-top)` inside the `@media (max-width: 768px)` block of `globals.css`. Already handled: `.topbar` (session), `.history-topbar`, `.app-brand`, `.landing-nav`, `.landing-inner`, and the `.app` grid rows. A new fixed-top element without this offset will sit under the Android status bar (this bug shipped twice — see `issues.md`).
 
 ---
 

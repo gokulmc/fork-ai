@@ -332,6 +332,8 @@ Key CSS variables (set on `<html>` via `App.tsx` useEffect based on tweaks):
 
 Fonts loaded via Google Fonts `<link>` in `layout.tsx`: Newsreader, Spectral, Fraunces, DM Sans, IBM Plex Sans, JetBrains Mono, Geist.
 
+**Mobile safe-area rule.** `layout.tsx` sets `viewportFit: 'cover'`, and the Capacitor Android app renders the WebView edge-to-edge — the page starts *behind* the status bar and `env(safe-area-inset-top)` is non-zero on device. Every `position: fixed/absolute` element near the top of the viewport that renders on mobile must offset its `top`/`padding-top` by `env(safe-area-inset-top)` inside the `@media (max-width: 768px)` block of `globals.css`. Currently offset: `.topbar`, `.history-topbar`, `.app-brand`, `.landing-nav`, `.landing-inner`, `.app` grid rows, `.mindmap-pane`. A new fixed-top element without this offset renders under the Android status bar (looks fine in desktop DevTools where the inset is 0 — test on device or with the "device frame" inset emulation). Same applies to bottom-anchored elements and `env(safe-area-inset-bottom)` (`.install-sheet`, `.workspace-inner`, mm-pill already handle it).
+
 ---
 
 ## Environment variables
