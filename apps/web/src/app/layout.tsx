@@ -3,6 +3,7 @@ import Script from 'next/script';
 import './globals.css';
 import { Providers } from '@/components/Providers';
 import { InstallPrompt } from '@/components/InstallPrompt';
+import { NativeShell } from '@/components/NativeShell';
 import { JsonLd } from '@/components/JsonLd';
 import { CookieConsent } from '@/components/CookieConsent';
 
@@ -95,6 +96,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <JsonLd />
         <Providers>{children}</Providers>
         <InstallPrompt />
+        <NativeShell />
         <CookieConsent />
       </body>
     </html>

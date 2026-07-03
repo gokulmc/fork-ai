@@ -6,6 +6,11 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
+### Android back gesture exited the app from /welcome instead of returning to Landing
+- **Symptom:** In the Android app (Capacitor shell), navigating Landing → "How it works" → `/welcome` and then using the hardware back gesture/button exited (backgrounded) the app instead of going back to Landing. `/welcome` itself had no nav chrome either — the only way back was the "Try fork ai free" link at the very bottom of the story.
+- **Cause:** The shell had no `@capacitor/app` plugin and no `backButton` listener, so back events fell through to the activity default (finish/minimize) rather than navigating WebView history. On the web side, the `/welcome` StoryPage rendered no header/back affordance at all.
+- **Fix:** Added `@capacitor/app` to `apps/mobile` (registered via `cap sync`) and a `NativeShell` client component mounted in the root layout (`apps/web/src/components/NativeShell.tsx`) that listens for `backButton`: `canGoBack → history.back()`, else `minimizeApp()` — typed against the injected `window.Capacitor` bridge, no `@capacitor/*` dep in apps/web, inert on the website and in old shell builds. Also added a fixed top nav to `/welcome` (`WelcomeNav.tsx` + `.wp-nav` in `welcome.css`) with the brand and a "Try fork ai" CTA linking to `/`, offset by `env(safe-area-inset-top)` per the mobile safe-area rule. (commit: pending)
+
 ### Fork.ai logo and nav overlapped Android status bar on Landing/History pages
 - **Symptom:** On Android (Capacitor WebView, edge-to-edge mode), the fork.ai logo and History button on the Landing page, and the logo on the History page, rendered inside/behind the system status bar rather than below it. The session workspace was unaffected.
 - **Cause:** `.app-brand` (`position: fixed; top: 14px`) and `.landing-nav` (`position: absolute; top: 16px` inside `.landing { position: fixed; inset: 0 }`) used hardcoded `top` values with no `env(safe-area-inset-top)` offset. On the session page `.app-brand` is hidden via `body:has(.app) .app-brand { display: none }` so the issue didn't appear there. The status bar on Android 15+ is ~30px in CSS pixels, so `top: 14–16px` placed both elements inside it.
