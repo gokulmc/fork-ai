@@ -12,6 +12,9 @@ export function initAnalytics(): void {
     api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST ?? 'https://us.i.posthog.com',
     capture_pageview: true,
     capture_pageleave: true,
+    // Sentry has no DSN in prod, so this is the only place uncaught client
+    // exceptions (incl. React 19 reportError) get recorded.
+    capture_exceptions: true,
   });
   inited = true;
 }
