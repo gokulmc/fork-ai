@@ -9,10 +9,13 @@ export interface PluginListenerHandle {
 }
 
 export interface CapacitorAppPlugin {
+  // The injected runtime returns the handle SYNCHRONOUSLY; only @capacitor/app's
+  // npm wrapper promisifies it. Callers must Promise.resolve() the result —
+  // calling .then() on it directly crashed the app shell (see issues.md).
   addListener(
     eventName: 'backButton',
     cb: (event: { canGoBack: boolean }) => void,
-  ): Promise<PluginListenerHandle>;
+  ): PluginListenerHandle | Promise<PluginListenerHandle>;
   minimizeApp(): Promise<void>;
 }
 
