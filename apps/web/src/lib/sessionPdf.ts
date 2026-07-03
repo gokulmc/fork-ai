@@ -1,4 +1,5 @@
 import type { ForkNode } from './types';
+import { nativeDownload } from './native';
 
 export async function exportNodePdf(activeNode: ForkNode): Promise<void> {
   const el = document.querySelector('.workspace-inner') as HTMLElement | null;
@@ -124,5 +125,9 @@ export async function exportNodePdf(activeNode: ForkNode): Promise<void> {
   }
 
   const slug = activeNode.title.slice(0, 50).replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+  // Android WebView has no DownloadListener, so doc.save()'s <a download> is
+  // silently dropped there — try the native share sheet first (inert on the
+  // website / an app build before the plugin shipped, per nativeDownload).
+  if (await nativeDownload(doc.output('blob'), `${slug}.pdf`)) return;
   doc.save(`${slug}.pdf`);
 }
