@@ -1575,6 +1575,10 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 }
 .twk-status-on { color: var(--accent); border-color: var(--accent); }
 .twk-status-off { opacity: .6; }
+/* Status chips are workspace context — noise on the landing page. */
+body:has(.landing) .twk-status { display: none; }
+/* The account button has no role while composing a mix (all viewports). */
+body:has(.mixer-overlay) button[aria-label="Account"] { display: none; }
 
 .twk-panel {
   position: fixed; right: 16px; bottom: 16px; z-index: 2147483646;
@@ -1851,8 +1855,7 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
   .mixer-overlay { bottom: calc(14px + env(safe-area-inset-bottom)); }
   body:has(.mixer-overlay) .mm-pill,
   body:has(.mixer-overlay) .twk-status,
-  body:has(.mixer-overlay) .twk-trigger,
-  body:has(.mixer-overlay) button[aria-label="Account"] { display: none; }
+  body:has(.mixer-overlay) .twk-trigger { display: none; }
 
   /* Selection popup +20% on mobile (intrinsic sizes — a transform scale would be
      overridden by the hlIn animation's `to { scale(1) }`). Centred horizontally by JS. */
