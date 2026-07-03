@@ -1844,6 +1844,16 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
   }
   .mm-pill:active { transform: translateX(-50%) scale(0.97); }
 
+  /* Mixer on phones: the overlay owns the bottom strip — hide the floating
+     chrome that collides with it (Read pill, tweaks chips + gear, account)
+     and the desktop-only keyboard hint. Cancel = the red × in the map toolbar. */
+  .mixer-shortcut-hint { display: none; }
+  .mixer-overlay { bottom: calc(14px + env(safe-area-inset-bottom)); }
+  body:has(.mixer-overlay) .mm-pill,
+  body:has(.mixer-overlay) .twk-status,
+  body:has(.mixer-overlay) .twk-trigger,
+  body:has(.mixer-overlay) button[aria-label="Account"] { display: none; }
+
   /* Selection popup +20% on mobile (intrinsic sizes — a transform scale would be
      overridden by the hlIn animation's `to { scale(1) }`). Centred horizontally by JS. */
   .hl-menu button { height: 36px; font-size: 16px; padding: 0 12px; gap: 7px; }
