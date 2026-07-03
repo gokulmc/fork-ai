@@ -1901,6 +1901,14 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
     padding-top: env(safe-area-inset-top);
     height: calc(52px + env(safe-area-inset-top));
   }
+
+  /* .app-brand and .landing-nav are position:fixed with hardcoded top values.
+     In edge-to-edge mode (Capacitor/Android 15+, iOS notch) the viewport
+     starts behind the status bar, so we shift them down by the safe-area inset. */
+  .app-brand { top: calc(14px + env(safe-area-inset-top)); }
+  .landing-nav { top: calc(16px + env(safe-area-inset-top)); }
+  /* Keep landing content below the repositioned brand/nav (72px = desktop base). */
+  .landing-inner { padding-top: calc(72px + env(safe-area-inset-top)); }
 }
 
 /* Small phones only (≤400px: SE 320, mini 360, X/11/12 375–390). The desktop hero
@@ -1908,7 +1916,7 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
    hits exactly 40px at the 400px edge, so it joins the original size seamlessly and
    larger phones (Plus/Max, 414px+) stay untouched. */
 @media (max-width: 400px) {
-  .landing-inner { padding: 60px 10px 16px; }
+  .landing-inner { padding: calc(60px + env(safe-area-inset-top)) 10px 16px; }
   .landing-mark { margin-bottom: 22px; }
   .landing h1 { font-size: clamp(28px, 10vw, 40px); margin-bottom: 14px; }
   .landing-sub { font-size: 14px; margin-bottom: 28px; line-height: 1.5; }

@@ -6,6 +6,11 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
+### Fork.ai logo and nav overlapped Android status bar on Landing/History pages
+- **Symptom:** On Android (Capacitor WebView, edge-to-edge mode), the fork.ai logo and History button on the Landing page, and the logo on the History page, rendered inside/behind the system status bar rather than below it. The session workspace was unaffected.
+- **Cause:** `.app-brand` (`position: fixed; top: 14px`) and `.landing-nav` (`position: absolute; top: 16px` inside `.landing { position: fixed; inset: 0 }`) used hardcoded `top` values with no `env(safe-area-inset-top)` offset. On the session page `.app-brand` is hidden via `body:has(.app) .app-brand { display: none }` so the issue didn't appear there. The status bar on Android 15+ is ~30px in CSS pixels, so `top: 14–16px` placed both elements inside it.
+- **Fix:** Added `top: calc(14px + env(safe-area-inset-top))` / `top: calc(16px + env(safe-area-inset-top))` for `.app-brand` / `.landing-nav` in `@media (max-width: 768px)`, and added `padding-top: calc(72px + env(safe-area-inset-top))` to `.landing-inner` so landing content doesn't overlap the repositioned nav. Also applied the env offset to the `@media (max-width: 400px)` small-phone `.landing-inner` padding. (commit: pending)
+
 ### Share button's "Download image" dropdown was unreachable on hover
 - **Symptom:** Hovering the "Shared" button revealed the "Download image" dropdown, but moving the cursor down toward it made the dropdown disappear before it could be clicked — the option was effectively unreachable.
 - **Cause:** `.share-dl-dropdown` (`globals.css`) was positioned `top: 100%` with a `margin-top: 4px` gap below `.share-hover-target`, the `:hover`-tracked wrapper. That 4px gap sits outside the wrapper's hoverable box, so moving the pointer from the button toward the dropdown crossed a dead zone where neither element was hovered — `:hover` dropped and `display: none` re-applied to the dropdown an instant before the cursor arrived.
