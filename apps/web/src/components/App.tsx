@@ -1911,16 +1911,34 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     setNotionPickerOpen(false);
     setNotionSaving(true);
     setNotionError(null);
+
+    // Building the block tree is pure client-side work that can throw on some
+    // session content. Keep it separate from the network push so a build crash
+    // reports a distinct, actionable message — and, critically, is logged rather
+    // than silently swallowed (an unlogged throw here looked like a server-side
+    // save failure that left no trace anywhere).
+    let payload: ReturnType<typeof buildNotionClipboard>;
     try {
-      const { blocks, childrenMap } = buildNotionClipboard(nodes, rootId, persistentHl, annotations);
+      payload = buildNotionClipboard(nodes, rootId, persistentHl, annotations);
+    } catch (err) {
+      console.error('[notion] failed to build page from session', err);
+      track('notion_export_error', { stage: 'build' });
+      setNotionError("Couldn't build the Notion page from this session");
+      setNotionSaving(false);
+      return;
+    }
+
+    try {
       const title = nodes[rootId]?.title ?? 'fork ai research';
-      const { url } = await pushToNotion(idToken, title, blocks, childrenMap, parentPageId);
+      const { url } = await pushToNotion(idToken, title, payload.blocks, payload.childrenMap, parentPageId);
       setNotionSavedUrl(url);
       track('notion_export');
       if (sessionId) {
         updateSessionNotionUrl(idToken, sessionId, url).catch(err => console.error('Failed to persist Notion URL', err));
       }
     } catch (err) {
+      console.error('[notion] push failed', err);
+      track('notion_export_error', { stage: 'push' });
       // Workspace-root create denied (integration lacks workspace access) → guide the user.
       const denied = err instanceof ApiError && err.message.includes('NOTION_WORKSPACE_DENIED');
       setNotionError(denied

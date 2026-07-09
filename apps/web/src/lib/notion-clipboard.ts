@@ -116,7 +116,11 @@ function makeLink(content: string, url: string, ann: Partial<NAnnotations> = {})
 //   • raw (streamed root nodes): <cite index="5-3,5-4">…</cite>
 // Strip the hyperlink wrappers — keep the [N] marker (it lines up with the numbered
 // "Sources" list), and unwrap raw <cite> tags to their plain inner text.
-function stripCiteRefs(body: string): string {
+// body/lede can be undefined on an incomplete node held only in client state
+// (a streamed or mixed node that finished loading but never got body text) —
+// tolerate it rather than crashing the whole export.
+function stripCiteRefs(body: string | null | undefined): string {
+  if (!body) return '';
   return body
     .replace(/<sup class="cite-ref">(?:<a\b[^>]*>)?(\[\d+\])(?:<\/a>)?<\/sup>/g, '$1')
     .replace(/<cite\b[^>]*>([\s\S]*?)<\/cite>/g, '$1');
@@ -465,8 +469,8 @@ function sectionsToHtml(
     }
     const hls = persistentHl[`${node.id}::${section.id}`] ?? [];
     let bodyHtml: string;
-    try { bodyHtml = marked.parse(section.body) as string; }
-    catch { bodyHtml = `<p>${escHtml(section.body)}</p>`; }
+    try { bodyHtml = marked.parse(section.body ?? '') as string; }
+    catch { bodyHtml = `<p>${escHtml(section.body ?? '')}</p>`; }
     html += applyHlsToHtml(bodyHtml, hls);
     for (const c of annotations.filter(a => a.nodeId === node.id && a.sectionId === section.id)) {
       html += `<blockquote>💡 ${escHtml(c.text)}</blockquote>\n`;
@@ -544,7 +548,7 @@ function renderNodePlain(
 
   for (const section of node.sections) {
     const heading = cleanHeading(section.heading);
-    text += heading ? `${sHashes} ${heading}\n\n${section.body}\n\n` : `${section.body}\n\n`;
+    text += heading ? `${sHashes} ${heading}\n\n${section.body ?? ''}\n\n` : `${section.body ?? ''}\n\n`;
     for (const c of annotations.filter(a => a.nodeId === node.id && a.sectionId === section.id)) {
       text += `> 💡 ${c.text}\n\n`;
     }
