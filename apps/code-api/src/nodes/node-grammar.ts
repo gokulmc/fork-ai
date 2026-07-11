@@ -19,7 +19,11 @@ export const ALLOWED_CHILD_KINDS: Record<NodeKind, NodeKind[]> = {
   ASK: ['DEEPER', 'ASK', 'MIX'],
   MIX: ['DEEPER', 'ASK', 'MIX'],
   PLAN: ['CODE', 'DEEPER', 'ASK'],
-  CODE: ['CODE', 'BRANCH', 'DEEPER', 'ASK'],
+  // QUERY here is only reachable via the seeded-question route
+  // (SessionsService.createRootNodeStreaming on a session whose root is a CODE
+  // node) — the generic create route (CreateNodeDto) still only accepts
+  // DEEPER/ASK, so a QUERY can never be minted under CODE any other way.
+  CODE: ['CODE', 'BRANCH', 'DEEPER', 'ASK', 'QUERY'],
   BRANCH: ['CODE'],
 };
 

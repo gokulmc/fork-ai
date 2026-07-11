@@ -9,6 +9,9 @@ export const validationSchema = Joi.object({
   GEMINI_API_KEY: Joi.string().allow('').optional(),
   DEEPSEEK_API_KEY: Joi.string().allow('').optional(),
   GLM_API_KEY: Joi.string().allow('').optional(),
+  GITHUB_CLIENT_ID: Joi.string().allow('').optional(),
+  GITHUB_CLIENT_SECRET: Joi.string().allow('').optional(),
+  GITHUB_REDIRECT_URI: Joi.string().allow('').optional(),
   PORT: Joi.number().default(3000),
   FRONTEND_URL: Joi.string().optional().default('http://localhost:3001'),
   SIGNUP_CREDIT_USD: Joi.number().default(5.00),
@@ -44,6 +47,11 @@ export const configuration = () => ({
   },
   glm: {
     apiKey: process.env.GLM_API_KEY ?? '',
+  },
+  github: {
+    clientId: process.env.GITHUB_CLIENT_ID ?? '',
+    clientSecret: process.env.GITHUB_CLIENT_SECRET ?? '',
+    redirectUri: process.env.GITHUB_REDIRECT_URI ?? 'http://localhost:4000/github/callback',
   },
   port: parseInt(process.env.PORT ?? '3000', 10),
   frontendUrl: process.env.FRONTEND_URL ?? 'http://localhost:3001',

@@ -11,6 +11,7 @@ import { UsersModule } from '@/users/users.module';
 import { SessionsModule } from '@/sessions/sessions.module';
 import { NodesModule } from '@/nodes/nodes.module';
 import { ProjectsModule } from '@/projects/projects.module';
+import { GithubModule } from '@/github/github.module';
 import { AnnotationsModule } from '@/annotations/annotations.module';
 import { HighlightsModule } from '@/highlights/highlights.module';
 import { BillingModule } from '@/billing/billing.module';
@@ -32,6 +33,7 @@ import { HealthController } from './health.controller';
     SessionsModule,
     NodesModule,
     ProjectsModule,
+    GithubModule,
     AnnotationsModule,
     HighlightsModule,
     BillingModule,

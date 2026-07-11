@@ -1,3 +1,4 @@
+import { randomBytes } from 'crypto';
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { ulid } from 'ulid';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
@@ -5,9 +6,28 @@ import type { NodeItem, AnnotationItem, HighlightItem, SessionMetaItem } from '@
 import { LlmService } from '@/llm/llm.service';
 import { ROOT_MODEL, resolveBranchModel } from '@/llm/models';
 import { UsersService } from '@/users/users.service';
+import { LEARN_KINDS, assertKindAllowed } from '@/nodes/node-grammar';
+import type { NodeKind } from '@/llm/llm.types';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { CreateDocumentDto } from './dto/create-document.dto';
 import { UpdateSessionDto } from './dto/update-session.dto';
+
+export interface ProjectSeedCommit {
+  sha: string;
+  message: string;
+  date: string;
+}
+
+// What a Project passes to createProjectSession to seed its map. `imported`
+// marks a real repo fetch (GitHub) vs. a synthesized/mock repo — see
+// createProjectSession for how it combines with `first` to decide whether the
+// root node is marked imported.
+export interface ProjectSeed {
+  defaultBranch: string;
+  first: ProjectSeedCommit | null;
+  head: ProjectSeedCommit | null;
+  imported: boolean;
+}
 
 export interface SessionSummary {
   sessionId: string;
@@ -115,9 +135,18 @@ export class SessionsService {
     await this.runRootQueryStream(sub, sessionId, rootNode, dto, emit);
   }
 
-  // Root-query streaming into an EXISTING empty session — a Project's map is
-  // created bare by ProjectsService (createEmpty), so its first query lands here
-  // rather than POST /sessions/stream, which always mints a new session.
+  // Root-query streaming into an EXISTING session — a Project's map is seeded
+  // by ProjectsService (createProjectSession) with a CODE root (+ optional HEAD
+  // node), so its first learn question lands here rather than POST
+  // /sessions/stream, which always mints a fresh session.
+  //
+  // Two shapes, depending on what's already in the session:
+  //  - zero nodes (legacy — a pre-D1 project, or any other bare session): the
+  //    original behaviour, unchanged — a fresh QUERY root with parentId null.
+  //  - a seeded CODE root (D1) and no learn node yet: the "first question"
+  //    route (D2) — the new QUERY node hangs off the CODE root instead of
+  //    starting a second tree, and the session title (the project name) is
+  //    left untouched since this isn't a fresh root query.
   async createRootNodeStreaming(
     sub: string,
     sessionId: string,
@@ -131,9 +160,58 @@ export class SessionsService {
     const meta = await this.db.getSessionMeta(sub, sessionId);
     if (!meta) throw new NotFoundException(`Session ${sessionId} not found`);
     const existing = await this.db.queryNodes(sessionId);
-    if (existing.length) {
-      throw new BadRequestException('Session already has nodes — a root query can only stream into an empty session');
+
+    if (existing.length === 0) {
+      const nodeId = ulid();
+      const now = new Date().toISOString();
+      const emit = (data: object) => { try { send(data); } catch { /* client gone */ } };
+
+      const rootNode: NodeItem = {
+        PK: `SESSION#${sessionId}`,
+        SK: `NODE#${nodeId}`,
+        nodeId,
+        parentId: null,
+        kind: 'QUERY',
+        title: this.tempTitle(dto.query),
+        emoji: null,
+        query: dto.query,
+        lede: '',
+        sections: [],
+        fromSection: null,
+        fromText: null,
+        createdAt: now,
+        model: ROOT_MODEL,
+      };
+
+      // Persist-first, but the SessionMeta row already exists and may carry
+      // projectId — so this is a PARTIAL update, never a putSessionMeta full
+      // replace, which would silently drop the project linkage.
+      await Promise.all([
+        this.db.putNode(rootNode),
+        this.db.updateSessionMeta(sub, sessionId, {
+          title: this.tempTitle(dto.query),
+          nodeCount: 1,
+          updatedAt: now,
+          gsi1sk: `UPDATED#${now}`,
+        }),
+      ]);
+      emit({ type: 'init', sessionId, nodeId });
+
+      await this.runRootQueryStream(sub, sessionId, rootNode, dto, emit);
+      return;
     }
+
+    // Seeded project session (D1): the first learn question anchors under the
+    // CODE root instead of minting a new tree. Only allowed once — a session
+    // that already has a learn node has already used this route.
+    if (existing.some((n) => LEARN_KINDS.includes(n.kind as NodeKind))) {
+      throw new BadRequestException('Session already has a learn node — the first-question route can only run once');
+    }
+
+    const parentId = meta.rootNodeId || existing.find((n) => n.parentId === null)?.nodeId;
+    const parentNode = parentId ? existing.find((n) => n.nodeId === parentId) : undefined;
+    if (!parentNode) throw new NotFoundException(`Session ${sessionId} has no root node to anchor the first question`);
+    assertKindAllowed(parentNode.kind as NodeKind, 'QUERY');
 
     const nodeId = ulid();
     const now = new Date().toISOString();
@@ -143,7 +221,7 @@ export class SessionsService {
       PK: `SESSION#${sessionId}`,
       SK: `NODE#${nodeId}`,
       nodeId,
-      parentId: null,
+      parentId,
       kind: 'QUERY',
       title: this.tempTitle(dto.query),
       emoji: null,
@@ -156,31 +234,34 @@ export class SessionsService {
       model: ROOT_MODEL,
     };
 
-    // Persist-first, but the SessionMeta row already exists (createEmpty) and may
-    // carry projectId — so this is a PARTIAL update, never a putSessionMeta full
-    // replace, which would silently drop the project linkage.
+    // Keep the project name as the session title — this is a branch off the
+    // seeded map, not a fresh root query, so nothing about the query text
+    // belongs in SessionMeta; only the node count/activity timestamp move.
     await Promise.all([
       this.db.putNode(rootNode),
       this.db.updateSessionMeta(sub, sessionId, {
-        title: this.tempTitle(dto.query),
-        nodeCount: 1,
+        nodeCount: existing.length + 1,
         updatedAt: now,
         gsi1sk: `UPDATED#${now}`,
       }),
     ]);
     emit({ type: 'init', sessionId, nodeId });
 
-    await this.runRootQueryStream(sub, sessionId, rootNode, dto, emit);
+    await this.runRootQueryStream(sub, sessionId, rootNode, dto, emit, false);
   }
 
   // Shared stream-consumption loop for both root-query entry points. The caller
-  // has already persisted the loading root node + session meta and emitted `init`.
+  // has already persisted the loading root node + session meta and emitted
+  // `init`. `patchSessionMetaAtDone` is false on the seeded first-question path
+  // (D2) — the session title stays the project name, so `done` writes nothing
+  // to SessionMeta beyond the node itself.
   private async runRootQueryStream(
     sub: string,
     sessionId: string,
     rootNode: NodeItem,
     dto: CreateSessionDto,
     emit: (data: object) => void,
+    patchSessionMetaAtDone: boolean = true,
   ): Promise<void> {
     const nodeId = rootNode.nodeId;
     let title = '';
@@ -212,10 +293,13 @@ export class SessionsService {
         // accessible if the client closes mid-stream). Patch only the title/emoji/lede
         // here — an UPDATE, not a full replace — so the History card shows the real
         // values once the stream finishes server-side (and any projectId survives).
-        await Promise.all([
-          this.db.putNode({ ...rootNode, title, emoji, lede, sections, ...sourcesPatch }),
-          this.db.updateSessionMeta(sub, sessionId, { title, emoji, lede }),
-        ]);
+        // Skipped on the seeded first-question path (D2): the session title stays
+        // the project name, not the query's LLM-generated title.
+        const writes: Promise<unknown>[] = [this.db.putNode({ ...rootNode, title, emoji, lede, sections, ...sourcesPatch })];
+        if (patchSessionMetaAtDone) {
+          writes.push(this.db.updateSessionMeta(sub, sessionId, { title, emoji, lede }));
+        }
+        await Promise.all(writes);
         await this.users.billUsage(sub, event.usage.inputTokens, event.usage.outputTokens, 'QUERY', sessionId, nodeId, ROOT_MODEL);
         emit({ type: 'done', sessionId, nodeId, model: ROOT_MODEL, sections, sources: event.sources });
       }
@@ -457,11 +541,72 @@ export class SessionsService {
     };
   }
 
-  // Creates a bare session with no root node — used by ProjectsService to give a
-  // freshly-created Project its map before any query/code node exists.
-  async createEmpty(sub: string, title: string): Promise<string> {
+  // Truncates a commit message to ~5 words for a CODE node's map-card title —
+  // the same rule createCodeNodeStreaming applies to a finished agent run.
+  private commitTitle(message: string): string {
+    return message.split(/\s+/).filter(Boolean).slice(0, 5).join(' ') || 'Initial commit';
+  }
+
+  // Creates a Project's map session, seeded with a CODE root node for the
+  // repo's first commit (plus a second CODE node for HEAD, if it differs from
+  // the first) — replaces the old createEmpty bare-session helper so a Project
+  // never starts as an empty map. `seed.imported` marks a real GitHub fetch,
+  // but the root node is only actually flagged `imported` when there's a real
+  // first commit to point at — an empty repo still falls back to a synthesized
+  // root, same as the mock provider (see ProjectsService.buildSeed).
+  async createProjectSession(sub: string, title: string, seed: ProjectSeed): Promise<string> {
     const sessionId = ulid();
     const now = new Date().toISOString();
+    const rootNodeId = ulid();
+
+    const rootMessage = seed.first?.message || 'Initial commit';
+    const rootNode: NodeItem = {
+      PK: `SESSION#${sessionId}`,
+      SK: `NODE#${rootNodeId}`,
+      nodeId: rootNodeId,
+      parentId: null,
+      kind: 'CODE',
+      title: this.commitTitle(rootMessage),
+      emoji: null,
+      query: rootMessage,
+      lede: '',
+      sections: [],
+      fromSection: null,
+      fromText: null,
+      createdAt: now,
+      branchName: seed.defaultBranch,
+      commitSha: seed.first?.sha ?? randomBytes(20).toString('hex'),
+      commitMessage: rootMessage,
+      ...(seed.imported && seed.first ? { imported: true } : {}),
+    };
+
+    const nodes: NodeItem[] = [rootNode];
+
+    if (seed.head && seed.first && seed.head.sha !== seed.first.sha) {
+      const headNodeId = ulid();
+      const headMessage = seed.head.message || 'Initial commit';
+      nodes.push({
+        PK: `SESSION#${sessionId}`,
+        SK: `NODE#${headNodeId}`,
+        nodeId: headNodeId,
+        parentId: rootNodeId,
+        kind: 'CODE',
+        title: this.commitTitle(headMessage),
+        emoji: null,
+        query: headMessage,
+        lede: '',
+        sections: [],
+        fromSection: null,
+        fromText: null,
+        // 1ms after the root so createdAt-ordered reads keep root-before-head.
+        createdAt: new Date(Date.parse(now) + 1).toISOString(),
+        branchName: seed.defaultBranch,
+        commitSha: seed.head.sha,
+        commitMessage: headMessage,
+        imported: true,
+      });
+    }
+
     const sessionMeta: SessionMetaItem = {
       PK: this.userPk(sub),
       SK: this.sessionSk(sessionId),
@@ -469,14 +614,15 @@ export class SessionsService {
       title,
       emoji: '',
       lede: '',
-      rootNodeId: '',
-      nodeCount: 0,
+      rootNodeId,
+      nodeCount: nodes.length,
       createdAt: now,
       updatedAt: now,
       gsi1pk: this.userPk(sub),
       gsi1sk: `UPDATED#${now}`,
     };
-    await this.db.putSessionMeta(sessionMeta);
+
+    await Promise.all([...nodes.map((n) => this.db.putNode(n)), this.db.putSessionMeta(sessionMeta)]);
     return sessionId;
   }
 

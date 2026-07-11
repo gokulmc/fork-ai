@@ -443,6 +443,77 @@ describe('NodesService', () => {
     });
   });
 
+  describe('createMixNode — plan forks a branch off the main CODE chain (F1)', () => {
+    // root → head → user-CODE, all on 'main' — user-CODE is the true tip even
+    // though `head` is the imported HEAD, because the user Continued main once.
+    const codeRoot = {
+      nodeId: 'code-root', parentId: null, kind: 'CODE', branchName: 'main', commitSha: 'root-sha',
+      title: 'Root', query: 'root commit', createdAt: '2026-01-01T00:00:00.000Z',
+    };
+    const codeHead = {
+      nodeId: 'code-head', parentId: 'code-root', kind: 'CODE', branchName: 'main', commitSha: 'head-sha',
+      title: 'Head', query: 'head commit', createdAt: '2026-01-01T00:00:01.000Z',
+    };
+    const codeUser = {
+      nodeId: 'code-user', parentId: 'code-head', kind: 'CODE', branchName: 'main', commitSha: 'user-sha',
+      title: 'User', query: 'user commit', createdAt: '2026-01-01T00:00:02.000Z',
+    };
+    const learnBase = {
+      nodeId: 'learn-base', parentId: 'code-user', kind: 'ASK', title: 'Learn', query: 'q',
+      sections: [] as Array<{ heading: string; body: string }>,
+    };
+    const planMixDto = { parentNodeId: 'learn-base', sourceNodeIds: [] as string[], query: 'Build the thing', plan: true };
+
+    beforeEach(() => {
+      mockLlm.mixNodes.mockResolvedValue({ ...llmResult, title: 'Mix Result' });
+      mockDb.putNode.mockResolvedValue(undefined);
+      mockSessions.touchUpdatedAt.mockResolvedValue(undefined);
+      mockSessions.incrementNodeCount.mockResolvedValue(undefined);
+    });
+
+    it('forks from the tip of the main CODE chain, not the imported HEAD', async () => {
+      mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [codeRoot, codeHead, codeUser, learnBase] });
+      const result = await service.createMixNode(SUB, SESSION_ID, planMixDto);
+      expect(result.branchName).toBe('fork/mix-result');
+      expect(result.commitSha).toBe('user-sha');
+    });
+
+    it('slugifies the plan title and de-dupes against every branchName already in the session', async () => {
+      const existingPlan = {
+        nodeId: 'plan-existing', parentId: 'learn-base', kind: 'PLAN', branchName: 'fork/mix-result',
+        commitSha: 'x', title: 'Existing plan', query: 'q', sections: [],
+      };
+      mockSessions.getSession.mockResolvedValue({
+        ...fullSession,
+        nodes: [codeRoot, codeHead, codeUser, learnBase, existingPlan],
+      });
+      const result = await service.createMixNode(SUB, SESSION_ID, planMixDto);
+      expect(result.branchName).toBe('fork/mix-result-2');
+    });
+
+    it("falls back to the root CODE node's own commit when there is no further chain", async () => {
+      mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [codeRoot, learnBase] });
+      const result = await service.createMixNode(SUB, SESSION_ID, planMixDto);
+      expect(result.branchName).toBe('fork/mix-result');
+      expect(result.commitSha).toBe('root-sha');
+    });
+
+    it('omits branchName/commitSha when the session has no CODE root (legacy learn-only session)', async () => {
+      mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [parentNode] });
+      const result = await service.createMixNode(SUB, SESSION_ID, { ...planMixDto, parentNodeId: PARENT_NODE_ID });
+      expect(result.branchName).toBeUndefined();
+      expect(result.commitSha).toBeUndefined();
+    });
+
+    it('never sets branchName/commitSha on a plain MIX node (plan:false)', async () => {
+      mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [codeRoot, codeHead, codeUser, learnBase] });
+      const result = await service.createMixNode(SUB, SESSION_ID, { ...planMixDto, plan: false });
+      expect(result.kind).toBe('MIX');
+      expect(result.branchName).toBeUndefined();
+      expect(result.commitSha).toBeUndefined();
+    });
+  });
+
   describe('createBranchNode', () => {
     const codeParent = { ...parentNode, kind: 'CODE', commitSha: 'abcdef1234567890' };
     const dto = { parentNodeId: PARENT_NODE_ID, branchName: 'feature/retry-logic' };
@@ -643,6 +714,26 @@ describe('NodesService', () => {
       const ctxArg = mockAgent.generate.mock.calls[0][0];
       expect(ctxArg.branchName).toBe('main'); // no BRANCH ancestor, no project
       expect(ctxArg.planDoc).toContain('Do the thing');
+    });
+
+    it("resolves the PLAN node's own branchName (F1 fork point) when there is no BRANCH ancestor", async () => {
+      const planWithBranch = { ...planNode, branchName: 'fork/add-retry-logic', commitSha: 'plan-base-sha' };
+      mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [planWithBranch] });
+      await service.createCodeNodeStreaming(SUB, SESSION_ID, dto, jest.fn());
+      const ctxArg = mockAgent.generate.mock.calls[0][0];
+      expect(ctxArg.branchName).toBe('fork/add-retry-logic');
+    });
+
+    it('still prefers a BRANCH ancestor branchName over a PLAN branchName (BRANCH beats PLAN in the seam)', async () => {
+      const branchNode = {
+        nodeId: 'branch-1', parentId: 'plan-1', kind: 'BRANCH', branchName: 'feature/manual',
+        commitSha: 'branch-sha', title: 'branch', query: 'q',
+      };
+      const planWithBranch = { ...planNode, branchName: 'fork/should-not-win', commitSha: 'plan-base-sha' };
+      mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [planWithBranch, branchNode] });
+      await service.createCodeNodeStreaming(SUB, SESSION_ID, { ...dto, parentNodeId: 'branch-1' }, jest.fn());
+      const ctxArg = mockAgent.generate.mock.calls[0][0];
+      expect(ctxArg.branchName).toBe('feature/manual');
     });
 
     it('bills usage with the mock agent result token counts and CODE kind', async () => {

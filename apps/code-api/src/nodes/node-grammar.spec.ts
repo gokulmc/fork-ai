@@ -34,8 +34,8 @@ describe('node-grammar', () => {
     expect(ALLOWED_CHILD_KINDS.PLAN.sort()).toEqual(['ASK', 'CODE', 'DEEPER']);
   });
 
-  it('CODE allows CODE/BRANCH/DEEPER/ASK', () => {
-    expect(ALLOWED_CHILD_KINDS.CODE.sort()).toEqual(['ASK', 'BRANCH', 'CODE', 'DEEPER']);
+  it('CODE allows CODE/BRANCH/DEEPER/ASK/QUERY', () => {
+    expect(ALLOWED_CHILD_KINDS.CODE.sort()).toEqual(['ASK', 'BRANCH', 'CODE', 'DEEPER', 'QUERY']);
   });
 
   it('BRANCH allows only CODE', () => {

@@ -218,6 +218,23 @@ export class NodesService {
     const now = new Date().toISOString();
     const sections = llmResult.sections.map((s) => ({ id: ulid(), ...s }));
 
+    // A PLAN forks a new git branch off the tip of the main CODE chain — see
+    // planBranchFields below (F1). A legacy learn-only session (no CODE root at
+    // all) has no chain to fork from, so the fields are simply omitted.
+    let planBranchFields: Partial<Pick<NodeItem, 'branchName' | 'commitSha'>> = {};
+    if (dto.plan) {
+      const chainTip = this.findMainChainTip(session.nodes);
+      if (chainTip) {
+        const existingBranchNames = new Set(
+          session.nodes.filter((n) => n.branchName).map((n) => n.branchName as string),
+        );
+        planBranchFields = {
+          branchName: this.slugifyBranchName(llmResult.title, existingBranchNames),
+          commitSha: chainTip.commitSha,
+        };
+      }
+    }
+
     const node: NodeItem = {
       PK: `SESSION#${sessionId}`,
       SK: `NODE#${nodeId}`,
@@ -233,6 +250,7 @@ export class NodesService {
       fromText: dto.sourceNodeIds.join(','),
       createdAt: now,
       model,
+      ...planBranchFields,
     };
 
     await this.db.putNode(node);
@@ -243,6 +261,43 @@ export class NodesService {
     ]);
 
     return node;
+  }
+
+  // Walks the main branch's CODE chain (root → newest child on the same
+  // branchName, repeated) to its tip — "main's HEAD" for fork-point purposes,
+  // which may differ from the imported HEAD if the user has since Continued
+  // main. Returns null when the session has no CODE root at all (a legacy
+  // learn-only session), so the caller can omit branchName/commitSha entirely.
+  private findMainChainTip(nodes: NodeItem[]): { branchName: string; commitSha: string } | null {
+    const root = nodes.find((n) => n.kind === 'CODE' && n.parentId === null);
+    if (!root || !root.branchName || !root.commitSha) return null;
+
+    let tip = root;
+    for (;;) {
+      const children = nodes.filter(
+        (n) => n.kind === 'CODE' && n.parentId === tip.nodeId && n.branchName === root.branchName,
+      );
+      if (!children.length) break;
+      // A fork can only happen if the user Continued main more than once from
+      // the same commit — prefer the newest attempt as the true tip.
+      tip = children.reduce((a, b) => (a.createdAt > b.createdAt ? a : b));
+    }
+    return { branchName: tip.branchName!, commitSha: tip.commitSha ?? root.commitSha! };
+  }
+
+  // Slugifies an LLM-returned plan title into a `fork/<slug>` branch name,
+  // de-duped (suffix -2, -3…) against every branchName already in the session.
+  private slugifyBranchName(title: string, existing: Set<string>): string {
+    const slug = title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 60)
+      .replace(/-+$/g, '') || 'plan';
+
+    let branchName = `fork/${slug}`;
+    for (let n = 2; existing.has(branchName); n++) branchName = `fork/${slug}-${n}`;
+    return branchName;
   }
 
   async createBranchNode(sub: string, sessionId: string, dto: CreateBranchNodeDto): Promise<NodeItem> {
@@ -323,11 +378,12 @@ export class NodesService {
     }
     assertKindAllowed(parentNode.kind as NodeKind, 'CODE');
 
-    // Lane identity: the nearest BRANCH ancestor's branchName wins; otherwise the
-    // project's default branch; otherwise a bare 'main' (no project at all).
+    // Lane identity: the nearest BRANCH ancestor's branchName wins; otherwise a
+    // PLAN's own forked branchName (F1); otherwise the project's default
+    // branch; otherwise a bare 'main' (no project at all).
     const chain = findRailChain(nodeById, dto.parentNodeId);
     const project = session.projectId ? await this.db.getProject(sub, session.projectId) : null;
-    const branchName = chain.branchNode?.branchName ?? project?.repoRef.defaultBranch ?? 'main';
+    const branchName = chain.branchNode?.branchName ?? chain.planNode?.branchName ?? project?.repoRef.defaultBranch ?? 'main';
     const baseCommitSha = parentNode.commitSha ?? null;
 
     const ctx: AgentRunContext = {

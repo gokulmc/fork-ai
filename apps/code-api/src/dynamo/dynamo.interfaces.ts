@@ -19,6 +19,10 @@ export interface UserMetaItem {
   // Free-text user persona prepended to every LLM prompt. Absent until the user
   // first saves one — the feature is inert until then.
   persona?: string;
+  // GitHub OAuth (read-only usage + import — see github.service.ts). Absent
+  // until the user completes the OAuth callback.
+  githubAccessToken?: string;
+  githubLogin?: string;
 }
 
 export interface CreditEventItem {
@@ -141,7 +145,7 @@ export interface HighlightItem {
 }
 
 export interface RepoRef {
-  provider: 'github-mock';
+  provider: 'github-mock' | 'github';
   owner: string;
   repo: string;
   defaultBranch: string;

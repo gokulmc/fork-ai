@@ -8,9 +8,9 @@ export const ALLOWED_PLUGINS = ['mem-palace', 'graphify', 'playwright-testing'] 
 export type PluginName = (typeof ALLOWED_PLUGINS)[number];
 
 class RepoRefDto {
-  @ApiProperty({ enum: ['github-mock'], description: 'Repo provider — only github-mock exists so far' })
-  @IsIn(['github-mock'])
-  provider!: 'github-mock';
+  @ApiProperty({ enum: ['github-mock', 'github'], description: 'Repo provider — github-mock is a synthesized fixture, github is a real linked repo' })
+  @IsIn(['github-mock', 'github'])
+  provider!: 'github-mock' | 'github';
 
   @ApiProperty({ description: 'Repo owner/org' })
   @IsString()

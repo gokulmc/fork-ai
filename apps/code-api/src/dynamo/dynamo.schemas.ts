@@ -35,6 +35,8 @@ export const UserMetaSchema = new dynamoose.Schema({
   signupCountry: { type: String, required: false },
   signupCity: { type: String, required: false },
   persona: { type: String, required: false },
+  githubAccessToken: { type: String, required: false },
+  githubLogin: { type: String, required: false },
 });
 
 export const CreditEventSchema = new dynamoose.Schema({

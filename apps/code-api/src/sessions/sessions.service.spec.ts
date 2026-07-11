@@ -198,8 +198,8 @@ describe('SessionsService', () => {
       mockLlm.streamAnswerQuery.mockReturnValue(fakeStream());
     });
 
-    it('rejects a session that already has nodes, before any SSE write or persistence', async () => {
-      mockDb.queryNodes.mockResolvedValue([{ nodeId: 'n1' }]);
+    it('rejects a session that already has a learn-kind node, before any SSE write or persistence (D2)', async () => {
+      mockDb.queryNodes.mockResolvedValue([{ nodeId: 'n1', kind: 'QUERY' }]);
       const send = jest.fn();
 
       await expect(service.createRootNodeStreaming(SUB, SESSION_ID, { query: 'What is ML?' }, send)).rejects.toBeInstanceOf(BadRequestException);
@@ -226,8 +226,8 @@ describe('SessionsService', () => {
       expect(events[0].sessionId).toBe(SESSION_ID);
       expect(events[0].nodeId).toBeDefined();
 
-      // Never a full putSessionMeta replace — that would drop projectId (createEmpty
-      // wrote the row; ProjectsService patched projectId onto it).
+      // Never a full putSessionMeta replace — that would drop projectId (the row
+      // already existed; ProjectsService patched projectId onto it).
       expect(mockDb.putSessionMeta).not.toHaveBeenCalled();
       // Every meta write is a partial update, and none touches projectId.
       expect(mockDb.updateSessionMeta.mock.calls.length).toBeGreaterThanOrEqual(2); // up-front placeholder + done patch
@@ -247,6 +247,156 @@ describe('SessionsService', () => {
       const events: Array<{ type: string }> = [];
       await service.createRootNodeStreaming(SUB, SESSION_ID, { query: 'What is ML?' }, (d) => events.push(d as { type: string }));
       expect(events.map((e) => e.type)).toEqual(['init', 'meta', 'section', 'section', 'done']);
+    });
+  });
+
+  describe('createRootNodeStreaming — seeded project, first-question route (D2)', () => {
+    const codeRootNode = {
+      nodeId: 'code-root-1', parentId: null, kind: 'CODE', branchName: 'main', commitSha: 'abc123',
+      title: 'Initial commit', query: 'Initial commit', sections: [], createdAt: NOW,
+    };
+    const seededMeta = { ...sessionMeta, title: 'My Project', emoji: '', lede: '', rootNodeId: 'code-root-1', nodeCount: 1, projectId: 'proj-1' };
+
+    beforeEach(() => {
+      mockUsers.checkCredit.mockResolvedValue(undefined);
+      mockUsers.billUsage.mockResolvedValue(undefined);
+      mockDb.getSessionMeta.mockResolvedValue(seededMeta);
+      mockDb.queryNodes.mockResolvedValue([codeRootNode]);
+      mockDb.putNode.mockResolvedValue(undefined);
+      mockDb.updateSessionMeta.mockResolvedValue(undefined);
+      mockLlm.streamAnswerQuery.mockReturnValue(fakeStream());
+    });
+
+    it('parents the streamed QUERY node under the CODE root and never patches the session title', async () => {
+      const events: Array<{ type: string; sessionId?: string; nodeId?: string }> = [];
+      await service.createRootNodeStreaming(SUB, SESSION_ID, { query: 'What is ML?' }, (d) => events.push(d as never));
+
+      expect(events[0].type).toBe('init');
+      expect(mockDb.putNode.mock.calls[0][0].parentId).toBe('code-root-1');
+      expect(mockDb.putNode.mock.calls[0][0].kind).toBe('QUERY');
+
+      // Meta is patched (nodeCount/updatedAt) at init only — never title/emoji/lede,
+      // since the session title stays the project name, not the query.
+      expect(mockDb.updateSessionMeta.mock.calls).toHaveLength(1);
+      expect(mockDb.updateSessionMeta.mock.calls[0][2]).toEqual(
+        expect.objectContaining({ nodeCount: 2 }),
+      );
+      expect(mockDb.updateSessionMeta.mock.calls[0][2]).not.toHaveProperty('title');
+    });
+
+    it('falls back to the parentId===null node when rootNodeId is empty', async () => {
+      mockDb.getSessionMeta.mockResolvedValue({ ...seededMeta, rootNodeId: '' });
+      const events: Array<{ type: string; nodeId?: string }> = [];
+      await service.createRootNodeStreaming(SUB, SESSION_ID, { query: 'Q' }, (d) => events.push(d as never));
+      expect(mockDb.putNode.mock.calls[0][0].parentId).toBe('code-root-1');
+    });
+
+    it('rejects with 400 when the session already has a learn-kind node (route already used)', async () => {
+      mockDb.queryNodes.mockResolvedValue([
+        codeRootNode,
+        { nodeId: 'q1', parentId: 'code-root-1', kind: 'QUERY', title: 't', query: 'q', sections: [] },
+      ]);
+      const send = jest.fn();
+      await expect(service.createRootNodeStreaming(SUB, SESSION_ID, { query: 'Q' }, send)).rejects.toBeInstanceOf(BadRequestException);
+      expect(send).not.toHaveBeenCalled();
+      expect(mockDb.putNode).not.toHaveBeenCalled();
+      expect(mockDb.updateSessionMeta).not.toHaveBeenCalled();
+    });
+
+    it('still bills usage and streams the standard event vocabulary', async () => {
+      const events: Array<{ type: string; nodeId?: string }> = [];
+      await service.createRootNodeStreaming(SUB, SESSION_ID, { query: 'What is ML?' }, (d) => events.push(d as never));
+      expect(events.map((e) => e.type)).toEqual(['init', 'meta', 'section', 'section', 'done']);
+      expect(mockUsers.billUsage).toHaveBeenCalledWith(SUB, 100, 50, 'QUERY', SESSION_ID, events[0].nodeId, expect.any(String));
+    });
+  });
+
+  describe('createProjectSession', () => {
+    const TITLE = 'My Project';
+
+    beforeEach(() => {
+      mockDb.putNode.mockResolvedValue(undefined);
+      mockDb.putSessionMeta.mockResolvedValue(undefined);
+    });
+
+    it('seeds a synthesized single CODE root when there is no real commit (mock provider)', async () => {
+      const sessionId = await service.createProjectSession(SUB, TITLE, {
+        defaultBranch: 'main', first: null, head: null, imported: false,
+      });
+
+      expect(mockDb.putNode).toHaveBeenCalledTimes(1);
+      const [node] = mockDb.putNode.mock.calls[0];
+      expect(node.kind).toBe('CODE');
+      expect(node.parentId).toBeNull();
+      expect(node.branchName).toBe('main');
+      expect(node.title).toBe('Initial commit');
+      expect(node.commitMessage).toBe('Initial commit');
+      expect(node.commitSha).toMatch(/^[0-9a-f]{40}$/); // randomBytes(20).toString('hex')
+      expect(node.imported).toBeUndefined();
+      expect(node.agentStatus).toBeUndefined();
+
+      const [meta] = mockDb.putSessionMeta.mock.calls[0];
+      expect(meta.sessionId).toBe(sessionId);
+      expect(meta.rootNodeId).toBe(node.nodeId);
+      expect(meta.nodeCount).toBe(1);
+      expect(meta.title).toBe(TITLE);
+    });
+
+    it('seeds a single imported CODE root when head equals first (single-commit repo)', async () => {
+      await service.createProjectSession(SUB, TITLE, {
+        defaultBranch: 'main',
+        first: { sha: 'abc123', message: 'Initial commit from a real repo', date: '2026-01-01T00:00:00Z' },
+        head: { sha: 'abc123', message: 'Initial commit from a real repo', date: '2026-01-01T00:00:00Z' },
+        imported: true,
+      });
+
+      expect(mockDb.putNode).toHaveBeenCalledTimes(1);
+      const [node] = mockDb.putNode.mock.calls[0];
+      expect(node.commitSha).toBe('abc123');
+      expect(node.title).toBe('Initial commit from a real');
+      expect(node.imported).toBe(true);
+
+      const [meta] = mockDb.putSessionMeta.mock.calls[0];
+      expect(meta.nodeCount).toBe(1);
+    });
+
+    it('seeds a root + HEAD pair when the two commits differ (real history)', async () => {
+      await service.createProjectSession(SUB, TITLE, {
+        defaultBranch: 'main',
+        first: { sha: 'first-sha', message: 'Initial commit', date: '2026-01-01T00:00:00Z' },
+        head: { sha: 'head-sha', message: 'Add retry logic to the fetch client', date: '2026-02-01T00:00:00Z' },
+        imported: true,
+      });
+
+      expect(mockDb.putNode).toHaveBeenCalledTimes(2);
+      const [rootNode] = mockDb.putNode.mock.calls[0];
+      const [headNode] = mockDb.putNode.mock.calls[1];
+
+      expect(rootNode.parentId).toBeNull();
+      expect(rootNode.commitSha).toBe('first-sha');
+      expect(rootNode.imported).toBe(true);
+
+      expect(headNode.parentId).toBe(rootNode.nodeId);
+      expect(headNode.kind).toBe('CODE');
+      expect(headNode.branchName).toBe('main');
+      expect(headNode.commitSha).toBe('head-sha');
+      expect(headNode.title).toBe('Add retry logic to the');
+      expect(headNode.imported).toBe(true);
+
+      const [meta] = mockDb.putSessionMeta.mock.calls[0];
+      expect(meta.rootNodeId).toBe(rootNode.nodeId);
+      expect(meta.nodeCount).toBe(2);
+    });
+
+    it('an empty repo (first/head both null but imported:true) still synthesizes a single unimported root', async () => {
+      await service.createProjectSession(SUB, TITLE, {
+        defaultBranch: 'main', first: null, head: null, imported: true,
+      });
+
+      expect(mockDb.putNode).toHaveBeenCalledTimes(1);
+      const [node] = mockDb.putNode.mock.calls[0];
+      expect(node.imported).toBeUndefined();
+      expect(node.commitMessage).toBe('Initial commit');
     });
   });
 
