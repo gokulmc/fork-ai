@@ -9,7 +9,7 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 ### forkai-code: code-web landing page fetched a `/topics` endpoint that no longer exists on code-api
 - **Symptom:** Every SSR render of `apps/code-web`'s `/` route made a failing `fetch(`${API_BASE}/topics`)` call (404), silently swallowed by the existing try/catch fallback — no user-visible breakage, but a guaranteed-failing request on every page load.
 - **Cause:** `page.tsx` was still carrying `apps/web`'s research-topics fetch (`GET /topics`), an endpoint that was never implemented on `code-api` (this fork has no topic-suggestion feature) — leftover from the original scaffold-by-copy.
-- **Fix:** Removed `fetchTopics`/`FALLBACK_TOPICS` entirely; `page.tsx` now passes a small static list of code-flavored example prompts (`EXAMPLE_TOPICS`) as `initialTopics` — same prop signature, no network call. (commit: pending)
+- **Fix:** Removed `fetchTopics`/`FALLBACK_TOPICS` entirely; `page.tsx` now passes a small static list of code-flavored example prompts (`EXAMPLE_TOPICS`) as `initialTopics` — same prop signature, no network call. (commit: dc01e54)
 
 ### forkai-code: "Failed to create project" on every attempt — Dynamoose rejected the nested DTO instance
 - **Symptom:** In `apps/code-web`, creating a project always failed with the modal's generic "Failed to create project — please try again", regardless of the selected mock repo. code-api logged 500s: `TypeMismatch: Expected repoRef to be of type object, instead found type RepoRefDto`.
