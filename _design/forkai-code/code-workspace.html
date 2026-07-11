@@ -1,0 +1,153 @@
+<!-- @dsCard group="Screens" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>forkai-code — Code workspace</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body { padding: 0; min-height: 100vh; }
+
+  .theme-toggle {
+    position: fixed; top: 20px; right: 24px; z-index: 100;
+    font-family: var(--sans); font-size: 12px; font-weight: 500;
+    padding: 7px 14px; border-radius: var(--radius);
+    border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink-2);
+    cursor: pointer; box-shadow: var(--shadow-1);
+  }
+  .theme-toggle:hover { background: var(--hover); color: var(--ink); }
+
+  .workspace-inner { max-width: 760px; margin: 0 auto; padding: 64px 40px 100px; }
+
+  .ds-brand { display: inline-flex; align-items: center; gap: 8px; font-family: var(--sans); font-weight: 600; font-size: 13px; letter-spacing: .02em; color: var(--ink-2); margin-bottom: 32px; }
+  .ds-brand .mark { width: 15px; height: 15px; border-radius: 4px; background: var(--ink); display: inline-block; }
+
+  /* ── header: kind pill + commit pill + status ──────────── */
+  .ws-meta { display: flex; align-items: center; gap: 8px; font-family: var(--sans); font-size: 12px; color: var(--ink-3); margin-bottom: 22px; flex-wrap: wrap; }
+  .pill-kind { border: 1px solid var(--line); border-radius: 4px; padding: 2px 8px; background: var(--paper); display: inline-flex; align-items: center; gap: 5px; font-weight: 600; }
+  .pill-kind--code { border-color: color-mix(in oklab, var(--kind-code) 45%, var(--line)); color: var(--kind-code); }
+  .commit-pill { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 11.5px; font-weight: 500; padding: 3px 10px; border-radius: 999px; background: var(--commit-pill-bg); color: var(--commit-pill-ink); border: 1px solid var(--commit-pill-border); }
+  .agent-status { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; margin-left: auto; }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--diff-add); flex-shrink: 0; }
+
+  /* ── instruction — serif, like a query, quoted as a directive ── */
+  .ws-instruction { font-family: var(--serif); font-size: clamp(21px, 2.6vw, 26px); line-height: 1.4; color: var(--ink); margin: 0 0 30px; padding-left: 18px; border-left: 3px solid var(--kind-code); letter-spacing: -0.01em; }
+
+  .ws-block-label { font-family: var(--sans); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 12px; }
+
+  /* ── agent log ──────────────────────────────────────────── */
+  .term-panel { background: var(--term-bg); border: 1px solid var(--term-line); border-radius: var(--radius); padding: 16px 18px; display: flex; flex-direction: column; gap: 9px; max-height: 480px; overflow-y: auto; margin-bottom: 36px; }
+  .log-line { font-family: var(--mono); font-size: 12.5px; line-height: 1.55; color: var(--term-ink); }
+  .log-line--text { font-family: var(--sans); font-size: 13px; }
+  .log-line--tool_call { color: var(--term-ink-dim); }
+  .log-line--tool_result { color: var(--term-ink-dim); padding-left: 18px; opacity: .9; }
+  .log-line--terminal { background: rgba(0,0,0,.055); border: 1px solid var(--term-line); border-radius: 4px; padding: 8px 10px; white-space: pre-wrap; }
+  [data-theme="dark"] .log-line--terminal { background: rgba(255,255,255,.045); }
+  .log-line--file_edit { display: flex; align-items: center; gap: 8px; }
+  .file-edit-chip { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 10.5px; font-weight: 600; padding: 1px 7px; border-radius: 4px; background: var(--panel); border: 1px solid var(--line); flex-shrink: 0; }
+  [data-theme="dark"] .file-edit-chip { background: var(--paper); }
+  .diff-add-text { color: var(--diff-add); font-family: var(--mono); font-weight: 600; }
+  .diff-del-text { color: var(--diff-del); font-family: var(--mono); font-weight: 600; }
+
+  /* ── diff summary ───────────────────────────────────────── */
+  .diff-summary { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--paper); margin-bottom: 32px; }
+  .diff-summary-head { font-family: var(--sans); font-size: 13px; font-weight: 600; color: var(--ink); padding: 11px 14px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  .diff-file-list { list-style: none; margin: 0; padding: 0; }
+  .diff-file-row { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 12.5px; }
+  .diff-file-row:last-child { border-bottom: 0; }
+  .diff-status { width: 17px; height: 17px; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; flex-shrink: 0; }
+  .diff-status--a { background: var(--diff-add-bg); color: var(--diff-add); }
+  .diff-status--m { background: var(--panel); color: var(--ink-3); }
+  .diff-file-path { flex: 1; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .diff-file-counts { flex-shrink: 0; display: flex; gap: 7px; font-size: 11.5px; }
+
+  /* ── footer action ──────────────────────────────────────── */
+  .ws-footer { display: flex; align-items: center; gap: 10px; }
+  .gh-btn { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 15px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 12.5px; font-weight: 500; cursor: pointer; }
+  .gh-btn:hover { background: var(--hover); }
+  .mock-tag { font-family: var(--sans); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); border: 1px solid var(--line-strong); border-radius: 999px; padding: 2px 7px; }
+</style>
+</head>
+<body>
+  <button class="theme-toggle" onclick="const h=document.documentElement; h.setAttribute('data-theme', (h.getAttribute('data-theme')||'light')==='light'?'dark':'light');">Toggle theme</button>
+
+  <div class="workspace-inner">
+    <div class="ds-brand"><span class="mark"></span>fork ai code</div>
+
+    <div class="ws-meta">
+      <span class="pill-kind pill-kind--code">🧩 Code</span>
+      <span class="commit-pill">⎇ main · f0e91aa</span>
+      <span class="agent-status"><span class="status-dot"></span>done</span>
+    </div>
+
+    <p class="ws-instruction">Wire the limiter to a Redis-backed token-bucket store so limits persist across API instances.</p>
+
+    <div class="ws-block-label">Agent log</div>
+    <div class="term-panel">
+      <div class="log-line log-line--text">Wiring the rate limiter to a Redis-backed token-bucket store so limits persist across API instances.</div>
+      <div class="log-line log-line--tool_call">→ Read src/middleware/rate-limit.middleware.ts</div>
+      <div class="log-line log-line--tool_result">42 lines · in-memory Map keyed by API key, no persistence</div>
+      <div class="log-line log-line--tool_call">→ Read package.json</div>
+      <div class="log-line log-line--tool_result">no redis client present</div>
+      <div class="log-line log-line--terminal">$ npm install ioredis
+added 1 package in 1.8s</div>
+      <div class="log-line log-line--text">Adding a small Redis client wrapper and swapping the in-memory Map for token-bucket keys.</div>
+      <div class="log-line log-line--tool_call">→ Read src/lib/env.ts</div>
+      <div class="log-line log-line--tool_result">REDIS_URL not yet defined</div>
+      <div class="log-line log-line--file_edit"><span class="file-edit-chip"><span class="diff-add-text">+6</span> <span class="diff-del-text">−0</span></span>src/lib/env.ts</div>
+      <div class="log-line log-line--file_edit"><span class="file-edit-chip"><span class="diff-add-text">+40</span> <span class="diff-del-text">−0</span></span>src/lib/redis.ts</div>
+      <div class="log-line log-line--tool_call">→ Edit src/middleware/rate-limit.middleware.ts</div>
+      <div class="log-line log-line--file_edit"><span class="file-edit-chip"><span class="diff-add-text">+47</span> <span class="diff-del-text">−15</span></span>src/middleware/rate-limit.middleware.ts</div>
+      <div class="log-line log-line--text">Replacing the Map lookup with a Redis EVAL script so the check-and-decrement stays atomic.</div>
+      <div class="log-line log-line--tool_call">→ Write src/middleware/rate-limit.lua</div>
+      <div class="log-line log-line--file_edit"><span class="file-edit-chip"><span class="diff-add-text">+22</span> <span class="diff-del-text">−0</span></span>src/middleware/rate-limit.lua</div>
+      <div class="log-line log-line--terminal">$ npm test -- rate-limit
+ ✗ persists the bucket across a simulated restart (expected 429, got 200)
+ 1 failing</div>
+      <div class="log-line log-line--tool_call">→ Read src/middleware/rate-limit.middleware.ts</div>
+      <div class="log-line log-line--text">The TTL on the Redis key was shorter than the rate-limit window — bumping it to match.</div>
+      <div class="log-line log-line--file_edit"><span class="file-edit-chip"><span class="diff-add-text">+7</span> <span class="diff-del-text">−4</span></span>src/middleware/rate-limit.middleware.ts</div>
+      <div class="log-line log-line--terminal">$ npm test -- rate-limit
+ ✓ blocks requests over the limit
+ ✓ resets after the window elapses
+ ✓ persists the bucket across a simulated restart
+ 3 passing</div>
+      <div class="log-line log-line--tool_call">→ Bash git add -A && git commit -m "Wire Redis token-bucket store"</div>
+      <div class="log-line log-line--tool_result">[main f0e91aa] Wire Redis token-bucket store · 4 files changed, 122 insertions(+), 19 deletions(-)</div>
+    </div>
+
+    <div class="ws-block-label">Diff summary</div>
+    <div class="diff-summary">
+      <div class="diff-summary-head">4 files changed, <span class="diff-add-text">+122</span> <span class="diff-del-text">−19</span></div>
+      <ul class="diff-file-list">
+        <li class="diff-file-row">
+          <span class="diff-status diff-status--m">M</span>
+          <span class="diff-file-path">apps/api/src/middleware/rate-limit.middleware.ts</span>
+          <span class="diff-file-counts"><span class="diff-add-text">+54</span> <span class="diff-del-text">−19</span></span>
+        </li>
+        <li class="diff-file-row">
+          <span class="diff-status diff-status--a">A</span>
+          <span class="diff-file-path">apps/api/src/lib/redis.ts</span>
+          <span class="diff-file-counts"><span class="diff-add-text">+40</span></span>
+        </li>
+        <li class="diff-file-row">
+          <span class="diff-status diff-status--a">A</span>
+          <span class="diff-file-path">apps/api/src/middleware/rate-limit.lua</span>
+          <span class="diff-file-counts"><span class="diff-add-text">+22</span></span>
+        </li>
+        <li class="diff-file-row">
+          <span class="diff-status diff-status--m">M</span>
+          <span class="diff-file-path">apps/api/src/lib/env.ts</span>
+          <span class="diff-file-counts"><span class="diff-add-text">+6</span></span>
+        </li>
+      </ul>
+    </div>
+
+    <div class="ws-footer">
+      <button class="gh-btn">View on GitHub ↗</button>
+      <span class="mock-tag">mock</span>
+    </div>
+  </div>
+</body>
+</html>

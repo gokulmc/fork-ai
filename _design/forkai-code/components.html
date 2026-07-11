@@ -1,0 +1,264 @@
+<!-- @dsCard group="Components" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>forkai-code — Components</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body { padding: 56px 64px 120px; min-height: 100vh; }
+
+  .theme-toggle {
+    position: fixed; top: 20px; right: 24px; z-index: 100;
+    font-family: var(--sans); font-size: 12px; font-weight: 500;
+    padding: 7px 14px; border-radius: var(--radius);
+    border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink-2);
+    cursor: pointer; box-shadow: var(--shadow-1);
+    transition: background .12s, color .12s;
+  }
+  .theme-toggle:hover { background: var(--hover); color: var(--ink); }
+
+  .ds-brand { display: inline-flex; align-items: center; gap: 8px; font-family: var(--sans); font-weight: 600; font-size: 13px; letter-spacing: .02em; color: var(--ink-2); margin-bottom: 28px; }
+  .ds-brand .mark { width: 15px; height: 15px; border-radius: 4px; background: var(--ink); display: inline-block; }
+  .ds-page-title { font-family: var(--serif); font-weight: 400; font-size: 34px; letter-spacing: -0.02em; margin: 0 0 8px; color: var(--ink); }
+  .ds-page-sub { font-family: var(--sans); font-size: 13px; color: var(--ink-3); margin: 0 0 48px; max-width: 640px; line-height: 1.55; }
+  .ds-section { margin-bottom: 64px; }
+  .ds-section-label { font-family: var(--sans); font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 18px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+  .ds-section-note { font-family: var(--sans); font-size: 12px; color: var(--ink-3); margin: -10px 0 18px; }
+  .ds-row { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+  .ds-label-sm { font-family: var(--sans); font-size: 10.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; }
+
+  /* ── Node cards ─────────────────────────────────────────── */
+  .node-card { width: 236px; background: var(--paper); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); box-shadow: var(--shadow-1); padding: 11px 14px; font-family: var(--sans); }
+  .node-card--learn { background: #fafafa; }
+  [data-theme="dark"] .node-card--learn { background: #1c1c1c; }
+  .node-card--plan { border-color: color-mix(in oklab, var(--kind-plan) 40%, var(--line-strong)); }
+  .node-card--code { border-color: color-mix(in oklab, var(--kind-code) 40%, var(--line-strong)); }
+  .node-card--branch { border-color: color-mix(in oklab, var(--kind-branch) 40%, var(--line-strong)); }
+  .node-card-top { margin-bottom: 8px; }
+  .node-card-main { display: flex; align-items: center; gap: 10px; }
+  .node-card-emoji { font-size: 18px; line-height: 1; flex-shrink: 0; font-family: "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui,sans-serif; }
+  .node-card-text { min-width: 0; }
+  .node-card-kicker { font-size: 9px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); line-height: 1; }
+  .node-card--plan .node-card-kicker { color: var(--kind-plan); }
+  .node-card--code .node-card-kicker { color: var(--kind-code); }
+  .node-card--branch .node-card-kicker { color: var(--kind-branch); }
+  .node-card-label { font-size: 12.5px; font-weight: 500; color: var(--ink); line-height: 1.28; margin-top: 3px; }
+
+  .commit-pill { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 10.5px; font-weight: 500; padding: 3px 9px; border-radius: 999px; background: var(--commit-pill-bg); color: var(--commit-pill-ink); border: 1px solid var(--commit-pill-border); cursor: pointer; transition: background .12s, color .12s, border-color .12s; }
+  .commit-pill:hover, .commit-pill--hover { background: var(--hover-strong); color: var(--ink); border-color: var(--line-strong); }
+  .commit-pill--open { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  [data-theme="dark"] .commit-pill--open { background: var(--ink); color: var(--bg); }
+
+  /* ── Branch popup ───────────────────────────────────────── */
+  .branch-popup { position: relative; width: 268px; background: var(--paper); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); box-shadow: var(--shadow-2); padding: 16px; margin-top: 12px; }
+  .branch-popup::before { content: ""; position: absolute; top: -7px; left: 28px; width: 12px; height: 12px; background: var(--paper); border-left: 1px solid var(--line-strong); border-top: 1px solid var(--line-strong); transform: rotate(45deg); }
+  .branch-popup-header { font-family: var(--sans); font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 12px; }
+  .branch-popup-header code { font-family: var(--mono); font-size: 12px; font-weight: 500; background: var(--commit-pill-bg); color: var(--commit-pill-ink); padding: 1px 6px; border-radius: 4px; }
+  .branch-popup-input { width: 100%; height: 32px; padding: 0 10px; margin-bottom: 10px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--panel); color: var(--ink); font-family: var(--mono); font-size: 12.5px; outline: none; }
+  .branch-popup-input:focus { border-color: var(--ink-3); background: var(--paper); }
+  .branch-popup-btn { width: 100%; height: 32px; border: 1px solid var(--ink); border-radius: var(--radius); background: var(--ink); color: var(--bg); font-family: var(--sans); font-size: 12.5px; font-weight: 600; cursor: pointer; transition: opacity .15s; }
+  .branch-popup-btn:hover { opacity: .85; }
+  .branch-popup-hint { font-family: var(--sans); font-size: 11px; color: var(--ink-3); margin: 9px 0 0; line-height: 1.4; }
+
+  /* ── Mixer popup ────────────────────────────────────────── */
+  .mixer-demo-shell { background: var(--sidebar, var(--panel)); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 28px; display: flex; justify-content: center; }
+  .mixer-demo { display: flex; flex-direction: column; gap: 8px; width: min(440px, 100%); }
+  .mixer-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow-1); }
+  .mixer-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px 3px 10px; background: var(--hover); border: 1px solid var(--line); border-radius: 99px; font-family: var(--sans); font-size: 12px; color: var(--ink); max-width: 200px; }
+  .mixer-chip-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mixer-chip-remove { flex-shrink: 0; width: 16px; height: 16px; border-radius: 50%; border: none; background: transparent; color: var(--ink-3); cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; font-size: 12px; }
+  .mixer-plan-row { display: flex; align-items: center; gap: 9px; padding: 9px 12px; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow-1); font-family: var(--sans); font-size: 12.5px; color: var(--ink-2); cursor: pointer; user-select: none; }
+  .mixer-plan-row input[type="checkbox"] { accent-color: var(--kind-plan); width: 14px; height: 14px; cursor: pointer; }
+  .mixer-plan-row span { color: var(--ink); font-weight: 500; }
+  .mixer-question-row { display: flex; gap: 6px; padding: 6px 6px 6px 12px; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow-1); align-items: center; }
+  .mixer-question-input { flex: 1; min-width: 0; background: transparent; border: none; outline: none; font-family: var(--sans); font-size: 13px; color: var(--ink); padding: 4px 0; }
+  .mixer-spawn-btn { flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 12px; font-family: var(--sans); font-size: 12px; font-weight: 600; background: var(--ink); color: var(--bg); border: 1px solid var(--ink); border-radius: 6px; cursor: pointer; }
+
+  /* ── Diff summary ───────────────────────────────────────── */
+  .diff-summary { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--paper); max-width: 620px; }
+  .diff-summary-head { font-family: var(--sans); font-size: 13px; font-weight: 600; color: var(--ink); padding: 11px 14px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  .diff-add-text { color: var(--diff-add); font-family: var(--mono); font-weight: 600; }
+  .diff-del-text { color: var(--diff-del); font-family: var(--mono); font-weight: 600; }
+  .diff-file-list { list-style: none; margin: 0; padding: 0; }
+  .diff-file-row { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 12.5px; }
+  .diff-file-row:last-child { border-bottom: 0; }
+  .diff-status { width: 17px; height: 17px; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; flex-shrink: 0; }
+  .diff-status--a { background: var(--diff-add-bg); color: var(--diff-add); }
+  .diff-status--d { background: var(--diff-del-bg); color: var(--diff-del); }
+  .diff-status--m { background: var(--panel); color: var(--ink-3); }
+  .diff-file-path { flex: 1; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .diff-file-counts { flex-shrink: 0; display: flex; gap: 7px; font-size: 11.5px; }
+
+  /* ── Agent log lines ────────────────────────────────────── */
+  .term-panel { background: var(--term-bg); border: 1px solid var(--term-line); border-radius: var(--radius); padding: 14px 16px; display: flex; flex-direction: column; gap: 9px; max-width: 680px; }
+  .log-line { font-family: var(--mono); font-size: 12.5px; line-height: 1.55; color: var(--term-ink); }
+  .log-line--text { font-family: var(--sans); font-size: 13px; }
+  .log-line--tool_call { color: var(--term-ink-dim); }
+  .log-line--tool_result { color: var(--term-ink-dim); padding-left: 18px; opacity: .9; }
+  .log-line--terminal { background: rgba(0,0,0,.055); border: 1px solid var(--term-line); border-radius: 4px; padding: 8px 10px; white-space: pre-wrap; }
+  [data-theme="dark"] .log-line--terminal { background: rgba(255,255,255,.045); }
+  .log-line--file_edit { display: flex; align-items: center; gap: 8px; }
+  .file-edit-chip { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 10.5px; font-weight: 600; padding: 1px 7px; border-radius: 4px; background: var(--panel); border: 1px solid var(--line); flex-shrink: 0; }
+  [data-theme="dark"] .file-edit-chip { background: var(--paper); }
+  .log-line-caption { font-family: var(--sans); font-size: 10.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 5px; }
+</style>
+</head>
+<body>
+  <button class="theme-toggle" onclick="const h=document.documentElement; h.setAttribute('data-theme', (h.getAttribute('data-theme')||'light')==='light'?'dark':'light');">Toggle theme</button>
+
+  <div class="ds-brand"><span class="mark"></span>fork ai code</div>
+  <h1 class="ds-page-title">Components</h1>
+  <p class="ds-page-sub">Node cards, the commit pill, the branch-fork popup, the mixer's new Plan checkbox, the diff summary, and the five agent-log line variants.</p>
+
+  <div class="ds-section">
+    <div class="ds-section-label">Node cards</div>
+    <div class="ds-row">
+      <div>
+        <div class="ds-label-sm">Learn</div>
+        <div class="node-card node-card--learn">
+          <div class="node-card-main">
+            <span class="node-card-emoji">📎</span>
+            <div class="node-card-text">
+              <div class="node-card-kicker">Learn</div>
+              <div class="node-card-label">Token bucket vs sliding window</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="ds-label-sm">Plan</div>
+        <div class="node-card node-card--plan">
+          <div class="node-card-main">
+            <span class="node-card-emoji">🗂</span>
+            <div class="node-card-text">
+              <div class="node-card-kicker">Plan</div>
+              <div class="node-card-label">Implementation plan</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="ds-label-sm">Code</div>
+        <div class="node-card node-card--code">
+          <div class="node-card-top"><span class="commit-pill">⎇ main · f0e91aa</span></div>
+          <div class="node-card-main">
+            <span class="node-card-emoji">🧩</span>
+            <div class="node-card-text">
+              <div class="node-card-kicker">Code</div>
+              <div class="node-card-label">Wire Redis token-bucket store</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="ds-label-sm">Branch</div>
+        <div class="node-card node-card--branch">
+          <div class="node-card-top"><span class="commit-pill">⎇ feature/sliding-window · d41f7b2</span></div>
+          <div class="node-card-main">
+            <span class="node-card-emoji">⑂</span>
+            <div class="node-card-text">
+              <div class="node-card-kicker">Branch</div>
+              <div class="node-card-label">Fork: feature/sliding-window</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ds-section">
+    <div class="ds-section-label">Commit pill — states</div>
+    <div class="ds-row" style="align-items: center;">
+      <div><div class="ds-label-sm">Default</div><span class="commit-pill">⎇ main · a1b2c3d</span></div>
+      <div><div class="ds-label-sm">Hover</div><span class="commit-pill commit-pill--hover">⎇ main · a1b2c3d</span></div>
+      <div><div class="ds-label-sm">Open</div><span class="commit-pill commit-pill--open">⎇ main · a1b2c3d</span></div>
+    </div>
+  </div>
+
+  <div class="ds-section">
+    <div class="ds-section-label">Branch popup</div>
+    <p class="ds-section-note">Opens anchored below a code node's commit pill.</p>
+    <span class="commit-pill commit-pill--open">⎇ main · a1b2c3d</span>
+    <div class="branch-popup">
+      <div class="branch-popup-header">Fork from <code>a1b2c3d</code></div>
+      <input class="branch-popup-input" type="text" value="feature/sliding-window" />
+      <button class="branch-popup-btn">Fork branch</button>
+      <p class="branch-popup-hint">Creates a new branch at this commit and starts a new lane on the map.</p>
+    </div>
+  </div>
+
+  <div class="ds-section">
+    <div class="ds-section-label">Mixer — with Plan checkbox</div>
+    <p class="ds-section-note">When checked, the spawn button relabels to "Plan &amp; Spawn" and the run synthesizes an implementation plan before returning.</p>
+    <div class="mixer-demo-shell">
+      <div class="mixer-demo">
+        <div class="mixer-chips">
+          <span class="mixer-chip"><span class="mixer-chip-label">Add rate limiting to the API</span><button class="mixer-chip-remove">×</button></span>
+          <span class="mixer-chip"><span class="mixer-chip-label">Token bucket vs sliding window</span><button class="mixer-chip-remove">×</button></span>
+        </div>
+        <label class="mixer-plan-row">
+          <input type="checkbox" checked />
+          <span>Create implementation plan</span>
+        </label>
+        <div class="mixer-question-row">
+          <input class="mixer-question-input" placeholder="Ask a question about these nodes…" value="How should we structure the rollout?" />
+          <button class="mixer-spawn-btn">Plan &amp; Spawn</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ds-section">
+    <div class="ds-section-label">Diff summary</div>
+    <div class="diff-summary">
+      <div class="diff-summary-head">4 files changed, <span class="diff-add-text">+122</span> <span class="diff-del-text">−19</span></div>
+      <ul class="diff-file-list">
+        <li class="diff-file-row">
+          <span class="diff-status diff-status--m">M</span>
+          <span class="diff-file-path">apps/api/src/middleware/rate-limit.middleware.ts</span>
+          <span class="diff-file-counts"><span class="diff-add-text">+54</span> <span class="diff-del-text">−19</span></span>
+        </li>
+        <li class="diff-file-row">
+          <span class="diff-status diff-status--a">A</span>
+          <span class="diff-file-path">apps/api/src/lib/redis.ts</span>
+          <span class="diff-file-counts"><span class="diff-add-text">+40</span></span>
+        </li>
+        <li class="diff-file-row">
+          <span class="diff-status diff-status--a">A</span>
+          <span class="diff-file-path">apps/api/src/middleware/rate-limit.lua</span>
+          <span class="diff-file-counts"><span class="diff-add-text">+22</span></span>
+        </li>
+        <li class="diff-file-row">
+          <span class="diff-status diff-status--m">M</span>
+          <span class="diff-file-path">apps/api/src/lib/env.ts</span>
+          <span class="diff-file-counts"><span class="diff-add-text">+6</span></span>
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="ds-section">
+    <div class="ds-section-label">Agent log — line variants</div>
+    <p class="ds-section-note">text (prose) · tool_call (mono, dim) · tool_result (mono, dimmer, indented) · terminal (mono block) · file_edit (mono + diff chip)</p>
+    <div class="term-panel">
+      <div class="log-line log-line--text">Adding a token-bucket limiter so <code style="font-family: var(--mono);">/api/*</code> requests are capped per API key.</div>
+      <div class="log-line log-line--tool_call">→ Read src/api/routes.ts</div>
+      <div class="log-line log-line--tool_result">150 lines · 6 route handlers, no existing rate-limit middleware</div>
+      <div class="log-line log-line--tool_call">→ Read src/middleware/</div>
+      <div class="log-line log-line--tool_result">empty directory</div>
+      <div class="log-line log-line--file_edit"><span class="file-edit-chip"><span class="diff-add-text">+42</span> <span class="diff-del-text">−0</span></span>src/middleware/rate-limit.middleware.ts</div>
+      <div class="log-line log-line--text">Wiring the limiter into the router and adding a Redis-backed token store.</div>
+      <div class="log-line log-line--terminal">$ npm test -- rate-limit
+ ✗ blocks requests over the limit (expected 429, got 200)
+ 1 failing</div>
+      <div class="log-line log-line--file_edit"><span class="file-edit-chip"><span class="diff-add-text">+8</span> <span class="diff-del-text">−3</span></span>src/middleware/rate-limit.middleware.ts</div>
+      <div class="log-line log-line--terminal">$ npm test -- rate-limit
+ ✓ blocks requests over the limit
+ ✓ resets after the window elapses
+ 2 passing</div>
+    </div>
+  </div>
+</body>
+</html>

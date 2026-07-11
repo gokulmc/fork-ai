@@ -7,9 +7,12 @@
   ],
   "scripts": {
     "prepare": "git config core.hooksPath .githooks || true",
-    "dev": "nx run-many --target=dev --parallel",
+    "dev": "nx run-many --target=dev --parallel --projects=@fork-ai/api,@fork-ai/web",
     "dev:web": "nx run @fork-ai/web:dev",
     "dev:api": "nx run @fork-ai/api:dev",
+    "dev:code": "nx run-many --target=dev --parallel --projects=@fork-ai/code-api,@fork-ai/code-web",
+    "dev:code-web": "nx run @fork-ai/code-web:dev",
+    "dev:code-api": "nx run @fork-ai/code-api:dev",
     "build": "nx run-many --target=build",
     "test": "nx run-many --target=test",
     "test:e2e": "playwright test -c e2e",

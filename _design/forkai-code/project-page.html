@@ -1,0 +1,190 @@
+<!-- @dsCard group="Screens" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>forkai-code — Projects</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  html, body { height: 100%; }
+  body { overflow: hidden; }
+
+  .theme-toggle {
+    position: fixed; top: 20px; right: 24px; z-index: 100;
+    font-family: var(--sans); font-size: 12px; font-weight: 500;
+    padding: 7px 14px; border-radius: var(--radius);
+    border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink-2);
+    cursor: pointer; box-shadow: var(--shadow-1);
+  }
+  .theme-toggle:hover { background: var(--hover); color: var(--ink); }
+
+  .topbar { display: flex; align-items: center; justify-content: space-between; padding: 16px 32px; border-bottom: 1px solid var(--line); background: var(--bg); }
+  .brand { display: inline-flex; align-items: center; gap: 9px; font-family: var(--sans); font-weight: 600; font-size: 14px; color: var(--ink); letter-spacing: -0.01em; }
+  .brand .mark { width: 18px; height: 18px; border-radius: 5px; background: var(--ink); display: inline-block; }
+  .topbar-actions { display: flex; align-items: center; gap: 10px; }
+  .btn-primary { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 16px; background: var(--ink); color: var(--bg); border: 1px solid var(--ink); border-radius: var(--radius); font-family: var(--sans); font-size: 13px; font-weight: 600; cursor: pointer; }
+  .btn-primary:hover { opacity: .85; }
+  .account-dot { width: 30px; height: 30px; border-radius: 50%; background: var(--panel); border: 1px solid var(--line); display: inline-flex; align-items: center; justify-content: center; font-family: var(--sans); font-size: 12px; font-weight: 600; color: var(--ink-2); }
+
+  .page-body { padding: 44px 32px 40px; max-width: 980px; margin: 0 auto; }
+  .page-title { font-family: var(--serif); font-weight: 400; font-size: 32px; letter-spacing: -0.02em; margin: 0 0 6px; color: var(--ink); }
+  .page-sub { font-family: var(--sans); font-size: 13px; color: var(--ink-3); margin: 0 0 32px; }
+
+  .project-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  .project-card { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 18px 20px; cursor: pointer; transition: border-color .12s, transform .12s, box-shadow .12s; }
+  .project-card:hover { border-color: var(--line-strong); transform: translateY(-1px); box-shadow: var(--shadow-1); }
+  .project-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .project-card-name { font-family: var(--sans); font-size: 15px; font-weight: 600; color: var(--ink); }
+  .project-card-branches { font-family: var(--sans); font-size: 10.5px; font-weight: 600; color: var(--ink-3); background: var(--panel); border-radius: 999px; padding: 2px 8px; flex-shrink: 0; }
+  .project-card-repo { font-family: var(--mono); font-size: 12px; color: var(--ink-2); margin-top: 7px; }
+  .project-card-meta { font-family: var(--sans); font-size: 11.5px; color: var(--ink-3); margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+
+  /* ── New project modal ─────────────────────────────────── */
+  .modal-overlay { position: fixed; inset: 0; z-index: 200; background: rgba(20,18,15,.35); backdrop-filter: blur(2px); display: flex; align-items: center; justify-content: center; }
+  [data-theme="dark"] .modal-overlay { background: rgba(0,0,0,.55); }
+  .modal { width: 460px; max-width: 92vw; max-height: 84vh; background: var(--paper); border-radius: var(--radius-lg); box-shadow: var(--shadow-3); display: flex; flex-direction: column; overflow: hidden; }
+  .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+  .modal-title { font-family: var(--sans); font-size: 14px; font-weight: 600; color: var(--ink); }
+  .modal-close { background: none; border: none; cursor: pointer; font-size: 15px; color: var(--ink-2); padding: 3px 7px; border-radius: 4px; }
+  .modal-close:hover { background: var(--hover); }
+  .modal-body { padding: 18px 20px 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
+  .field-label { font-family: var(--sans); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; }
+  .field-input { width: 100%; height: 36px; padding: 0 11px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--panel); color: var(--ink); font-family: var(--sans); font-size: 13.5px; outline: none; }
+  .field-input:focus { border-color: var(--ink-3); background: var(--paper); }
+
+  .repo-list { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; max-height: 168px; overflow-y: auto; }
+  .repo-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .repo-row:last-child { border-bottom: 0; }
+  .repo-row:hover { background: var(--hover); }
+  .repo-row.selected { background: var(--accent-soft); }
+  .repo-name { font-family: var(--mono); font-size: 12.5px; color: var(--ink); flex: 1; }
+  .mock-tag { font-family: var(--sans); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); border: 1px solid var(--line-strong); border-radius: 999px; padding: 2px 7px; flex-shrink: 0; }
+
+  .plugin-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .plugin-row:last-child { border-bottom: 0; padding-bottom: 0; }
+  .plugin-name { font-family: var(--sans); font-size: 13px; font-weight: 600; color: var(--ink); }
+  .plugin-desc { font-family: var(--sans); font-size: 11.5px; color: var(--ink-3); margin-top: 3px; max-width: 320px; line-height: 1.4; }
+  .switch { position: relative; width: 34px; height: 19px; border-radius: 999px; background: var(--line-strong); flex-shrink: 0; cursor: pointer; margin-top: 2px; }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: var(--paper); box-shadow: var(--shadow-1); transition: transform .15s; }
+  .switch.on { background: var(--ink); }
+  .switch.on::after { transform: translateX(15px); background: var(--bg); }
+
+  .modal-foot { padding: 14px 20px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; }
+</style>
+</head>
+<body>
+  <button class="theme-toggle" onclick="const h=document.documentElement; h.setAttribute('data-theme', (h.getAttribute('data-theme')||'light')==='light'?'dark':'light');">Toggle theme</button>
+
+  <div class="topbar">
+    <div class="brand"><span class="mark"></span>fork ai code</div>
+    <div class="topbar-actions">
+      <button class="btn-primary">+ New project</button>
+      <span class="account-dot">GM</span>
+    </div>
+  </div>
+
+  <div class="page-body">
+    <h1 class="page-title">Projects</h1>
+    <p class="page-sub">Every project tracks one repo. Branch into learn nodes, plan nodes, and code runs from any commit.</p>
+
+    <div class="project-grid">
+      <div class="project-card">
+        <div class="project-card-head">
+          <div class="project-card-name">forkai-code core</div>
+          <div class="project-card-branches">3 branches</div>
+        </div>
+        <div class="project-card-repo">forkai/forkai-code</div>
+        <div class="project-card-meta">Last activity 2 hours ago</div>
+      </div>
+      <div class="project-card">
+        <div class="project-card-head">
+          <div class="project-card-name">billing-service</div>
+          <div class="project-card-branches">1 branch</div>
+        </div>
+        <div class="project-card-repo">acme-labs/billing-service</div>
+        <div class="project-card-meta">Last activity yesterday</div>
+      </div>
+      <div class="project-card">
+        <div class="project-card-head">
+          <div class="project-card-name">marketing-site</div>
+          <div class="project-card-branches">2 branches</div>
+        </div>
+        <div class="project-card-repo">acme-labs/marketing-site</div>
+        <div class="project-card-meta">Last activity 3 days ago</div>
+      </div>
+      <div class="project-card">
+        <div class="project-card-head">
+          <div class="project-card-name">internal-cli</div>
+          <div class="project-card-branches">1 branch</div>
+        </div>
+        <div class="project-card-repo">gokulmc/internal-cli</div>
+        <div class="project-card-meta">Last activity 1 week ago</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay">
+    <div class="modal">
+      <div class="modal-head">
+        <div class="modal-title">New project</div>
+        <button class="modal-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div>
+          <div class="field-label">Name</div>
+          <input class="field-input" type="text" value="billing-service" />
+        </div>
+        <div>
+          <div class="field-label">Repository</div>
+          <div class="repo-list">
+            <div class="repo-row selected">
+              <span class="repo-name">acme-labs/billing-service</span>
+              <span class="mock-tag">mock</span>
+            </div>
+            <div class="repo-row">
+              <span class="repo-name">acme-labs/marketing-site</span>
+              <span class="mock-tag">mock</span>
+            </div>
+            <div class="repo-row">
+              <span class="repo-name">gokulmc/internal-cli</span>
+              <span class="mock-tag">mock</span>
+            </div>
+            <div class="repo-row">
+              <span class="repo-name">forkai/forkai-code</span>
+              <span class="mock-tag">mock</span>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="field-label">Plugins</div>
+          <div class="plugin-row">
+            <div>
+              <div class="plugin-name">Mem palace</div>
+              <div class="plugin-desc">Mine this project's history into a searchable memory palace as code nodes land.</div>
+            </div>
+            <div class="switch on"></div>
+          </div>
+          <div class="plugin-row">
+            <div>
+              <div class="plugin-name">Graphify</div>
+              <div class="plugin-desc">Build a structural AST index of the repo before the agent starts searching.</div>
+            </div>
+            <div class="switch on"></div>
+          </div>
+          <div class="plugin-row">
+            <div>
+              <div class="plugin-name">Playwright testing</div>
+              <div class="plugin-desc">Run a headless browser check after each code node that touches the frontend.</div>
+            </div>
+            <div class="switch"></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn-primary">Create</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

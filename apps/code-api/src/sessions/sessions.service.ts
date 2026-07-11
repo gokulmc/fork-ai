@@ -1,0 +1,487 @@
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { ulid } from 'ulid';
+import { DynamoRepository } from '@/dynamo/dynamo.repository';
+import type { NodeItem, AnnotationItem, HighlightItem, SessionMetaItem } from '@/dynamo/dynamo.interfaces';
+import { LlmService } from '@/llm/llm.service';
+import { ROOT_MODEL, resolveBranchModel } from '@/llm/models';
+import { UsersService } from '@/users/users.service';
+import { CreateSessionDto } from './dto/create-session.dto';
+import { CreateDocumentDto } from './dto/create-document.dto';
+import { UpdateSessionDto } from './dto/update-session.dto';
+
+export interface SessionSummary {
+  sessionId: string;
+  title: string;
+  emoji: string;
+  lede: string;
+  createdAt: string;
+  updatedAt: string;
+  nodeCount: number;
+  highlightCount: number;
+}
+
+export interface FullSession extends SessionSummary {
+  nodes: NodeItem[];
+  annotations: AnnotationItem[];
+  highlights: HighlightItem[];
+}
+
+@Injectable()
+export class SessionsService {
+  constructor(
+    private readonly db: DynamoRepository,
+    private readonly llm: LlmService,
+    private readonly users: UsersService,
+  ) {}
+
+  private readonly logger = new Logger(SessionsService.name);
+
+  // A DynamoDB Query returns ≤1MB/page; queryNodes now paginates via .all(), so
+  // a large session loads correctly but costs extra round-trips + a heavy payload.
+  // Warn once it crosses ~80% of the single-page limit so we get an early signal
+  // of when incremental node loading becomes worth building (vs. full-session load).
+  private static readonly LARGE_SESSION_WARN_BYTES = 800_000;
+
+  private warnIfLarge(sessionId: string, nodes: NodeItem[], annotations: AnnotationItem[], highlights: HighlightItem[]): void {
+    const bytes = Buffer.byteLength(JSON.stringify(nodes)) +
+      Buffer.byteLength(JSON.stringify(annotations)) +
+      Buffer.byteLength(JSON.stringify(highlights));
+    if (bytes >= SessionsService.LARGE_SESSION_WARN_BYTES) {
+      this.logger.warn(`Large session load: ${sessionId} — ${nodes.length} nodes, ~${Math.round(bytes / 1024)}KB (crossed single-page Query limit; multi-page read)`);
+    }
+  }
+
+  private userPk(sub: string) { return `USER#${sub}`; }
+  private sessionSk(sessionId: string) { return `SESSION#${sessionId}`; }
+
+  // Placeholder title shown until the LLM streams the real one. The query is now
+  // unbounded, so cap the display copy and mark the truncation with an ellipsis.
+  private tempTitle(query: string) { return query.length > 60 ? query.slice(0, 60) + '…' : query; }
+
+  async createStreaming(
+    sub: string,
+    dto: CreateSessionDto,
+    send: (data: object) => void,
+  ): Promise<void> {
+    await this.users.checkCredit(sub);
+
+    const sessionId = ulid();
+    const nodeId = ulid();
+    const now = new Date().toISOString();
+
+    // Writes to a disconnected client throw — swallow so the LLM loop still
+    // completes and the full result is persisted even if the user navigated away.
+    const emit = (data: object) => { try { send(data); } catch { /* client gone */ } };
+
+    const rootNode: NodeItem = {
+      PK: `SESSION#${sessionId}`,
+      SK: `NODE#${nodeId}`,
+      nodeId,
+      parentId: null,
+      kind: 'QUERY',
+      title: this.tempTitle(dto.query),
+      emoji: null,
+      query: dto.query,
+      lede: '',
+      sections: [],
+      fromSection: null,
+      fromText: null,
+      createdAt: now,
+      model: ROOT_MODEL,
+    };
+    const sessionMeta: SessionMetaItem = {
+      PK: this.userPk(sub),
+      SK: this.sessionSk(sessionId),
+      sessionId,
+      title: this.tempTitle(dto.query),
+      emoji: '',
+      lede: '',
+      rootNodeId: nodeId,
+      nodeCount: 1,
+      createdAt: now,
+      updatedAt: now,
+      gsi1pk: this.userPk(sub),
+      gsi1sk: `UPDATED#${now}`,
+    };
+
+    // Persist the session up-front and tell the client its id NOW (the `init`
+    // event), so the URL updates immediately and a refresh mid-stream restores
+    // the real session instead of dropping to Landing. Filled in as it streams.
+    await Promise.all([this.db.putNode(rootNode), this.db.putSessionMeta(sessionMeta)]);
+    emit({ type: 'init', sessionId, nodeId });
+
+    let title = '';
+    let emoji = '';
+    let lede = '';
+    const sections: Array<{ id: string; heading: string; body: string }> = [];
+
+    const persona = await this.users.getPersona(sub);
+    for await (const event of this.llm.streamAnswerQuery(dto.query, dto.sectionCount ?? 5, dto.webSearch ?? false, persona)) {
+      if (event.type === 'meta') {
+        title = event.title;
+        emoji = event.emoji;
+        lede = event.lede;
+        emit({ type: 'meta', title, emoji, lede });
+      } else if (event.type === 'section') {
+        const section = { id: ulid(), heading: event.heading, body: event.body };
+        sections.push(section);
+        emit({ type: 'section', ...section });
+        // Incrementally persist so a refresh shows progress, not an empty node.
+        await this.db.putNode({ ...rootNode, title: title || rootNode.title, emoji, lede, sections: [...sections] });
+      } else if (event.type === 'done') {
+        // Citation-processed bodies arrive only at done; map them onto the streamed
+        // sections by index to preserve their ids. Sources are persisted on the node.
+        if (event.sections) {
+          event.sections.forEach((s, i) => { if (sections[i]) sections[i].body = s.body; });
+        }
+        const sourcesPatch = event.sources?.length ? { sources: event.sources } : {};
+        // The SessionMeta row already exists (written up-front so the session is
+        // accessible if the client closes mid-stream). Patch only the title/emoji/lede
+        // here — an UPDATE, not a full replace — so the History card shows the real
+        // values once the stream finishes server-side.
+        await Promise.all([
+          this.db.putNode({ ...rootNode, title, emoji, lede, sections, ...sourcesPatch }),
+          this.db.updateSessionMeta(sub, sessionId, { title, emoji, lede }),
+        ]);
+        await this.users.billUsage(sub, event.usage.inputTokens, event.usage.outputTokens, 'QUERY', sessionId, nodeId, ROOT_MODEL);
+        emit({ type: 'done', sessionId, nodeId, model: ROOT_MODEL, sections, sources: event.sources });
+      }
+    }
+  }
+
+  // Build a whole mind-map session from an uploaded document (authed-only).
+  // Two phases over one SSE stream: (1) read the document ONCE and design the
+  // tree; (2) generate each node's content from its brief, root→leaf. Follows the
+  // same persist-first contract as createStreaming (init up-front, incremental
+  // putNode, finalise at done) so a refresh mid-run restores progress.
+  async createDocumentStreaming(
+    sub: string,
+    dto: CreateDocumentDto,
+    send: (data: object) => void,
+  ): Promise<void> {
+    await this.users.checkCredit(sub);
+
+    const sessionId = ulid();
+    const rootNodeId = ulid();
+    const now = new Date().toISOString();
+    const emit = (data: object) => { try { send(data); } catch { /* client gone */ } };
+
+    const placeholderTitle = this.tempTitle(dto.fileName || dto.documentText);
+
+    // Persist-first: minimal session + loading root so a refresh during the slow
+    // extraction restores the session instead of dropping the user to Landing.
+    const initialRoot: NodeItem = {
+      PK: `SESSION#${sessionId}`,
+      SK: `NODE#${rootNodeId}`,
+      nodeId: rootNodeId,
+      parentId: null,
+      kind: 'QUERY',
+      title: placeholderTitle,
+      emoji: null,
+      query: dto.fileName || placeholderTitle,
+      lede: '',
+      sections: [],
+      fromSection: null,
+      fromText: null,
+      createdAt: now,
+      model: ROOT_MODEL,
+    };
+    const sessionMeta: SessionMetaItem = {
+      PK: this.userPk(sub),
+      SK: this.sessionSk(sessionId),
+      sessionId,
+      title: placeholderTitle,
+      emoji: '',
+      lede: '',
+      rootNodeId,
+      nodeCount: 1,
+      createdAt: now,
+      updatedAt: now,
+      gsi1pk: this.userPk(sub),
+      gsi1sk: `UPDATED#${now}`,
+    };
+    await Promise.all([this.db.putNode(initialRoot), this.db.putSessionMeta(sessionMeta)]);
+    emit({ type: 'init', sessionId, nodeId: rootNodeId });
+
+    // ── Phase 1: read the document once, design the tree (always Sonnet). ──
+    const outline = await this.llm.extractDocumentOutline(dto.documentText, dto.maxNodes ?? 8);
+
+    // Map outline tempIds → real ULIDs; the root is implicit (rootNodeId). An
+    // unknown/missing parentTempId re-parents under the root (defensive).
+    const idByTemp = new Map<string, string>();
+    for (const n of outline.nodes) idByTemp.set(n.tempId, ulid());
+    const parentRealId = (parentTempId: string | null): string =>
+      parentTempId && idByTemp.has(parentTempId) ? idByTemp.get(parentTempId)! : rootNodeId;
+
+    interface PlanNode { nodeId: string; parentId: string | null; title: string; emoji: string; description: string; }
+    const plans: PlanNode[] = [
+      { nodeId: rootNodeId, parentId: null, title: outline.title, emoji: outline.emoji, description: outline.rootDescription },
+      ...outline.nodes.map((n) => ({
+        nodeId: idByTemp.get(n.tempId)!,
+        parentId: parentRealId(n.parentTempId),
+        title: n.title,
+        emoji: n.emoji,
+        description: n.description,
+      })),
+    ];
+    const planById = new Map(plans.map((p) => [p.nodeId, p]));
+
+    // Order content calls root→leaf (BFS) so requirement 6 holds and the map
+    // lights up top-down. The BFS index also seeds createdAt so sibling order is stable.
+    const order: PlanNode[] = [];
+    const queue: string[] = [rootNodeId];
+    while (queue.length) {
+      const p = planById.get(queue.shift()!);
+      if (!p) continue;
+      order.push(p);
+      for (const c of plans) if (c.parentId === p.nodeId) queue.push(c.nodeId);
+    }
+
+    // Persist all node skeletons (loading, empty sections) and tell the client the
+    // full shape so the whole map renders at once. createdAt is offset by BFS index
+    // so the frontend's createdAt-sorted childMap keeps the intended order.
+    const baseMs = Date.parse(now);
+    const skeletons: NodeItem[] = order.map((p, i) => ({
+      PK: `SESSION#${sessionId}`,
+      SK: `NODE#${p.nodeId}`,
+      nodeId: p.nodeId,
+      parentId: p.parentId,
+      kind: p.parentId ? 'DEEPER' : 'QUERY',
+      title: p.title,
+      emoji: p.emoji || null,
+      query: p.title,
+      lede: '',
+      sections: [],
+      fromSection: null,
+      fromText: p.description,
+      createdAt: new Date(baseMs + i).toISOString(),
+      model: ROOT_MODEL,
+    }));
+    const skeletonById = new Map(skeletons.map((n) => [n.nodeId, n]));
+    await Promise.all([
+      ...skeletons.map((n) => this.db.putNode(n)),
+      this.db.updateSessionMeta(sub, sessionId, {
+        title: outline.title, emoji: outline.emoji, lede: outline.lede, nodeCount: skeletons.length,
+      }),
+      this.users.billUsage(sub, outline.usage.inputTokens, outline.usage.outputTokens, 'QUERY', sessionId, rootNodeId, ROOT_MODEL),
+    ]);
+    emit({
+      type: 'skeleton',
+      nodes: skeletons.map((n) => ({ id: n.nodeId, parentId: n.parentId ?? null, kind: n.kind, title: n.title, emoji: n.emoji ?? null })),
+    });
+
+    // ── Phase 2: generate content root→leaf, sequentially. ──
+    const contentModel = resolveBranchModel(dto.model);
+    const persona = await this.users.getPersona(sub);
+
+    for (const p of order) {
+      // Ancestor briefs (root → parent) ground the note and prevent repetition.
+      const ancestors: Array<{ title: string; description: string }> = [];
+      let cur = p.parentId;
+      while (cur) {
+        const a = planById.get(cur);
+        if (!a) break;
+        ancestors.unshift({ title: a.title, description: a.description });
+        cur = a.parentId;
+      }
+
+      const skeleton = skeletonById.get(p.nodeId)!;
+      try {
+        const result = await this.llm.generateFromBrief(
+          ancestors, p.title, p.description,
+          dto.sectionCount ?? 4, dto.webSearch ?? false, contentModel, dto.verbose ?? false, true, persona,
+        );
+        // Keep the outline title/emoji (stable on the map); take content's sections + lede.
+        const node: NodeItem = {
+          ...skeleton,
+          lede: result.lede,
+          sections: result.sections.map((s) => ({ id: ulid(), ...s })),
+          model: contentModel,
+          ...(result.sources?.length ? { sources: result.sources } : {}),
+        };
+        await this.db.putNode(node);
+        // node.kind is always QUERY or DEEPER here — the skeleton above only ever
+        // assigns one of those two (see `kind: p.parentId ? 'DEEPER' : 'QUERY'`).
+        await this.users.billUsage(sub, result.usage.inputTokens, result.usage.outputTokens, node.kind as 'QUERY' | 'DEEPER', sessionId, node.nodeId, contentModel);
+        emit({ type: 'node-done', node });
+      } catch (err) {
+        // One node failing must not abort the tree — fall back to the brief as the
+        // node body so it never hangs as a perpetual loading skeleton, and continue.
+        this.logger.warn(`Document node ${p.nodeId} content failed: ${(err as Error).message}`);
+        const fallback: NodeItem = {
+          ...skeleton,
+          lede: p.description.slice(0, 200),
+          sections: [{ id: ulid(), heading: '', body: p.description }],
+          model: contentModel,
+        };
+        await this.db.putNode(fallback);
+        emit({ type: 'node-done', node: fallback });
+      }
+    }
+
+    emit({ type: 'done', sessionId, nodeCount: skeletons.length, title: outline.title, emoji: outline.emoji, lede: outline.lede });
+  }
+
+  async create(sub: string, dto: CreateSessionDto): Promise<FullSession> {
+    await this.users.checkCredit(sub);
+
+    const sessionId = ulid();
+    const nodeId = ulid();
+    const now = new Date().toISOString();
+
+    const persona = await this.users.getPersona(sub);
+    const llmResult = await this.llm.answerQuery(dto.query, dto.sectionCount ?? 4, dto.webSearch ?? false, persona);
+    const sections = llmResult.sections.map((s) => ({ id: ulid(), ...s }));
+
+    const rootNode: NodeItem = {
+      PK: `SESSION#${sessionId}`,
+      SK: `NODE#${nodeId}`,
+      nodeId,
+      parentId: null,
+      kind: 'QUERY',
+      title: llmResult.title,
+      emoji: llmResult.emoji,
+      query: dto.query,
+      lede: llmResult.lede,
+      sections,
+      fromSection: null,
+      fromText: null,
+      createdAt: now,
+      model: ROOT_MODEL,
+      ...(llmResult.sources?.length ? { sources: llmResult.sources } : {}),
+    };
+
+    const sessionMeta: SessionMetaItem = {
+      PK: this.userPk(sub),
+      SK: this.sessionSk(sessionId),
+      sessionId,
+      title: llmResult.title,
+      emoji: llmResult.emoji,
+      lede: llmResult.lede,
+      rootNodeId: nodeId,
+      nodeCount: 1,
+      createdAt: now,
+      updatedAt: now,
+      gsi1pk: this.userPk(sub),
+      gsi1sk: `UPDATED#${now}`,
+    };
+
+    await Promise.all([this.db.putNode(rootNode), this.db.putSessionMeta(sessionMeta)]);
+    await this.users.billUsage(sub, llmResult.usage.inputTokens, llmResult.usage.outputTokens, 'QUERY', sessionId, nodeId, ROOT_MODEL);
+
+    return {
+      sessionId,
+      title: llmResult.title,
+      emoji: llmResult.emoji,
+      lede: llmResult.lede,
+      createdAt: now,
+      updatedAt: now,
+      nodeCount: 1,
+      highlightCount: 0,
+      nodes: [rootNode],
+      annotations: [],
+      highlights: [],
+    };
+  }
+
+  // Creates a bare session with no root node — used by ProjectsService to give a
+  // freshly-created Project its map before any query/code node exists.
+  async createEmpty(sub: string, title: string): Promise<string> {
+    const sessionId = ulid();
+    const now = new Date().toISOString();
+    const sessionMeta: SessionMetaItem = {
+      PK: this.userPk(sub),
+      SK: this.sessionSk(sessionId),
+      sessionId,
+      title,
+      emoji: '',
+      lede: '',
+      rootNodeId: '',
+      nodeCount: 0,
+      createdAt: now,
+      updatedAt: now,
+      gsi1pk: this.userPk(sub),
+      gsi1sk: `UPDATED#${now}`,
+    };
+    await this.db.putSessionMeta(sessionMeta);
+    return sessionId;
+  }
+
+  async list(sub: string): Promise<SessionSummary[]> {
+    const items = await this.db.listSessionMeta(sub);
+    const counts = await Promise.all(
+      items.map(async (m) => (await this.db.queryHighlights(m.sessionId)).length),
+    );
+    return items.map((m, i) => ({ ...this.toSummary(m), highlightCount: counts[i] }));
+  }
+
+  async getSession(sub: string, sessionId: string): Promise<FullSession> {
+    const meta = await this.db.getSessionMeta(sub, sessionId);
+    if (!meta) throw new NotFoundException(`Session ${sessionId} not found`);
+
+    const [nodes, annotations, highlights] = await Promise.all([
+      this.db.queryNodes(sessionId),
+      this.db.queryAnnotations(sessionId),
+      this.db.queryHighlights(sessionId),
+    ]);
+
+    this.warnIfLarge(sessionId, nodes, annotations, highlights);
+    return { ...this.toSummary(meta), highlightCount: highlights.length, nodes, annotations, highlights };
+  }
+
+  async update(sub: string, sessionId: string, dto: UpdateSessionDto): Promise<void> {
+    const meta = await this.db.getSessionMeta(sub, sessionId);
+    if (!meta) throw new NotFoundException(`Session ${sessionId} not found`);
+    const now = new Date().toISOString();
+    const updates: Partial<Parameters<typeof this.db.updateSessionMeta>[2]> = {
+      updatedAt: now,
+      gsi1sk: `UPDATED#${now}`,
+    };
+    if (dto.title !== undefined) updates.title = dto.title;
+    await this.db.updateSessionMeta(sub, sessionId, updates);
+  }
+
+  async delete(sub: string, sessionId: string): Promise<void> {
+    const meta = await this.db.getSessionMeta(sub, sessionId);
+    if (!meta) throw new NotFoundException(`Session ${sessionId} not found`);
+
+    const [nodes, annotations, highlights] = await Promise.all([
+      this.db.queryNodes(sessionId),
+      this.db.queryAnnotations(sessionId),
+      this.db.queryHighlights(sessionId),
+    ]);
+
+    await Promise.all([
+      this.db.batchDeleteNodes(sessionId, nodes.map((n) => n.nodeId)),
+      this.db.batchDeleteAnnotations(sessionId, annotations.map((a) => a.annId)),
+      this.db.batchDeleteHighlights(sessionId, highlights.map((h) => h.hlId)),
+      this.db.deleteSessionMeta(sub, sessionId),
+    ]);
+  }
+
+  async touchUpdatedAt(sub: string, sessionId: string): Promise<void> {
+    const now = new Date().toISOString();
+    await this.db.updateSessionMeta(sub, sessionId, { updatedAt: now, gsi1sk: `UPDATED#${now}` });
+  }
+
+  async incrementNodeCount(sub: string, sessionId: string, delta: number): Promise<void> {
+    const meta = await this.db.getSessionMeta(sub, sessionId);
+    if (!meta) return;
+    await this.db.updateSessionMeta(sub, sessionId, {
+      nodeCount: Math.max(0, (meta.nodeCount ?? 0) + delta),
+    });
+  }
+
+  private toSummary(item: SessionMetaItem): SessionSummary {
+    return {
+      sessionId: item.sessionId,
+      title: item.title,
+      emoji: item.emoji,
+      lede: item.lede,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+      nodeCount: item.nodeCount ?? 0,
+      highlightCount: 0,
+    };
+  }
+}

@@ -1,0 +1,305 @@
+<!-- @dsCard group="Screens" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>forkai-code — Git-graph map</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  html, body { height: 100%; }
+  body { overflow: hidden; display: flex; flex-direction: column; }
+
+  .theme-toggle {
+    position: fixed; top: 20px; right: 24px; z-index: 100;
+    font-family: var(--sans); font-size: 12px; font-weight: 500;
+    padding: 7px 14px; border-radius: var(--radius);
+    border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink-2);
+    cursor: pointer; box-shadow: var(--shadow-1);
+  }
+  .theme-toggle:hover { background: var(--hover); color: var(--ink); }
+
+  .page-head { padding: 22px 32px 16px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
+  .ds-brand { display: inline-flex; align-items: center; gap: 8px; font-family: var(--sans); font-weight: 600; font-size: 13px; letter-spacing: .02em; color: var(--ink-2); margin-bottom: 14px; }
+  .ds-brand .mark { width: 15px; height: 15px; border-radius: 4px; background: var(--ink); display: inline-block; }
+  .page-title { font-family: var(--serif); font-weight: 400; font-size: 28px; letter-spacing: -0.02em; margin: 0 0 6px; color: var(--ink); }
+  .page-sub { font-family: var(--sans); font-size: 12.5px; color: var(--ink-3); margin: 0; max-width: 720px; line-height: 1.5; }
+
+  .map-wrap { position: relative; flex: 1; overflow: auto; background: var(--bg); }
+  .map-svg { display: block; }
+
+  /* node cards — same visual language as components.html */
+  .node-card { width: 190px; background: var(--paper); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); box-shadow: var(--shadow-1); padding: 9px 12px; font-family: var(--sans); box-sizing: border-box; }
+  .node-card--learn { background: #fafafa; width: 170px; padding: 8px 11px; }
+  [data-theme="dark"] .node-card--learn { background: #1c1c1c; }
+  .node-card--plan { border-color: color-mix(in oklab, var(--kind-plan) 40%, var(--line-strong)); }
+  .node-card--code { border-color: color-mix(in oklab, var(--kind-code) 40%, var(--line-strong)); }
+  .node-card--branch { border-color: color-mix(in oklab, var(--kind-branch) 40%, var(--line-strong)); }
+  .node-card-top { margin-bottom: 6px; }
+  .node-card-main { display: flex; align-items: center; gap: 8px; }
+  .node-card-emoji { font-size: 16px; line-height: 1; flex-shrink: 0; font-family: "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui,sans-serif; }
+  .node-card-text { min-width: 0; }
+  .node-card-kicker { font-size: 8.5px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3); line-height: 1; }
+  .node-card--plan .node-card-kicker { color: var(--kind-plan); }
+  .node-card--code .node-card-kicker { color: var(--kind-code); }
+  .node-card--branch .node-card-kicker { color: var(--kind-branch); }
+  .node-card-label { font-size: 11.5px; font-weight: 500; color: var(--ink); line-height: 1.25; margin-top: 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .commit-pill { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 9.5px; font-weight: 500; padding: 2px 7px; border-radius: 999px; background: var(--commit-pill-bg); color: var(--commit-pill-ink); border: 1px solid var(--commit-pill-border); }
+
+  .edge-learn { fill: none; stroke: var(--ink-3); stroke-opacity: .45; stroke-width: 1.25; }
+  .edge-lane { fill: none; stroke: var(--lane-line); stroke-width: 1.75; }
+  .edge-fork { fill: none; stroke: var(--kind-branch); stroke-opacity: .8; stroke-width: 1.75; }
+  .lane-rail { stroke: var(--lane-line); stroke-width: 1; stroke-dasharray: 2 4; }
+  .lane-label { font-family: var(--mono); font-size: 10.5px; fill: var(--ink-3); }
+
+  .map-legend { position: absolute; left: 20px; bottom: 20px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-2); padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; font-family: var(--sans); font-size: 11.5px; color: var(--ink-2); z-index: 5; }
+  .legend-row { display: flex; align-items: center; gap: 8px; }
+  .legend-sep { height: 1px; background: var(--line); margin: 2px 0; }
+  .legend-dot { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
+  .legend-dot--learn { background: var(--ink-3); }
+  .legend-dot--plan { background: var(--kind-plan); }
+  .legend-dot--code { background: var(--kind-code); }
+  .legend-dot--branch { background: var(--kind-branch); }
+  .legend-line { width: 18px; height: 0; border-top: 2px solid; flex-shrink: 0; }
+  .legend-line--lane { border-top-style: dashed; border-top-color: var(--lane-line); }
+  .legend-line--learn { border-top-style: solid; border-top-color: var(--ink-3); opacity: .6; }
+  .legend-line--fork { border-top-style: solid; border-top-color: var(--kind-branch); }
+</style>
+</head>
+<body>
+  <button class="theme-toggle" onclick="const h=document.documentElement; h.setAttribute('data-theme', (h.getAttribute('data-theme')||'light')==='light'?'dark':'light');">Toggle theme</button>
+
+  <div class="page-head">
+    <div class="ds-brand"><span class="mark"></span>fork ai code</div>
+    <h1 class="page-title">Git-graph map</h1>
+    <p class="page-sub">Code chains ride horizontal lanes (1 git branch = 1 lane); forking a branch allocates a new lane below; learn subtrees hang below their anchor node, same as today's mind map. Node positions below are computed live by the lane-allocator in this page's script, not hand-placed.</p>
+  </div>
+
+  <div class="map-wrap">
+    <svg class="map-svg" id="mapSvg" xmlns="http://www.w3.org/2000/svg"></svg>
+    <div class="map-legend">
+      <div class="legend-row"><span class="legend-dot legend-dot--learn"></span>Learn — go deeper / ask AI</div>
+      <div class="legend-row"><span class="legend-dot legend-dot--plan"></span>Plan — synthesized implementation plan</div>
+      <div class="legend-row"><span class="legend-dot legend-dot--code"></span>Code — one agent run = one commit</div>
+      <div class="legend-row"><span class="legend-dot legend-dot--branch"></span>Branch — forks a new lane from a commit</div>
+      <div class="legend-sep"></div>
+      <div class="legend-row"><span class="legend-line legend-line--lane"></span>Lane rail</div>
+      <div class="legend-row"><span class="legend-line legend-line--learn"></span>Learn edge (curve)</div>
+      <div class="legend-row"><span class="legend-line legend-line--fork"></span>Fork elbow</div>
+    </div>
+  </div>
+
+<script>
+/* ============================================================
+   Sample data — one query, one plan, a 3-commit main lane, a
+   2-commit feature branch forked mid-lane, and a learn subtree
+   hanging off the fork point. Mirrors the real ForkNode shape
+   (kind/parentId) plus two coding-layer fields: commit, branch.
+   ============================================================ */
+const nodes = [
+  { id: 'root',    kind: 'QUERY',  parentId: null,     title: 'Add rate limiting to the API',        emoji: '💬' },
+  { id: 'learn1',  kind: 'DEEPER', parentId: 'root',   title: 'Token bucket vs sliding window',       emoji: '📎' },
+  { id: 'learn2',  kind: 'ASK',    parentId: 'root',   title: "What's a sensible default limit?",     emoji: '💬' },
+  { id: 'plan',    kind: 'PLAN',   parentId: 'root',   title: 'Implementation plan',                  emoji: '🗂' },
+  { id: 'code1',   kind: 'CODE',   parentId: 'plan',   title: 'Add limiter middleware skeleton',      emoji: '🧩', commit: 'a1b2c3d', branch: 'main' },
+  { id: 'code2',   kind: 'CODE',   parentId: 'code1',  title: 'Wire Redis token-bucket store',        emoji: '🧩', commit: 'f0e91aa', branch: 'main' },
+  { id: 'code3',   kind: 'CODE',   parentId: 'code2',  title: 'Add per-key limit overrides',          emoji: '🧩', commit: '9c4d21e', branch: 'main' },
+  { id: 'branch1', kind: 'BRANCH', parentId: 'code2',  title: 'Fork: feature/sliding-window',         emoji: '🔀', commit: 'd41f7b2', branch: 'feature/sliding-window' },
+  { id: 'code4',   kind: 'CODE',   parentId: 'branch1',title: 'Swap to sliding-window algorithm',     emoji: '🧩', commit: '77bcf10', branch: 'feature/sliding-window' },
+  { id: 'code5',   kind: 'CODE',   parentId: 'code4',  title: 'Add feature-flag rollout guard',       emoji: '🧩', commit: '2b8e991', branch: 'feature/sliding-window' },
+  { id: 'lc1',     kind: 'DEEPER', parentId: 'code2',  title: 'Why Redis over in-memory state',       emoji: '📎' },
+  { id: 'lc2',     kind: 'ASK',    parentId: 'lc1',    title: 'Multi-instance consistency',            emoji: '💬' },
+];
+
+/* ============================================================
+   Lane allocator — core rules:
+   1. PLAN / CODE / BRANCH are "rail" kinds; everything else
+      (QUERY / DEEPER / ASK) is a "hanging" tree node.
+   2. A CODE child inherits its parent's lane: same y, x = parent.x + COL_W.
+   3. A BRANCH node allocates the lowest FREE lane index (a real
+      free-list, not just "append") and forks right of its source
+      commit by half a column, so the fork reads as a corner.
+   4. Hanging (DEEPER/ASK) subtrees are laid out below their anchor
+      (root, or any rail node) as a small centered tree — same
+      geometry the existing mind map already uses.
+   5. A lane's y must clear the deepest hanging subtree attached to
+      any node in the lane above it (root counts as the row above
+      lane 0). This is what pushes the feature-branch lane down
+      further than a flat "one row per lane" would.
+   ============================================================ */
+const RAIL = new Set(['PLAN', 'CODE', 'BRANCH']);
+const ROOT_X = 160, ROOT_Y = 70;
+const ROW_H = 160;        // vertical gap between rail lanes
+const COL_W = 230;         // horizontal gap between same-lane rail nodes
+const HANG_ROW_H = 100;    // vertical gap between hanging-tree levels
+const HANG_COL_W = 190;    // horizontal spread between hanging-tree siblings
+
+function layout(nodes) {
+  const byId = new Map(nodes.map(n => [n.id, n]));
+  const childrenOf = id => nodes.filter(n => n.parentId === id);
+  const nonRailChildren = id => childrenOf(id).filter(n => !RAIL.has(n.kind));
+  const railChildren = id => childrenOf(id).filter(n => RAIL.has(n.kind));
+
+  const pos = {};
+  const laneOf = {};
+  const laneUsed = [];
+  const laneNodes = [];
+
+  function allocateLane() {
+    let i = 0;
+    while (laneUsed[i]) i++;
+    laneUsed[i] = true;
+    laneNodes[i] = [];
+    return i;
+  }
+
+  const root = nodes.find(n => n.parentId === null);
+  pos[root.id] = { x: ROOT_X, y: ROOT_Y };
+
+  // 1) place rail nodes left-to-right, parent before child
+  function placeRail(node) {
+    const parent = byId.get(node.parentId);
+    let lane, x;
+    if (node.kind === 'BRANCH') {
+      lane = allocateLane();
+      x = pos[parent.id].x + COL_W / 2;
+    } else if (!RAIL.has(parent.kind)) {
+      lane = allocateLane();
+      x = pos[parent.id].x + COL_W;
+    } else {
+      lane = laneOf[parent.id];
+      x = pos[parent.id].x + COL_W;
+    }
+    laneOf[node.id] = lane;
+    laneNodes[lane].push(node.id);
+    pos[node.id] = { x, y: undefined };
+    railChildren(node.id).forEach(placeRail);
+  }
+  railChildren(root.id).forEach(placeRail);
+
+  // 2) depth (in levels) of the hanging subtree under a node
+  function hangDepth(id) {
+    const kids = nonRailChildren(id);
+    if (!kids.length) return 0;
+    return 1 + Math.max(...kids.map(k => hangDepth(k.id)));
+  }
+
+  // 3) stack lane rows, each clearing the row above's deepest hang
+  const rootHang = hangDepth(root.id);
+  let cursorY = ROOT_Y + ROW_H + rootHang * HANG_ROW_H;
+  laneNodes.forEach(ids => {
+    ids.forEach(id => { pos[id].y = cursorY; });
+    const laneHang = Math.max(0, ...ids.map(hangDepth));
+    cursorY = cursorY + ROW_H + laneHang * HANG_ROW_H;
+  });
+
+  // 4) hang DEEPER/ASK subtrees below their now-final anchor position
+  function placeHanging(anchorId) {
+    const kids = nonRailChildren(anchorId);
+    const a = pos[anchorId];
+    kids.forEach((kid, i) => {
+      const spread = (i - (kids.length - 1) / 2) * HANG_COL_W;
+      pos[kid.id] = { x: a.x + spread, y: a.y + HANG_ROW_H };
+      placeHanging(kid.id);
+    });
+  }
+  placeHanging(root.id);
+  nodes.filter(n => RAIL.has(n.kind)).forEach(n => placeHanging(n.id));
+
+  return { pos, laneOf, laneNodes };
+}
+
+const { pos, laneOf, laneNodes } = layout(nodes);
+
+/* ---------------- render ---------------- */
+const SVGNS = 'http://www.w3.org/2000/svg';
+const CARD_W = 190, CARD_H = 62, CARD_H_PILL = 100, HANG_W = 170, HANG_H = 62;
+const svg = document.getElementById('mapSvg');
+const byId = new Map(nodes.map(n => [n.id, n]));
+
+// CODE/BRANCH cards carry the extra commit-pill row above the title, so they
+// need more vertical room than a plain PLAN/QUERY or hanging LEARN card
+function dims(n) {
+  if (n.kind === 'CODE' || n.kind === 'BRANCH') return [CARD_W, CARD_H_PILL];
+  if (RAIL.has(n.kind) || n.kind === 'QUERY') return [CARD_W, CARD_H];
+  return [HANG_W, HANG_H];
+}
+function el(tag, attrs) { const e = document.createElementNS(SVGNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; }
+function curve(x1, y1, x2, y2) { const my = (y1 + y2) / 2; return `M ${x1} ${y1} C ${x1} ${my}, ${x2} ${my}, ${x2} ${y2}`; }
+function straight(x1, y1, x2, y2) { return `M ${x1} ${y1} L ${x2} ${y2}`; }
+
+// bounds, computed from the layout (not hand-set)
+let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+for (const n of nodes) {
+  const [w, h] = dims(n);
+  const p = pos[n.id];
+  minX = Math.min(minX, p.x - w / 2); maxX = Math.max(maxX, p.x + w / 2);
+  minY = Math.min(minY, p.y - h / 2); maxY = Math.max(maxY, p.y + h / 2);
+}
+const PAD = 48;
+const vb = { x: minX - PAD, y: minY - PAD, w: maxX - minX + PAD * 2, h: maxY - minY + PAD * 2 };
+svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+svg.setAttribute('width', vb.w);
+svg.setAttribute('height', vb.h);
+
+// 1) lane rails, drawn first so everything else sits on top
+laneNodes.forEach(ids => {
+  if (!ids.length) return;
+  const y = pos[ids[0]].y;
+  const railStartX = pos[ids[0]].x - CARD_W / 2 - 24;
+  const railEndX = pos[ids[ids.length - 1]].x + CARD_W / 2 + 24;
+  svg.appendChild(el('line', { class: 'lane-rail', x1: railStartX, y1: y, x2: railEndX, y2: y }));
+  const label = el('text', { class: 'lane-label', x: railStartX, y: y - CARD_H / 2 - 10 });
+  // the lane's leading node may not itself carry a branch name (e.g. PLAN) —
+  // use the first node in the lane that does
+  const named = ids.map(id => byId.get(id)).find(n => n.branch);
+  label.textContent = named ? named.branch : '';
+  svg.appendChild(label);
+});
+
+// 2) edges
+function edge(a, b, cls, path) {
+  const pa = pos[a.id], pb = pos[b.id];
+  svg.appendChild(el('path', { class: cls, d: path(pa, pb) }));
+}
+for (const n of nodes) {
+  if (n.parentId === null) continue;
+  const parent = byId.get(n.parentId);
+  const [pw, ph] = dims(parent), [nw, nh] = dims(n);
+  const pp = pos[parent.id], np = pos[n.id];
+  if (n.kind === 'CODE' && RAIL.has(parent.kind)) {
+    // same-lane continuation: straight edge, card edge to card edge
+    edge(parent, n, 'edge-lane', (a, b) => straight(a.x + pw / 2, a.y, b.x - nw / 2, b.y));
+  } else if (n.kind === 'BRANCH') {
+    // fork point: rounded elbow from the source commit down into the new lane
+    edge(parent, n, 'edge-fork', (a, b) => curve(a.x, a.y + ph / 2, b.x, b.y - nh / 2));
+  } else {
+    // learn edge (root or code node -> DEEPER/ASK, or PLAN's parent query)
+    edge(parent, n, 'edge-learn', (a, b) => curve(a.x, a.y + ph / 2, b.x, b.y - nh / 2));
+  }
+}
+
+// 3) node cards, rendered as HTML inside foreignObject — same DOM shape the
+//    real MindMap uses (<g translate> > foreignObject > .node-card)
+function cardHTML(n) {
+  const kindClass = n.kind === 'PLAN' ? 'node-card--plan'
+    : n.kind === 'CODE' ? 'node-card--code'
+    : n.kind === 'BRANCH' ? 'node-card--branch'
+    : 'node-card--learn';
+  const kicker = n.kind === 'QUERY' ? 'Query' : (n.kind === 'DEEPER' || n.kind === 'ASK') ? 'Learn' : n.kind.charAt(0) + n.kind.slice(1).toLowerCase();
+  const pill = (n.kind === 'CODE' || n.kind === 'BRANCH')
+    ? `<div class="node-card-top"><span class="commit-pill">⎇ ${n.branch} · ${n.commit}</span></div>` : '';
+  return `<div class="node-card ${kindClass}">${pill}<div class="node-card-main"><span class="node-card-emoji">${n.emoji || ''}</span><div class="node-card-text"><div class="node-card-kicker">${kicker}</div><div class="node-card-label">${n.title}</div></div></div></div>`;
+}
+for (const n of nodes) {
+  const [w, h] = dims(n);
+  const p = pos[n.id];
+  const g = el('g', { transform: `translate(${p.x - w / 2} ${p.y - h / 2})` });
+  const fo = el('foreignObject', { width: w, height: h });
+  fo.innerHTML = cardHTML(n);
+  g.appendChild(fo);
+  svg.appendChild(g);
+}
+</script>
+</body>
+</html>

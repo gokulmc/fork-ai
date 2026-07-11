@@ -1,0 +1,129 @@
+/* ============================================================
+   forkai-code — design tokens
+   Base tokens mirrored from apps/web/src/app/globals.css (:root /
+   [data-theme="dark"]). New tokens for the coding-agent layer are
+   appended at the end of each block, grouped and commented.
+   ============================================================ */
+:root {
+  --bg: #ffffff;
+  --paper: #ffffff;
+  --panel: #f6f6f6;
+  --sidebar: #fafafa;
+  --ink: #2d2d2d;
+  --ink-2: #595959;
+  --ink-3: #999999;
+  --ink-faint: rgba(0, 0, 0, 0.45);
+  --line: rgba(0, 0, 0, 0.08);
+  --line-2: rgba(0, 0, 0, 0.04);
+  --line-strong: rgba(0, 0, 0, 0.14);
+  --hover: rgba(0, 0, 0, 0.04);
+  --hover-strong: rgba(0, 0, 0, 0.07);
+  --accent: #525252;
+  --accent-soft: #e8e8e8;
+  --highlight: #ededed;
+  --highlight-strong: #dcdcdc;
+  --serif: "Newsreader", Georgia, serif;
+  --sans: "Geist", "Söhne", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+  --shadow-1: 0 1px 2px rgba(15, 15, 15, 0.04);
+  --shadow-2: 0 6px 18px rgba(15, 15, 15, 0.08), 0 2px 6px rgba(15, 15, 15, 0.05);
+  --shadow-3: 0 14px 36px rgba(15, 15, 15, 0.12), 0 4px 10px rgba(15, 15, 15, 0.06);
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-lg: 10px;
+  --gap: 24px;
+
+  /* ── forkai-code: kind accents ──────────────────────────────
+     Subtle, desaturated — tint a card's border/kicker/pill, never
+     the whole card surface. Chosen to sit apart from --accent (grey)
+     and from each other at a glance: violet / teal / amber. */
+  --kind-plan: #6d5fa3;
+  --kind-plan-soft: #efedf7;
+  --kind-code: #3f7a68;
+  --kind-code-soft: #eaf3ef;
+  --kind-branch: #a3703f;
+  --kind-branch-soft: #f6eee3;
+
+  /* ── forkai-code: commit pill ───────────────────────────────
+     Neutral mono chip — deliberately NOT tinted by kind, since the
+     same pill format sits on both code and branch cards. */
+  --commit-pill-bg: #f1f1ef;
+  --commit-pill-ink: #57564f;
+  --commit-pill-border: rgba(0, 0, 0, 0.1);
+
+  /* ── forkai-code: git-graph lanes ───────────────────────────
+     Slightly stronger than --line since it's a structural rail,
+     not a content divider. */
+  --lane-line: rgba(0, 0, 0, 0.13);
+
+  /* ── forkai-code: diff colors ────────────────────────────────
+     Desaturated — reads as "add/remove" without the saturated
+     red/green of a typical code diff view. */
+  --diff-add: #2f6f4e;
+  --diff-add-bg: #eaf3ee;
+  --diff-del: #a34438;
+  --diff-del-bg: #f8ece9;
+
+  /* ── forkai-code: agent log panel ───────────────────────────
+     A muted panel one step darker/warmer than --panel — NOT a
+     black terminal. */
+  --term-bg: #eeece7;
+  --term-ink: #3a3a37;
+  --term-ink-dim: #8b897f;
+  --term-line: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="dark"] {
+  --bg: #191919;
+  --paper: #1f1f1f;
+  --panel: #232323;
+  --sidebar: #1c1c1c;
+  --ink: #e6e6e3;
+  --ink-2: #b3b3ae;
+  --ink-3: #7e7e78;
+  --ink-faint: rgba(230, 230, 227, 0.4);
+  --line: rgba(255, 255, 255, 0.09);
+  --line-2: rgba(255, 255, 255, 0.05);
+  --line-strong: rgba(255, 255, 255, 0.16);
+  --hover: rgba(255, 255, 255, 0.055);
+  --hover-strong: rgba(255, 255, 255, 0.09);
+  --accent: #c4c4c4;
+  --accent-soft: #2f2f2f;
+  --highlight: rgba(255, 255, 255, 0.08);
+  --highlight-strong: rgba(255, 255, 255, 0.16);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-2: 0 6px 18px rgba(0, 0, 0, 0.5);
+  --shadow-3: 0 14px 36px rgba(0, 0, 0, 0.55);
+
+  --kind-plan: #b3a8dd;
+  --kind-plan-soft: #2a2735;
+  --kind-code: #7fc4ab;
+  --kind-code-soft: #1d2b26;
+  --kind-branch: #d9ac7c;
+  --kind-branch-soft: #332821;
+
+  --commit-pill-bg: #242422;
+  --commit-pill-ink: #c9c7bd;
+  --commit-pill-border: rgba(255, 255, 255, 0.12);
+
+  --lane-line: rgba(255, 255, 255, 0.16);
+
+  --diff-add: #7fbf9c;
+  --diff-add-bg: #1c2925;
+  --diff-del: #d98a7c;
+  --diff-del-bg: #2c211f;
+
+  --term-bg: #1b1b19;
+  --term-ink: #d8d6cd;
+  --term-ink-dim: #837f74;
+  --term-line: rgba(255, 255, 255, 0.08);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+}

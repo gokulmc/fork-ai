@@ -42,6 +42,12 @@ npx nx run @fork-ai/web:dev
 
 ---
 
+## forkai-code (apps/code-api + apps/code-web)
+
+A second product pair scaffolded alongside the original — `apps/code-api` (NestJS, port **4000**) and `apps/code-web` (Next.js, port **4001**), forked from `apps/api`/`apps/web` on the `feat/forkai-code` branch (this worktree, `/Users/gokulmc/fork ai-code`). Own DynamoDB table: `forkai-code-main` (required env, no fallback default — missing `DYNAMO_TABLE_NAME` fails boot, to prevent an accidental write to `forkai-main`). It is a stripped-down fork: no Notion export, no guest/share/trial mode, no admin dashboard, no blog, no referrals, no transactional email — see each app's own `CLAUDE.md` for specifics. Run with `npm run dev:code` (both) or `npm run dev:code-api` / `npm run dev:code-web`.
+
+---
+
 ## Architecture: how the two apps connect
 
 ```

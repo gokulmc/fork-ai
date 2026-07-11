@@ -1,0 +1,167 @@
+<!-- @dsCard group="Foundations" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>forkai-code — Foundations</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body { padding: 56px 64px 100px; min-height: 100vh; }
+
+  .theme-toggle {
+    position: fixed; top: 20px; right: 24px; z-index: 100;
+    font-family: var(--sans); font-size: 12px; font-weight: 500;
+    padding: 7px 14px; border-radius: var(--radius);
+    border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink-2);
+    cursor: pointer; box-shadow: var(--shadow-1);
+    transition: background .12s, color .12s;
+  }
+  .theme-toggle:hover { background: var(--hover); color: var(--ink); }
+
+  .ds-brand { display: inline-flex; align-items: center; gap: 8px; font-family: var(--sans); font-weight: 600; font-size: 13px; letter-spacing: .02em; color: var(--ink-2); margin-bottom: 28px; }
+  .ds-brand .mark { width: 15px; height: 15px; border-radius: 4px; background: var(--ink); display: inline-block; }
+  .ds-page-title { font-family: var(--serif); font-weight: 400; font-size: 34px; letter-spacing: -0.02em; margin: 0 0 8px; color: var(--ink); }
+  .ds-page-sub { font-family: var(--sans); font-size: 13px; color: var(--ink-3); margin: 0 0 48px; max-width: 640px; line-height: 1.55; }
+  .ds-section { margin-bottom: 56px; }
+  .ds-section-label { font-family: var(--sans); font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 18px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+  .ds-section-note { font-family: var(--sans); font-size: 12px; color: var(--ink-3); margin: -10px 0 18px; }
+
+  .swatch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+  .swatch { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--paper); box-shadow: var(--shadow-1); }
+  .swatch-color { height: 64px; display: flex; align-items: center; justify-content: center; }
+  .swatch-color--line { background: var(--panel); }
+  .swatch-color--line .ring { width: 70%; height: 3px; }
+  .swatch-color--text { display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 20px; font-weight: 600; }
+  .swatch-meta { padding: 10px 12px; border-top: 1px solid var(--line); }
+  .swatch-name { font-family: var(--mono); font-size: 12px; color: var(--ink); font-weight: 600; }
+  .swatch-value { font-family: var(--mono); font-size: 11px; color: var(--ink-3); margin-top: 3px; }
+
+  .lane-sample { position: relative; height: 44px; margin: 4px 0 8px; }
+  .lane-rail { position: absolute; top: 50%; left: 0; right: 0; height: 1px; background: var(--lane-line); }
+  .lane-dot { position: absolute; top: 50%; width: 10px; height: 10px; margin-top: -5px; border-radius: 50%; background: var(--paper); border: 2px solid var(--kind-code); }
+  .lane-caption { font-family: var(--sans); font-size: 12px; color: var(--ink-3); margin: 0; }
+
+  .type-sample { display: flex; flex-direction: column; gap: 16px; align-items: flex-start; }
+  .type-serif { font-family: var(--serif); font-size: 30px; color: var(--ink); letter-spacing: -0.01em; }
+  .type-sans { font-family: var(--sans); font-size: 15px; color: var(--ink-2); line-height: 1.55; max-width: 60ch; }
+  .type-mono { font-family: var(--mono); font-size: 13px; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 12px; }
+</style>
+</head>
+<body>
+  <button class="theme-toggle" onclick="const h=document.documentElement; h.setAttribute('data-theme', (h.getAttribute('data-theme')||'light')==='light'?'dark':'light');">Toggle theme</button>
+
+  <div class="ds-brand"><span class="mark"></span>fork ai code</div>
+  <h1 class="ds-page-title">Foundations</h1>
+  <p class="ds-page-sub">New tokens layered on top of fork.ai's existing design language for the coding-agent surface: kind accents, the commit pill, git-graph lanes, diff colors, and the agent-log panel. Base tokens (bg / ink / line / accent / shadow / radius) are unchanged — see <code style="font-family: var(--mono);">tokens.css</code>.</p>
+
+  <div class="ds-section">
+    <div class="ds-section-label">Kind accents</div>
+    <p class="ds-section-note">Desaturated — tint a card's left border, kicker text, and pill; never the whole card surface.</p>
+    <div class="swatch-grid">
+      <div class="swatch">
+        <div class="swatch-color" style="background: var(--kind-plan);"></div>
+        <div class="swatch-meta"><div class="swatch-name">--kind-plan</div><div class="swatch-value">#6d5fa3 → #b3a8dd (dark)</div></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background: var(--kind-plan-soft);"></div>
+        <div class="swatch-meta"><div class="swatch-name">--kind-plan-soft</div><div class="swatch-value">#efedf7 → #2a2735 (dark)</div></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background: var(--kind-code);"></div>
+        <div class="swatch-meta"><div class="swatch-name">--kind-code</div><div class="swatch-value">#3f7a68 → #7fc4ab (dark)</div></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background: var(--kind-code-soft);"></div>
+        <div class="swatch-meta"><div class="swatch-name">--kind-code-soft</div><div class="swatch-value">#eaf3ef → #1d2b26 (dark)</div></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background: var(--kind-branch);"></div>
+        <div class="swatch-meta"><div class="swatch-name">--kind-branch</div><div class="swatch-value">#a3703f → #d9ac7c (dark)</div></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background: var(--kind-branch-soft);"></div>
+        <div class="swatch-meta"><div class="swatch-name">--kind-branch-soft</div><div class="swatch-value">#f6eee3 → #332821 (dark)</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ds-section">
+    <div class="ds-section-label">Commit pill</div>
+    <p class="ds-section-note">Neutral mono chip — not tinted by kind, since the same pill sits on both code and branch cards.</p>
+    <div class="swatch-grid">
+      <div class="swatch">
+        <div class="swatch-color" style="background: var(--commit-pill-bg);"></div>
+        <div class="swatch-meta"><div class="swatch-name">--commit-pill-bg</div><div class="swatch-value">#f1f1ef → #242422 (dark)</div></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color swatch-color--text" style="background: var(--commit-pill-bg); color: var(--commit-pill-ink);">Aa</div>
+        <div class="swatch-meta"><div class="swatch-name">--commit-pill-ink</div><div class="swatch-value">#57564f → #c9c7bd (dark)</div></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color swatch-color--line"><div class="ring" style="background: var(--commit-pill-border);"></div></div>
+        <div class="swatch-meta"><div class="swatch-name">--commit-pill-border</div><div class="swatch-value">10% ink → 12% white (dark)</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ds-section">
+    <div class="ds-section-label">Git-graph lanes</div>
+    <div class="lane-sample">
+      <div class="lane-rail"></div>
+      <div class="lane-dot" style="left: 6%;"></div>
+      <div class="lane-dot" style="left: 34%;"></div>
+      <div class="lane-dot" style="left: 62%;"></div>
+      <div class="lane-dot" style="left: 90%;"></div>
+    </div>
+    <p class="lane-caption">--lane-line — the horizontal rail a code chain travels along (1 git branch = 1 lane)</p>
+  </div>
+
+  <div class="ds-section">
+    <div class="ds-section-label">Diff colors</div>
+    <p class="ds-section-note">Desaturated on purpose — reads as add/remove without a saturated red/green diff view.</p>
+    <div class="swatch-grid">
+      <div class="swatch">
+        <div class="swatch-color swatch-color--text" style="background: var(--diff-add-bg); color: var(--diff-add);">+182</div>
+        <div class="swatch-meta"><div class="swatch-name">--diff-add / --diff-add-bg</div><div class="swatch-value">#2f6f4e → #7fbf9c (dark)</div></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color swatch-color--text" style="background: var(--diff-del-bg); color: var(--diff-del);">−37</div>
+        <div class="swatch-meta"><div class="swatch-name">--diff-del / --diff-del-bg</div><div class="swatch-value">#a34438 → #d98a7c (dark)</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ds-section">
+    <div class="ds-section-label">Agent log panel</div>
+    <p class="ds-section-note">A muted panel one step darker/warmer than --panel — deliberately not a black terminal.</p>
+    <div class="swatch-grid">
+      <div class="swatch">
+        <div class="swatch-color" style="background: var(--term-bg);"></div>
+        <div class="swatch-meta"><div class="swatch-name">--term-bg</div><div class="swatch-value">#eeece7 → #1b1b19 (dark)</div></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color swatch-color--text" style="background: var(--term-bg); color: var(--term-ink);">Aa</div>
+        <div class="swatch-meta"><div class="swatch-name">--term-ink</div><div class="swatch-value">#3a3a37 → #d8d6cd (dark)</div></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color swatch-color--text" style="background: var(--term-bg); color: var(--term-ink-dim);">Aa</div>
+        <div class="swatch-meta"><div class="swatch-name">--term-ink-dim</div><div class="swatch-value">#8b897f → #837f74 (dark)</div></div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color swatch-color--line" style="background: var(--term-bg);"><div class="ring" style="background: var(--term-line);"></div></div>
+        <div class="swatch-meta"><div class="swatch-name">--term-line</div><div class="swatch-value">8% ink → 8% white (dark)</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ds-section">
+    <div class="ds-section-label">Type</div>
+    <div class="type-sample">
+      <div class="type-serif">Add rate limiting to the API</div>
+      <div class="type-sans">Wire the limiter to a Redis-backed token-bucket store so limits persist across API instances.</div>
+      <div class="type-mono">⎇ main · f0e91aa — src/middleware/rate-limit.middleware.ts</div>
+    </div>
+  </div>
+</body>
+</html>
