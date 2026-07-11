@@ -24,8 +24,10 @@ export class ProjectsService {
       SK: `PROJECT#${projectId}`,
       projectId,
       name: dto.name,
-      repoRef: dto.repoRef,
-      plugins: dto.plugins,
+      // Dynamoose v4 type-checks nested objects by constructor and rejects the
+      // class-transformer RepoRefDto instance — it must be a plain object.
+      repoRef: { ...dto.repoRef },
+      plugins: [...dto.plugins],
       sessionId,
       createdAt: now,
       updatedAt: now,
