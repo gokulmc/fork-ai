@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { ulid } from 'ulid';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
 import type { NodeItem, AnnotationItem, HighlightItem, SessionMetaItem } from '@/dynamo/dynamo.interfaces';
@@ -18,6 +18,8 @@ export interface SessionSummary {
   updatedAt: string;
   nodeCount: number;
   highlightCount: number;
+  // Set when this session is a Project's map (see ProjectsService.create).
+  projectId?: string;
 }
 
 export interface FullSession extends SessionSummary {
@@ -110,6 +112,77 @@ export class SessionsService {
     await Promise.all([this.db.putNode(rootNode), this.db.putSessionMeta(sessionMeta)]);
     emit({ type: 'init', sessionId, nodeId });
 
+    await this.runRootQueryStream(sub, sessionId, rootNode, dto, emit);
+  }
+
+  // Root-query streaming into an EXISTING empty session — a Project's map is
+  // created bare by ProjectsService (createEmpty), so its first query lands here
+  // rather than POST /sessions/stream, which always mints a new session.
+  async createRootNodeStreaming(
+    sub: string,
+    sessionId: string,
+    dto: CreateSessionDto,
+    send: (data: object) => void,
+  ): Promise<void> {
+    await this.users.checkCredit(sub);
+
+    // All guards run before any SSE write (the controller surfaces these as a
+    // real 4xx, not an error event inside a 200 stream).
+    const meta = await this.db.getSessionMeta(sub, sessionId);
+    if (!meta) throw new NotFoundException(`Session ${sessionId} not found`);
+    const existing = await this.db.queryNodes(sessionId);
+    if (existing.length) {
+      throw new BadRequestException('Session already has nodes — a root query can only stream into an empty session');
+    }
+
+    const nodeId = ulid();
+    const now = new Date().toISOString();
+    const emit = (data: object) => { try { send(data); } catch { /* client gone */ } };
+
+    const rootNode: NodeItem = {
+      PK: `SESSION#${sessionId}`,
+      SK: `NODE#${nodeId}`,
+      nodeId,
+      parentId: null,
+      kind: 'QUERY',
+      title: this.tempTitle(dto.query),
+      emoji: null,
+      query: dto.query,
+      lede: '',
+      sections: [],
+      fromSection: null,
+      fromText: null,
+      createdAt: now,
+      model: ROOT_MODEL,
+    };
+
+    // Persist-first, but the SessionMeta row already exists (createEmpty) and may
+    // carry projectId — so this is a PARTIAL update, never a putSessionMeta full
+    // replace, which would silently drop the project linkage.
+    await Promise.all([
+      this.db.putNode(rootNode),
+      this.db.updateSessionMeta(sub, sessionId, {
+        title: this.tempTitle(dto.query),
+        nodeCount: 1,
+        updatedAt: now,
+        gsi1sk: `UPDATED#${now}`,
+      }),
+    ]);
+    emit({ type: 'init', sessionId, nodeId });
+
+    await this.runRootQueryStream(sub, sessionId, rootNode, dto, emit);
+  }
+
+  // Shared stream-consumption loop for both root-query entry points. The caller
+  // has already persisted the loading root node + session meta and emitted `init`.
+  private async runRootQueryStream(
+    sub: string,
+    sessionId: string,
+    rootNode: NodeItem,
+    dto: CreateSessionDto,
+    emit: (data: object) => void,
+  ): Promise<void> {
+    const nodeId = rootNode.nodeId;
     let title = '';
     let emoji = '';
     let lede = '';
@@ -138,7 +211,7 @@ export class SessionsService {
         // The SessionMeta row already exists (written up-front so the session is
         // accessible if the client closes mid-stream). Patch only the title/emoji/lede
         // here — an UPDATE, not a full replace — so the History card shows the real
-        // values once the stream finishes server-side.
+        // values once the stream finishes server-side (and any projectId survives).
         await Promise.all([
           this.db.putNode({ ...rootNode, title, emoji, lede, sections, ...sourcesPatch }),
           this.db.updateSessionMeta(sub, sessionId, { title, emoji, lede }),
@@ -482,6 +555,7 @@ export class SessionsService {
       updatedAt: item.updatedAt,
       nodeCount: item.nodeCount ?? 0,
       highlightCount: 0,
+      projectId: item.projectId,
     };
   }
 }

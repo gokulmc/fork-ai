@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, Logger } from '@nestjs/common';
+import { NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SessionsService } from './sessions.service';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
@@ -19,8 +19,6 @@ const mockDb = {
   batchDeleteNodes: jest.fn(),
   batchDeleteAnnotations: jest.fn(),
   batchDeleteHighlights: jest.fn(),
-  deleteShareToken: jest.fn(),
-  putShareToken: jest.fn(),
 };
 
 const mockLlm = {
@@ -28,7 +26,6 @@ const mockLlm = {
   streamAnswerQuery: jest.fn(),
   extractDocumentOutline: jest.fn(),
   generateFromBrief: jest.fn(),
-  generateShareHook: jest.fn(),
 };
 
 // Mimics LlmService.streamAnswerQuery: meta first, then sections, then done.
@@ -187,6 +184,72 @@ describe('SessionsService', () => {
     });
   });
 
+  describe('createRootNodeStreaming', () => {
+    // An empty Project map session — carries projectId, zero nodes.
+    const emptyProjectMeta = { ...sessionMeta, title: 'My Project', emoji: '', lede: '', rootNodeId: '', nodeCount: 0, projectId: 'proj-1' };
+
+    beforeEach(() => {
+      mockUsers.checkCredit.mockResolvedValue(undefined);
+      mockUsers.billUsage.mockResolvedValue(undefined);
+      mockDb.getSessionMeta.mockResolvedValue(emptyProjectMeta);
+      mockDb.queryNodes.mockResolvedValue([]);
+      mockDb.putNode.mockResolvedValue(undefined);
+      mockDb.updateSessionMeta.mockResolvedValue(undefined);
+      mockLlm.streamAnswerQuery.mockReturnValue(fakeStream());
+    });
+
+    it('rejects a session that already has nodes, before any SSE write or persistence', async () => {
+      mockDb.queryNodes.mockResolvedValue([{ nodeId: 'n1' }]);
+      const send = jest.fn();
+
+      await expect(service.createRootNodeStreaming(SUB, SESSION_ID, { query: 'What is ML?' }, send)).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(send).not.toHaveBeenCalled();
+      expect(mockDb.putNode).not.toHaveBeenCalled();
+      expect(mockDb.updateSessionMeta).not.toHaveBeenCalled();
+    });
+
+    it('rejects a session the caller does not own (getSessionMeta miss)', async () => {
+      mockDb.getSessionMeta.mockResolvedValue(null);
+      const send = jest.fn();
+
+      await expect(service.createRootNodeStreaming(SUB, SESSION_ID, { query: 'Q' }, send)).rejects.toBeInstanceOf(NotFoundException);
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('reuses the existing sessionId — persist-first via PARTIAL meta patches only, so projectId survives', async () => {
+      const events: Array<{ type: string; sessionId?: string; nodeId?: string }> = [];
+      await service.createRootNodeStreaming(SUB, SESSION_ID, { query: 'What is ML?' }, (d) => events.push(d as never));
+
+      // init carries the EXISTING session id and a fresh node id.
+      expect(events[0].type).toBe('init');
+      expect(events[0].sessionId).toBe(SESSION_ID);
+      expect(events[0].nodeId).toBeDefined();
+
+      // Never a full putSessionMeta replace — that would drop projectId (createEmpty
+      // wrote the row; ProjectsService patched projectId onto it).
+      expect(mockDb.putSessionMeta).not.toHaveBeenCalled();
+      // Every meta write is a partial update, and none touches projectId.
+      expect(mockDb.updateSessionMeta.mock.calls.length).toBeGreaterThanOrEqual(2); // up-front placeholder + done patch
+      for (const [sub, sessionId, updates] of mockDb.updateSessionMeta.mock.calls) {
+        expect(sub).toBe(SUB);
+        expect(sessionId).toBe(SESSION_ID);
+        expect(updates).not.toHaveProperty('projectId');
+      }
+      // The done patch swaps in the real title/emoji/lede.
+      const doneUpdates = mockDb.updateSessionMeta.mock.calls[mockDb.updateSessionMeta.mock.calls.length - 1][2];
+      expect(doneUpdates).toEqual({ title: 'Neural Nets', emoji: '🧠', lede: 'How neural networks work.' });
+
+      expect(mockUsers.billUsage).toHaveBeenCalledWith(SUB, 100, 50, 'QUERY', SESSION_ID, events[0].nodeId, expect.any(String));
+    });
+
+    it('streams the same event vocabulary as POST /sessions/stream (init → meta → section* → done)', async () => {
+      const events: Array<{ type: string }> = [];
+      await service.createRootNodeStreaming(SUB, SESSION_ID, { query: 'What is ML?' }, (d) => events.push(d as { type: string }));
+      expect(events.map((e) => e.type)).toEqual(['init', 'meta', 'section', 'section', 'done']);
+    });
+  });
+
   describe('createDocumentStreaming', () => {
     // Outline: root + 2 children (A, B) + 1 grandchild (A1 under A).
     const outline = {
@@ -320,24 +383,6 @@ describe('SessionsService', () => {
       expect(result.highlightCount).toBe(1);
     });
 
-    it('passes shareHook through toSummary', async () => {
-      mockDb.getSessionMeta.mockResolvedValue({ ...sessionMeta, shareHook: 'A wild fact.' });
-      mockDb.queryNodes.mockResolvedValue([]);
-      mockDb.queryAnnotations.mockResolvedValue([]);
-      mockDb.queryHighlights.mockResolvedValue([]);
-      const result = await service.getSession(SUB, SESSION_ID);
-      expect(result.shareHook).toBe('A wild fact.');
-    });
-
-    it('defaults shareHook to null when absent', async () => {
-      mockDb.getSessionMeta.mockResolvedValue(sessionMeta);
-      mockDb.queryNodes.mockResolvedValue([]);
-      mockDb.queryAnnotations.mockResolvedValue([]);
-      mockDb.queryHighlights.mockResolvedValue([]);
-      const result = await service.getSession(SUB, SESSION_ID);
-      expect(result.shareHook).toBeNull();
-    });
-
     it('warns only when the loaded session crosses the multi-page size threshold', async () => {
       const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
       mockDb.getSessionMeta.mockResolvedValue(sessionMeta);
@@ -432,48 +477,6 @@ describe('SessionsService', () => {
       mockDb.getSessionMeta.mockResolvedValue(null);
       await service.incrementNodeCount(SUB, SESSION_ID, 1);
       expect(mockDb.updateSessionMeta).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('generateShareToken', () => {
-    const rootNode = { nodeId: 'n1', parentId: null, title: 'Root', query: 'What is ML?', sections: [{ body: 'Some **body** text' }] };
-
-    beforeEach(() => {
-      mockDb.getSessionMeta.mockResolvedValue(sessionMeta);
-      mockDb.queryNodes.mockResolvedValue([rootNode]);
-      mockDb.putShareToken.mockResolvedValue(undefined);
-      mockDb.updateSessionMeta.mockResolvedValue(undefined);
-    });
-
-    it('persists a fresh shareHook alongside the share token', async () => {
-      mockLlm.generateShareHook.mockResolvedValue('A shocking fact.');
-      await service.generateShareToken(SUB, SESSION_ID);
-      const [, , updates] = mockDb.updateSessionMeta.mock.calls[0];
-      expect(updates.shareToken).toEqual(expect.any(String));
-      expect(updates.shareHook).toBe('A shocking fact.');
-    });
-
-    it('still shares successfully when generateShareHook resolves null', async () => {
-      mockLlm.generateShareHook.mockResolvedValue(null);
-      const result = await service.generateShareToken(SUB, SESSION_ID);
-      expect(result.token).toEqual(expect.any(String));
-      const [, , updates] = mockDb.updateSessionMeta.mock.calls[0];
-      expect(updates.shareHook).toBeUndefined();
-    });
-
-    it('still shares successfully when queryNodes rejects', async () => {
-      mockDb.queryNodes.mockRejectedValue(new Error('ddb blip'));
-      const result = await service.generateShareToken(SUB, SESSION_ID);
-      expect(result.token).toEqual(expect.any(String));
-      expect(mockDb.putShareToken).toHaveBeenCalled();
-    });
-
-    it('keeps the previous shareHook when regeneration fails', async () => {
-      mockDb.getSessionMeta.mockResolvedValue({ ...sessionMeta, shareHook: 'Previous hook.' });
-      mockDb.queryNodes.mockRejectedValue(new Error('ddb blip'));
-      await service.generateShareToken(SUB, SESSION_ID);
-      const [, , updates] = mockDb.updateSessionMeta.mock.calls[0];
-      expect(updates.shareHook).toBe('Previous hook.');
     });
   });
 });

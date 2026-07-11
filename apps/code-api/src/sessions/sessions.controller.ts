@@ -72,6 +72,42 @@ export class SessionsController {
     }
   }
 
+  // Registered AFTER the static 'stream' and 'document/stream' routes — the
+  // :sessionId param segment would otherwise capture 'document' for
+  // POST /sessions/document/stream (Express matches in declaration order).
+  @Post(':sessionId/stream')
+  @Header('Content-Type', 'text/event-stream')
+  @Header('Cache-Control', 'no-cache')
+  @Header('Connection', 'keep-alive')
+  @ApiOperation({ summary: 'Stream a root query into an EXISTING empty session (a Project map) — same SSE vocabulary as POST /sessions/stream' })
+  @ApiParam({ name: 'sessionId', description: 'ULID session ID (must be owned by the caller and have zero nodes)' })
+  async createRootNodeStream(
+    @CurrentUser() user: CognitoUser,
+    @Param('sessionId') sessionId: string,
+    @Body() dto: CreateSessionDto,
+    @Res() res: Response,
+  ) {
+    let wrote = false;
+    const send = (data: object) => { wrote = true; res.write(`data: ${JSON.stringify(data)}\n\n`); };
+    try {
+      await this.sessionsService.createRootNodeStreaming(user.sub, sessionId, dto, send);
+    } catch (err) {
+      const isHttp = err instanceof HttpException;
+      // Guard failures (not found / non-empty / out of credit) all throw before
+      // the service's first emit — surface them as a real 4xx HTTP status, not a
+      // 200 stream carrying only an error event. Headers aren't flushed until the
+      // first write, so setting the status here is still possible.
+      if (!wrote && isHttp) res.status(err.getStatus());
+      send({
+        type: 'error',
+        message: isHttp ? err.message : friendlyLlmError(err as Error),
+        status: isHttp ? err.getStatus() : 500,
+      });
+    } finally {
+      res.end();
+    }
+  }
+
   @Get()
   @ApiOperation({ summary: 'List sessions (newest first)' })
   list(@CurrentUser() user: CognitoUser) {

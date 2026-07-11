@@ -155,7 +155,7 @@ export class DynamoRepository {
   async updateSessionMeta(
     sub: string,
     sessionId: string,
-    updates: Partial<Pick<SessionMetaItem, 'title' | 'emoji' | 'lede' | 'nodeCount' | 'updatedAt' | 'gsi1sk'>>,
+    updates: Partial<Pick<SessionMetaItem, 'title' | 'emoji' | 'lede' | 'nodeCount' | 'updatedAt' | 'gsi1sk' | 'projectId'>>,
   ): Promise<void> {
     // Dynamoose v4 rejects null for typed fields. Translate null → $REMOVE so
     // callers can clear optional fields by passing null.
@@ -213,7 +213,7 @@ export class DynamoRepository {
   async updateNode(
     sessionId: string,
     nodeId: string,
-    updates: Partial<Pick<NodeItem, 'title' | 'starred' | 'commitSha' | 'branchName' | 'commitMessage' | 'diffSummary' | 'agentStatus' | 'imported'>>,
+    updates: Partial<Pick<NodeItem, 'title' | 'lede' | 'starred' | 'commitSha' | 'branchName' | 'commitMessage' | 'diffSummary' | 'agentStatus' | 'imported'>>,
   ): Promise<void> {
     await this.nodeModel.update(
       { PK: this.sessionPk(sessionId), SK: this.nodeSk(nodeId) },

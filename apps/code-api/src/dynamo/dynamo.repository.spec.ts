@@ -7,16 +7,11 @@ import {
   NODE_MODEL,
   ANNOTATION_MODEL,
   HIGHLIGHT_MODEL,
-  SHARE_TOKEN_MODEL,
   USAGE_EVENT_MODEL,
   PAYMENT_MODEL,
-  ADMIN_AUDIT_MODEL,
-  REFERRAL_MODEL,
   CREDIT_EVENT_MODEL,
-  BLOG_SUBMISSION_MODEL,
-  BLOG_VIEW_MODEL,
-  TRIAL_SPEND_MODEL,
-  PAGE_VIEW_MODEL,
+  PROJECT_MODEL,
+  AGENT_RUN_MODEL,
 } from './dynamo.constants';
 
 // Factory for a Dynamoose-model-shaped mock with chainable query builder
@@ -54,16 +49,11 @@ describe('DynamoRepository', () => {
   let node: ReturnType<typeof makeModelMock>;
   let annotation: ReturnType<typeof makeModelMock>;
   let highlight: ReturnType<typeof makeModelMock>;
-  let shareToken: ReturnType<typeof makeModelMock>;
   let usageEvent: ReturnType<typeof makeModelMock>;
   let payment: ReturnType<typeof makeModelMock>;
-  let adminAudit: ReturnType<typeof makeModelMock>;
-  let referral: ReturnType<typeof makeModelMock>;
   let creditEvent: ReturnType<typeof makeModelMock>;
-  let blogSubmission: ReturnType<typeof makeModelMock>;
-  let blogView: ReturnType<typeof makeModelMock>;
-  let trialSpend: ReturnType<typeof makeModelMock>;
-  let pageView: ReturnType<typeof makeModelMock>;
+  let project: ReturnType<typeof makeModelMock>;
+  let agentRun: ReturnType<typeof makeModelMock>;
 
   beforeEach(async () => {
     userMeta = makeModelMock();
@@ -71,16 +61,11 @@ describe('DynamoRepository', () => {
     node = makeModelMock();
     annotation = makeModelMock();
     highlight = makeModelMock();
-    shareToken = makeModelMock();
     usageEvent = makeModelMock();
     payment = makeModelMock();
-    adminAudit = makeModelMock();
-    referral = makeModelMock();
     creditEvent = makeModelMock();
-    blogSubmission = makeModelMock();
-    blogView = makeModelMock();
-    trialSpend = makeModelMock();
-    pageView = makeModelMock();
+    project = makeModelMock();
+    agentRun = makeModelMock();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -91,16 +76,11 @@ describe('DynamoRepository', () => {
         { provide: NODE_MODEL, useValue: node.mock },
         { provide: ANNOTATION_MODEL, useValue: annotation.mock },
         { provide: HIGHLIGHT_MODEL, useValue: highlight.mock },
-        { provide: SHARE_TOKEN_MODEL, useValue: shareToken.mock },
         { provide: USAGE_EVENT_MODEL, useValue: usageEvent.mock },
         { provide: PAYMENT_MODEL, useValue: payment.mock },
-        { provide: ADMIN_AUDIT_MODEL, useValue: adminAudit.mock },
-        { provide: REFERRAL_MODEL, useValue: referral.mock },
         { provide: CREDIT_EVENT_MODEL, useValue: creditEvent.mock },
-        { provide: BLOG_SUBMISSION_MODEL, useValue: blogSubmission.mock },
-        { provide: BLOG_VIEW_MODEL, useValue: blogView.mock },
-        { provide: TRIAL_SPEND_MODEL, useValue: trialSpend.mock },
-        { provide: PAGE_VIEW_MODEL, useValue: pageView.mock },
+        { provide: PROJECT_MODEL, useValue: project.mock },
+        { provide: AGENT_RUN_MODEL, useValue: agentRun.mock },
       ],
     }).compile();
     repo = module.get<DynamoRepository>(DynamoRepository);
@@ -165,13 +145,6 @@ describe('DynamoRepository', () => {
       );
     });
 
-    it('translates null values into $REMOVE', async () => {
-      sessionMeta.mock.update.mockResolvedValue({});
-      await repo.updateSessionMeta(SUB, SESSION_ID, { shareToken: null });
-      const op = sessionMeta.mock.update.mock.calls[0][1];
-      expect(op.$REMOVE).toContain('shareToken');
-    });
-
     it('does nothing when updates object is empty', async () => {
       await repo.updateSessionMeta(SUB, SESSION_ID, {});
       expect(sessionMeta.mock.update).not.toHaveBeenCalled();
@@ -234,25 +207,58 @@ describe('DynamoRepository', () => {
     });
   });
 
-  describe('putShareToken / getShareToken / deleteShareToken', () => {
-    it('puts a share token record', async () => {
-      shareToken.mock.create.mockResolvedValue({});
-      await repo.putShareToken('tok123', SESSION_ID, SUB);
-      expect(shareToken.mock.create).toHaveBeenCalledWith(
-        expect.objectContaining({ token: 'tok123', sessionId: SESSION_ID }),
+  describe('putProject / getProject / listProjects', () => {
+    const PROJECT_ID = 'proj-1';
+
+    it('puts a project with overwrite', async () => {
+      project.mock.create.mockResolvedValue({});
+      await repo.putProject({
+        PK: `USER#${SUB}`, SK: `PROJECT#${PROJECT_ID}`, projectId: PROJECT_ID, name: 'P',
+        repoRef: { provider: 'github-mock', owner: 'acme', repo: 'widgets', defaultBranch: 'main', url: 'https://mock.git/acme/widgets' },
+        plugins: [], sessionId: SESSION_ID, createdAt: 'now', updatedAt: 'now',
+      });
+      expect(project.mock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ projectId: PROJECT_ID }),
         { overwrite: true },
       );
     });
 
-    it('returns null for missing share token', async () => {
-      shareToken.mock.get.mockResolvedValue(null);
-      expect(await repo.getShareToken('tok')).toBeNull();
+    it('returns null when project not found', async () => {
+      project.mock.get.mockResolvedValue(null);
+      expect(await repo.getProject(SUB, PROJECT_ID)).toBeNull();
     });
 
-    it('deletes share token by value', async () => {
-      shareToken.mock.delete.mockResolvedValue({});
-      await repo.deleteShareToken('tok123');
-      expect(shareToken.mock.delete).toHaveBeenCalledWith({ PK: 'SHARE#tok123', SK: 'METADATA' });
+    it('lists projects for the user', async () => {
+      project.queryChain.exec.mockResolvedValue([{ projectId: PROJECT_ID }]);
+      const result = await repo.listProjects(SUB);
+      expect(project.mock.query).toHaveBeenCalledWith('PK');
+      expect(project.queryChain.beginsWith).toHaveBeenCalledWith('PROJECT#');
+      expect(result).toHaveLength(1);
+    });
+  });
+
+  describe('putAgentRun / getAgentRun / updateAgentRun', () => {
+    it('puts an AgentRun with overwrite', async () => {
+      agentRun.mock.create.mockResolvedValue({});
+      await repo.putAgentRun({ PK: `SESSION#${SESSION_ID}`, SK: `AGENTRUN#${NODE_ID}`, nodeId: NODE_ID, status: 'running', events: '[]', createdAt: 'now', updatedAt: 'now' });
+      expect(agentRun.mock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ nodeId: NODE_ID, status: 'running' }),
+        { overwrite: true },
+      );
+    });
+
+    it('returns null when no AgentRun exists', async () => {
+      agentRun.mock.get.mockResolvedValue(null);
+      expect(await repo.getAgentRun(SESSION_ID, NODE_ID)).toBeNull();
+    });
+
+    it('updates status and events', async () => {
+      agentRun.mock.update.mockResolvedValue({});
+      await repo.updateAgentRun(SESSION_ID, NODE_ID, { status: 'done', events: '[]' });
+      expect(agentRun.mock.update).toHaveBeenCalledWith(
+        { PK: `SESSION#${SESSION_ID}`, SK: `AGENTRUN#${NODE_ID}` },
+        { status: 'done', events: '[]' },
+      );
     });
   });
 });

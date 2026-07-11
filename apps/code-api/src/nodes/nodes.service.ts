@@ -1,17 +1,31 @@
+import { randomBytes } from 'crypto';
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { ulid } from 'ulid';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
 import type { NodeItem, AgentRunItem } from '@/dynamo/dynamo.interfaces';
-import { LlmService } from '@/llm/llm.service';
+import { LlmService, friendlyLlmError } from '@/llm/llm.service';
 import { resolveBranchModel } from '@/llm/models';
 import { NodeKind } from '@/llm/llm.types';
 import { SessionsService } from '@/sessions/sessions.service';
 import { UsersService } from '@/users/users.service';
+import { MockAgentService, AgentRunContext } from '@/agent/mock-agent.service';
+import { AgentEvent, serializeEventsCapped } from '@/agent/agent-run.util';
 import { CreateNodeDto } from './dto/create-node.dto';
 import { CreateMixNodeDto } from './dto/create-mix-node.dto';
 import { CreateBranchNodeDto } from './dto/create-branch-node.dto';
+import { CreateCodeNodeDto } from './dto/create-code-node.dto';
 import { UpdateNodeDto } from './dto/update-node.dto';
 import { assertKindAllowed, LEARN_KINDS } from './node-grammar';
+import { findRailChain, planDocOf, codeSummaryOf, codeContextBlockOf } from './context';
+
+// Pacing between replayed agent events on the CODE-node stream — simulates a
+// live run instead of dumping the whole mocked transcript at once.
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+function jitterMs(): number {
+  return 100 + Math.floor(Math.random() * 500);
+}
 
 @Injectable()
 export class NodesService {
@@ -20,6 +34,7 @@ export class NodesService {
     private readonly llm: LlmService,
     private readonly sessions: SessionsService,
     private readonly users: UsersService,
+    private readonly mockAgent: MockAgentService,
   ) {}
 
   async createNode(sub: string, sessionId: string, dto: CreateNodeDto): Promise<NodeItem> {
@@ -65,13 +80,26 @@ export class NodesService {
     const boost = dto.boost ?? false;
     const persona = await this.users.getPersona(sub);
 
+    // A DEEPER/ASK hanging directly off a CODE node is grounded in what the agent
+    // actually did, not just the parent's title/query like a normal ancestor —
+    // fetching the AgentRun is best-effort (skipped silently if absent/erroring).
+    let extraContext: string | undefined;
+    if (parentNode.kind === 'CODE') {
+      const run = await this.db.getAgentRun(sessionId, parentNode.nodeId).catch(() => null);
+      let recentEvents: AgentEvent[] = [];
+      if (run) {
+        try { recentEvents = (JSON.parse(run.events) as AgentEvent[]).slice(-15); } catch { /* malformed events blob — degrade gracefully */ }
+      }
+      extraContext = codeContextBlockOf(parentNode, recentEvents);
+    }
+
     if (dto.kind === 'DEEPER') {
       if (!dto.sectionBody) throw new BadRequestException('sectionBody required for DEEPER nodes');
-      llmResult = await this.llm.expandSection(ancestors, dto.query, dto.sectionBody, dto.sectionCount ?? 4, dto.webSearch ?? false, model, dto.verbose ?? false, true, boost, avoidEmojis, persona);
+      llmResult = await this.llm.expandSection(ancestors, dto.query, dto.sectionBody, dto.sectionCount ?? 4, dto.webSearch ?? false, model, dto.verbose ?? false, true, boost, avoidEmojis, persona, extraContext);
       fromText = `${dto.query}: ${dto.sectionBody.slice(0, 200)}…`;
     } else {
       if (!dto.highlightText) throw new BadRequestException('highlightText required for ASK nodes');
-      llmResult = await this.llm.followUpFromHighlight(ancestors, dto.highlightText, dto.query, dto.sectionCount ?? 4, dto.webSearch ?? false, model, dto.verbose ?? false, true, boost, avoidEmojis, persona);
+      llmResult = await this.llm.followUpFromHighlight(ancestors, dto.highlightText, dto.query, dto.sectionCount ?? 4, dto.webSearch ?? false, model, dto.verbose ?? false, true, boost, avoidEmojis, persona, extraContext);
       fromText = dto.highlightText;
     }
 
@@ -268,6 +296,151 @@ export class NodesService {
     ]);
 
     return node;
+  }
+
+  // Streaming CODE-node creation: persist-first (loading node + running AgentRun,
+  // `init` emitted before any agent-event — see root CLAUDE.md's root-query
+  // streaming contract, followed here for the same refresh-survives-mid-run
+  // reason), then a single mocked agent run replayed over SSE with jittered
+  // pacing. `send` is wrapped in a swallow-errors `emit` exactly like
+  // SessionsService.createStreaming so a client disconnect never aborts the run —
+  // it still lands fully in the DB.
+  async createCodeNodeStreaming(
+    sub: string,
+    sessionId: string,
+    dto: CreateCodeNodeDto,
+    send: (data: object) => void,
+  ): Promise<void> {
+    await this.users.checkCredit(sub);
+
+    const model = resolveBranchModel(dto.model);
+    const session = await this.sessions.getSession(sub, sessionId);
+    const nodeById = new Map(session.nodes.map((n) => [n.nodeId, n]));
+
+    const parentNode = nodeById.get(dto.parentNodeId);
+    if (!parentNode) {
+      throw new NotFoundException(`Parent node ${dto.parentNodeId} not found`);
+    }
+    assertKindAllowed(parentNode.kind as NodeKind, 'CODE');
+
+    // Lane identity: the nearest BRANCH ancestor's branchName wins; otherwise the
+    // project's default branch; otherwise a bare 'main' (no project at all).
+    const chain = findRailChain(nodeById, dto.parentNodeId);
+    const project = session.projectId ? await this.db.getProject(sub, session.projectId) : null;
+    const branchName = chain.branchNode?.branchName ?? project?.repoRef.defaultBranch ?? 'main';
+    const baseCommitSha = parentNode.commitSha ?? null;
+
+    const ctx: AgentRunContext = {
+      instruction: dto.instruction,
+      planDoc: chain.planNode ? planDocOf(chain.planNode) : null,
+      branchName,
+      baseCommitSha,
+      repoRef: project?.repoRef ?? null,
+      plugins: project?.plugins ?? [],
+      ancestorCodeSummaries: chain.codeAncestors.slice(0, 10).map(codeSummaryOf),
+      model,
+    };
+
+    const nodeId = ulid();
+    // No real git backend exists yet (mock-first per ADR-0001) — a random SHA-1-
+    // shaped hex string stands in for the commit this run "produces".
+    const commitSha = randomBytes(20).toString('hex');
+    const now = new Date().toISOString();
+    const emit = (data: object) => { try { send(data); } catch { /* client gone */ } };
+
+    const node: NodeItem = {
+      PK: `SESSION#${sessionId}`,
+      SK: `NODE#${nodeId}`,
+      nodeId,
+      parentId: dto.parentNodeId,
+      kind: 'CODE',
+      title: dto.instruction.slice(0, 60),
+      emoji: null,
+      query: dto.instruction,
+      lede: '',
+      sections: [],
+      fromSection: null,
+      fromText: null,
+      createdAt: now,
+      model,
+      branchName,
+      commitSha,
+      agentStatus: 'running',
+    };
+    const agentRun: AgentRunItem = {
+      PK: `SESSION#${sessionId}`,
+      SK: `AGENTRUN#${nodeId}`,
+      nodeId,
+      status: 'running',
+      events: '[]',
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    // Persist BEFORE any SSE event — a refresh mid-run must restore a real node,
+    // not drop back to nothing.
+    await Promise.all([this.db.putNode(node), this.db.putAgentRun(agentRun)]);
+    emit({ type: 'init', node });
+
+    let result;
+    try {
+      result = await this.mockAgent.generate(ctx);
+    } catch (err) {
+      const message = friendlyLlmError(err as Error);
+      await Promise.all([
+        this.db.updateNode(sessionId, nodeId, { agentStatus: 'error' }),
+        this.db.updateAgentRun(sessionId, nodeId, { status: 'error', updatedAt: new Date().toISOString() }),
+      ]);
+      emit({ type: 'error', message });
+      return;
+    }
+
+    const events: AgentEvent[] = [];
+    let lastPersistAt = Date.now();
+    for (const event of result.events) {
+      await sleep(jitterMs());
+      events.push(event);
+      emit({ type: 'agent-event', event });
+      if (events.length % 10 === 0 || Date.now() - lastPersistAt >= 2000) {
+        await this.db.updateAgentRun(sessionId, nodeId, { events: serializeEventsCapped(events), updatedAt: new Date().toISOString() });
+        lastPersistAt = Date.now();
+      }
+    }
+
+    // No extra LLM call for title/lede — a simple truncation of the commit
+    // message is enough for the map card and breadcrumb.
+    const title = result.commitMessage.split(/\s+/).filter(Boolean).slice(0, 5).join(' ') || node.title;
+    const lede = result.commitMessage.length > 140 ? `${result.commitMessage.slice(0, 140)}…` : result.commitMessage;
+
+    await Promise.all([
+      this.db.updateNode(sessionId, nodeId, {
+        title,
+        lede,
+        commitMessage: result.commitMessage,
+        diffSummary: result.diffSummary,
+        agentStatus: 'done',
+      }),
+      this.db.updateAgentRun(sessionId, nodeId, {
+        status: 'done',
+        events: serializeEventsCapped(events),
+        commitSha,
+        branchName,
+        commitMessage: result.commitMessage,
+        diffSummary: result.diffSummary,
+        updatedAt: new Date().toISOString(),
+      }),
+    ]);
+    await Promise.all([
+      this.sessions.touchUpdatedAt(sub, sessionId),
+      this.sessions.incrementNodeCount(sub, sessionId, 1),
+      this.users.billUsage(sub, result.inputTokens, result.outputTokens, 'CODE', sessionId, nodeId, result.model),
+    ]);
+
+    emit({ type: 'commit', sha: commitSha, branchName, message: result.commitMessage, diffSummary: result.diffSummary });
+    emit({
+      type: 'done',
+      node: { ...node, title, lede, commitMessage: result.commitMessage, diffSummary: result.diffSummary, agentStatus: 'done' },
+    });
   }
 
   async getAgentRun(sub: string, sessionId: string, nodeId: string): Promise<AgentRunItem> {

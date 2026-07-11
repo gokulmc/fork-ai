@@ -91,6 +91,7 @@ export const SessionMetaSchema = new dynamoose.Schema({
     index: [{ name: 'gsi1', type: 'global', rangeKey: 'gsi1sk' }],
   },
   gsi1sk: String,
+  projectId: { type: String, required: false },
 });
 
 export const NodeSchema = new dynamoose.Schema({

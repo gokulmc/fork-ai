@@ -59,6 +59,9 @@ export interface SessionMetaItem {
   updatedAt: string;
   gsi1pk: string;
   gsi1sk: string;
+  // Set by ProjectsService.create when this session is a Project's map — absent
+  // for plain research sessions created outside a Project.
+  projectId?: string;
 }
 
 export interface CitationSource {

@@ -8,6 +8,7 @@ const mockDb = {
   putProject: jest.fn(),
   getProject: jest.fn(),
   listProjects: jest.fn(),
+  updateSessionMeta: jest.fn(),
 };
 
 const mockSessions = {
@@ -47,6 +48,7 @@ describe('ProjectsService', () => {
     it('creates an empty session first, then the project pointing at it', async () => {
       mockSessions.createEmpty.mockResolvedValue('sess-1');
       mockDb.putProject.mockResolvedValue(undefined);
+      mockDb.updateSessionMeta.mockResolvedValue(undefined);
 
       const result = await service.create(SUB, dto);
 
@@ -56,6 +58,16 @@ describe('ProjectsService', () => {
       );
       expect(result.sessionId).toBe('sess-1');
       expect(result.projectId).toBeDefined();
+    });
+
+    it('links the new session back to the project via projectId', async () => {
+      mockSessions.createEmpty.mockResolvedValue('sess-1');
+      mockDb.putProject.mockResolvedValue(undefined);
+      mockDb.updateSessionMeta.mockResolvedValue(undefined);
+
+      const result = await service.create(SUB, dto);
+
+      expect(mockDb.updateSessionMeta).toHaveBeenCalledWith(SUB, 'sess-1', { projectId: result.projectId });
     });
   });
 

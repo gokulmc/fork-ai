@@ -8,14 +8,20 @@ import {
   Param,
   HttpCode,
   HttpStatus,
+  Res,
+  Header,
+  HttpException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiParam } from '@nestjs/swagger';
+import { Response } from 'express';
+import { friendlyLlmError } from '@/llm/llm.service';
 import { CurrentUser } from '@/auth/current-user.decorator';
 import { CognitoUser } from '@/auth/jwt.strategy';
 import { NodesService } from './nodes.service';
 import { CreateNodeDto } from './dto/create-node.dto';
 import { CreateMixNodeDto } from './dto/create-mix-node.dto';
 import { CreateBranchNodeDto } from './dto/create-branch-node.dto';
+import { CreateCodeNodeDto } from './dto/create-code-node.dto';
 import { UpdateNodeDto } from './dto/update-node.dto';
 
 @ApiTags('nodes')
@@ -54,6 +60,33 @@ export class NodesController {
     @Body() dto: CreateBranchNodeDto,
   ) {
     return this.nodesService.createBranchNode(user.sub, sessionId, dto);
+  }
+
+  @Post('code/stream')
+  @Header('Content-Type', 'text/event-stream')
+  @Header('Cache-Control', 'no-cache')
+  @Header('Connection', 'keep-alive')
+  @ApiOperation({ summary: 'Create a CODE node with streaming SSE — replays a mocked agent run (init → agent-event… → commit → done)' })
+  @ApiParam({ name: 'sessionId', description: 'ULID session ID' })
+  async createCodeStream(
+    @CurrentUser() user: CognitoUser,
+    @Param('sessionId') sessionId: string,
+    @Body() dto: CreateCodeNodeDto,
+    @Res() res: Response,
+  ) {
+    const send = (data: object) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+    try {
+      await this.nodesService.createCodeNodeStreaming(user.sub, sessionId, dto, send);
+    } catch (err) {
+      const isHttp = err instanceof HttpException;
+      send({
+        type: 'error',
+        message: isHttp ? err.message : friendlyLlmError(err as Error),
+        status: isHttp ? err.getStatus() : 500,
+      });
+    } finally {
+      res.end();
+    }
   }
 
   @Get(':nodeId/agent-run')

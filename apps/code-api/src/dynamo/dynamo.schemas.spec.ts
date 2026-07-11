@@ -1,5 +1,5 @@
 import * as dynamoose from 'dynamoose';
-import { NodeSchema, AgentRunSchema, ProjectSchema } from './dynamo.schemas';
+import { NodeSchema, AgentRunSchema, ProjectSchema, SessionMetaSchema } from './dynamo.schemas';
 
 // Model instantiation + toJSON only — no .save()/.get(), so no AWS calls/creds
 // needed. This exists to catch the exact bug this codebase has hit before:
@@ -106,5 +106,26 @@ describe('Dynamoose schema field coverage', () => {
       url: 'https://mock.git/acme/widgets',
     });
     expect(json.plugins).toEqual(['mem-palace', 'graphify']);
+  });
+
+  it('SessionMeta model retains projectId', () => {
+    const SessionMetaModel = dynamoose.model('SessionMetaSchemaCoverageTest', SessionMetaSchema);
+    const item = new SessionMetaModel({
+      PK: 'USER#u1',
+      SK: 'SESSION#s1',
+      sessionId: 's1',
+      title: 'T',
+      emoji: '',
+      lede: '',
+      rootNodeId: '',
+      nodeCount: 0,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      gsi1pk: 'USER#u1',
+      gsi1sk: 'UPDATED#2026-01-01T00:00:00.000Z',
+      projectId: 'p1',
+    });
+    const json = item.toJSON() as Record<string, unknown>;
+    expect(json.projectId).toBe('p1');
   });
 });

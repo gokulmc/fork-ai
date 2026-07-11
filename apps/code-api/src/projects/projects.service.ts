@@ -32,6 +32,9 @@ export class ProjectsService {
     };
 
     await this.db.putProject(project);
+    // projectId is only known after the project exists, so it's attached to the
+    // (already-created) session as a follow-up patch rather than at createEmpty time.
+    await this.db.updateSessionMeta(sub, sessionId, { projectId });
     return project;
   }
 

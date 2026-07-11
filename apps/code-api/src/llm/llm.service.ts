@@ -358,6 +358,7 @@ Each section "body" should be 80-180 words. You MAY use GitHub-flavored markdown
     boost = false,
     usedEmojis: string[] = [],
     persona?: string,
+    extraContext?: string,
   ): Promise<LlmResponse> {
     const trail = ancestors
       .map((a, i) => `${ i === 0 ? 'Root query' : 'Sub-topic'}: "${a.query}" → "${a.title}"`)
@@ -367,16 +368,18 @@ ${trail}
 
 Go DEEPER on the section titled "${sectionHeading}" within this context.
 Section content for reference: "${sectionBody.slice(0, 400)}"`;
+    // Undefined by default, so a non-CODE-parent branch's prompt stays byte-identical.
+    const contextBlock = extraContext ? `\n\n${extraContext}` : '';
 
     const prompt = verbose
-      ? `${intro}
+      ? `${intro}${contextBlock}
 
 Write a thorough, well-structured deep-dive — like a chat assistant answering in depth. Use rich markdown (headings, lists, bold, code, tables) inside one continuous answer, NOT the app's section cards. Stay relevant to the full research trail.
 
 ${VERBOSE_SCHEMA}
 
 The "title" should be a 5-word-max phrase capturing the deep dive.`
-      : `${intro}
+      : `${intro}${contextBlock}
 
 Produce a focused deep-dive with as many sections as the topic warrants — no more than ${sectionCount}. Do not pad; fewer sections is better when the scope is narrow. Each section should be 80-180 words. Stay relevant to the full research trail.
 
@@ -399,6 +402,7 @@ You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase 
     boost = false,
     usedEmojis: string[] = [],
     persona?: string,
+    extraContext?: string,
   ): Promise<LlmResponse> {
     const trail = ancestors
       .map((a, i) => `${i === 0 ? 'Root query' : 'Sub-topic'}: "${a.query}" → "${a.title}"`)
@@ -408,16 +412,18 @@ ${trail}
 
 The user highlighted this passage: "${highlight.slice(0, 800)}"
 They asked: "${question}"`;
+    // Undefined by default, so a non-CODE-parent branch's prompt stays byte-identical.
+    const contextBlock = extraContext ? `\n\n${extraContext}` : '';
 
     const prompt = verbose
-      ? `${intro}
+      ? `${intro}${contextBlock}
 
 Answer thoroughly — like a chat assistant replying in depth. Use rich markdown (headings, lists, bold, code, tables) inside one continuous answer, NOT the app's section cards. Keep the answer grounded in the research trail context.
 
 ${VERBOSE_SCHEMA}
 
 The "title" should be a 5-word-max phrase capturing the answer topic.`
-      : `${intro}
+      : `${intro}${contextBlock}
 
 Answer with as many sections as the question warrants — no more than ${sectionCount}. Do not pad; fewer sections is better when the answer is focused. Each section should be 80-180 words. Keep the answer grounded in the research trail context.
 
@@ -613,6 +619,27 @@ You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase 
     const result = this.parseJson(rawText);
     result.usage = usage;
     return result;
+  }
+
+  // Used by MockAgentService — a bare completion call reusing the same provider
+  // dispatch, non-streaming output ceiling, and truncation handling as
+  // mixNodes/callJson. Parsing/validation is the caller's job: the agent-run
+  // transcript JSON shape (commitMessage/diffSummary/events) isn't LlmResponse's
+  // {title,emoji,lede,sections}, so parseJson doesn't apply here.
+  async generateAgentTranscript(prompt: string, model: string): Promise<{ rawText: string; usage: LlmUsage }> {
+    const provider = this.providerFor(model);
+    const { rawText, usage, truncated } = await provider.complete(prompt, {
+      model,
+      maxTokens: NON_STREAMING_MAX_TOKENS,
+      webSearch: false,
+    });
+    if (truncated) {
+      throw new UnprocessableEntityException({
+        message: 'The agent transcript was cut off — it hit the length limit',
+        code: 'OUTPUT_TRUNCATED',
+      });
+    }
+    return { rawText, usage };
   }
 
   async getTrendingTopics(): Promise<string[]> {
