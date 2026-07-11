@@ -612,6 +612,157 @@ export function deleteHighlight(
   return apiFetch<void>(`/sessions/${sessionId}/highlights/${hlId}`, idToken, { method: 'DELETE' });
 }
 
+// ── Projects ──────────────────────────────────────────────────────────────
+
+export interface RepoRef {
+  provider: 'github-mock';
+  owner: string;
+  repo: string;
+  defaultBranch: string;
+  url: string;
+}
+
+export interface Project {
+  projectId: string;
+  name: string;
+  repoRef: RepoRef;
+  plugins: string[];
+  sessionId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateProjectPayload {
+  name: string;
+  repoRef: RepoRef;
+  plugins: string[];
+}
+
+export function listProjects(idToken: string): Promise<Project[]> {
+  return apiFetch<Project[]>('/projects', idToken);
+}
+
+export function createProject(idToken: string, payload: CreateProjectPayload): Promise<Project> {
+  return apiFetch<Project>('/projects', idToken, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getProject(idToken: string, projectId: string): Promise<Project> {
+  return apiFetch<Project>(`/projects/${projectId}`, idToken);
+}
+
+// ── Root query into an existing (empty) project session ────────────────────
+// Same SSE vocabulary as createSessionStream (init/meta/section/done/error) —
+// the only difference is the session already exists, so `init`'s sessionId is
+// the one the caller already knows.
+
+export interface RootQueryPayload {
+  query: string;
+  sectionCount?: number;
+  webSearch?: boolean;
+}
+
+export async function createRootQueryInSessionStream(
+  idToken: string,
+  sessionId: string,
+  payload: RootQueryPayload,
+  onEvent: (event: StreamEvent) => void,
+): Promise<void> {
+  const res = await fetch(`${base()}/sessions/${sessionId}/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok || !res.body) {
+    const text = await res.text().catch(() => '');
+    const { message, code } = extractError(text, res.statusText);
+    throw new ApiError(res.status, message, code);
+  }
+
+  await readSseStream<StreamEvent>(res.body, onEvent);
+}
+
+// ── CODE nodes — streaming mocked agent run ─────────────────────────────────
+
+// Mirrors apps/code-api/src/agent/agent-run.util.ts's AgentEvent — `ts` is an
+// ISO string, `payload` is `unknown` (in practice always a string from the mock
+// agent, but render defensively), and 'truncated' is a synthetic marker kind
+// serializeEventsCapped injects when the persisted log was middle-truncated.
+export interface AgentEvent {
+  seq: number;
+  ts: string;
+  kind: 'text' | 'tool_call' | 'tool_result' | 'terminal' | 'file_edit' | 'truncated';
+  payload: unknown;
+}
+
+export interface CreateCodeNodePayload {
+  parentNodeId: string;
+  instruction: string;
+  model?: 'haiku' | 'sonnet' | 'opus' | 'gemini-pro' | 'gemini-flash' | 'gemini-flash-lite' | 'deepseek-pro' | 'deepseek-flash' | 'glm' | 'glm-air';
+}
+
+export type CodeStreamEvent =
+  | { type: 'init'; node: ApiNode }
+  | { type: 'agent-event'; event: AgentEvent }
+  | { type: 'commit'; sha: string; branchName: string; message: string; diffSummary: DiffSummary }
+  | { type: 'done'; node: ApiNode }
+  | { type: 'error'; message: string; status?: number };
+
+export async function createCodeNodeStream(
+  idToken: string,
+  sessionId: string,
+  payload: CreateCodeNodePayload,
+  onEvent: (event: CodeStreamEvent) => void,
+): Promise<void> {
+  const res = await fetch(`${base()}/sessions/${sessionId}/nodes/code/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok || !res.body) {
+    const text = await res.text().catch(() => '');
+    const { message, code } = extractError(text, res.statusText);
+    throw new ApiError(res.status, message, code);
+  }
+
+  await readSseStream<CodeStreamEvent>(res.body, onEvent);
+}
+
+// Raw shape returned by GET /sessions/:id/nodes/:nodeId/agent-run — `events` is
+// a JSON-serialized string on the wire (see AgentRunItem); parsed here into
+// AgentEvent[] so callers never touch JSON.parse themselves.
+export interface AgentRun {
+  nodeId: string;
+  status: 'running' | 'done' | 'error';
+  events: AgentEvent[];
+  commitSha?: string;
+  branchName?: string;
+  commitMessage?: string;
+  diffSummary?: DiffSummary;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function getAgentRun(idToken: string, sessionId: string, nodeId: string): Promise<AgentRun> {
+  const raw = await apiFetch<Omit<AgentRun, 'events'> & { events: string }>(
+    `/sessions/${sessionId}/nodes/${nodeId}/agent-run`,
+    idToken,
+  );
+  let events: AgentEvent[] = [];
+  try { events = JSON.parse(raw.events) as AgentEvent[]; } catch { /* malformed events blob */ }
+  return { ...raw, events };
+}
+
 export type SupportSubject = 'Bug' | 'Billing' | 'Feature Request' | 'Other';
 
 export async function submitSupportTicket(dto: {

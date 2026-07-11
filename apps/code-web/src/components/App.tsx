@@ -18,6 +18,11 @@ const HL_FG = [null, '#b91c1c', '#1d4ed8', '#047857'];
 // the colour picker.
 const BRANCH_HL = 'branch';
 
+// Mirrors backend LEARN_KINDS (apps/code-api/src/nodes/node-grammar.ts) — a PLAN
+// node is only ever spawned via the mixer's plan:true route, never the generic
+// create-node grammar, so it isn't expressed in nodeGrammar.ts's canSpawn table.
+const MIXER_PLAN_BASE_KINDS = new Set<ForkNode['kind']>(['QUERY', 'DEEPER', 'ASK', 'MIX']);
+
 function hlName(bg: string | null, fg: string | null | undefined): string {
   const b = (bg ?? '#fef08a').replace('#', '');
   const f = (fg ?? null)?.replace('#', '') ?? null;
@@ -64,6 +69,7 @@ function nodeErrorDisplay(err: unknown): { msg: string; status?: number; code?: 
 // Retry context for a failed LLM node, keyed by the failed node's id.
 type RetryInfo =
   | { kind: 'ROOT'; query: string }
+  | { kind: 'ROOT_IN_SESSION'; sessionId: string; query: string }
   | { kind: 'DEEPER'; parentNodeId: string; section: { id: string; heading: string; body: string }; boost?: boolean }
   | { kind: 'ASK'; question: string; source: FollowUpState; boost?: boolean };
 import { useTweaks } from '@/hooks/useTweaks';
@@ -73,10 +79,14 @@ import {
   listSessions,
   getSession,
   createSessionStream,
+  createRootQueryInSessionStream,
   createDocumentSessionStream,
   createNode,
   createMixNode,
   createBranchNode,
+  createCodeNodeStream,
+  listProjects,
+  createProject,
   renameNode as apiRenameNode,
   setNodeStar as apiSetNodeStar,
   deleteNode as apiDeleteNode,
@@ -95,7 +105,12 @@ import {
   ApiError,
   type SessionSummary,
   type DocumentStreamEvent,
+  type StreamEvent,
+  type Project,
+  type CreateProjectPayload,
+  type AgentEvent,
 } from '@/lib/api';
+import { canSpawn } from '@/lib/nodeGrammar';
 import { SkeletonSections } from './SkeletonSections';
 import { HighlightMenu } from './HighlightMenu';
 import { FollowUpPop, SHORTHANDS } from './FollowUpPop';
@@ -107,10 +122,14 @@ import { HistoryPage } from './HistoryPage';
 import { TweaksPanel } from './TweaksPanel';
 import { AccountButton } from './AccountButton';
 import { MindMapPill } from './MindMapPill';
+import { ProjectsPage } from './ProjectsPage';
+import { ProjectStart } from './ProjectStart';
+import { AgentLogPane } from './AgentLogPane';
+import { CodeInstructionPopup } from './CodeInstructionPopup';
 import {
   Search, Bookmark, ChevronRight, Sparkles, CornerDownRight, Hash,
   Quote, AlertCircle, ArrowUpRight, Pencil, Trash, Clock, FileText, Home,
-  Blend, Filter, X as XIcon, ClipboardList, Code, GitBranch,
+  Blend, Filter, X as XIcon, ClipboardList, Code,
 } from './Icons';
 import { exportNodePdf } from '@/lib/sessionPdf';
 
@@ -254,6 +273,13 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
   const [pdfExporting, setPdfExporting] = useState(false);
+  // Projects (shown on the projects page — replaces Landing for authed users)
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loadingProjects, setLoadingProjects] = useState(false);
+  // The Project behind the active session, if any — needed for repo deep-links
+  // (AgentLogPane's "View on GitHub") and the plugins display. Null for a plain
+  // research session (not every session belongs to a project).
+  const [activeProject, setActiveProject] = useState<Project | null>(null);
   // Active research session
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [nodes, setNodes] = useState<Record<string, ForkNode>>({});
@@ -300,6 +326,8 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   const [mixerQuestion, setMixerQuestion] = useState('');
   const [mixerAnimating, setMixerAnimating] = useState(false);
   const [mixerCollapsing, setMixerCollapsing] = useState(false);
+  // When checked, spawnMix synthesizes a PLAN node (plan:true) instead of a MIX node.
+  const [mixerPlan, setMixerPlan] = useState(false);
   // Refs to each SVG node <g> element — used to compute ghost start positions
   const nodeRefs = useRef<Map<string, SVGGElement>>(new Map());
 
@@ -309,7 +337,21 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     setMixerQuestion('');
     setMixerAnimating(false);
     setMixerCollapsing(false);
+    setMixerPlan(false);
   }, []);
+
+  // ── Code-node (git-graph rail) state ──────────────────────────────────────
+  // Live agent-event log per CODE node, keyed by node id — populated while
+  // createCodeNodeStream streams; AgentLogPane falls back to GET .../agent-run
+  // when a node has no in-memory log (e.g. a reload landed on a finished run).
+  const [agentLogs, setAgentLogs] = useState<Record<string, AgentEvent[]>>({});
+  const [codeInstrOpen, setCodeInstrOpen] = useState<{
+    rect: { left: number; top: number; width: number; height: number; bottom: number };
+    mode: 'implement' | 'continue';
+    parentNodeId: string;
+  } | null>(null);
+  const codeBtnRef = useRef<HTMLButtonElement>(null);
+  const [askCommitLoading, setAskCommitLoading] = useState(false);
 
   const [creditBalance, setCreditBalance] = useState<number | null>(null);
   const [rootQueryOutOfCredit, setRootQueryOutOfCredit] = useState(false);
@@ -446,6 +488,21 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
 
   useEffect(() => {
     if (!idToken) return;
+    setLoadingProjects(true);
+    listProjects(idToken)
+      .then(setProjects)
+      .catch(err => console.error('Failed to load projects', err))
+      .finally(() => setLoadingProjects(false));
+  }, [idToken]);
+
+  const handleCreateProject = useCallback(async (payload: CreateProjectPayload): Promise<Project> => {
+    const project = await createProject(idToken, payload);
+    setProjects(prev => [project, ...prev]);
+    return project;
+  }, [idToken]);
+
+  useEffect(() => {
+    if (!idToken) return;
     getMe(idToken)
       .then(me => setCreditBalance(me.creditUsd ?? null))
       .catch(() => {});
@@ -552,6 +609,13 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       setLoadingRoot(false);
     }
   }, [idToken]);
+
+  // Opening a project = load its (possibly empty) session + remember the
+  // Project itself, since nodes/sessions carry no projectId client-side.
+  const openProject = useCallback((project: Project) => {
+    setActiveProject(project);
+    void loadSession(project.sessionId);
+  }, [loadSession]);
 
   // ── Persist active session to URL hash + localStorage (survive refresh) ────
 
@@ -734,6 +798,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         setNodes({});
         setRootId(null);
         setActiveId(null);
+        setActiveProject(null);
         setView('landing');
       }
     } catch (err) {
@@ -755,34 +820,17 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
 
   const retryInfoRef = useRef<Record<string, RetryInfo>>({});
 
-  const submitRootQuery = useCallback(async (query: string) => {
-    if (!idToken) { setForceLogin(true); return; }
-    const tempId = uid();
-    const optimisticNode: ForkNode = {
-      id: tempId,
-      parentId: null,
-      kind: 'QUERY',
-      title: '',
-      emoji: null,
-      query,
-      lede: '',
-      sections: [],
-      fromSection: null,
-      fromText: null,
-      createdAt: Date.now(),
-      loading: true,
-    };
-
-    // Show workspace immediately with optimistic node
-    setNodes({ [tempId]: optimisticNode });
-    setRootId(tempId);
-    setActiveId(tempId);
-    setSessionId(null);
-    setAnnotations([]);
-    setPersistentHl({});
-    setHighlightsList([]);
-    setLoadingRoot(true);
-
+  // Shared SSE-consumption loop for a root-query stream — used both by a
+  // brand-new session (submitRootQuery, via createSessionStream) and a query
+  // into an existing empty project session (submitProjectQuery, via
+  // createRootQueryInSessionStream). Both event vocabularies are identical
+  // (StreamEvent); only how the stream is *started*, and what to retry on
+  // failure, differ — those are the two params callers supply.
+  const consumeRootStream = useCallback(async (
+    tempId: string,
+    starter: (onEvent: (event: StreamEvent) => void) => Promise<void>,
+    retryInfo: RetryInfo,
+  ) => {
     try {
       let realNodeId = tempId;
       // Captured from the meta event so the done handler can use them
@@ -792,9 +840,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       let metaEmoji: string | null = null;
       let metaLede = '';
 
-      track('root_query', { webSearch: tweaksRef.current.webSearch });
-
-      await createSessionStream(idToken, query, tweaksRef.current.maxSections, tweaksRef.current.webSearch, (event) => {
+      await starter((event) => {
         if (event.type === 'init') {
           // Backend has persisted the session up-front. Adopt its id NOW so
           // the URL hash updates and a refresh mid-stream restores the real session
@@ -876,7 +922,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         console.error('Failed to create session', err);
         const { msg, status } = nodeErrorDisplay(err);
         track('node_error', { kind: 'QUERY', status, message: msg });
-        retryInfoRef.current[tempId] = { kind: 'ROOT', query };
+        retryInfoRef.current[tempId] = retryInfo;
         setNodes(prev => prev[tempId]
           ? { ...prev, [tempId]: { ...prev[tempId], loading: false, error: msg, errorStatus: status } }
           : prev);
@@ -892,7 +938,81 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         return next;
       });
     }
-  }, [idToken]);
+  }, [refreshCredit]);
+
+  const submitRootQuery = useCallback(async (query: string) => {
+    if (!idToken) { setForceLogin(true); return; }
+    const tempId = uid();
+    const optimisticNode: ForkNode = {
+      id: tempId,
+      parentId: null,
+      kind: 'QUERY',
+      title: '',
+      emoji: null,
+      query,
+      lede: '',
+      sections: [],
+      fromSection: null,
+      fromText: null,
+      createdAt: Date.now(),
+      loading: true,
+    };
+
+    // Show workspace immediately with optimistic node
+    setNodes({ [tempId]: optimisticNode });
+    setRootId(tempId);
+    setActiveId(tempId);
+    setSessionId(null);
+    setAnnotations([]);
+    setPersistentHl({});
+    setHighlightsList([]);
+    setLoadingRoot(true);
+
+    track('root_query', { webSearch: tweaksRef.current.webSearch });
+    await consumeRootStream(
+      tempId,
+      onEvent => createSessionStream(idToken, query, tweaksRef.current.maxSections, tweaksRef.current.webSearch, onEvent),
+      { kind: 'ROOT', query },
+    );
+  }, [idToken, consumeRootStream]);
+
+  // First query inside an empty Project session — the session already exists
+  // (ProjectsService.create → SessionsService.createEmpty), so this streams
+  // into it via POST /sessions/:id/stream rather than minting a new session.
+  const submitProjectQuery = useCallback(async (sid: string, query: string, reuseTempId?: string) => {
+    if (!idToken) { setForceLogin(true); return; }
+    const tempId = reuseTempId ?? uid();
+    const optimisticNode: ForkNode = {
+      id: tempId,
+      parentId: null,
+      kind: 'QUERY',
+      title: '',
+      emoji: null,
+      query,
+      lede: '',
+      sections: [],
+      fromSection: null,
+      fromText: null,
+      createdAt: Date.now(),
+      loading: true,
+    };
+
+    setNodes({ [tempId]: optimisticNode });
+    setRootId(tempId);
+    setActiveId(tempId);
+    setLoadingRoot(true);
+
+    track('root_query', { webSearch: tweaksRef.current.webSearch, project: true });
+    await consumeRootStream(
+      tempId,
+      onEvent => createRootQueryInSessionStream(idToken, sid, {
+        query,
+        sectionCount: tweaksRef.current.maxSections,
+        webSearch: tweaksRef.current.webSearch,
+      }, onEvent),
+      { kind: 'ROOT_IN_SESSION', sessionId: sid, query },
+    );
+  }, [idToken, consumeRootStream]);
 
   // ── Document upload: build a whole mind-map in one stream ──────────────────
   // Authed-only (Landing routes guests to login). Mirrors submitRootQuery's
@@ -1227,6 +1347,141 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     }
   }, [nodes, idToken, scrollWsTop]);
 
+  // ── CODE node: "Implement"/"Continue" — runs the mocked coding agent ─────
+
+  const submitCodeNode = useCallback(async (parentNodeId: string, instruction: string) => {
+    const sid = sessionIdRef.current;
+    if (!sid || !idToken) return;
+    const parent = nodes[parentNodeId];
+    if (!parent) return;
+
+    const tempId = uid();
+    setNodes(prev => ({
+      ...prev,
+      [tempId]: {
+        id: tempId,
+        parentId: parentNodeId,
+        title: short5(instruction),
+        kind: 'CODE',
+        query: instruction,
+        emoji: null,
+        lede: '',
+        sections: [],
+        fromSection: null,
+        fromText: null,
+        createdAt: Date.now(),
+        loading: true,
+        agentStatus: 'running',
+      },
+    }));
+    setActiveId(tempId);
+    scrollWsTop();
+    setLoadingNodes(prev => new Set(prev).add(tempId));
+
+    let realNodeId = tempId;
+    try {
+      await createCodeNodeStream(idToken, sid, { parentNodeId, instruction, model: tweaksRef.current.branchModel }, (event) => {
+        if (event.type === 'init') {
+          // Real node is already persisted (agentStatus 'running') — swap the
+          // temp id now so the map shows the node on its lane immediately.
+          const real = toForkNode(event.node);
+          realNodeId = real.id;
+          setNodes(prev => {
+            const next = { ...prev };
+            delete next[tempId];
+            next[real.id] = { ...real, loading: true };
+            return next;
+          });
+          setActiveId(prev => (prev === tempId ? real.id : prev));
+          setAgentLogs(prev => ({ ...prev, [real.id]: [] }));
+          setLoadingNodes(prev => { const n = new Set(prev); n.delete(tempId); n.add(real.id); return n; });
+        } else if (event.type === 'agent-event') {
+          setAgentLogs(prev => ({ ...prev, [realNodeId]: [...(prev[realNodeId] ?? []), event.event] }));
+        } else if (event.type === 'commit') {
+          setNodes(prev => prev[realNodeId]
+            ? { ...prev, [realNodeId]: { ...prev[realNodeId], commitSha: event.sha, branchName: event.branchName, commitMessage: event.message, diffSummary: event.diffSummary } }
+            : prev);
+        } else if (event.type === 'done') {
+          const real = toForkNode(event.node);
+          setNodes(prev => ({ ...prev, [realNodeId]: { ...real, loading: false } }));
+          refreshCredit();
+          track('branch_created', { kind: 'CODE', model: tweaksRef.current.branchModel });
+        }
+      });
+    } catch (err) {
+      const { msg, status, code } = nodeErrorDisplay(err);
+      track('node_error', { kind: 'CODE', status, message: msg });
+      setNodes(prev => prev[realNodeId]
+        ? { ...prev, [realNodeId]: { ...prev[realNodeId], loading: false, error: msg, errorStatus: status, errorCode: code, agentStatus: 'error' } }
+        : prev);
+    } finally {
+      setLoadingNodes(prev => { const n = new Set(prev); n.delete(tempId); n.delete(realNodeId); return n; });
+    }
+  }, [nodes, idToken, scrollWsTop, refreshCredit]);
+
+  // "Ask about this commit" on a CODE node's AgentLogPane — spawns an ASK node
+  // with no highlight selection, so the commit message stands in as the anchor
+  // text (the ASK route requires non-empty highlightText).
+  const askAboutCommit = useCallback(async (nodeId: string, question: string) => {
+    const sid = sessionIdRef.current;
+    if (!sid || !idToken) return;
+    const parent = nodes[nodeId];
+    if (!parent) return;
+    const anchorText = parent.commitMessage || parent.title;
+
+    const tempId = uid();
+    setAskCommitLoading(true);
+    setLoadingNodes(prev => new Set(prev).add(tempId));
+    setNodes(prev => ({
+      ...prev,
+      [tempId]: {
+        id: tempId,
+        parentId: nodeId,
+        title: short5(question),
+        kind: 'ASK',
+        query: question,
+        emoji: null,
+        lede: '',
+        sections: [],
+        fromSection: null,
+        fromText: anchorText,
+        createdAt: Date.now(),
+        loading: true,
+      },
+    }));
+    try {
+      const apiNode = await createNode(idToken, sid, {
+        kind: 'ASK',
+        parentNodeId: nodeId,
+        fromSection: '',
+        query: question,
+        highlightText: anchorText,
+        sectionCount: tweaksRef.current.maxSections,
+        webSearch: tweaksRef.current.webSearch,
+        verbose: tweaksRef.current.answerStyle === 'verbose',
+        model: tweaksRef.current.branchModel,
+      });
+      const realNode = toForkNode(apiNode);
+      setNodes(prev => {
+        const next = { ...prev };
+        delete next[tempId];
+        next[realNode.id] = realNode;
+        return next;
+      });
+      setActiveId(realNode.id);
+      scrollWsTop();
+      refreshCredit();
+      track('branch_created', { kind: 'ASK', model: tweaksRef.current.branchModel });
+    } catch (err) {
+      const { msg, status, code } = nodeErrorDisplay(err);
+      track('node_error', { kind: 'ASK', status, message: msg });
+      setNodes(prev => ({ ...prev, [tempId]: { ...prev[tempId], loading: false, error: msg, errorStatus: status, errorCode: code } }));
+    } finally {
+      setAskCommitLoading(false);
+      setLoadingNodes(prev => { const n = new Set(prev); n.delete(tempId); return n; });
+    }
+  }, [nodes, idToken, scrollWsTop, refreshCredit]);
+
   // ── Retry a failed LLM node ───────────────────────────────────────────────
 
   const retryNode = useCallback((failedId: string) => {
@@ -1235,9 +1490,10 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     delete retryInfoRef.current[failedId];
     track('retry_clicked', { kind: info.kind });
     if (info.kind === 'ROOT') void submitRootQuery(info.query);
+    else if (info.kind === 'ROOT_IN_SESSION') void submitProjectQuery(info.sessionId, info.query, failedId);
     else if (info.kind === 'DEEPER') void expandSectionAsChild(info.parentNodeId, info.section, failedId, info.boost);
     else void askFromHighlight(info.question, info.source, failedId, info.boost);
-  }, [submitRootQuery, expandSectionAsChild, askFromHighlight]);
+  }, [submitRootQuery, submitProjectQuery, expandSectionAsChild, askFromHighlight]);
 
   // ── Text selection → highlight menu ──────────────────────────────────────
 
@@ -1590,8 +1846,8 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     const optimisticNode: ForkNode = {
       id: tempId,
       parentId: activeId,
-      kind: 'MIX',
-      title: 'Synthesizing…',
+      kind: mixerPlan ? 'PLAN' : 'MIX',
+      title: mixerPlan ? 'Planning…' : 'Synthesizing…',
       emoji: null,
       query: expanded,
       lede: '',
@@ -1611,6 +1867,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         query: expanded,
         sectionCount: tweaksRef.current.maxSections,
         model: tweaksRef.current.branchModel,
+        ...(mixerPlan ? { plan: true } : {}),
       });
 
       const realNode = toForkNode(result);
@@ -1645,7 +1902,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       if (baseCardEl) baseCardEl.classList.remove('mixer-shaking');
       exitMixer();
     }
-  }, [activeId, sessionId, idToken, mixerSelectedIds, mixerQuestion, nodes, exitMixer, scrollWsTop]);
+  }, [activeId, sessionId, idToken, mixerSelectedIds, mixerQuestion, mixerPlan, nodes, exitMixer, scrollWsTop]);
 
   const renameNodeLocal = (id: string) => {
     const name = prompt('Rename node (max 5 words)', nodes[id]?.title);
@@ -1707,6 +1964,9 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   // ── Derived state ─────────────────────────────────────────────────────────
 
   const active = activeId ? nodes[activeId] : null;
+  // The mixer's base node is always the current activeId (fixed for the
+  // duration of a mixer session — selecting nodes doesn't change activeId).
+  const canMixerPlan = active ? MIXER_PLAN_BASE_KINDS.has(active.kind) : false;
 
   const breadcrumbs = useMemo(() => {
     if (!activeId) return [] as ForkNode[];
@@ -1752,7 +2012,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
 
   // ── Landing / history / loading ───────────────────────────────────────────
 
-  const goHome = () => { setRootId(null); setNodes({}); setSessionId(null); setActiveId(null); setView('landing'); };
+  const goHome = () => { setRootId(null); setNodes({}); setSessionId(null); setActiveId(null); setActiveProject(null); setView('landing'); };
   const persistentBrand = (
     <div className="app-brand" onClick={goHome} title="Go to home">
       <span className="brand-logo" aria-hidden="true" /> fork ai
@@ -1786,12 +2046,33 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       <HistoryPage
         sessions={sessions}
         loading={loadingSessions}
-        onLoadSession={loadSession}
+        onLoadSession={sid => { setActiveProject(null); loadSession(sid); }}
         onDeleteSession={handleDeleteSession}
         onBack={() => setView('landing')}
       />
     );
+    // A Project's session is created empty (ProjectsService.create) — its first
+    // query streams into the existing session via submitProjectQuery rather than
+    // minting a brand-new one.
+    else if (activeProject && sessionId) inner = (
+      <ProjectStart
+        project={activeProject}
+        loading={loadingRoot}
+        onSubmit={q => { setRootQueryOutOfCredit(false); void submitProjectQuery(sessionId, q); }}
+      />
+    );
+    else if (status === 'authenticated') inner = (
+      <ProjectsPage
+        projects={projects}
+        loading={loadingProjects}
+        onOpenProject={openProject}
+        onCreateProject={handleCreateProject}
+        onShowHistory={() => setView('history')}
+      />
+    );
     else inner = (
+      // Only reached by a logged-out new visitor (authed users with no active
+      // session are routed to ProjectsPage above) — loggedIn is always false here.
       <Landing
         onSubmit={q => { setRootQueryOutOfCredit(false); submitRootQuery(q); }}
         onSubmitDocument={(text, fileName) => { setRootQueryOutOfCredit(false); submitDocument(text, fileName); }}
@@ -1799,7 +2080,6 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         onShowHistory={() => setView('history')}
         outOfCredit={rootQueryOutOfCredit}
         initialTopics={initialTopics}
-        loggedIn={status === 'authenticated'}
         onLogin={() => setForceLogin(true)}
       />
     );
@@ -1843,7 +2123,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
             </button>
           )}
           {idToken && (
-            <button data-tour="tour-history" className="icon-btn" onClick={() => { setView('history'); setRootId(null); setNodes({}); setSessionId(null); }} title="Research history">
+            <button data-tour="tour-history" className="icon-btn" onClick={() => { setView('history'); setRootId(null); setNodes({}); setSessionId(null); setActiveProject(null); }} title="Research history">
               <Clock size={14} /> History
             </button>
           )}
@@ -1901,6 +2181,22 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
                     </span>
                   ))}
                 </div>
+                {mixerCollapsing ? null : (
+                  <>
+                    <label className={`mixer-plan-row${canMixerPlan ? '' : ' mixer-plan-row--disabled'}`}>
+                      <input
+                        type="checkbox"
+                        checked={mixerPlan}
+                        disabled={!canMixerPlan}
+                        onChange={e => setMixerPlan(e.target.checked)}
+                      />
+                      <span>Create implementation plan</span>
+                    </label>
+                    {!canMixerPlan && (
+                      <p className="mixer-plan-hint">Plans can only be created from Query, Deep dive, Ask AI, or Synthesis nodes.</p>
+                    )}
+                  </>
+                )}
                 <div className={`mixer-question-row${mixerCollapsing ? ' mixer-question-row--hidden' : ''}`}>
                   <input
                     className="mixer-question-input"
@@ -1923,7 +2219,9 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
                   >
                     {mixerAnimating
                       ? <span className="spinner" style={{ width: 11, height: 11 }} />
-                      : <><Blend size={13} /> Mix &amp; Spawn</>}
+                      : mixerPlan
+                        ? <><ClipboardList size={13} /> Plan &amp; Spawn</>
+                        : <><Blend size={13} /> Mix &amp; Spawn</>}
                   </button>
                 </div>
                 <span className="mixer-shortcut-hint">⌘ + ⏎ to mix · Esc to cancel</span>
@@ -1942,7 +2240,19 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
 
       <section className="workspace" ref={wsRef}>
         <div className="workspace-inner" ref={wsInnerRef}>
-          {active && (
+          {active && (active.kind === 'CODE' || active.kind === 'BRANCH') && sessionId && (
+            <AgentLogPane
+              node={active}
+              events={agentLogs[active.id]}
+              project={activeProject}
+              idToken={idToken}
+              sessionId={sessionId}
+              onImplement={rect => setCodeInstrOpen({ rect, mode: active.kind === 'CODE' ? 'continue' : 'implement', parentNodeId: active.id })}
+              onAskAboutCommit={q => askAboutCommit(active.id, q)}
+              askLoading={askCommitLoading}
+            />
+          )}
+          {active && active.kind !== 'CODE' && active.kind !== 'BRANCH' && (
             <>
               <div className="ws-meta">
                 <button
@@ -1952,6 +2262,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
                   onClick={() => toggleStar(active)}
                   title={active.starred ? 'Starred — click to unstar' : 'Star this node'}
                 >
+                  {/* CODE/BRANCH never reach this block — they render via AgentLogPane above. */}
                   {active.kind === 'ASK'
                     ? <><Sparkles size={12} className="ic" /> Follow-up</>
                     : active.kind === 'DEEPER'
@@ -1960,11 +2271,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
                         ? <><Blend size={12} className="ic" /> Synthesis</>
                         : active.kind === 'PLAN'
                           ? <><ClipboardList size={12} className="ic" /> Plan</>
-                          : active.kind === 'CODE'
-                            ? <><Code size={12} className="ic" /> Code</>
-                            : active.kind === 'BRANCH'
-                              ? <><GitBranch size={12} className="ic" /> Branch</>
-                              : <><Search size={12} className="ic" /> Query</>}
+                          : <><Search size={12} className="ic" /> Query</>}
                 </button>
                 {active.kind === 'QUERY' && (
                   <span className="pill"><Hash size={12} className="ic" /> {active.sections.length || '—'} sections</span>
@@ -2013,6 +2320,24 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
                     }}
                   >
                     <Sparkles size={12} className="ic" /> Ask AI
+                  </button>
+                )}
+                {/* Only PLAN reaches here (CODE/BRANCH render via AgentLogPane, which
+                    has its own Implement/Continue trigger) — canSpawn still gates it
+                    explicitly so this stays correct if that ever changes. */}
+                {!active.loading && !active.error && canSpawn(active.kind, 'CODE') && (
+                  <button
+                    ref={codeBtnRef}
+                    className="pill pill-code-cta"
+                    onClick={() => {
+                      const r = codeBtnRef.current?.getBoundingClientRect();
+                      const rect = r
+                        ? { left: r.left, top: r.top, width: r.width, height: r.height, bottom: r.bottom }
+                        : { left: 0, top: 0, width: 0, height: 0, bottom: 0 };
+                      setCodeInstrOpen({ rect, mode: 'implement', parentNodeId: active.id });
+                    }}
+                  >
+                    <Code size={12} className="ic" /> Implement
                   </button>
                 )}
                 {active.loading && (
@@ -2118,6 +2443,19 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
           loading={followUp.loading}
           onClose={() => setFollowUp(null)}
           onSubmit={q => askFromHighlight(q, followUp)}
+        />
+      )}
+
+      {codeInstrOpen && (
+        <CodeInstructionPopup
+          rect={codeInstrOpen.rect}
+          mode={codeInstrOpen.mode}
+          onSubmit={instruction => {
+            const parentNodeId = codeInstrOpen.parentNodeId;
+            setCodeInstrOpen(null);
+            void submitCodeNode(parentNodeId, instruction);
+          }}
+          onClose={() => setCodeInstrOpen(null)}
         />
       )}
 
