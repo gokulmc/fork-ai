@@ -1,15 +1,27 @@
 'use client';
-import { useState } from 'react';
-import type { Project, CreateProjectPayload } from '@/lib/api';
-import { MOCK_REPOS, PLUGINS, type MockRepo } from '@/lib/mockGithub';
-import { Clock, ArrowUpRight, Plus, X as XIcon, Check } from './Icons';
+import { useEffect, useState } from 'react';
+import type { Project, CreateProjectPayload, GithubRepo, GithubStatus, RepoRef } from '@/lib/api';
+import { getGithubStatus, getGithubAuthUrl, listGithubRepos, ApiError } from '@/lib/api';
+import { MOCK_REPOS, PLUGINS } from '@/lib/mockGithub';
+import { Clock, ArrowUpRight, Plus, X as XIcon, Check, Github } from './Icons';
 
 interface ProjectsPageProps {
   projects: Project[];
   loading: boolean;
+  idToken: string;
   onOpenProject: (project: Project) => void;
   onCreateProject: (payload: CreateProjectPayload) => Promise<Project>;
   onShowHistory: () => void;
+  // Auto-opens the New Project modal once, after a `?github=connected` round-trip.
+  initialModalOpen?: boolean;
+}
+
+// Real repos (once GitHub is connected) and mock fixtures share this shape for
+// the picker; a real repo's description falls back to its full name.
+type RepoOption = Pick<RepoRef, 'provider' | 'owner' | 'repo' | 'defaultBranch' | 'url'> & { description: string };
+
+function toRepoOption(r: GithubRepo): RepoOption {
+  return { provider: 'github', owner: r.owner, repo: r.repo, defaultBranch: r.defaultBranch, url: r.url, description: r.description || r.fullName };
 }
 
 function relativeTime(iso: string): string {
@@ -25,12 +37,38 @@ function relativeTime(iso: string): string {
   return `${wk} week${wk === 1 ? '' : 's'} ago`;
 }
 
-function NewProjectModal({ onClose, onCreate }: { onClose: () => void; onCreate: (payload: CreateProjectPayload) => Promise<void> }) {
+function NewProjectModal({ idToken, onClose, onCreate }: { idToken: string; onClose: () => void; onCreate: (payload: CreateProjectPayload) => Promise<void> }) {
   const [name, setName] = useState('');
-  const [selectedRepo, setSelectedRepo] = useState<MockRepo>(MOCK_REPOS[0]);
+  const [selectedRepo, setSelectedRepo] = useState<RepoOption>(MOCK_REPOS[0]);
   const [plugins, setPlugins] = useState<Set<string>>(new Set());
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [ghStatus, setGhStatus] = useState<GithubStatus | null>(null);
+  const [ghRepos, setGhRepos] = useState<GithubRepo[]>([]);
+  const [ghConnecting, setGhConnecting] = useState(false);
+  const [ghHint, setGhHint] = useState<string | null>(null);
+
+  useEffect(() => {
+    getGithubStatus(idToken)
+      .then(status => {
+        setGhStatus(status);
+        if (status.connected) listGithubRepos(idToken).then(setGhRepos).catch(() => {});
+      })
+      .catch(() => setGhStatus({ connected: false }));
+  }, [idToken]);
+
+  const connectGithub = async () => {
+    setGhConnecting(true);
+    setGhHint(null);
+    try {
+      const { url } = await getGithubAuthUrl(idToken);
+      window.location.href = url;
+    } catch (err) {
+      setGhHint(err instanceof ApiError && err.status === 503 ? 'GitHub OAuth not configured' : 'Could not start GitHub connect — try again.');
+      setGhConnecting(false);
+    }
+  };
 
   const togglePlugin = (id: string) => {
     setPlugins(prev => {
@@ -74,7 +112,28 @@ function NewProjectModal({ onClose, onCreate }: { onClose: () => void; onCreate:
           </div>
           <div>
             <div className="proj-field-label">Repository</div>
+            {ghStatus?.connected ? (
+              <div className="proj-gh-chip"><Github size={12} /> {ghStatus.login}</div>
+            ) : (
+              <button type="button" className="proj-gh-connect" disabled={ghConnecting} onClick={connectGithub}>
+                {ghConnecting ? <span className="spinner" style={{ width: 11, height: 11 }} /> : <Github size={13} />}
+                Connect GitHub (read-only — we only ever read, never push)
+              </button>
+            )}
+            {ghHint && <div className="proj-field-error">{ghHint}</div>}
             <div className="proj-repo-list">
+              {ghRepos.map(repo => (
+                <div
+                  key={repo.url}
+                  className={`proj-repo-row${repo.url === selectedRepo.url ? ' selected' : ''}`}
+                  onClick={() => setSelectedRepo(toRepoOption(repo))}
+                  title={repo.description}
+                >
+                  <span className="proj-repo-name">{repo.fullName}</span>
+                  {repo.private && <span className="mock-tag">private</span>}
+                </div>
+              ))}
+              {ghRepos.length > 0 && <div className="proj-repo-divider">mock repos</div>}
               {MOCK_REPOS.map(repo => (
                 <div
                   key={repo.url}
@@ -119,9 +178,14 @@ function NewProjectModal({ onClose, onCreate }: { onClose: () => void; onCreate:
   );
 }
 
-export function ProjectsPage({ projects, loading, onOpenProject, onCreateProject, onShowHistory }: ProjectsPageProps) {
+export function ProjectsPage({ projects, loading, idToken, onOpenProject, onCreateProject, onShowHistory, initialModalOpen }: ProjectsPageProps) {
   const [showModal, setShowModal] = useState(false);
   const [leavingId, setLeavingId] = useState<string | null>(null);
+
+  // initialModalOpen can flip true AFTER this component has already mounted
+  // (App.tsx sets it once the `?github=connected` query param is parsed) — a
+  // reactive effect, not a useState initializer, so the late arrival still opens it.
+  useEffect(() => { if (initialModalOpen) setShowModal(true); }, [initialModalOpen]);
 
   const openProject = (project: Project) => {
     setLeavingId(project.projectId);
@@ -185,6 +249,7 @@ export function ProjectsPage({ projects, loading, onOpenProject, onCreateProject
 
       {showModal && (
         <NewProjectModal
+          idToken={idToken}
           onClose={() => setShowModal(false)}
           onCreate={async payload => {
             const project = await onCreateProject(payload);

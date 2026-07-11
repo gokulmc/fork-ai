@@ -113,11 +113,11 @@ export function Landing({ onSubmit, onSubmitDocument, loading, onShowHistory, ou
         onDragLeave={onDragLeave}
         onDrop={onDrop}
       >
-        <div className="landing-mark">A branching research workspace</div>
-        <h1>Ask once. <em>Branch</em> forever.</h1>
+        <div className="landing-mark">Plan-first coding, by you</div>
+        <h1>Program like an actual programmer.<em>One shot never works.</em></h1>
         <p className="landing-sub">
-          Type a question. Get an answer split into sections you can dive deeper into, highlight,
-          and branch from. Every detour becomes a node on your mind map.
+          Learn the concepts, synthesize a plan, then watch the agent commit one focused step at a
+          time — reviewable, branchable, never a single unreviewable mega-diff.
         </p>
         <div className={`query-box${dragOver ? ' drag-over' : ''}`} data-tour="tour-query">
           <span className="icon"><Search size={20} /></span>
@@ -125,7 +125,7 @@ export function Landing({ onSubmit, onSubmitDocument, loading, onShowHistory, ou
             type="text"
             autoFocus
             value={q}
-            placeholder="Try: how does photosynthesis work?"
+            placeholder="Try: add rate limiting to my API"
             onChange={e => setQ(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && onGo()}
           />
@@ -183,10 +183,8 @@ export function Landing({ onSubmit, onSubmitDocument, loading, onShowHistory, ou
         </div>
       </div>
       <div className="landing-foot">
-        FORK AI · V0.1 · BRANCHING RESEARCH, BY YOU
+        FORKAI CODE · V0.2 · PLAN-FIRST CODING, BY YOU
         <span className="landing-foot-links">
-          <a href="/welcome">How it works</a>
-          <a href="/blog">Blog</a>
           <a href="/privacy-policy">Privacy</a>
           <a href="/terms">Terms</a>
           <CookiePreferencesLink />

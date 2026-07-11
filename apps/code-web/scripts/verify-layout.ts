@@ -1,10 +1,12 @@
 // Standalone verification for layoutGitGraph() — no test runner is configured
 // for apps/code-web yet, so this is run directly via `npx tsx scripts/verify-layout.ts`.
-// Sample shape (per the forkai-code task spec):
-//   root (learn) + 2 learn children
-//     -> PLAN -> 3 CODE (lane 0)
-//                  CODE#2 -> BRANCH -> 2 CODE (lane 1)
-//                  CODE#2 -> 2-node learn subtree (hangs off CODE#2)
+// Two fixtures:
+//   1. Learn-root — root (learn) + 2 learn children
+//        -> PLAN -> 3 CODE (column 0)
+//                     CODE#2 -> BRANCH -> 2 CODE (column 1)
+//                     CODE#2 -> 2-node learn subtree (hangs right of CODE#2)
+//   2. Rail-root — CODE root (imported) -> CODE head child (column 0)
+//                    root -> QUERY (hangs right of root) -> PLAN (column 1) -> 2 CODE
 import { layoutGitGraph, NODE_W, NODE_H } from '../src/lib/layoutGitGraph';
 import type { ForkNode } from '../src/lib/types';
 
@@ -28,6 +30,20 @@ function mkNode(id: string, parentId: string | null, kind: ForkNode['kind'], ext
   };
 }
 
+let failures = 0;
+function assert(cond: boolean, msg: string) {
+  if (cond) {
+    console.log(`  ok   ${msg}`);
+  } else {
+    failures += 1;
+    console.log(`  FAIL ${msg}`);
+  }
+}
+
+// ── Fixture 1: learn-root ────────────────────────────────────────────────────
+
+console.log('layoutGitGraph verification — fixture 1: learn root');
+
 const nodeList: ForkNode[] = [
   mkNode('root', null, 'QUERY'),
   mkNode('learn1', 'root', 'DEEPER'),
@@ -49,63 +65,104 @@ nodeList.forEach(n => { nodes[n.id] = n; });
 const result = layoutGitGraph(nodes, 'root');
 const { pos } = result;
 
-let failures = 0;
-function assert(cond: boolean, msg: string) {
-  if (cond) {
-    console.log(`  ok   ${msg}`);
-  } else {
-    failures += 1;
-    console.log(`  FAIL ${msg}`);
-  }
-}
-
-const lane0 = ['plan', 'code1', 'code2', 'code3'];
-const lane1 = ['branch1', 'code4', 'code5'];
-
-console.log('layoutGitGraph verification');
+const col0 = ['plan', 'code1', 'code2', 'code3'];
+const col1 = ['branch1', 'code4', 'code5'];
 
 console.log('positions:');
 Object.entries(pos).forEach(([id, p]) => console.log(`  ${id.padEnd(8)} x=${p.x.toFixed(1).padStart(8)} y=${p.y.toFixed(1).padStart(8)}`));
 
-// 1) all lane-0 rail nodes share one y
-const lane0Ys = new Set(lane0.map(id => pos[id].y));
-assert(lane0Ys.size === 1, 'all lane-0 rail nodes share one y');
-const lane0Y = [...lane0Ys][0];
+// 1) all column-0 rail nodes share one x
+const col0Xs = new Set(col0.map(id => pos[id].x));
+assert(col0Xs.size === 1, 'all column-0 rail nodes share one x');
+const col0X = [...col0Xs][0];
 
-// 2) all lane-1 rail nodes share one y, greater than lane-0's y
-const lane1Ys = new Set(lane1.map(id => pos[id].y));
-assert(lane1Ys.size === 1, 'all lane-1 rail nodes share one y');
-const lane1Y = [...lane1Ys][0];
-assert(lane1Y > lane0Y, 'lane-1 y is greater than lane-0 y');
+// 2) all column-1 rail nodes share one x, greater than column-0's x
+const col1Xs = new Set(col1.map(id => pos[id].x));
+assert(col1Xs.size === 1, 'all column-1 rail nodes share one x');
+const col1X = [...col1Xs][0];
+assert(col1X > col0X, 'column-1 x is greater than column-0 x');
 
-// 3) lane-1 y clears CODE#2's hanging subtree bottom (lc1 -> lc2 chain)
-const hangBottom = Math.max(pos['lc1'].y + NODE_H, pos['lc2'].y + NODE_H);
-assert(lane1Y >= hangBottom, `lane-1 y (${lane1Y}) clears CODE#2's hanging subtree bottom (${hangBottom})`);
+// 3) column-1 x clears CODE#2's hanging subtree right edge (lc1 -> lc2 chain)
+const hangRight = Math.max(pos['lc1'].x + NODE_W, pos['lc2'].x + NODE_W);
+assert(col1X >= hangRight, `column-1 x (${col1X}) clears CODE#2's hanging subtree right edge (${hangRight})`);
 
-// 4) x strictly increases along each rail chain
-function assertIncreasingX(chain: string[], label: string) {
+// 4) y strictly increases along each rail chain
+function assertIncreasingY(positions: Record<string, { x: number; y: number }>, chain: string[], label: string) {
   for (let i = 1; i < chain.length; i++) {
-    assert(pos[chain[i]].x > pos[chain[i - 1]].x, `${label}: ${chain[i - 1]}.x < ${chain[i]}.x`);
+    assert(positions[chain[i]].y > positions[chain[i - 1]].y, `${label}: ${chain[i - 1]}.y < ${chain[i]}.y`);
   }
 }
-assertIncreasingX(lane0, 'lane 0 chain');
-assertIncreasingX(['code2', ...lane1], 'lane 1 chain (forked off code2)');
+assertIncreasingY(pos, col0, 'column 0 chain');
+assertIncreasingY(pos, ['code2', ...col1], 'column 1 chain (forked off code2)');
 
 // 5) no two node boxes overlap (axis-aligned NODE_W x NODE_H boxes)
 function overlaps(a: { x: number; y: number }, b: { x: number; y: number }): boolean {
   return a.x < b.x + NODE_W && b.x < a.x + NODE_W && a.y < b.y + NODE_H && b.y < a.y + NODE_H;
 }
-const ids = Object.keys(pos);
-let overlapCount = 0;
-for (let i = 0; i < ids.length; i++) {
-  for (let j = i + 1; j < ids.length; j++) {
-    if (overlaps(pos[ids[i]], pos[ids[j]])) {
-      overlapCount += 1;
-      console.log(`  FAIL overlap: ${ids[i]} <-> ${ids[j]}`);
+function assertNoOverlaps(positions: Record<string, { x: number; y: number }>) {
+  const ids = Object.keys(positions);
+  let overlapCount = 0;
+  for (let i = 0; i < ids.length; i++) {
+    for (let j = i + 1; j < ids.length; j++) {
+      if (overlaps(positions[ids[i]], positions[ids[j]])) {
+        overlapCount += 1;
+        console.log(`  FAIL overlap: ${ids[i]} <-> ${ids[j]}`);
+      }
     }
   }
+  assert(overlapCount === 0, 'no two node boxes overlap');
 }
-assert(overlapCount === 0, 'no two node boxes overlap');
+assertNoOverlaps(pos);
 
-console.log(failures === 0 ? `\nPASS (${ids.length} nodes)` : `\nFAIL (${failures} assertion(s) failed)`);
+// ── Fixture 2: rail root (imported repo — no learn ancestor at all) ─────────
+
+console.log('\nlayoutGitGraph verification — fixture 2: rail root');
+
+seq = 0;
+const railRootList: ForkNode[] = [
+  mkNode('rroot', null, 'CODE', { imported: true, branchName: 'main', commitSha: 'aaa1111' }),
+  mkNode('rhead', 'rroot', 'CODE', { branchName: 'main', commitSha: 'bbb2222' }),
+  mkNode('rq1', 'rroot', 'QUERY'),
+  mkNode('rplan', 'rq1', 'PLAN', { branchName: 'fork/add-x', commitSha: 'bbb2222' }),
+  mkNode('rcodeA', 'rplan', 'CODE'),
+  mkNode('rcodeB', 'rcodeA', 'CODE'),
+];
+const railNodes: Record<string, ForkNode> = {};
+railRootList.forEach(n => { railNodes[n.id] = n; });
+
+const railResult = layoutGitGraph(railNodes, 'rroot');
+const rpos = railResult.pos;
+
+console.log('positions:');
+Object.entries(rpos).forEach(([id, p]) => console.log(`  ${id.padEnd(8)} x=${p.x.toFixed(1).padStart(8)} y=${p.y.toFixed(1).padStart(8)}`));
+
+const railCol0 = ['rroot', 'rhead'];
+const railCol1 = ['rplan', 'rcodeA', 'rcodeB'];
+
+// 1) the rail root itself gets a real position (the crash this fixture guards against)
+assert(!!rpos['rroot'] && !Number.isNaN(rpos['rroot'].x) && !Number.isNaN(rpos['rroot'].y), 'rail root has a real (non-NaN) position');
+
+// 2) rroot + rhead share column 0's x; rhead is strictly below rroot
+const railCol0Xs = new Set(railCol0.map(id => rpos[id].x));
+assert(railCol0Xs.size === 1, 'rail root + its CODE child share one x (column 0)');
+assert(rpos['rhead'].y > rpos['rroot'].y, 'rail root chain: rroot.y < rhead.y');
+
+// 3) rq1 (the learn child hanging off the rail root) sits to the right of column 0
+assert(rpos['rq1'].x > rpos['rroot'].x, "rail root's learn child (rq1) hangs to the right of it");
+
+// 4) rplan/rcodeA/rcodeB share a new column's x, greater than column 0's x, and
+// clearing rq1's own position (the buried-entry-point ordering this fixture guards against)
+const railCol1Xs = new Set(railCol1.map(id => rpos[id].x));
+assert(railCol1Xs.size === 1, 'PLAN + its CODE chain (entering from rq1) share one x (a new column)');
+const railCol1X = [...railCol1Xs][0];
+assert(railCol1X > rpos['rroot'].x, 'the new column x is greater than column 0 x');
+assert(railCol1X >= rpos['rq1'].x + NODE_W, "the new column x clears rq1's box");
+
+// 5) y strictly increases down the new column's chain
+assertIncreasingY(rpos, railCol1, 'rail-root new-column chain');
+
+// 6) no two node boxes overlap
+assertNoOverlaps(rpos);
+
+console.log(failures === 0 ? `\nPASS` : `\nFAIL (${failures} assertion(s) failed)`);
 process.exit(failures === 0 ? 0 : 1);

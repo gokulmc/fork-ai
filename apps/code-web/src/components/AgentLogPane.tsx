@@ -120,15 +120,20 @@ export function AgentLogPane({ node, events, project, idToken, sessionId, onImpl
         )}
       </div>
 
-      <p className="ws-instruction">{node.query}</p>
+      {/* Selectable so a highlight over the instruction or the agent log can
+          spawn an Ask AI branch (Phase G) — the diff summary and footer below
+          stay outside, matching the rest of the workspace's select-body-only rule. */}
+      <div data-section-id="agentlog" className="agent-log-selectable">
+        <p className="ws-instruction">{node.query}</p>
 
-      <div className="ws-block-label">Agent log</div>
-      <div className="term-panel" ref={logRef}>
-        {log.length === 0 && fetchLoading && <div className="log-line log-line--text agent-log-shimmer">Loading run…</div>}
-        {log.length === 0 && !fetchLoading && node.agentStatus === 'running' && (
-          <div className="log-line log-line--text agent-log-shimmer">Starting…</div>
-        )}
-        {log.map(e => <LogLine key={e.seq} event={e} />)}
+        <div className="ws-block-label">Agent log</div>
+        <div className="term-panel" ref={logRef}>
+          {log.length === 0 && fetchLoading && <div className="log-line log-line--text agent-log-shimmer">Loading run…</div>}
+          {log.length === 0 && !fetchLoading && node.agentStatus === 'running' && (
+            <div className="log-line log-line--text agent-log-shimmer">Starting…</div>
+          )}
+          {log.map(e => <LogLine key={e.seq} event={e} />)}
+        </div>
       </div>
 
       {node.diffSummary && (

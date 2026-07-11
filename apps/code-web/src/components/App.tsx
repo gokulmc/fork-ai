@@ -22,6 +22,10 @@ const BRANCH_HL = 'branch';
 // node is only ever spawned via the mixer's plan:true route, never the generic
 // create-node grammar, so it isn't expressed in nodeGrammar.ts's canSpawn table.
 const MIXER_PLAN_BASE_KINDS = new Set<ForkNode['kind']>(['QUERY', 'DEEPER', 'ASK', 'MIX']);
+// Same set, reused to gate the project first-question interstitial — a seeded
+// project session has a CODE root (and maybe a HEAD child) but no learn-kind
+// node until the user's first question lands.
+const LEARN_KINDS = MIXER_PLAN_BASE_KINDS;
 
 function hlName(bg: string | null, fg: string | null | undefined): string {
   const b = (bg ?? '#fef08a').replace('#', '');
@@ -364,6 +368,10 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   // useCallback re-creation lags one render behind state commits in some codepaths.
   const sessionIdRef = useRef(sessionId);
   useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
+  // Same pattern for rootId — consumeRootStream reads it (project-query 402
+  // recovery) without needing rootId in its own dependency array.
+  const rootIdRef = useRef(rootId);
+  useEffect(() => { rootIdRef.current = rootId; }, [rootId]);
   // The branch/root-query callbacks intentionally omit `tweaks` from their deps
   // (so they aren't recreated on every tweak change). Read the live values through
   // a ref to avoid a stale closure that would send the previously-selected
@@ -500,6 +508,29 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     setProjects(prev => [project, ...prev]);
     return project;
   }, [idToken]);
+
+  // GitHub OAuth callback landing: code-api's /github/callback redirects back
+  // here with ?github=connected|error. Strip it immediately (it's a one-shot
+  // signal, not app state worth keeping in the URL) and surface it — connected
+  // auto-opens the New Project modal so the picker shows the linked repos.
+  const [githubJustConnected, setGithubJustConnected] = useState(false);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const gh = params.get('github');
+    if (!gh) return;
+    params.delete('github');
+    const qs = params.toString();
+    history.replaceState(null, '', qs ? `?${qs}` : window.location.pathname);
+    if (gh === 'connected') setGithubJustConnected(true);
+    else console.warn('GitHub connection failed');
+  }, []);
+
+  // Project first-question gate: a seeded project session loads WITH nodes (a
+  // CODE root, maybe a HEAD child) — shown when there's no learn-kind node yet.
+  // "Open map ↗" locally dismisses it so imported history stays browsable
+  // without answering. Reset whenever the active session changes.
+  const [projectStartDismissed, setProjectStartDismissed] = useState(false);
+  useEffect(() => { setProjectStartDismissed(false); }, [sessionId]);
 
   useEffect(() => {
     if (!idToken) return;
@@ -831,6 +862,10 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     starter: (onEvent: (event: StreamEvent) => void) => Promise<void>,
     retryInfo: RetryInfo,
   ) => {
+    // A query into an EXISTING (seeded project) session must not adopt the
+    // streamed node as root — the root stays the project's CODE root — and a
+    // failure must only drop the failed optimistic node, not the whole tree.
+    const isProjectQuery = retryInfo.kind === 'ROOT_IN_SESSION';
     try {
       let realNodeId = tempId;
       // Captured from the meta event so the done handler can use them
@@ -887,7 +922,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
             }
             return next;
           });
-          setRootId(realNodeId);
+          if (!isProjectQuery) setRootId(realNodeId);
           setActiveId(realNodeId);
           refreshCredit();
           // Patch any open UI state that was anchored to the optimistic temp ID
@@ -913,9 +948,16 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     } catch (err) {
       if (err instanceof ApiError && err.status === 402) {
         setRootQueryOutOfCredit(true);
-        setNodes({});
-        setRootId(null);
-        setActiveId(null);
+        if (isProjectQuery) {
+          // Only the failed optimistic node goes — the project's imported
+          // CODE/BRANCH/PLAN tree must survive an out-of-credit first question.
+          setNodes(prev => { const next = { ...prev }; delete next[tempId]; return next; });
+          setActiveId(rootIdRef.current);
+        } else {
+          setNodes({});
+          setRootId(null);
+          setActiveId(null);
+        }
       } else {
         // Keep the failed node on screen with the actual reason and a Retry
         // CTA instead of silently dumping the user back to Landing.
@@ -984,7 +1026,9 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     const tempId = reuseTempId ?? uid();
     const optimisticNode: ForkNode = {
       id: tempId,
-      parentId: null,
+      // The session already has a CODE root (seeded on project creation) — the
+      // first question lands as its child, never a new root.
+      parentId: rootIdRef.current,
       kind: 'QUERY',
       title: '',
       emoji: null,
@@ -997,8 +1041,10 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       loading: true,
     };
 
-    setNodes({ [tempId]: optimisticNode });
-    setRootId(tempId);
+    // Merge, never wipe — the project's imported CODE/BRANCH/PLAN tree must
+    // survive the optimistic add. rootId is untouched: it stays the project's
+    // CODE root, not this new QUERY node.
+    setNodes(prev => ({ ...prev, [tempId]: optimisticNode }));
     setActiveId(tempId);
     setLoadingRoot(true);
 
@@ -1271,8 +1317,12 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       // Stay on current node — but if the user already opened the loading
       // node, follow the id swap so its panel doesn't blank out (tempId is gone).
       setActiveId(prev => (prev === tempId ? realNode.id : prev));
-      // Branch source gets the reserved glow style, not the last picked highlighter colour.
-      persistHighlight(source.nodeId, source.sectionId, source.text, BRANCH_HL, null, source.start, source.end);
+      // Branch source gets the reserved glow style, not the last picked highlighter
+      // colour — except the agent-log pseudo-section, which isn't real section
+      // content and has no persisted-highlight rendering path (Phase G: ask-only).
+      if (source.sectionId !== 'agentlog') {
+        persistHighlight(source.nodeId, source.sectionId, source.text, BRANCH_HL, null, source.start, source.end);
+      }
       refreshCredit();
       track('branch_created', { kind: 'ASK', model: tweaksRef.current.branchModel });
     } catch (err) {
@@ -2051,23 +2101,15 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         onBack={() => setView('landing')}
       />
     );
-    // A Project's session is created empty (ProjectsService.create) — its first
-    // query streams into the existing session via submitProjectQuery rather than
-    // minting a brand-new one.
-    else if (activeProject && sessionId) inner = (
-      <ProjectStart
-        project={activeProject}
-        loading={loadingRoot}
-        onSubmit={q => { setRootQueryOutOfCredit(false); void submitProjectQuery(sessionId, q); }}
-      />
-    );
     else if (status === 'authenticated') inner = (
       <ProjectsPage
         projects={projects}
         loading={loadingProjects}
+        idToken={idToken}
         onOpenProject={openProject}
         onCreateProject={handleCreateProject}
         onShowHistory={() => setView('history')}
+        initialModalOpen={githubJustConnected}
       />
     );
     else inner = (
@@ -2084,6 +2126,25 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       />
     );
     return <>{persistentBrand}{inner}<AccountButton creditBalance={creditBalance} onCreditUpdated={setCreditBalance} /><TweaksPanel tweaks={tweaks} setTweak={setTweak} fontPairOptions={FONT_PAIR_OPTIONS} userEmail={authSession?.user?.email ?? ''} userName={authSession?.user?.name ?? ''} /></>;
+  }
+
+  // A seeded project session loads straight into the Workspace below (rootId
+  // is already the imported CODE root) — intercept here, before the commit map
+  // renders, when there's no learn-kind node yet asking what to build.
+  if (activeProject && sessionId && !projectStartDismissed && !Object.values(nodes).some(n => LEARN_KINDS.has(n.kind))) {
+    return (
+      <>
+        {persistentBrand}
+        <ProjectStart
+          project={activeProject}
+          loading={loadingRoot}
+          onSubmit={q => { setRootQueryOutOfCredit(false); void submitProjectQuery(sessionId, q); }}
+          onOpenMap={() => setProjectStartDismissed(true)}
+        />
+        <AccountButton creditBalance={creditBalance} onCreditUpdated={setCreditBalance} />
+        <TweaksPanel tweaks={tweaks} setTweak={setTweak} fontPairOptions={FONT_PAIR_OPTIONS} userEmail={authSession?.user?.email ?? ''} userName={authSession?.user?.name ?? ''} />
+      </>
+    );
   }
 
   // ── Workspace ─────────────────────────────────────────────────────────────
@@ -2435,6 +2496,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         lastColors={lastHlColors}
         onAction={(action, payload) => handleHlAction(action, payload)}
         onClose={() => setHlMenu(null)}
+        askOnly={hlMenu?.sectionId === 'agentlog'}
       />
       {followUp && (
         <FollowUpPop

@@ -1,0 +1,235 @@
+<!-- @dsCard group="Screens" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>forkai-code — Landing</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  html, body { height: 100%; }
+  body { overflow-y: auto; }
+
+  .theme-toggle {
+    position: fixed; top: 20px; right: 24px; z-index: 100;
+    font-family: var(--sans); font-size: 12px; font-weight: 500;
+    padding: 7px 14px; border-radius: var(--radius);
+    border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink-2);
+    cursor: pointer; box-shadow: var(--shadow-1);
+  }
+  .theme-toggle:hover { background: var(--hover); color: var(--ink); }
+
+  /* ── nav ─────────────────────────────────────────────────── */
+  .nav { display: flex; align-items: center; justify-content: space-between; padding: 20px 32px; }
+  .nav-brand { display: inline-flex; align-items: center; gap: 9px; font-family: var(--sans); font-weight: 600; font-size: 14.5px; color: var(--ink); letter-spacing: -0.01em; }
+  .nav-brand .mark { width: 18px; height: 18px; border-radius: 5px; background: var(--ink); display: inline-block; }
+  .nav-signin { font-family: var(--sans); font-size: 13px; font-weight: 500; color: var(--ink-2); text-decoration: none; padding: 7px 16px; border: 1px solid var(--line-strong); border-radius: 999px; transition: background .12s, color .12s; }
+  .nav-signin:hover { background: var(--hover); color: var(--ink); }
+
+  /* ── hero ────────────────────────────────────────────────── */
+  .hero { text-align: center; padding: 56px 24px 8px; max-width: 760px; margin: 0 auto; }
+  .hero-mark {
+    font-family: var(--sans); font-weight: 500; font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--ink-3); display: inline-flex; align-items: center; gap: 12px; margin-bottom: 28px;
+  }
+  .hero-mark::before, .hero-mark::after { content: ""; width: 32px; height: 1px; background: var(--line-strong); }
+  .hero h1 { font-family: var(--serif); font-weight: 400; font-size: clamp(34px, 5.4vw, 54px); line-height: 1.12; letter-spacing: -0.025em; margin: 0 0 20px; color: var(--ink); }
+  .hero h1 em { display: block; font-style: italic; color: var(--ink-3); font-weight: 300; margin-top: 4px; }
+  .hero-sub { color: var(--ink-2); font-size: 16px; line-height: 1.6; margin: 0 auto 34px; max-width: 560px; }
+  .hero-cta { display: inline-flex; align-items: center; gap: 9px; height: 46px; padding: 0 26px; background: var(--ink); color: var(--bg); border: 0; border-radius: 999px; font-family: var(--sans); font-size: 14.5px; font-weight: 600; cursor: pointer; text-decoration: none; box-shadow: var(--shadow-2); }
+  .hero-cta:hover { opacity: .88; }
+  .hero-hint { display: block; margin-top: 14px; font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); letter-spacing: .02em; }
+
+  /* ── illustration: static vertical git-graph, hand-placed ──── */
+  .illo-wrap { max-width: 620px; margin: 52px auto 0; padding: 0 24px; }
+  .illo-svg { display: block; width: 100%; height: auto; }
+  .illo-card { width: 168px; background: var(--paper); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); box-shadow: var(--shadow-1); padding: 8px 11px; font-family: var(--sans); box-sizing: border-box; }
+  .illo-card--learn { background: #fafafa; width: 150px; padding: 7px 10px; }
+  [data-theme="dark"] .illo-card--learn { background: #1c1c1c; }
+  .illo-card--plan { border-color: color-mix(in oklab, var(--kind-plan) 40%, var(--line-strong)); }
+  .illo-card--code { border-color: color-mix(in oklab, var(--kind-code) 40%, var(--line-strong)); }
+  .illo-card--branch { border-color: color-mix(in oklab, var(--kind-branch) 40%, var(--line-strong)); }
+  .illo-card-top { margin-bottom: 5px; }
+  .illo-card-main { display: flex; align-items: center; gap: 7px; }
+  .illo-emoji { font-size: 14px; line-height: 1; flex-shrink: 0; font-family: "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui,sans-serif; }
+  .illo-kicker { font-size: 8px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3); line-height: 1; }
+  .illo-card--plan .illo-kicker { color: var(--kind-plan); }
+  .illo-card--code .illo-kicker { color: var(--kind-code); }
+  .illo-card--branch .illo-kicker { color: var(--kind-branch); }
+  .illo-label { font-size: 10.5px; font-weight: 500; color: var(--ink); line-height: 1.2; margin-top: 1px; }
+  .illo-pill { display: inline-flex; align-items: center; gap: 3px; font-family: var(--mono); font-size: 8.5px; font-weight: 500; padding: 1px 6px; border-radius: 999px; background: var(--commit-pill-bg); color: var(--commit-pill-ink); border: 1px solid var(--commit-pill-border); }
+  .illo-edge-learn { fill: none; stroke: var(--ink-3); stroke-opacity: .45; stroke-width: 1.25; }
+  .illo-edge-lane { fill: none; stroke: var(--lane-line); stroke-width: 1.75; }
+  .illo-edge-fork { fill: none; stroke: var(--kind-branch); stroke-opacity: .8; stroke-width: 1.75; }
+  .illo-rail { stroke: var(--lane-line); stroke-width: 1; stroke-dasharray: 2 4; }
+
+  /* ── features ────────────────────────────────────────────── */
+  .features { max-width: 900px; margin: 64px auto 0; padding: 0 24px 80px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; }
+  .feature-num { font-family: var(--mono); font-size: 11px; color: var(--ink-3); letter-spacing: .06em; margin-bottom: 10px; }
+  .feature-title { font-family: var(--sans); font-size: 15px; font-weight: 600; color: var(--ink); margin: 0 0 8px; }
+  .feature-body { font-family: var(--sans); font-size: 13px; color: var(--ink-2); line-height: 1.55; margin: 0; }
+
+  @media (max-width: 720px) {
+    .features { grid-template-columns: 1fr; gap: 32px; }
+  }
+</style>
+</head>
+<body>
+  <button class="theme-toggle" onclick="const h=document.documentElement; h.setAttribute('data-theme', (h.getAttribute('data-theme')||'light')==='light'?'dark':'light');">Toggle theme</button>
+
+  <nav class="nav">
+    <div class="nav-brand"><span class="mark"></span>fork ai code</div>
+    <a class="nav-signin" href="#">Sign in</a>
+  </nav>
+
+  <div class="hero">
+    <div class="hero-mark">Plan-first coding, by you</div>
+    <h1>Program like an actual programmer.<em>One shot never works.</em></h1>
+    <p class="hero-sub">
+      Learn the concepts, synthesize a plan, then watch the agent commit one focused step at a time —
+      reviewable, branchable, and never a single unreviewable mega-diff. Fork from any commit to try a
+      different approach without losing the one that already works.
+    </p>
+    <a class="hero-cta" href="#">Start a project →</a>
+    <span class="hero-hint">Try: add rate limiting to my API</span>
+  </div>
+
+  <div class="illo-wrap">
+    <svg class="illo-svg" viewBox="0 0 620 560" xmlns="http://www.w3.org/2000/svg">
+      <!-- column rails -->
+      <line class="illo-rail" x1="76" y1="20" x2="76" y2="330" />
+      <line class="illo-rail" x1="76" y1="20" x2="76" y2="20" />
+      <line class="illo-rail" x1="306" y1="130" x2="306" y2="450" />
+      <line class="illo-rail" x1="536" y1="270" x2="536" y2="430" />
+
+      <!-- edges -->
+      <path class="illo-edge-learn" d="M 160 40 C 233 40, 233 105, 306 105" />
+      <path class="illo-edge-lane" d="M 76 79 L 76 191" />
+      <path class="illo-edge-lane" d="M 306 164 L 306 276" />
+      <path class="illo-edge-lane" d="M 306 315 L 306 387" />
+      <path class="illo-edge-fork" d="M 160 230 C 233 230, 233 289, 306 289" />
+      <path class="illo-edge-learn" d="M 160 230 C 233 230, 233 328, 306 328" />
+      <path class="illo-edge-fork" d="M 390 315 C 463 315, 463 309, 536 309" />
+      <path class="illo-edge-lane" d="M 536 348 L 536 391" />
+
+      <!-- root: imported commit, column 0 -->
+      <foreignObject x="0" y="20" width="160" height="60">
+        <div class="illo-card illo-card--code">
+          <div class="illo-card-top"><span class="illo-pill">⎇ main · a1b2c3d</span></div>
+          <div class="illo-card-main">
+            <span class="illo-emoji">🧩</span>
+            <div><div class="illo-kicker">Commit</div><div class="illo-label">Initial commit</div></div>
+          </div>
+        </div>
+      </foreignObject>
+
+      <!-- learn node hanging right -->
+      <foreignObject x="160" y="10" width="146" height="60">
+        <div class="illo-card illo-card--learn">
+          <div class="illo-card-main">
+            <span class="illo-emoji">💬</span>
+            <div><div class="illo-kicker">Learn</div><div class="illo-label">How does the auth flow work?</div></div>
+          </div>
+        </div>
+      </foreignObject>
+
+      <!-- second commit on main, hangs the ask above -->
+      <foreignObject x="0" y="191" width="160" height="60">
+        <div class="illo-card illo-card--code">
+          <div class="illo-card-top"><span class="illo-pill">⎇ main · 9e2f1cd</span></div>
+          <div class="illo-card-main">
+            <span class="illo-emoji">🧩</span>
+            <div><div class="illo-kicker">Commit</div><div class="illo-label">Update dependencies</div></div>
+          </div>
+        </div>
+      </foreignObject>
+
+      <!-- plan heading its own column -->
+      <foreignObject x="230" y="105" width="152" height="59">
+        <div class="illo-card illo-card--plan">
+          <div class="illo-card-top"><span class="illo-pill">⎇ fork/rate-limit · from 9e2f1cd</span></div>
+          <div class="illo-card-main">
+            <span class="illo-emoji">🗂</span>
+            <div><div class="illo-kicker">Plan</div><div class="illo-label">Add rate limiting</div></div>
+          </div>
+        </div>
+      </foreignObject>
+
+      <foreignObject x="230" y="276" width="152" height="39">
+        <div class="illo-card illo-card--code">
+          <div class="illo-card-main">
+            <span class="illo-emoji">🧩</span>
+            <div><div class="illo-kicker">Commit</div><div class="illo-label">Add limiter middleware</div></div>
+          </div>
+        </div>
+      </foreignObject>
+
+      <foreignObject x="230" y="315" width="152" height="72">
+        <div class="illo-card illo-card--code">
+          <div class="illo-card-main">
+            <span class="illo-emoji">🧩</span>
+            <div><div class="illo-kicker">Commit</div><div class="illo-label">Wire Redis token bucket</div></div>
+          </div>
+        </div>
+      </foreignObject>
+
+      <!-- learn node hanging off the token-bucket commit -->
+      <foreignObject x="390" y="298" width="146" height="34">
+        <div class="illo-card illo-card--learn">
+          <div class="illo-card-main">
+            <span class="illo-emoji">📎</span>
+            <div><div class="illo-kicker">Learn</div><div class="illo-label">Why Redis, not in-memory?</div></div>
+          </div>
+        </div>
+      </foreignObject>
+
+      <foreignObject x="230" y="387" width="152" height="39">
+        <div class="illo-card illo-card--code">
+          <div class="illo-card-main">
+            <span class="illo-emoji">🧩</span>
+            <div><div class="illo-kicker">Commit</div><div class="illo-label">Add per-key overrides</div></div>
+          </div>
+        </div>
+      </foreignObject>
+
+      <!-- fork off the token-bucket commit into its own column -->
+      <foreignObject x="460" y="270" width="152" height="79">
+        <div class="illo-card illo-card--branch">
+          <div class="illo-card-top"><span class="illo-pill">⎇ feature/sliding-window</span></div>
+          <div class="illo-card-main">
+            <span class="illo-emoji">🔀</span>
+            <div><div class="illo-kicker">Branch</div><div class="illo-label">Try sliding-window instead</div></div>
+          </div>
+        </div>
+      </foreignObject>
+
+      <foreignObject x="460" y="391" width="152" height="39">
+        <div class="illo-card illo-card--code">
+          <div class="illo-card-main">
+            <span class="illo-emoji">🧩</span>
+            <div><div class="illo-kicker">Commit</div><div class="illo-label">Swap the algorithm</div></div>
+          </div>
+        </div>
+      </foreignObject>
+    </svg>
+  </div>
+
+  <div class="features">
+    <div>
+      <div class="feature-num">01</div>
+      <div class="feature-title">Learn before you build</div>
+      <p class="feature-body">Go deeper on the concepts, ask follow-ups, branch into whatever needs clearing up — before a single line of code changes.</p>
+    </div>
+    <div>
+      <div class="feature-num">02</div>
+      <div class="feature-title">Plans, not vibes</div>
+      <p class="feature-body">Synthesize what you've learned into an implementation plan. Review it, adjust it, and only then let the agent start.</p>
+    </div>
+    <div>
+      <div class="feature-num">03</div>
+      <div class="feature-title">One commit at a time</div>
+      <p class="feature-body">The agent lands a real commit per step — reviewable on its own, and forkable from any point if you want to try something else.</p>
+    </div>
+  </div>
+</body>
+</html>

@@ -5,41 +5,41 @@ import { Providers } from '@/components/Providers';
 import { JsonLd } from '@/components/JsonLd';
 import { CookieConsent } from '@/components/CookieConsent';
 
-const DESCRIPTION = 'A branching research workspace — ask once, branch forever. Get a structured AI answer split into sections, dive deeper into any of them, and watch every branch become a node on a live mind map.';
+const DESCRIPTION = 'A plan-first coding agent workspace — learn the concepts, synthesize an implementation plan, then watch the agent commit one reviewable step at a time on a live git-graph map. Branch a new approach from any commit without losing the one that already works.';
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://forkai.in'),
   title: {
-    default: 'fork ai — a branching AI research workspace',
-    template: '%s · fork ai',
+    default: 'fork ai code — a plan-first AI coding agent workspace',
+    template: '%s · fork ai code',
   },
   description: DESCRIPTION,
-  applicationName: 'fork ai',
+  applicationName: 'fork ai code',
   keywords: [
-    'ai research', 'research ai', 'llm research', 'mind map research',
-    'mind map llm', 'ai mind map', 'memory map', 'knowledge map',
-    'ai research assistant', 'branching ai chat', 'ai study tool', 'second brain ai',
+    'ai coding agent', 'plan-first coding', 'ai pair programmer', 'coding agent workspace',
+    'git branching map', 'ai code review', 'agentic coding', 'github coding agent',
+    'implementation plan ai', 'ai commit by commit', 'branch from any commit', 'ai developer tool',
   ],
   alternates: { canonical: '/' },
   robots: { index: true, follow: true },
   formatDetection: { telephone: false },
   openGraph: {
     type: 'website',
-    siteName: 'fork ai',
-    title: 'fork ai — a branching AI research workspace',
+    siteName: 'fork ai code',
+    title: 'fork ai code — a plan-first AI coding agent workspace',
     description: DESCRIPTION,
     url: 'https://forkai.in',
     locale: 'en_US',
-    images: [{ url: '/api/og', width: 1200, height: 630, alt: 'fork ai — a branching AI research workspace' }],
+    images: [{ url: '/api/og', width: 1200, height: 630, alt: 'fork ai code — a plan-first AI coding agent workspace' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'fork ai — a branching AI research workspace',
+    title: 'fork ai code — a plan-first AI coding agent workspace',
     description: DESCRIPTION,
     images: ['/api/og'],
   },
   // Standalone PWA on iOS (no Safari chrome once added to the Home Screen).
-  appleWebApp: { capable: true, statusBarStyle: 'default', title: 'fork ai' },
+  appleWebApp: { capable: true, statusBarStyle: 'default', title: 'fork ai code' },
 };
 
 // viewport-fit=cover lets the Capacitor/iOS safe-area insets (notch, home bar)

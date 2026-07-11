@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import type { ForkNode } from '@/lib/types';
 import { clamp } from '@/lib/utils';
-import { Hash, Sparkles, CornerDownRight, GitBranch, Map, Minus, Plus, Maximize, Filter, Blend, X, ClipboardList, Code } from './Icons';
+import { Hash, Search, Sparkles, CornerDownRight, GitBranch, Map, Minus, Plus, Maximize, Filter, Blend, X, ClipboardList, Code } from './Icons';
 import { NODE_W, NODE_H, layoutTree, layoutGitGraph, hasRailNode } from '@/lib/layoutGitGraph';
 import { BranchPopup } from './BranchPopup';
 
@@ -82,11 +82,13 @@ export function MindMap({
     return () => { ro.disconnect(); clearTimeout(timer); };
   }, []);
 
-  // Sessions with any PLAN/CODE/BRANCH rail node get the git-graph layout;
-  // pure-research sessions keep the plain vertical mind map (no regression).
+  // Sessions with any PLAN/CODE/BRANCH rail node get the git-graph layout
+  // (vertical columns); pure-research sessions keep the plain vertical mind
+  // map (no regression) — same function, same edges, untouched.
+  const gitLayout = useMemo(() => hasRailNode(nodes), [nodes]);
   const { pos, bounds, childMap, depthMap, laneRails } = useMemo(
-    () => (hasRailNode(nodes) ? layoutGitGraph(nodes, rootId) : layoutTree(nodes, rootId)),
-    [nodes, rootId],
+    () => (gitLayout ? layoutGitGraph(nodes, rootId) : layoutTree(nodes, rootId)),
+    [gitLayout, nodes, rootId],
   );
 
   const [branchPopup, setBranchPopup] = useState<{ nodeId: string; rect: { left: number; top: number; width: number; height: number; bottom: number } } | null>(null);
@@ -269,11 +271,15 @@ export function MindMap({
     animateTo(size.w / 2 - cx * scale, size.h / 2 - cy * scale, scale, 380);
   };
 
-  // Edge routing: a straight lane line for same-lane rail continuation (CODE
-  // following PLAN/CODE), a rounded elbow bézier for the fork point on either
-  // side of a BRANCH node, and the existing vertical bézier for learn edges.
-  // Geometrically 'fork' and 'learn' share the same curve — only the CSS class
-  // (colour) differs, matching the design bundle's map-git-graph.html.
+  // Edge routing: a straight lane line for same-column rail continuation (CODE
+  // following PLAN/CODE), a rounded elbow bézier for a fork/plan-entry point
+  // (either side of a BRANCH node, or a PLAN entering from a learn parent),
+  // and — ONLY when the git-graph layout is active — that same elbow rotated
+  // 90° (right-center -> left-center) for learn edges too, since columns now
+  // flow vertically and learn subtrees hang to the right instead of below.
+  // Legacy learn-only sessions (gitLayout false) keep the original vertical
+  // bézier untouched. Geometrically 'fork' and 'learn' share the same curve —
+  // only the CSS class (colour) differs, matching map-git-graph.html.
   const edges: { pid: string; cid: string; d: string; kind: 'lane' | 'fork' | 'learn' }[] = [];
   Object.keys(childMap).forEach(pid => {
     childMap[pid].forEach(cid => {
@@ -283,8 +289,13 @@ export function MindMap({
       const isFork = cKind === 'BRANCH' || pKind === 'BRANCH';
       const isLane = !isFork && cKind === 'CODE' && (pKind === 'PLAN' || pKind === 'CODE');
       if (isLane) {
-        const y = a.y + NODE_H / 2;
-        edges.push({ pid, cid, kind: 'lane', d: `M ${a.x + NODE_W} ${y} L ${b.x} ${y}` });
+        const x = a.x + NODE_W / 2;
+        edges.push({ pid, cid, kind: 'lane', d: `M ${x} ${a.y + NODE_H} L ${x} ${b.y}` });
+      } else if (gitLayout) {
+        const x1 = a.x + NODE_W, y1 = a.y + NODE_H / 2;
+        const x2 = b.x, y2 = b.y + NODE_H / 2;
+        const mx = (x1 + x2) / 2;
+        edges.push({ pid, cid, kind: isFork ? 'fork' : 'learn', d: `M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}` });
       } else {
         const x1 = a.x + NODE_W / 2, y1 = a.y + NODE_H;
         const x2 = b.x + NODE_W / 2, y2 = b.y;
@@ -305,6 +316,7 @@ export function MindMap({
 
   function pickIcon(kind: ForkNode['kind'], isRoot: boolean) {
     if (isRoot) return Hash;
+    if (kind === 'QUERY') return Search;
     if (kind === 'ASK') return Sparkles;
     if (kind === 'DEEPER') return CornerDownRight;
     if (kind === 'MIX') return Blend;
@@ -354,7 +366,7 @@ export function MindMap({
       >
         <g transform={`translate(${view.tx} ${view.ty}) scale(${view.scale})`}>
           {laneRails?.map((r, i) => (
-            <line key={`lane-${i}`} x1={r.x1} y1={r.y} x2={r.x2} y2={r.y} className="lane-rail" />
+            <line key={`lane-${i}`} x1={r.x} y1={r.y1} x2={r.x} y2={r.y2} className="lane-rail" />
           ))}
           {edges.map((e, i) => (
             <path key={i} d={e.d} className={`branch branch-${e.kind}${isOnPath(e.pid, e.cid) ? ' active' : ''}`} />
@@ -385,13 +397,18 @@ export function MindMap({
                           ? 'Branch'
                           : 'Branch';
 
-            // CODE/BRANCH cards grow upward to fit the commit pill above the title.
-            const hasPill = n.kind === 'CODE' || n.kind === 'BRANCH';
+            // CODE/BRANCH cards grow upward to fit the commit pill above the title —
+            // a PLAN card only does when it actually carries a branchName (plans
+            // created before the plan-creates-a-branch iteration have none, and
+            // shouldn't grow to fit a pill they don't render).
+            const hasPill = n.kind === 'CODE' || n.kind === 'BRANCH' || (n.kind === 'PLAN' && !!n.branchName);
             const boxY = hasPill ? -PILL_H : 0;
             const boxH = hasPill ? NODE_H + PILL_H : NODE_H;
             const commitShaShort = n.kind === 'CODE'
               ? (n.commitSha ? n.commitSha.slice(0, 7) : '—')
-              : `fork @${(n.commitSha ?? nodes[n.parentId ?? '']?.commitSha ?? '').slice(0, 7) || '—'}`;
+              : n.kind === 'PLAN'
+                ? `from ${(n.commitSha ?? '').slice(0, 7) || '—'}`
+                : `fork @${(n.commitSha ?? nodes[n.parentId ?? '']?.commitSha ?? '').slice(0, 7) || '—'}`;
 
             const isMixerBase = mixerMode && n.id === mixerBaseId;
             const isMixerSelected = mixerMode && mixerSelectedIds.includes(n.id);

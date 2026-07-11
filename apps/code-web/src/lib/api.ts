@@ -615,7 +615,7 @@ export function deleteHighlight(
 // ── Projects ──────────────────────────────────────────────────────────────
 
 export interface RepoRef {
-  provider: 'github-mock';
+  provider: 'github-mock' | 'github';
   owner: string;
   repo: string;
   defaultBranch: string;
@@ -651,6 +651,37 @@ export function createProject(idToken: string, payload: CreateProjectPayload): P
 
 export function getProject(idToken: string, projectId: string): Promise<Project> {
   return apiFetch<Project>(`/projects/${projectId}`, idToken);
+}
+
+// ── GitHub — read-only OAuth link (usage + import; never pushes) ───────────
+
+export interface GithubStatus {
+  connected: boolean;
+  login?: string;
+}
+
+export interface GithubRepo {
+  owner: string;
+  repo: string;
+  fullName: string;
+  defaultBranch: string;
+  private: boolean;
+  url: string;
+  description: string;
+}
+
+export function getGithubStatus(idToken: string): Promise<GithubStatus> {
+  return apiFetch<GithubStatus>('/github/status', idToken);
+}
+
+// 503 (GITHUB_CLIENT_ID unset) surfaces as an ApiError — callers show a "not
+// configured" hint rather than attempting the redirect.
+export function getGithubAuthUrl(idToken: string): Promise<{ url: string }> {
+  return apiFetch<{ url: string }>('/github/auth', idToken);
+}
+
+export function listGithubRepos(idToken: string): Promise<GithubRepo[]> {
+  return apiFetch<GithubRepo[]>('/github/repos', idToken);
 }
 
 // ── Root query into an existing (empty) project session ────────────────────

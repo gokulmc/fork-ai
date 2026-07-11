@@ -1,7 +1,7 @@
 // Server component — emits structured data for search engines (Organization +
 // WebSite + SoftwareApplication). Rendered once in the root layout.
 const SITE_URL = 'https://forkai.in';
-const DESCRIPTION = 'A branching research workspace — ask once, branch forever.';
+const DESCRIPTION = 'A plan-first AI coding agent workspace — learn, plan, then commit one step at a time on a live git-graph map.';
 
 const graph = {
   '@context': 'https://schema.org',
@@ -38,12 +38,12 @@ const graph = {
     },
     {
       '@type': 'SoftwareApplication',
-      name: 'fork ai',
-      applicationCategory: 'EducationApplication',
-      operatingSystem: 'Web, iOS, Android',
+      name: 'fork ai code',
+      applicationCategory: 'DeveloperApplication',
+      operatingSystem: 'Web',
       url: SITE_URL,
       description:
-        'fork ai is an AI research workspace. Ask a question, get a structured answer split into sections, then branch any section into a child node or highlight a passage to ask a follow-up — every branch becomes a node on a live mind map.',
+        'fork ai code is a plan-first AI coding agent workspace. Learn the concepts, synthesize an implementation plan, then watch the agent commit one reviewable step at a time on a live git-graph map — fork a new approach from any commit without losing the one that already works.',
       offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
     },
   ],

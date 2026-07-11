@@ -276,7 +276,7 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
   margin: 0 0 18px;
   color: var(--ink);
 }
-.landing h1 em { font-style: italic; color: var(--ink-3); font-weight: 300; }
+.landing h1 em { display: block; font-style: italic; color: var(--ink-3); font-weight: 300; margin-top: 4px; }
 .landing-sub {
   color: var(--ink-2);
   font-size: 16px;
@@ -1277,6 +1277,7 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
    matching the highlight feature which already only works on section bodies. */
 .workspace-inner { -webkit-user-select: none; user-select: none; }
 .workspace-inner .section-body { -webkit-user-select: text; user-select: text; }
+.workspace-inner .agent-log-selectable { -webkit-user-select: text; user-select: text; }
 
 .ws-meta { display: flex; align-items: center; gap: 8px; font-family: var(--sans); font-size: 12px; color: var(--ink-3); margin-bottom: 16px; }
 .ws-meta .pill { border: 1px solid var(--line); border-radius: 4px; padding: 2px 8px; background: var(--paper); display: inline-flex; align-items: center; gap: 5px; font-weight: 500; }
@@ -2332,6 +2333,12 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
 .proj-field-input:focus { border-color: var(--ink-3); background: var(--paper); }
 .proj-field-error { font-family: var(--sans); font-size: 11.5px; color: #c0392b; }
 .proj-modal-foot { padding: 14px 20px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; }
+
+.proj-gh-connect { display: inline-flex; align-items: center; gap: 7px; width: 100%; height: 36px; padding: 0 12px; margin-bottom: 8px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--panel); color: var(--ink); font-family: var(--sans); font-size: 12.5px; font-weight: 500; cursor: pointer; box-sizing: border-box; }
+.proj-gh-connect:hover:not(:disabled) { background: var(--hover); }
+.proj-gh-connect:disabled { opacity: .6; cursor: not-allowed; }
+.proj-gh-chip { display: inline-flex; align-items: center; gap: 6px; font-family: var(--sans); font-size: 12px; font-weight: 600; color: var(--ink-2); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 4px 11px; margin-bottom: 8px; }
+.proj-repo-divider { font-family: var(--sans); font-size: 9.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); padding: 6px 12px; background: var(--panel); border-bottom: 1px solid var(--line); }
 
 .proj-repo-list { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; max-height: 168px; overflow-y: auto; }
 .proj-repo-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--line); cursor: pointer; }

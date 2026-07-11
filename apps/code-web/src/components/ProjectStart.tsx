@@ -7,11 +7,16 @@ interface ProjectStartProps {
   project: Project;
   loading: boolean;
   onSubmit: (query: string) => void;
+  // Locally dismisses this interstitial so imported history is browsable
+  // without asking — the project's seeded commits already exist on the map.
+  onOpenMap: () => void;
 }
 
-// Shown when a project's session has zero nodes — reuses the .landing/.query-box
-// shell so the "first question" moment matches Landing's look exactly.
-export function ProjectStart({ project, loading, onSubmit }: ProjectStartProps) {
+// Shown when a project's session has no learn-kind node yet — reuses the
+// .landing/.query-box shell so the "first question" moment matches Landing's
+// look exactly. The project's seeded CODE root (and any imported commits)
+// already exist on the map underneath this — "Open map" just dismisses it.
+export function ProjectStart({ project, loading, onSubmit, onOpenMap }: ProjectStartProps) {
   const [q, setQ] = useState('');
 
   const onGo = () => {
@@ -21,6 +26,11 @@ export function ProjectStart({ project, loading, onSubmit }: ProjectStartProps) 
 
   return (
     <div className="landing">
+      <nav className="landing-nav">
+        <button className="icon-btn" onClick={onOpenMap}>
+          Open map ↗
+        </button>
+      </nav>
       <div className="landing-inner">
         <div
           className="landing-mark"
