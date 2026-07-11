@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 580" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
+  <rect width="1200" height="580" fill="#fbfaf8"/>
+
+  <text x="220" y="80" text-anchor="middle" font-size="19" letter-spacing="2" fill="#8f897c">MIND MAP</text>
+  <text x="220" y="106" text-anchor="middle" font-size="15" fill="#b3ac9c">structure, no content</text>
+  <text x="600" y="80" text-anchor="middle" font-size="19" letter-spacing="2" fill="#8f897c">LLM CHAT</text>
+  <text x="600" y="106" text-anchor="middle" font-size="15" fill="#b3ac9c">content, no structure</text>
+  <text x="980" y="80" text-anchor="middle" font-size="19" letter-spacing="2" fill="#b45309">MIND-MAP LLM</text>
+  <text x="980" y="106" text-anchor="middle" font-size="15" fill="#b45309">structure + content</text>
+
+  <!-- left: empty mind map -->
+  <g stroke="#d8d2c6" stroke-width="2.5" fill="none">
+    <line x1="220" y1="250" x2="130" y2="370"/>
+    <line x1="220" y1="250" x2="220" y2="370"/>
+    <line x1="220" y1="250" x2="310" y2="370"/>
+  </g>
+  <ellipse cx="220" cy="235" rx="68" ry="34" fill="none" stroke="#8f897c" stroke-width="2"/>
+  <ellipse cx="130" cy="390" rx="48" ry="26" fill="none" stroke="#d8d2c6" stroke-width="2"/>
+  <ellipse cx="220" cy="390" rx="48" ry="26" fill="none" stroke="#d8d2c6" stroke-width="2"/>
+  <ellipse cx="310" cy="390" rx="48" ry="26" fill="none" stroke="#d8d2c6" stroke-width="2"/>
+  <text x="220" y="470" text-anchor="middle" font-size="15" fill="#b3ac9c">empty bubbles</text>
+
+  <text x="412" y="330" text-anchor="middle" font-size="38" fill="#8f897c">+</text>
+
+  <!-- middle: chat column -->
+  <rect x="480" y="170" width="240" height="290" rx="14" fill="#ffffff" stroke="#e3ded4"/>
+  <g fill="#d8d2c6">
+    <rect x="500" y="194" width="180" height="9" rx="4.5"/>
+    <rect x="500" y="212" width="200" height="9" rx="4.5"/>
+    <rect x="500" y="230" width="160" height="9" rx="4.5"/>
+    <rect x="500" y="262" width="200" height="9" rx="4.5"/>
+    <rect x="500" y="280" width="150" height="9" rx="4.5"/>
+    <rect x="500" y="298" width="190" height="9" rx="4.5"/>
+    <rect x="500" y="330" width="170" height="9" rx="4.5"/>
+    <rect x="500" y="348" width="200" height="9" rx="4.5"/>
+    <rect x="500" y="366" width="140" height="9" rx="4.5"/>
+    <rect x="500" y="398" width="190" height="9" rx="4.5"/>
+    <rect x="500" y="416" width="160" height="9" rx="4.5"/>
+  </g>
+  <text x="600" y="490" text-anchor="middle" font-size="15" fill="#b3ac9c">shape lost in scroll</text>
+
+  <text x="792" y="330" text-anchor="middle" font-size="38" fill="#8f897c">=</text>
+
+  <!-- right: map with filled nodes -->
+  <g stroke="#d8d2c6" stroke-width="2.5" fill="none">
+    <line x1="980" y1="248" x2="894" y2="362"/>
+    <line x1="980" y1="248" x2="1066" y2="362"/>
+  </g>
+  <line x1="980" y1="248" x2="980" y2="362" stroke="#b45309" stroke-width="3"/>
+  <rect x="910" y="190" width="140" height="58" rx="12" fill="#fdf3e7" stroke="#b45309" stroke-width="2.5"/>
+  <rect x="926" y="206" width="108" height="7" rx="3.5" fill="#e3c49a"/>
+  <rect x="926" y="220" width="84" height="7" rx="3.5" fill="#e3c49a"/>
+
+  <rect x="838" y="362" width="112" height="52" rx="11" fill="#f1eee8" stroke="#e3ded4"/>
+  <rect x="852" y="376" width="84" height="7" rx="3.5" fill="#b3ac9c"/>
+  <rect x="852" y="390" width="64" height="7" rx="3.5" fill="#b3ac9c"/>
+
+  <rect x="924" y="362" width="112" height="52" rx="11" fill="#fdf3e7" stroke="#b45309" stroke-width="2.5"/>
+  <rect x="938" y="376" width="84" height="7" rx="3.5" fill="#e3c49a"/>
+  <rect x="938" y="390" width="70" height="7" rx="3.5" fill="#e3c49a"/>
+
+  <rect x="1010" y="362" width="112" height="52" rx="11" fill="#f1eee8" stroke="#e3ded4"/>
+  <rect x="1024" y="376" width="84" height="7" rx="3.5" fill="#b3ac9c"/>
+  <rect x="1024" y="390" width="58" height="7" rx="3.5" fill="#b3ac9c"/>
+
+  <text x="980" y="470" text-anchor="middle" font-size="15" fill="#b45309">full bubbles, in place</text>
+
+  <text x="600" y="546" text-anchor="middle" font-size="18" fill="#b3ac9c">each tool fixes the other’s flaw</text>
+</svg>

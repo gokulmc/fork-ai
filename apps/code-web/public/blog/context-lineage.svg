@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 640" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
+  <rect width="1200" height="640" fill="#fbfaf8"/>
+
+  <!-- Left: linear chat -->
+  <text x="290" y="78" text-anchor="middle" font-size="23" letter-spacing="3" fill="#8f897c">LINEAR CHAT</text>
+  <text x="290" y="108" text-anchor="middle" font-size="18" fill="#b3ac9c">context = the whole transcript</text>
+
+  <rect x="80" y="136" width="420" height="424" rx="14" fill="none" stroke="#8f897c" stroke-width="2" stroke-dasharray="7 7"/>
+
+  <!-- bubbles: alternating user / ai -->
+  <g>
+    <rect x="110" y="158" width="250" height="48" rx="12" fill="#efece6"/>
+    <rect x="130" y="178" width="180" height="9" rx="4.5" fill="#d8d2c6"/>
+    <rect x="160" y="218" width="310" height="58" rx="12" fill="#ffffff" stroke="#e3ded4"/>
+    <rect x="180" y="236" width="250" height="8" rx="4" fill="#d8d2c6"/>
+    <rect x="180" y="252" width="200" height="8" rx="4" fill="#d8d2c6"/>
+
+    <!-- abandoned tangent -->
+    <rect x="110" y="288" width="250" height="48" rx="12" fill="#efece6"/>
+    <rect x="130" y="308" width="180" height="9" rx="4.5" fill="#d8d2c6"/>
+    <rect x="160" y="348" width="310" height="58" rx="12" fill="#ffffff" stroke="#e3ded4"/>
+    <rect x="180" y="366" width="250" height="8" rx="4" fill="#d8d2c6"/>
+    <rect x="180" y="382" width="160" height="8" rx="4" fill="#d8d2c6"/>
+    <line x1="120" y1="312" x2="350" y2="312" stroke="#c4452e" stroke-width="2.5" opacity="0.55"/>
+    <line x1="170" y1="377" x2="460" y2="377" stroke="#c4452e" stroke-width="2.5" opacity="0.55"/>
+    <text x="382" y="318" font-size="16" fill="#c4452e">dead tangent —</text>
+    <text x="382" y="338" font-size="16" fill="#c4452e">still in the window</text>
+
+    <rect x="110" y="418" width="250" height="48" rx="12" fill="#efece6"/>
+    <rect x="130" y="438" width="180" height="9" rx="4.5" fill="#d8d2c6"/>
+    <rect x="160" y="478" width="310" height="58" rx="12" fill="#ffffff" stroke="#e3ded4"/>
+    <rect x="180" y="496" width="250" height="8" rx="4" fill="#d8d2c6"/>
+    <rect x="180" y="512" width="220" height="8" rx="4" fill="#d8d2c6"/>
+  </g>
+  <text x="290" y="596" text-anchor="middle" font-size="18" fill="#8f897c">everything rides along, every turn</text>
+
+  <!-- Right: branching map -->
+  <text x="905" y="78" text-anchor="middle" font-size="23" letter-spacing="3" fill="#8f897c">BRANCHING MAP</text>
+  <text x="905" y="108" text-anchor="middle" font-size="18" fill="#b3ac9c">context = the lineage</text>
+
+  <!-- edges -->
+  <path d="M 905 216 C 905 246, 770 246, 770 280" fill="none" stroke="#d8d2c6" stroke-width="2.5"/>
+  <path d="M 905 216 L 905 280" fill="none" stroke="#b45309" stroke-width="3.5"/>
+  <path d="M 905 216 C 905 246, 1040 246, 1040 280" fill="none" stroke="#d8d2c6" stroke-width="2.5"/>
+  <path d="M 770 336 L 770 400" fill="none" stroke="#d8d2c6" stroke-width="2.5"/>
+  <path d="M 905 336 L 905 400" fill="none" stroke="#b45309" stroke-width="3.5"/>
+
+  <!-- root (on path) -->
+  <rect x="815" y="162" width="180" height="54" rx="12" fill="#fdf3e7" stroke="#b45309" stroke-width="2.5"/>
+  <text x="905" y="195" text-anchor="middle" font-size="18" fill="#7a4a12">root question</text>
+
+  <!-- children -->
+  <rect x="695" y="280" width="150" height="56" rx="12" fill="#f1eee8" stroke="#e3ded4"/>
+  <text x="770" y="313" text-anchor="middle" font-size="17" fill="#8f897c">section A</text>
+  <rect x="830" y="280" width="150" height="56" rx="12" fill="#fdf3e7" stroke="#b45309" stroke-width="2.5"/>
+  <text x="905" y="313" text-anchor="middle" font-size="17" fill="#7a4a12">section B</text>
+  <rect x="965" y="280" width="150" height="56" rx="12" fill="#f1eee8" stroke="#e3ded4"/>
+  <text x="1040" y="313" text-anchor="middle" font-size="17" fill="#8f897c">section C</text>
+
+  <!-- grandchildren -->
+  <rect x="695" y="400" width="150" height="56" rx="12" fill="#f1eee8" stroke="#e3ded4"/>
+  <text x="770" y="433" text-anchor="middle" font-size="17" fill="#8f897c">(dropped)</text>
+  <rect x="830" y="400" width="150" height="56" rx="12" fill="#fdf3e7" stroke="#b45309" stroke-width="2.5"/>
+  <text x="905" y="426" text-anchor="middle" font-size="17" fill="#7a4a12">go deeper</text>
+  <text x="905" y="446" text-anchor="middle" font-size="15" fill="#b45309">← you are here</text>
+
+  <!-- lineage outline -->
+  <rect x="806" y="148" width="198" height="324" rx="18" fill="none" stroke="#b45309" stroke-width="2" stroke-dasharray="7 7" opacity="0.7"/>
+  <text x="905" y="596" text-anchor="middle" font-size="18" fill="#b45309">only this lineage is sent to the model</text>
+</svg>

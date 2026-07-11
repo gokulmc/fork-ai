@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
+  <rect width="1200" height="600" fill="#fbfaf8"/>
+  <line x1="600" y1="58" x2="600" y2="548" stroke="#e3ded4" stroke-width="1.5" stroke-dasharray="3 7"/>
+
+  <text x="300" y="44" text-anchor="middle" fill="#8f897c" font-size="19" letter-spacing="1.5">ANSWERS, THEN GONE</text>
+  <text x="900" y="44" text-anchor="middle" fill="#7a4a12" font-size="19" letter-spacing="1.5">A MAP YOU KEEP</text>
+
+  <!-- LEFT: disposable cited answers, one after another -->
+  <g>
+    <rect x="150" y="92" width="300" height="86" rx="12" fill="#f1eee8" stroke="#e3ded4"/>
+    <rect x="170" y="110" width="240" height="9" rx="4.5" fill="#d8d2c6"/>
+    <rect x="170" y="126" width="200" height="9" rx="4.5" fill="#d8d2c6"/>
+    <circle cx="176" cy="158" r="6" fill="#cdb98f"/><circle cx="194" cy="158" r="6" fill="#cdb98f"/><circle cx="212" cy="158" r="6" fill="#cdb98f"/>
+
+    <rect x="150" y="200" width="300" height="86" rx="12" fill="#f1eee8" stroke="#e3ded4"/>
+    <rect x="170" y="218" width="220" height="9" rx="4.5" fill="#d8d2c6"/>
+    <rect x="170" y="234" width="180" height="9" rx="4.5" fill="#d8d2c6"/>
+    <circle cx="176" cy="266" r="6" fill="#cdb98f"/><circle cx="194" cy="266" r="6" fill="#cdb98f"/>
+
+    <rect x="150" y="308" width="300" height="86" rx="12" fill="#f6f4f0" stroke="#ece7dd" stroke-dasharray="4 4"/>
+    <rect x="170" y="326" width="210" height="9" rx="4.5" fill="#e3ded4"/>
+    <rect x="170" y="342" width="160" height="9" rx="4.5" fill="#e3ded4"/>
+    <text x="300" y="382" text-anchor="middle" fill="#b3ac9c" font-size="13">the last one scrolls away</text>
+
+    <text x="300" y="500" text-anchor="middle" fill="#b3ac9c" font-size="15">great answers — but no structure survives the session</text>
+  </g>
+
+  <!-- RIGHT: a branching map you keep -->
+  <g>
+    <path d="M760 116 C 820 116, 820 188, 880 188" fill="none" stroke="#e3ded4" stroke-width="2"/>
+    <path d="M760 116 C 820 116, 820 300, 880 300" fill="none" stroke="#e3c49a" stroke-width="2.5"/>
+    <path d="M760 116 C 820 116, 820 412, 880 412" fill="none" stroke="#e3ded4" stroke-width="2"/>
+    <path d="M1060 300 C 1100 300, 1100 360, 1140 360" fill="none" stroke="#e3c49a" stroke-width="2.5"/>
+
+    <rect x="640" y="90" width="120" height="52" rx="12" fill="#f1eee8" stroke="#cdbf8f"/>
+    <rect x="658" y="106" width="84" height="9" rx="4.5" fill="#cdb98f"/>
+    <rect x="658" y="121" width="60" height="9" rx="4.5" fill="#cdb98f"/>
+
+    <rect x="880" y="162" width="180" height="52" rx="12" fill="#f1eee8" stroke="#e3ded4"/>
+    <rect x="898" y="178" width="120" height="9" rx="4.5" fill="#d8d2c6"/>
+    <rect x="898" y="193" width="80" height="9" rx="4.5" fill="#d8d2c6"/>
+
+    <rect x="880" y="274" width="180" height="52" rx="12" fill="#fdf3e7" stroke="#b45309"/>
+    <rect x="898" y="290" width="120" height="9" rx="4.5" fill="#e3c49a"/>
+    <rect x="898" y="305" width="86" height="9" rx="4.5" fill="#e3c49a"/>
+
+    <rect x="880" y="386" width="180" height="52" rx="12" fill="#f1eee8" stroke="#e3ded4"/>
+    <rect x="898" y="402" width="120" height="9" rx="4.5" fill="#d8d2c6"/>
+    <rect x="898" y="417" width="70" height="9" rx="4.5" fill="#d8d2c6"/>
+
+    <rect x="1010" y="334" width="150" height="52" rx="12" fill="#fdf3e7" stroke="#b45309"/>
+    <rect x="1028" y="350" width="100" height="9" rx="4.5" fill="#e3c49a"/>
+    <rect x="1028" y="365" width="64" height="9" rx="4.5" fill="#e3c49a"/>
+
+    <text x="900" y="500" text-anchor="middle" fill="#b3ac9c" font-size="15">every answer is a node you can revisit, extend, and export</text>
+  </g>
+</svg>

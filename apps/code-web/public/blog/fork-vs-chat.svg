@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
+  <rect width="1200" height="600" fill="#fbfaf8"/>
+  <line x1="600" y1="58" x2="600" y2="548" stroke="#e3ded4" stroke-width="1.5" stroke-dasharray="3 7"/>
+
+  <text x="300" y="44" text-anchor="middle" fill="#8f897c" font-size="19" letter-spacing="1.5">ONE LINEAR THREAD</text>
+  <text x="900" y="44" text-anchor="middle" fill="#7a4a12" font-size="19" letter-spacing="1.5">A BRANCHING MAP</text>
+
+  <!-- LEFT: a single column; the tangent buries your place -->
+  <g>
+    <line x1="300" y1="96" x2="300" y2="470" stroke="#e3ded4" stroke-width="2"/>
+    <!-- msg 1 -->
+    <rect x="150" y="84" width="300" height="52" rx="12" fill="#f1eee8" stroke="#e3ded4"/>
+    <rect x="170" y="100" width="220" height="9" rx="4.5" fill="#d8d2c6"/>
+    <rect x="170" y="115" width="150" height="9" rx="4.5" fill="#d8d2c6"/>
+    <!-- msg 2 -->
+    <rect x="150" y="156" width="300" height="52" rx="12" fill="#f1eee8" stroke="#e3ded4"/>
+    <rect x="170" y="172" width="240" height="9" rx="4.5" fill="#d8d2c6"/>
+    <rect x="170" y="187" width="120" height="9" rx="4.5" fill="#d8d2c6"/>
+    <!-- msg 3 (the main topic) -->
+    <rect x="150" y="228" width="300" height="52" rx="12" fill="#f1eee8" stroke="#cdbf8f"/>
+    <rect x="170" y="244" width="200" height="9" rx="4.5" fill="#cdb98f"/>
+    <rect x="170" y="259" width="160" height="9" rx="4.5" fill="#cdb98f"/>
+    <!-- tangent buries it -->
+    <rect x="150" y="300" width="300" height="52" rx="12" fill="#f7e7e2" stroke="#e0b4a8"/>
+    <rect x="166" y="300" width="4" height="52" rx="2" fill="#c4452e"/>
+    <rect x="184" y="316" width="200" height="9" rx="4.5" fill="#e0a99a"/>
+    <rect x="184" y="331" width="120" height="9" rx="4.5" fill="#e0a99a"/>
+    <text x="470" y="332" fill="#c4452e" font-size="14">tangent</text>
+    <!-- msg 5 -->
+    <rect x="150" y="372" width="300" height="52" rx="12" fill="#f1eee8" stroke="#e3ded4"/>
+    <rect x="170" y="388" width="230" height="9" rx="4.5" fill="#d8d2c6"/>
+    <rect x="170" y="403" width="140" height="9" rx="4.5" fill="#d8d2c6"/>
+    <text x="300" y="500" text-anchor="middle" fill="#b3ac9c" font-size="15">scroll up and hope to find your place</text>
+  </g>
+
+  <!-- RIGHT: a tree; the tangent is its own branch -->
+  <g>
+    <path d="M760 116 C 820 116, 820 188, 880 188" fill="none" stroke="#e3ded4" stroke-width="2"/>
+    <path d="M760 116 C 820 116, 820 300, 880 300" fill="none" stroke="#e3c49a" stroke-width="2.5"/>
+    <path d="M760 116 C 820 116, 820 412, 880 412" fill="none" stroke="#e3ded4" stroke-width="2"/>
+    <path d="M1060 300 C 1100 300, 1100 360, 1140 360" fill="none" stroke="#e3c49a" stroke-width="2.5"/>
+
+    <!-- root -->
+    <rect x="640" y="90" width="120" height="52" rx="12" fill="#f1eee8" stroke="#cdbf8f"/>
+    <rect x="658" y="106" width="84" height="9" rx="4.5" fill="#cdb98f"/>
+    <rect x="658" y="121" width="60" height="9" rx="4.5" fill="#cdb98f"/>
+
+    <!-- child: a tangent, kept aside -->
+    <rect x="880" y="162" width="180" height="52" rx="12" fill="#f1eee8" stroke="#e3ded4"/>
+    <rect x="898" y="178" width="120" height="9" rx="4.5" fill="#d8d2c6"/>
+    <rect x="898" y="193" width="80" height="9" rx="4.5" fill="#d8d2c6"/>
+    <text x="1072" y="194" fill="#b3ac9c" font-size="13">tangent</text>
+
+    <!-- child: the path you follow (accent) -->
+    <rect x="880" y="274" width="180" height="52" rx="12" fill="#fdf3e7" stroke="#b45309"/>
+    <rect x="898" y="290" width="120" height="9" rx="4.5" fill="#e3c49a"/>
+    <rect x="898" y="305" width="86" height="9" rx="4.5" fill="#e3c49a"/>
+
+    <!-- child 3 -->
+    <rect x="880" y="386" width="180" height="52" rx="12" fill="#f1eee8" stroke="#e3ded4"/>
+    <rect x="898" y="402" width="120" height="9" rx="4.5" fill="#d8d2c6"/>
+    <rect x="898" y="417" width="70" height="9" rx="4.5" fill="#d8d2c6"/>
+
+    <!-- grandchild (accent, deeper) -->
+    <rect x="1010" y="334" width="150" height="52" rx="12" fill="#fdf3e7" stroke="#b45309"/>
+    <rect x="1028" y="350" width="100" height="9" rx="4.5" fill="#e3c49a"/>
+    <rect x="1028" y="365" width="64" height="9" rx="4.5" fill="#e3c49a"/>
+
+    <text x="900" y="500" text-anchor="middle" fill="#b3ac9c" font-size="15">every branch keeps its place — and its own context</text>
+  </g>
+</svg>

@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 620" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
+  <rect width="1200" height="620" fill="#fbfaf8"/>
+
+  <text x="280" y="90" text-anchor="middle" font-size="20" letter-spacing="3" fill="#8f897c">THE MAP YOU BUILT</text>
+  <text x="900" y="90" text-anchor="middle" font-size="20" letter-spacing="3" fill="#8f897c">THE PAGE YOU KEEP</text>
+
+  <!-- left: research map -->
+  <g stroke="#d8d2c6" stroke-width="2.5" fill="none">
+    <path d="M 280 220 C 280 260, 180 260, 180 300"/>
+    <path d="M 280 220 C 280 260, 380 260, 380 300"/>
+    <path d="M 380 352 C 380 390, 440 390, 440 426"/>
+  </g>
+  <path d="M 280 220 L 280 300" stroke="#b45309" stroke-width="3" fill="none"/>
+  <rect x="200" y="160" width="160" height="60" rx="13" fill="#fdf3e7" stroke="#b45309" stroke-width="2.5"/>
+  <text x="280" y="196" text-anchor="middle" font-size="17" fill="#7a4a12">root question</text>
+  <rect x="110" y="300" width="140" height="52" rx="11" fill="#f1eee8" stroke="#e3ded4"/>
+  <text x="180" y="332" text-anchor="middle" font-size="15" fill="#26231f">branch A</text>
+  <rect x="212" y="300" width="136" height="52" rx="11" fill="#fdf3e7" stroke="#b45309" stroke-width="2"/>
+  <text x="280" y="332" text-anchor="middle" font-size="15" fill="#7a4a12">branch B</text>
+  <rect x="312" y="300" width="136" height="52" rx="11" fill="#f1eee8" stroke="#e3ded4"/>
+  <text x="380" y="332" text-anchor="middle" font-size="15" fill="#26231f">branch C</text>
+  <rect x="372" y="426" width="136" height="50" rx="11" fill="#f1eee8" stroke="#e3ded4"/>
+  <text x="440" y="457" text-anchor="middle" font-size="15" fill="#26231f">C → deeper</text>
+
+  <!-- export arrow -->
+  <line x1="560" y1="320" x2="660" y2="320" stroke="#b45309" stroke-width="4"/>
+  <path d="M 672 320 l -18 -11 l 0 22 z" fill="#b45309"/>
+  <text x="613" y="290" text-anchor="middle" font-size="16" fill="#b45309">export</text>
+
+  <!-- right: Notion-like page -->
+  <rect x="700" y="130" width="400" height="400" rx="14" fill="#ffffff" stroke="#e3ded4"/>
+  <text x="730" y="180" font-size="20" fill="#26231f">📄 Root question</text>
+  <!-- mini diagram block -->
+  <rect x="730" y="200" width="340" height="80" rx="10" fill="#fbfaf8" stroke="#e3ded4"/>
+  <g stroke="#b3ac9c" stroke-width="2" fill="none">
+    <line x1="900" y1="225" x2="850" y2="255"/>
+    <line x1="900" y1="225" x2="900" y2="255"/>
+    <line x1="900" y1="225" x2="950" y2="255"/>
+  </g>
+  <circle cx="900" cy="222" r="8" fill="#fdf3e7" stroke="#b45309" stroke-width="2"/>
+  <circle cx="850" cy="259" r="7" fill="#f1eee8" stroke="#b3ac9c"/>
+  <circle cx="900" cy="259" r="7" fill="#f1eee8" stroke="#b3ac9c"/>
+  <circle cx="950" cy="259" r="7" fill="#f1eee8" stroke="#b3ac9c"/>
+  <text x="1056" y="248" text-anchor="end" font-size="13" fill="#b3ac9c">map overview</text>
+
+  <!-- toggle headings -->
+  <text x="730" y="322" font-size="17" fill="#26231f">▸ Branch A</text>
+  <text x="730" y="360" font-size="17" fill="#7a4a12">▾ Branch B</text>
+  <rect x="756" y="376" width="280" height="8" rx="4" fill="#d8d2c6"/>
+  <rect x="756" y="392" width="240" height="8" rx="4" fill="#d8d2c6"/>
+  <rect x="756" y="408" width="262" height="8" rx="4" fill="#d8d2c6"/>
+  <text x="730" y="450" font-size="17" fill="#26231f">▸ Branch C</text>
+  <text x="756" y="486" font-size="15" fill="#b3ac9c">▸ C → deeper (nested)</text>
+
+  <text x="900" y="566" text-anchor="middle" font-size="16" fill="#b45309">the tree survives the trip</text>
+  <text x="280" y="566" text-anchor="middle" font-size="16" fill="#8f897c">lives in a session</text>
+</svg>

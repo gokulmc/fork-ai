@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 620" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
+  <rect width="1200" height="620" fill="#fbfaf8"/>
+
+  <text x="290" y="80" text-anchor="middle" font-size="22" letter-spacing="3" fill="#8f897c">BY ORDER</text>
+  <text x="290" y="110" text-anchor="middle" font-size="17" fill="#b3ac9c">the sequence you encountered things</text>
+  <text x="880" y="80" text-anchor="middle" font-size="22" letter-spacing="3" fill="#8f897c">BY STRUCTURE</text>
+  <text x="880" y="110" text-anchor="middle" font-size="17" fill="#b3ac9c">how the things actually relate</text>
+
+  <!-- left: dated note rows -->
+  <g>
+    <rect x="120" y="150" width="340" height="52" rx="10" fill="#ffffff" stroke="#e3ded4"/>
+    <text x="144" y="182" font-size="15" fill="#b3ac9c">mar 03</text>
+    <rect x="230" y="170" width="190" height="9" rx="4.5" fill="#d8d2c6"/>
+    <rect x="120" y="214" width="340" height="52" rx="10" fill="#ffffff" stroke="#e3ded4"/>
+    <text x="144" y="246" font-size="15" fill="#b3ac9c">mar 09</text>
+    <rect x="230" y="234" width="160" height="9" rx="4.5" fill="#d8d2c6"/>
+    <rect x="120" y="278" width="340" height="52" rx="10" fill="#ffffff" stroke="#e3ded4"/>
+    <text x="144" y="310" font-size="15" fill="#b3ac9c">mar 17</text>
+    <rect x="230" y="298" width="200" height="9" rx="4.5" fill="#d8d2c6"/>
+    <rect x="120" y="342" width="340" height="52" rx="10" fill="#ffffff" stroke="#e3ded4"/>
+    <text x="144" y="374" font-size="15" fill="#b3ac9c">apr 02</text>
+    <rect x="230" y="362" width="150" height="9" rx="4.5" fill="#d8d2c6"/>
+    <rect x="120" y="406" width="340" height="52" rx="10" fill="#ffffff" stroke="#e3ded4"/>
+    <text x="144" y="438" font-size="15" fill="#b3ac9c">apr 11</text>
+    <rect x="230" y="426" width="180" height="9" rx="4.5" fill="#d8d2c6"/>
+  </g>
+  <text x="290" y="510" text-anchor="middle" font-size="16" fill="#c4452e">a longer path, never a richer map</text>
+
+  <!-- right: clustered map; same notes attach where they belong -->
+  <g stroke="#d8d2c6" stroke-width="2.5" fill="none">
+    <line x1="880" y1="220" x2="770" y2="330"/>
+    <line x1="880" y1="220" x2="990" y2="330"/>
+    <line x1="770" y1="330" x2="730" y2="440"/>
+    <line x1="990" y1="330" x2="950" y2="440"/>
+  </g>
+  <path d="M 990 330 C 1060 360, 1060 410, 1030 440" fill="none" stroke="#b45309" stroke-width="3"/>
+
+  <rect x="800" y="170" width="160" height="52" rx="12" fill="#fdf3e7" stroke="#b45309" stroke-width="2.5"/>
+  <text x="880" y="202" text-anchor="middle" font-size="16" fill="#7a4a12">the topic</text>
+
+  <rect x="690" y="330" width="160" height="50" rx="11" fill="#f1eee8" stroke="#e3ded4"/>
+  <text x="770" y="361" text-anchor="middle" font-size="15" fill="#26231f">mechanisms</text>
+  <rect x="910" y="330" width="160" height="50" rx="11" fill="#f1eee8" stroke="#e3ded4"/>
+  <text x="990" y="361" text-anchor="middle" font-size="15" fill="#26231f">applications</text>
+
+  <rect x="650" y="440" width="160" height="50" rx="11" fill="#ffffff" stroke="#e3ded4"/>
+  <text x="730" y="464" text-anchor="middle" font-size="14" fill="#b3ac9c">mar 09 note</text>
+  <text x="730" y="481" text-anchor="middle" font-size="14" fill="#b3ac9c">lives here</text>
+  <rect x="870" y="440" width="160" height="50" rx="11" fill="#ffffff" stroke="#e3ded4"/>
+  <text x="950" y="464" text-anchor="middle" font-size="14" fill="#b3ac9c">apr 02 note</text>
+  <text x="950" y="481" text-anchor="middle" font-size="14" fill="#b3ac9c">lives here</text>
+  <rect x="950" y="440" width="0" height="0" fill="none"/>
+  <text x="1078" y="464" text-anchor="middle" font-size="14" fill="#b45309">this week’s</text>
+  <text x="1078" y="481" text-anchor="middle" font-size="14" fill="#b45309">question attaches</text>
+
+  <line x1="580" y1="140" x2="580" y2="520" stroke="#eee9df" stroke-width="2"/>
+  <text x="600" y="586" text-anchor="middle" font-size="18" fill="#b3ac9c">notes append; maps compound</text>
+</svg>

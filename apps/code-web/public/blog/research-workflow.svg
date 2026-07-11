@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 480" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
+  <rect width="1200" height="480" fill="#fbfaf8"/>
+
+  <!-- arrows between steps -->
+  <g stroke="#d8d2c6" stroke-width="2.5" fill="#d8d2c6">
+    <line x1="234" y1="230" x2="282" y2="230"/><path d="M 282 230 l -10 -6 l 0 12 z"/>
+    <line x1="464" y1="230" x2="512" y2="230"/><path d="M 512 230 l -10 -6 l 0 12 z"/>
+    <line x1="694" y1="230" x2="742" y2="230"/><path d="M 742 230 l -10 -6 l 0 12 z"/>
+    <line x1="924" y1="230" x2="972" y2="230"/><path d="M 972 230 l -10 -6 l 0 12 z"/>
+  </g>
+
+  <!-- step 1: one real question -->
+  <text x="149" y="110" text-anchor="middle" font-size="20" fill="#b3ac9c">1</text>
+  <rect x="64" y="130" width="170" height="200" rx="14" fill="#ffffff" stroke="#e3ded4"/>
+  <rect x="99" y="200" width="100" height="56" rx="12" fill="#fdf3e7" stroke="#b45309" stroke-width="2.5"/>
+  <text x="149" y="236" text-anchor="middle" font-size="26" fill="#7a4a12">?</text>
+  <text x="149" y="368" text-anchor="middle" font-size="16" fill="#8f897c">ask one real</text>
+  <text x="149" y="390" text-anchor="middle" font-size="16" fill="#8f897c">question</text>
+
+  <!-- step 2: answer splits into sections -->
+  <text x="379" y="110" text-anchor="middle" font-size="20" fill="#b3ac9c">2</text>
+  <rect x="294" y="130" width="170" height="200" rx="14" fill="#ffffff" stroke="#e3ded4"/>
+  <rect x="334" y="156" width="90" height="34" rx="9" fill="#f1eee8" stroke="#e3ded4"/>
+  <g stroke="#d8d2c6" stroke-width="2">
+    <line x1="379" y1="190" x2="339" y2="222"/>
+    <line x1="379" y1="190" x2="379" y2="222"/>
+    <line x1="379" y1="190" x2="419" y2="222"/>
+  </g>
+  <rect x="314" y="222" width="50" height="26" rx="7" fill="#f1eee8" stroke="#e3ded4"/>
+  <rect x="354" y="252" width="50" height="26" rx="7" fill="#f1eee8" stroke="#e3ded4"/>
+  <rect x="394" y="222" width="50" height="26" rx="7" fill="#f1eee8" stroke="#e3ded4"/>
+  <text x="379" y="368" text-anchor="middle" font-size="16" fill="#8f897c">let the answer</text>
+  <text x="379" y="390" text-anchor="middle" font-size="16" fill="#8f897c">split into sections</text>
+
+  <!-- step 3: branch what matters -->
+  <text x="609" y="110" text-anchor="middle" font-size="20" fill="#b3ac9c">3</text>
+  <rect x="524" y="130" width="170" height="200" rx="14" fill="#ffffff" stroke="#e3ded4"/>
+  <rect x="564" y="156" width="90" height="34" rx="9" fill="#f1eee8" stroke="#e3ded4"/>
+  <line x1="579" y1="190" x2="559" y2="230" stroke="#d8d2c6" stroke-width="2"/>
+  <line x1="639" y1="190" x2="659" y2="230" stroke="#b45309" stroke-width="3"/>
+  <rect x="534" y="230" width="50" height="28" rx="7" fill="#f1eee8" stroke="#e3ded4"/>
+  <rect x="634" y="230" width="50" height="28" rx="7" fill="#fdf3e7" stroke="#b45309" stroke-width="2.5"/>
+  <line x1="659" y1="258" x2="659" y2="284" stroke="#b45309" stroke-width="3"/>
+  <rect x="634" y="284" width="50" height="28" rx="7" fill="#fdf3e7" stroke="#b45309" stroke-width="2.5"/>
+  <text x="609" y="368" text-anchor="middle" font-size="16" fill="#8f897c">branch the sections</text>
+  <text x="609" y="390" text-anchor="middle" font-size="16" fill="#8f897c">that matter</text>
+
+  <!-- step 4: highlight and ask -->
+  <text x="839" y="110" text-anchor="middle" font-size="20" fill="#b3ac9c">4</text>
+  <rect x="754" y="130" width="170" height="200" rx="14" fill="#ffffff" stroke="#e3ded4"/>
+  <rect x="779" y="166" width="120" height="9" rx="4.5" fill="#d8d2c6"/>
+  <rect x="779" y="188" width="96" height="13" rx="6" fill="#b45309" opacity="0.3"/>
+  <rect x="779" y="190" width="92" height="9" rx="4.5" fill="#b3ac9c"/>
+  <rect x="779" y="212" width="110" height="9" rx="4.5" fill="#d8d2c6"/>
+  <path d="M 827 201 C 827 240, 839 240, 839 254" fill="none" stroke="#b45309" stroke-width="3"/>
+  <rect x="804" y="254" width="70" height="32" rx="8" fill="#fdf3e7" stroke="#b45309" stroke-width="2.5"/>
+  <text x="839" y="275" text-anchor="middle" font-size="15" fill="#7a4a12">ask</text>
+  <text x="839" y="368" text-anchor="middle" font-size="16" fill="#8f897c">highlight and</text>
+  <text x="839" y="390" text-anchor="middle" font-size="16" fill="#8f897c">ask in place</text>
+
+  <!-- step 5: keep the map -->
+  <text x="1069" y="110" text-anchor="middle" font-size="20" fill="#b3ac9c">5</text>
+  <rect x="984" y="130" width="170" height="200" rx="14" fill="#ffffff" stroke="#e3ded4"/>
+  <g stroke="#d8d2c6" stroke-width="2">
+    <line x1="1069" y1="186" x2="1029" y2="232"/>
+    <line x1="1069" y1="186" x2="1109" y2="232"/>
+    <line x1="1109" y1="232" x2="1089" y2="278"/>
+    <line x1="1109" y1="232" x2="1129" y2="278"/>
+  </g>
+  <circle cx="1069" cy="182" r="13" fill="#fdf3e7" stroke="#b45309" stroke-width="2.5"/>
+  <circle cx="1029" cy="236" r="11" fill="#f1eee8" stroke="#e3ded4"/>
+  <circle cx="1109" cy="236" r="11" fill="#f1eee8" stroke="#e3ded4"/>
+  <circle cx="1089" cy="282" r="11" fill="#f1eee8" stroke="#e3ded4"/>
+  <circle cx="1129" cy="282" r="11" fill="#f1eee8" stroke="#e3ded4"/>
+  <rect x="1004" y="152" width="150" height="156" rx="12" fill="none" stroke="#b45309" stroke-width="2" stroke-dasharray="6 6" opacity="0.7"/>
+  <text x="1069" y="368" text-anchor="middle" font-size="16" fill="#8f897c">keep the map —</text>
+  <text x="1069" y="390" text-anchor="middle" font-size="16" fill="#8f897c">it’s the artifact</text>
+
+  <text x="600" y="442" text-anchor="middle" font-size="18" fill="#b3ac9c">one prompt in, a knowledge map out</text>
+</svg>
