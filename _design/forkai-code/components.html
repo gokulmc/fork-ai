@@ -36,15 +36,22 @@
   .node-card--plan { border-color: color-mix(in oklab, var(--kind-plan) 40%, var(--line-strong)); }
   .node-card--code { border-color: color-mix(in oklab, var(--kind-code) 40%, var(--line-strong)); }
   .node-card--branch { border-color: color-mix(in oklab, var(--kind-branch) 40%, var(--line-strong)); }
+  .node-card--merge { border-color: color-mix(in oklab, var(--kind-merge) 40%, var(--line-strong)); }
   .node-card-top { margin-bottom: 8px; }
   .node-card-main { display: flex; align-items: center; gap: 10px; }
   .node-card-emoji { font-size: 18px; line-height: 1; flex-shrink: 0; font-family: "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui,sans-serif; }
   .node-card-text { min-width: 0; }
-  .node-card-kicker { font-size: 9px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); line-height: 1; }
+  .node-card-kicker { display: flex; align-items: center; gap: 6px; font-size: 9px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); line-height: 1; }
   .node-card--plan .node-card-kicker { color: var(--kind-plan); }
   .node-card--code .node-card-kicker { color: var(--kind-code); }
   .node-card--branch .node-card-kicker { color: var(--kind-branch); }
+  .node-card--merge .node-card-kicker { color: var(--kind-merge); }
   .node-card-label { font-size: 12.5px; font-weight: 500; color: var(--ink); line-height: 1.28; margin-top: 3px; }
+
+  /* PR status chip on a MERGE card's kicker row (see MindMap.tsx .mm-pr-status) */
+  .pr-status-chip { font-family: var(--sans); font-size: 8.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 1px 6px; border-radius: 999px; line-height: 1.5; }
+  .pr-status-chip--open { color: var(--kind-merge); border: 1px solid color-mix(in oklab, var(--kind-merge) 50%, var(--line)); }
+  .pr-status-chip--merged { color: #fff; background: var(--kind-merge); }
 
   .commit-pill { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 10.5px; font-weight: 500; padding: 3px 9px; border-radius: 999px; background: var(--commit-pill-bg); color: var(--commit-pill-ink); border: 1px solid var(--commit-pill-border); cursor: pointer; transition: background .12s, color .12s, border-color .12s; }
   .commit-pill:hover, .commit-pill--hover { background: var(--hover-strong); color: var(--ink); border-color: var(--line-strong); }
@@ -61,6 +68,33 @@
   .branch-popup-btn { width: 100%; height: 32px; border: 1px solid var(--ink); border-radius: var(--radius); background: var(--ink); color: var(--bg); font-family: var(--sans); font-size: 12.5px; font-weight: 600; cursor: pointer; transition: opacity .15s; }
   .branch-popup-btn:hover { opacity: .85; }
   .branch-popup-hint { font-family: var(--sans); font-size: 11px; color: var(--ink-3); margin: 9px 0 0; line-height: 1.4; }
+
+  /* ── Code composer — bottom-docked instruction bar ─────────
+     (see globals.css .code-composer — shown here in a static shell
+     since the real bar is absolutely-docked to the workspace pane) */
+  .composer-demo-shell { background: var(--sidebar, var(--panel)); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 28px; display: flex; justify-content: center; }
+  .code-composer-inner { pointer-events: all; max-width: 520px; width: 100%; display: flex; flex-direction: column; gap: 6px; background: var(--paper); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); box-shadow: var(--shadow-2); padding: 8px 10px; }
+  .code-composer-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 2px; }
+  .code-composer-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 220px; padding: 3px 6px 3px 9px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; font-family: var(--mono); font-size: 11px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .code-composer-chip button { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 50%; border: none; background: transparent; color: var(--ink-3); cursor: pointer; padding: 0; font-size: 11px; line-height: 1; }
+  .code-composer-row { display: flex; align-items: flex-end; gap: 6px; }
+  .code-composer-attach-btn, .code-composer-send-btn { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 50%; background: var(--panel); color: var(--ink-2); cursor: pointer; font-size: 13px; }
+  .code-composer-send-btn { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .code-composer-textarea-demo { flex: 1; min-width: 0; font-family: var(--sans); font-size: 13.5px; color: var(--ink-3); padding: 5px 2px; }
+
+  /* ── PR pane — merge one branch into another ────────────── */
+  .pr-pane-demo { max-width: 460px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-1); padding: 20px 22px; }
+  .pr-pane-kind-row { display: flex; align-items: center; gap: 8px; margin-bottom: 20px; }
+  .pill-kind--merge { border: 1px solid color-mix(in oklab, var(--kind-merge) 45%, var(--line)); color: var(--kind-merge); border-radius: 4px; padding: 2px 8px; font-family: var(--sans); font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: 5px; }
+  .pr-status-pill { font-family: var(--sans); font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px; }
+  .pr-status-pill--open { color: var(--kind-merge); border: 1px solid color-mix(in oklab, var(--kind-merge) 50%, var(--line)); }
+  .pr-status-pill--merged { color: #fff; background: var(--kind-merge); }
+  .pr-branches-row { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; font-family: var(--mono); }
+  .pr-branches-arrow { color: var(--ink-3); }
+  .pr-merge-btn { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 16px; border-radius: var(--radius); border: none; background: var(--kind-merge); color: #fff; font-family: var(--sans); font-size: 13px; font-weight: 600; cursor: pointer; }
+  .pr-merged-row { display: inline-flex; align-items: center; gap: 12px; }
+  .pr-merged-badge { display: inline-flex; align-items: center; gap: 5px; font-family: var(--sans); font-size: 12px; font-weight: 600; color: var(--kind-merge); }
+  .pr-merged-link { font-family: var(--sans); font-size: 12.5px; color: var(--kind-merge); text-decoration: underline; }
 
   /* ── Mixer popup ────────────────────────────────────────── */
   .mixer-demo-shell { background: var(--sidebar, var(--panel)); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 28px; display: flex; justify-content: center; }
@@ -165,6 +199,30 @@
           </div>
         </div>
       </div>
+      <div>
+        <div class="ds-label-sm">Merge (open)</div>
+        <div class="node-card node-card--merge">
+          <div class="node-card-main">
+            <span class="node-card-emoji">🔀</span>
+            <div class="node-card-text">
+              <div class="node-card-kicker">PR<span class="pr-status-chip pr-status-chip--open">open</span></div>
+              <div class="node-card-label">Merge feature/sliding-window</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="ds-label-sm">Merge (merged)</div>
+        <div class="node-card node-card--merge">
+          <div class="node-card-main">
+            <span class="node-card-emoji">🔀</span>
+            <div class="node-card-text">
+              <div class="node-card-kicker">PR<span class="pr-status-chip pr-status-chip--merged">merged</span></div>
+              <div class="node-card-label">Merge feature/sliding-window</div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -186,6 +244,55 @@
       <input class="branch-popup-input" type="text" value="feature/sliding-window" />
       <button class="branch-popup-btn">Fork branch</button>
       <p class="branch-popup-hint">Creates a new branch at this commit and starts a new lane on the map.</p>
+    </div>
+  </div>
+
+  <div class="ds-section">
+    <div class="ds-section-label">Code composer</div>
+    <p class="ds-section-note">Bottom-docked instruction bar (textarea + attach + send) — replaces the old anchored popup for spawning/continuing CODE nodes. Absolutely positioned over the workspace pane in the real app; shown here in a static shell.</p>
+    <div class="composer-demo-shell">
+      <div class="code-composer-inner">
+        <div class="code-composer-chips">
+          <span class="code-composer-chip">rate-limit.middleware.ts<button type="button" aria-label="Remove">×</button></span>
+        </div>
+        <div class="code-composer-row">
+          <button type="button" class="code-composer-attach-btn" title="Attach files">📎</button>
+          <div class="code-composer-textarea-demo">Add a per-key override so admin API keys skip the limiter entirely…</div>
+          <button type="button" class="code-composer-send-btn" title="Send (Enter)">↑</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ds-section">
+    <div class="ds-section-label">PR pane</div>
+    <p class="ds-section-note">Rendered in the workspace pane for the active MERGE node — source → target branches, an open/merged status pill, and a violet Merge button.</p>
+    <div class="pr-pane-demo">
+      <div class="pr-pane-kind-row">
+        <span class="pill-kind--merge">⑂ Pull Request</span>
+        <span class="pr-status-pill pr-status-pill--open">open</span>
+      </div>
+      <div class="pr-branches-row">
+        <span class="commit-pill">⎇ feature/sliding-window · d41f7b2</span>
+        <span class="pr-branches-arrow">→</span>
+        <span class="commit-pill">⎇ fork/add-rate-limiting</span>
+      </div>
+      <button class="pr-merge-btn">⑂ Merge pull request</button>
+    </div>
+    <div class="pr-pane-demo" style="margin-top: 16px;">
+      <div class="pr-pane-kind-row">
+        <span class="pill-kind--merge">⑂ Pull Request</span>
+        <span class="pr-status-pill pr-status-pill--merged">merged</span>
+      </div>
+      <div class="pr-branches-row">
+        <span class="commit-pill">⎇ feature/sliding-window · d41f7b2</span>
+        <span class="pr-branches-arrow">→</span>
+        <span class="commit-pill">⎇ fork/add-rate-limiting</span>
+      </div>
+      <div class="pr-merged-row">
+        <span class="pr-merged-badge">✓ Merged</span>
+        <span class="pr-merged-link">View merge commit →</span>
+      </div>
     </div>
   </div>
 

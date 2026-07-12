@@ -23,7 +23,7 @@
   .ds-brand { display: inline-flex; align-items: center; gap: 8px; font-family: var(--sans); font-weight: 600; font-size: 13px; letter-spacing: .02em; color: var(--ink-2); margin-bottom: 14px; }
   .ds-brand .mark { width: 15px; height: 15px; border-radius: 4px; background: var(--ink); display: inline-block; }
   .page-title { font-family: var(--serif); font-weight: 400; font-size: 28px; letter-spacing: -0.02em; margin: 0 0 6px; color: var(--ink); }
-  .page-sub { font-family: var(--sans); font-size: 12.5px; color: var(--ink-3); margin: 0; max-width: 720px; line-height: 1.5; }
+  .page-sub { font-family: var(--sans); font-size: 12.5px; color: var(--ink-3); margin: 0; max-width: 760px; line-height: 1.5; }
 
   .map-wrap { position: relative; flex: 1; overflow: auto; background: var(--bg); }
   .map-svg { display: block; }
@@ -35,20 +35,38 @@
   .node-card--plan { border-color: color-mix(in oklab, var(--kind-plan) 40%, var(--line-strong)); }
   .node-card--code { border-color: color-mix(in oklab, var(--kind-code) 40%, var(--line-strong)); }
   .node-card--branch { border-color: color-mix(in oklab, var(--kind-branch) 40%, var(--line-strong)); }
+  .node-card--merge { border-color: color-mix(in oklab, var(--kind-merge) 40%, var(--line-strong)); }
   .node-card-top { margin-bottom: 6px; }
   .node-card-main { display: flex; align-items: center; gap: 8px; }
   .node-card-emoji { font-size: 16px; line-height: 1; flex-shrink: 0; font-family: "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui,sans-serif; }
   .node-card-text { min-width: 0; }
-  .node-card-kicker { font-size: 8.5px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3); line-height: 1; }
+  .node-card-kicker { display: flex; align-items: center; gap: 6px; font-size: 8.5px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3); line-height: 1; }
   .node-card--plan .node-card-kicker { color: var(--kind-plan); }
   .node-card--code .node-card-kicker { color: var(--kind-code); }
   .node-card--branch .node-card-kicker { color: var(--kind-branch); }
+  .node-card--merge .node-card-kicker { color: var(--kind-merge); }
   .node-card-label { font-size: 11.5px; font-weight: 500; color: var(--ink); line-height: 1.25; margin-top: 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .commit-pill { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 9.5px; font-weight: 500; padding: 2px 7px; border-radius: 999px; background: var(--commit-pill-bg); color: var(--commit-pill-ink); border: 1px solid var(--commit-pill-border); }
 
+  /* PR status chip — same shape as the workspace's pr-status-pill, shrunk for
+     the map card's kicker row (see MindMap.tsx's .mm-pr-status). */
+  .pr-status-chip { font-family: var(--sans); font-size: 7.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 1px 5px; border-radius: 999px; line-height: 1.5; }
+  .pr-status-chip--open { color: var(--kind-merge); border: 1px solid color-mix(in oklab, var(--kind-merge) 50%, var(--line)); }
+  .pr-status-chip--merged { color: #fff; background: var(--kind-merge); }
+
+  /* Collapsed commit-chain segment — a slimmer dashed pill, centered label,
+     no kicker/icon/commit-pill (see lib/collapseSegments.ts + .mm-node--segment). */
+  .node-card--segment {
+    display: flex; align-items: center; justify-content: center; text-align: center;
+    width: 170px; padding: 8px 10px;
+    background: var(--kind-code-soft); border: 1px dashed var(--kind-code);
+    font-size: 11px; font-weight: 500; color: var(--ink-3);
+  }
+
   .edge-learn { fill: none; stroke: var(--ink-3); stroke-opacity: .45; stroke-width: 1.25; }
   .edge-lane { fill: none; stroke: var(--lane-line); stroke-width: 1.75; }
-  .edge-fork { fill: none; stroke: var(--kind-branch); stroke-opacity: .8; stroke-width: 1.75; }
+  .edge-fork { fill: none; stroke: var(--kind-branch); stroke-opacity: .85; stroke-width: 1.75; }
+  .edge-merge { fill: none; stroke: var(--kind-merge); stroke-opacity: .85; stroke-width: 1.75; }
   .lane-rail { stroke: var(--lane-line); stroke-width: 1; stroke-dasharray: 2 4; }
   .lane-label { font-family: var(--mono); font-size: 10.5px; fill: var(--ink-3); }
 
@@ -60,10 +78,13 @@
   .legend-dot--plan { background: var(--kind-plan); }
   .legend-dot--code { background: var(--kind-code); }
   .legend-dot--branch { background: var(--kind-branch); }
+  .legend-dot--merge { background: var(--kind-merge); }
+  .legend-dot--segment { background: var(--kind-code-soft); border: 1px dashed var(--kind-code); }
   .legend-line { width: 18px; height: 0; border-top: 2px solid; flex-shrink: 0; }
   .legend-line--lane { border-top-style: dashed; border-top-color: var(--lane-line); }
   .legend-line--learn { border-top-style: solid; border-top-color: var(--ink-3); opacity: .6; }
   .legend-line--fork { border-top-style: solid; border-top-color: var(--kind-branch); }
+  .legend-line--merge { border-top-style: solid; border-top-color: var(--kind-merge); }
 </style>
 </head>
 <body>
@@ -72,7 +93,7 @@
   <div class="page-head">
     <div class="ds-brand"><span class="mark"></span>fork ai code</div>
     <h1 class="page-title">Git-graph map — vertical columns</h1>
-    <p class="page-sub">Code chains ride vertical columns (1 git branch = 1 column), commits flowing downward; forking a branch allocates a new column to the right; learn subtrees hang to the RIGHT of their anchor, transposed from today's mind map. Node positions below are computed live by the column-allocator in this page's script — its rules are the spec for <code style="font-family: var(--mono);">layoutGitGraph.ts</code>.</p>
+    <p class="page-sub">Commits flow DOWN a vertical column (1 git branch = 1 column). Forking a branch (<b>BRANCH</b>) allocates a new column immediately to the right, at the SAME ROW as the commit it forked from — a strict horizontal arrow makes the fork point unambiguous. Learn nodes (go deeper / ask AI) hang BELOW their anchor in a side lane offset to the right, growing downward — never to the side of the trunk. A <b>MERGE</b> ("PR") node rides the TARGET column like any other commit, pulled down to align with its source branch's row, with a straight violet edge carrying the second-parent link in from the source commit. A long run of imported commits collapses into a single dashed "⋯ N commits" placeholder. Node positions below are computed live by the column-allocator in this page's script — its rules are the spec for <code style="font-family: var(--mono);">layoutGitGraph.ts</code>.</p>
   </div>
 
   <div class="map-wrap">
@@ -81,189 +102,230 @@
       <div class="legend-row"><span class="legend-dot legend-dot--learn"></span>Learn — go deeper / ask AI</div>
       <div class="legend-row"><span class="legend-dot legend-dot--plan"></span>Plan — synthesized implementation plan</div>
       <div class="legend-row"><span class="legend-dot legend-dot--code"></span>Code — one agent run = one commit</div>
-      <div class="legend-row"><span class="legend-dot legend-dot--branch"></span>Branch — forks a new column from a commit</div>
+      <div class="legend-row"><span class="legend-dot legend-dot--branch"></span>Branch — forks a new column, same row</div>
+      <div class="legend-row"><span class="legend-dot legend-dot--merge"></span>Merge — PR into a target column</div>
+      <div class="legend-row"><span class="legend-dot legend-dot--segment"></span>Collapsed commit chain</div>
       <div class="legend-sep"></div>
       <div class="legend-row"><span class="legend-line legend-line--lane"></span>Column rail</div>
-      <div class="legend-row"><span class="legend-line legend-line--learn"></span>Learn edge (elbow)</div>
-      <div class="legend-row"><span class="legend-line legend-line--fork"></span>Fork elbow</div>
+      <div class="legend-row"><span class="legend-line legend-line--learn"></span>Learn edge (curved, hangs below)</div>
+      <div class="legend-row"><span class="legend-line legend-line--fork"></span>Branch fork (horizontal, arrowhead)</div>
+      <div class="legend-row"><span class="legend-line legend-line--merge"></span>Merge edge (violet, arrowhead)</div>
     </div>
   </div>
 
 <script>
 /* ============================================================
-   Sample data — one query, one plan (heading its own column), a
-   3-commit main column, a 2-commit feature branch forked mid-column,
-   and a learn subtree hanging off the fork point. Mirrors the real
-   ForkNode shape (kind/parentId) plus two coding-layer fields:
-   commit, branch.
+   Sample data — one query, a plan (heading the trunk column), a
+   3-commit trunk with a collapsed import segment, a 2-commit
+   feature branch forked mid-column, a learn subtree hanging below
+   a commit, and a MERGE ("PR") node landing back on the trunk.
+   Mirrors the real ForkNode shape (kind/parentId/mergeFromNodeId)
+   plus the coding-layer fields: commit, branch, prStatus.
    ============================================================ */
 const nodes = [
   { id: 'root',    kind: 'QUERY',  parentId: null,     title: 'Add rate limiting to the API',        emoji: '💬' },
-  { id: 'learn1',  kind: 'DEEPER', parentId: 'root',   title: 'Token bucket vs sliding window',       emoji: '📎' },
-  { id: 'learn2',  kind: 'ASK',    parentId: 'root',   title: "What's a sensible default limit?",     emoji: '💬' },
-  { id: 'plan',    kind: 'PLAN',   parentId: 'root',   title: 'Implementation plan',                  emoji: '🗂', branch: 'fork/add-rate-limiting', commit: 'a1b2c3d' },
+  { id: 'plan',    kind: 'PLAN',   parentId: 'root',   title: 'Implementation plan',                  emoji: '🗂', branch: 'fork/add-rate-limiting', commit: '5f2a819' },
   { id: 'code1',   kind: 'CODE',   parentId: 'plan',   title: 'Add limiter middleware skeleton',      emoji: '🧩', commit: 'a1b2c3d', branch: 'fork/add-rate-limiting' },
-  { id: 'code2',   kind: 'CODE',   parentId: 'code1',  title: 'Wire Redis token-bucket store',        emoji: '🧩', commit: 'f0e91aa', branch: 'fork/add-rate-limiting' },
-  { id: 'code3',   kind: 'CODE',   parentId: 'code2',  title: 'Add per-key limit overrides',          emoji: '🧩', commit: '9c4d21e', branch: 'fork/add-rate-limiting' },
-  { id: 'branch1', kind: 'BRANCH', parentId: 'code2',  title: 'Fork: feature/sliding-window',         emoji: '🔀', commit: 'd41f7b2', branch: 'feature/sliding-window' },
+  { id: 'seg:hid', kind: 'CODE',   parentId: 'code1',  title: '⋯ 12 commits',                          emoji: '',   commit: '',        branch: 'fork/add-rate-limiting' },
+  { id: 'code2',   kind: 'CODE',   parentId: 'seg:hid',title: 'Wire Redis token-bucket store',        emoji: '🧩', commit: '9c4d21e', branch: 'fork/add-rate-limiting' },
+  { id: 'lc1',     kind: 'DEEPER', parentId: 'code2',  title: 'Why Redis over in-memory state',       emoji: '📎' },
+  { id: 'lc2',     kind: 'ASK',    parentId: 'code2',  title: 'Multi-instance consistency',            emoji: '💬' },
+  { id: 'code3',   kind: 'CODE',   parentId: 'code2',  title: 'Add per-key limit overrides',          emoji: '🧩', commit: 'e77a410', branch: 'fork/add-rate-limiting' },
+  { id: 'branch1', kind: 'BRANCH', parentId: 'code2',  title: 'Fork: feature/sliding-window',         emoji: '⑂', commit: 'd41f7b2', branch: 'feature/sliding-window' },
   { id: 'code4',   kind: 'CODE',   parentId: 'branch1',title: 'Swap to sliding-window algorithm',     emoji: '🧩', commit: '77bcf10', branch: 'feature/sliding-window' },
   { id: 'code5',   kind: 'CODE',   parentId: 'code4',  title: 'Add feature-flag rollout guard',       emoji: '🧩', commit: '2b8e991', branch: 'feature/sliding-window' },
-  { id: 'lc1',     kind: 'DEEPER', parentId: 'code2',  title: 'Why Redis over in-memory state',       emoji: '📎' },
-  { id: 'lc2',     kind: 'ASK',    parentId: 'lc1',    title: 'Multi-instance consistency',            emoji: '💬' },
+  { id: 'merge',   kind: 'MERGE',  parentId: 'code3',  title: 'Merge feature/sliding-window',         emoji: '',   branch: 'fork/add-rate-limiting', mergeFromNodeId: 'code5', prStatus: 'open' },
 ];
 
 /* ============================================================
-   Column allocator — core rules (transposed from the shipped
-   horizontal lane allocator; same free-list, same overall shape,
-   axes swapped):
-   1. PLAN / CODE / BRANCH are "rail" kinds; everything else
-      (QUERY / DEEPER / ASK) is a "hanging" tree node.
-   2. A CODE child inherits its parent's column: same x,
-      y = parent.y + ROW_H (elastic — see rule 5).
-   3. A BRANCH node allocates the lowest FREE column index (a real
-      free-list, not just "append") and its own y starts one row
-      below its source commit — same formula as any same-column
-      continuation, so the fork reads as a corner, not a jump.
-   4. Hanging (DEEPER/ASK) subtrees are laid out to the RIGHT of
-      their anchor (root, or any rail node) as a small TOP-ALIGNED
-      tree (depth -> x, siblings -> y) — one-sided clearance, since
-      an anchor's row is shared with every other node in its column.
+   Column allocator — ported 1:1 from layoutGitGraph.ts's rules
+   (this IS the spec, so the shapes below match the shipped file,
+   just with design-file-local constant names):
+   1. PLAN / CODE / BRANCH / MERGE are "rail" kinds; everything
+      else (QUERY / DEEPER / ASK) is a "hanging" learn node.
+   2. A CODE (or MERGE) child of a rail parent continues the
+      parent's column: same x, y = parent.y + row advance.
+   3. A BRANCH child allocates the lowest free column index, at
+      the SAME y as its fork commit — immediate visual feedback of
+      where it forked off (a straight horizontal edge, not a jump).
+   4. Hanging (DEEPER/ASK) subtrees are laid out BELOW their anchor
+      (root, or any rail node), offset into a side lane clear of the
+      anchor's own column, as a small tree (depth -> y, siblings -> x)
+      — one-sided clearance, since an anchor's column is shared with
+      every other node stacked below it.
    5. Elastic row advance: the next node in the SAME column clears
-      its parent's own hanging-subtree height (top-aligned hangs
-      extend straight down, so a wide hang pushes the next commit
-      down with it).
-   6. Elastic column width: a column's x must clear the deepest
-      hanging subtree of every node in the column to its left (this
-      is what pushes the feature-branch column right of a wide hang,
-      not just one flat COL_W).
+      its parent's own hanging-subtree depth (the hang extends
+      straight down, so a deep hang pushes the next commit down).
+   6. Elastic column width: a column's x must clear the widest
+      hanging subtree of every node in the column to its left.
+   7. MERGE nodes ride the TARGET column like any other rail
+      continuation, then get pulled down (post-pass) to align with
+      their SOURCE node's row — for a clean, near-horizontal second-
+      parent edge — shifting the rest of their column down with them.
    ============================================================ */
-const RAIL = new Set(['PLAN', 'CODE', 'BRANCH']);
-const ROOT_X = 70, ROOT_Y = 60;
-const COL_W = 230;         // horizontal gap between columns
-const ROW_H = 160;          // vertical gap between same-column rail nodes
-const HANG_COL_W = 190;     // horizontal gap between hanging-tree depth levels
-const HANG_ROW_H = 100;     // vertical gap between hanging-tree siblings (top-aligned)
+const RAIL = new Set(['PLAN', 'CODE', 'BRANCH', 'MERGE']);
+const CARD_W = 190, CARD_H = 62, CARD_H_PILL = 100, HANG_W = 170, HANG_H = 62, SEG_W = 170, SEG_H = 54;
+const ROW_GAP = 160;        // baseline vertical gap between same-column rail nodes
+const HANG_ROW_H = 110;     // vertical step per hang depth level (downward)
+const HANG_COL_W = 170;     // horizontal step between hang siblings (side lane)
+const HANG_SIB_GAP = 16;
+const HANG_GAP_X = 40;      // gap from an anchor's right edge to its side lane
+const START_GAP = 60;
 
 function layout(nodes) {
   const byId = new Map(nodes.map(n => [n.id, n]));
-  const childrenOf = id => nodes.filter(n => n.parentId === id);
-  const nonRailChildren = id => childrenOf(id).filter(n => !RAIL.has(n.kind));
-  const railChildren = id => childrenOf(id).filter(n => RAIL.has(n.kind));
+  const rootId = nodes.find(n => n.parentId === null).id;
+  const childMap = {};
+  nodes.forEach(n => { childMap[n.id] = []; });
+  nodes.forEach(n => { if (n.parentId && childMap[n.parentId]) childMap[n.parentId].push(n.id); });
+  const isRail = id => RAIL.has(byId.get(id).kind);
+
+  // hangChildMap: for a rail node, only its non-rail (learn) children — its
+  // rail children are placed separately by placeRail below.
+  const hangChildMap = {};
+  Object.keys(childMap).forEach(id => {
+    hangChildMap[id] = isRail(id) ? childMap[id].filter(k => !isRail(k)) : childMap[id];
+  });
+
+  function hangDepth(id) {
+    const kids = hangChildMap[id] || [];
+    if (!kids.length) return 0;
+    return 1 + Math.max(...kids.map(hangDepth));
+  }
+  function leafRows(id) {
+    const kids = hangChildMap[id] || [];
+    if (!kids.length) return 1;
+    return kids.reduce((s, k) => s + leafRows(k), 0);
+  }
+  function hangRows(id) {
+    const kids = hangChildMap[id] || [];
+    if (!kids.length) return 0;
+    return kids.reduce((s, k) => s + leafRows(k), 0);
+  }
+  function rowAdvance(id) {
+    return Math.max(ROW_GAP, hangDepth(id) * HANG_ROW_H + CARD_H + START_GAP);
+  }
 
   const pos = {};
-  const colOf = {};
-  const colUsed = [];
-  const colNodes = [];
+  // Places every descendant of anchorId BELOW it, in a side lane offset to the
+  // right (depth -> y, siblings -> x) — rule 4 above.
+  function placeHangingSubtreeV(anchorId) {
+    const rows = {};
+    function leaves(id) {
+      if (rows[id] !== undefined) return rows[id];
+      const kids = hangChildMap[id] || [];
+      if (!kids.length) { rows[id] = 1; return 1; }
+      let s = 0; kids.forEach(k => s += leaves(k)); rows[id] = s; return s;
+    }
+    leaves(anchorId);
+    const a = pos[anchorId];
+    const laneX0 = a.x + CARD_W / 2 + HANG_GAP_X + HANG_W / 2;
+    function place(id, depth, leftCol) {
+      if (depth > 0) pos[id] = { x: laneX0 + leftCol * (HANG_W + HANG_SIB_GAP), y: a.y + depth * HANG_ROW_H };
+      let col = leftCol;
+      (hangChildMap[id] || []).forEach(k => { place(k, depth + 1, col); col += rows[k]; });
+    }
+    place(anchorId, 0, 0);
+  }
 
+  pos[rootId] = { x: 0, y: 0 };
+  if (hangChildMap[rootId]?.length) placeHangingSubtreeV(rootId);
+
+  const colUsed = [], colNodes = [], colOf = {}, colOccupiedY = {};
   function allocateColumn() {
     let i = 0;
     while (colUsed[i]) i++;
     colUsed[i] = true;
     colNodes[i] = [];
+    colOccupiedY[i] = new Set();
     return i;
   }
-
-  // depth (in levels) of the hanging subtree under a node — used for elastic
-  // column width (rule 6).
-  function hangDepth(id) {
-    const kids = nonRailChildren(id);
-    if (!kids.length) return 0;
-    return 1 + Math.max(...kids.map(k => hangDepth(k.id)));
-  }
-  // leaf-row count of a subtree (>=1) — used for elastic row advance (rule 5).
-  function leafRows(id) {
-    const kids = nonRailChildren(id);
-    if (!kids.length) return 1;
-    return kids.reduce((s, k) => s + leafRows(k.id), 0);
-  }
-  function hangRows(id) {
-    const kids = nonRailChildren(id);
-    if (!kids.length) return 0;
-    return kids.reduce((s, k) => s + leafRows(k.id), 0);
-  }
-  function rowAdvance(id) {
-    return Math.max(ROW_H, hangRows(id) * HANG_ROW_H);
+  function reserveY(col, y) {
+    const used = colOccupiedY[col];
+    while (used.has(y)) y += ROW_GAP;
+    used.add(y);
+    return y;
   }
 
-  const root = nodes.find(n => n.parentId === null);
-  pos[root.id] = { x: ROOT_X, y: ROOT_Y };
-
-  // 1) place rail nodes top-to-bottom within a column, parent before child
-  function placeRail(node) {
-    const parent = byId.get(node.parentId);
+  function placeRail(id) {
+    const parentId = byId.get(id).parentId;
+    const parentIsRail = isRail(parentId);
     let col, y;
-    if (node.kind === 'BRANCH') {
+    if (byId.get(id).kind === 'BRANCH') {
+      // Rule 3 — shares its fork commit's row exactly.
       col = allocateColumn();
-      y = pos[parent.id].y + rowAdvance(parent.id);
-    } else if (!RAIL.has(parent.kind)) {
+      y = pos[parentId].y;
+    } else if (!parentIsRail) {
       col = allocateColumn();
-      y = pos[parent.id].y + rowAdvance(parent.id);
+      y = pos[parentId].y + rowAdvance(parentId);
     } else {
-      col = colOf[parent.id];
-      y = pos[parent.id].y + rowAdvance(parent.id);
+      col = colOf[parentId];
+      y = pos[parentId].y + rowAdvance(parentId);
     }
-    colOf[node.id] = col;
-    colNodes[col].push(node.id);
-    pos[node.id] = { x: undefined, y };
-    railChildren(node.id).forEach(placeRail);
+    y = reserveY(col, y);
+    colOf[id] = col;
+    colNodes[col].push(id);
+    pos[id] = { x: NaN, y }; // x filled in once every column is stacked
+    childMap[id].filter(isRail).forEach(placeRail);
   }
-  railChildren(root.id).forEach(placeRail);
+  function findRailEntryPoints(id) {
+    childMap[id].forEach(k => { isRail(k) ? placeRail(k) : findRailEntryPoints(k); });
+  }
+  findRailEntryPoints(rootId);
 
-  // 2) stack columns left-to-right, each clearing the column to its left's
-  // deepest hang (rule 6)
-  let cursorX = ROOT_X;
+  // Stack columns left-to-right, each clearing the column to its left's
+  // widest hanging learn subtree (rule 6).
+  let cursorX = pos[rootId].x;
   colNodes.forEach(ids => {
     ids.forEach(id => { pos[id].x = cursorX; });
-    const colHang = Math.max(0, ...ids.map(hangDepth));
-    cursorX = cursorX + COL_W + colHang * HANG_COL_W;
+    const colHang = Math.max(0, ...ids.map(id => {
+      const rows = hangRows(id);
+      return rows > 0 ? rows * (HANG_W + HANG_SIB_GAP) + HANG_GAP_X : 0;
+    }));
+    cursorX += (CARD_W + 50) + colHang;
   });
 
-  // 3) hang DEEPER/ASK subtrees to the right of their now-final anchor
-  // position, top-aligned (rule 4)
-  function placeHanging(anchorId) {
-    const kids = nonRailChildren(anchorId);
-    const rows = {};
-    function leaves(id) {
-      if (rows[id] !== undefined) return rows[id];
-      const k = nonRailChildren(id);
-      rows[id] = k.length ? k.reduce((s, c) => s + leaves(c.id), 0) : 1;
-      return rows[id];
-    }
-    leaves(anchorId);
-    const a = pos[anchorId];
-    function place(id, depth, topRow) {
-      if (depth > 0) pos[id] = { x: a.x + depth * HANG_COL_W, y: a.y + topRow * HANG_ROW_H };
-      let row = topRow;
-      nonRailChildren(id).forEach(k => { place(k.id, depth + 1, row); row += rows[k.id]; });
-    }
-    place(anchorId, 0, 0);
-  }
-  placeHanging(root.id);
-  nodes.filter(n => RAIL.has(n.kind)).forEach(n => placeHanging(n.id));
+  // MERGE y-alignment post-pass (rule 7) — pulls a MERGE node down to clear
+  // its SOURCE node's row for a clean near-horizontal second-parent edge,
+  // shifting the rest of its own column down with it.
+  nodes.forEach(n => {
+    if (n.kind !== 'MERGE' || !n.mergeFromNodeId) return;
+    const sourcePos = pos[n.mergeFromNodeId];
+    if (!sourcePos) return;
+    const oldY = pos[n.id].y;
+    const newY = Math.max(oldY, sourcePos.y);
+    if (newY === oldY) return;
+    const delta = newY - oldY;
+    const col = colOf[n.id];
+    colNodes[col].forEach(otherId => { if (otherId !== n.id && pos[otherId].y >= oldY) pos[otherId].y += delta; });
+    pos[n.id].y = newY;
+  });
 
-  return { pos, colOf, colNodes };
+  // Hang remaining learn subtrees below their now-final rail anchor.
+  nodes.forEach(n => {
+    if (isRail(n.id) && n.id !== rootId && hangChildMap[n.id]?.length) placeHangingSubtreeV(n.id);
+  });
+
+  return { pos, colOf, colNodes, childMap };
 }
 
-const { pos, colOf, colNodes } = layout(nodes);
+const { pos, colOf, colNodes, childMap } = layout(nodes);
 
 /* ---------------- render ---------------- */
 const SVGNS = 'http://www.w3.org/2000/svg';
-const CARD_W = 190, CARD_H = 62, CARD_H_PILL = 100, HANG_W = 170, HANG_H = 62;
 const svg = document.getElementById('mapSvg');
 const byId = new Map(nodes.map(n => [n.id, n]));
 
-// CODE/BRANCH cards carry the extra commit-pill row above the title, so they
-// need more vertical room than a plain PLAN/QUERY or hanging LEARN card
 function dims(n) {
+  if (n.id.startsWith('seg:')) return [SEG_W, SEG_H];
   if (n.kind === 'CODE' || n.kind === 'BRANCH') return [CARD_W, CARD_H_PILL];
+  if (n.kind === 'PLAN' && n.branch) return [CARD_W, CARD_H_PILL];
   if (RAIL.has(n.kind) || n.kind === 'QUERY') return [CARD_W, CARD_H];
   return [HANG_W, HANG_H];
 }
 function el(tag, attrs) { const e = document.createElementNS(SVGNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; }
-// horizontal elbow: right-center of a -> left-center of b (learn + fork edges
-// when the git-graph layout is active — both share this curve, colour only differs)
-function elbow(x1, y1, x2, y2) { const mx = (x1 + x2) / 2; return `M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`; }
 function straightV(x, y1, y2) { return `M ${x} ${y1} L ${x} ${y2}`; }
+function vcurve(x1, y1, x2, y2) { const my = (y1 + y2) / 2; return `M ${x1} ${y1} C ${x1} ${my}, ${x2} ${my}, ${x2} ${y2}`; }
 
 // bounds, computed from the layout (not hand-set)
 let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -279,6 +341,16 @@ svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
 svg.setAttribute('width', vb.w);
 svg.setAttribute('height', vb.h);
 
+// 0) arrowhead markers — fork edges (branch green) and merge edges (violet)
+const defs = el('defs', {});
+const arrowBranch = el('marker', { id: 'arrow-branch', viewBox: '0 0 8 8', refX: '8', refY: '4', markerWidth: '8', markerHeight: '8', markerUnits: 'userSpaceOnUse', orient: 'auto' });
+arrowBranch.appendChild(el('path', { d: 'M 0 0 L 8 4 L 0 8 z', fill: 'var(--kind-branch)' }));
+defs.appendChild(arrowBranch);
+const arrowMerge = el('marker', { id: 'arrow-merge', viewBox: '0 0 8 8', refX: '8', refY: '4', markerWidth: '8', markerHeight: '8', markerUnits: 'userSpaceOnUse', orient: 'auto' });
+arrowMerge.appendChild(el('path', { d: 'M 0 0 L 8 4 L 0 8 z', fill: 'var(--kind-merge)' }));
+defs.appendChild(arrowMerge);
+svg.appendChild(defs);
+
 // 1) column rails, drawn first so everything else sits on top; branch labels at column tops
 colNodes.forEach(ids => {
   if (!ids.length) return;
@@ -287,46 +359,68 @@ colNodes.forEach(ids => {
   const railEndY = pos[ids[ids.length - 1]].y + CARD_H / 2 + 24;
   svg.appendChild(el('line', { class: 'lane-rail', x1: x, y1: railStartY, x2: x, y2: railEndY }));
   const label = el('text', { class: 'lane-label', x: x - CARD_W / 2, y: railStartY - 10 });
-  // the column's leading node may not itself carry a branch name (e.g. a bare
-  // PLAN before its first commit) — use the first node in the column that does
   const named = ids.map(id => byId.get(id)).find(n => n.branch);
   label.textContent = named ? named.branch : '';
   svg.appendChild(label);
 });
 
-// 2) edges
-function edge(a, b, cls, path) {
-  const pa = pos[a.id], pb = pos[b.id];
-  svg.appendChild(el('path', { class: cls, d: path(pa, pb) }));
+// 2) edges — same three treatments the shipped MindMap.tsx uses: a straight
+// vertical lane line for a same-column CODE continuation, a strict horizontal
+// line with an arrowhead for a BRANCH fork (parent and child now share a row),
+// and a curved vertical edge for everything else (learn hangs, and a rail
+// entry point like PLAN or MERGE landing on a column via its parentId link).
+function edge(a, b, cls, path, extraAttrs) {
+  svg.appendChild(el('path', { class: cls, d: path(pos[a.id], pos[b.id]), ...(extraAttrs || {}) }));
 }
 for (const n of nodes) {
   if (n.parentId === null) continue;
   const parent = byId.get(n.parentId);
   const [pw, ph] = dims(parent), [nw, nh] = dims(n);
-  const pp = pos[parent.id], np = pos[n.id];
-  if (n.kind === 'CODE' && RAIL.has(parent.kind)) {
-    // same-column continuation: straight vertical edge, card edge to card edge
+  const cKind = n.kind, pKind = parent.kind;
+  const isFork = cKind === 'BRANCH';
+  const isLane = !isFork && cKind === 'CODE' && RAIL.has(pKind);
+  if (isLane) {
     edge(parent, n, 'edge-lane', (a, b) => straightV(a.x, a.y + ph / 2, b.y - nh / 2));
-  } else if (n.kind === 'BRANCH') {
-    // fork point: rounded elbow from the source commit's right side into the new column
-    edge(parent, n, 'edge-fork', (a, b) => elbow(a.x + pw / 2, a.y, b.x - nw / 2, b.y));
+  } else if (isFork) {
+    edge(parent, n, 'edge-fork', (a, b) => `M ${a.x + pw / 2} ${a.y} L ${b.x - nw / 2} ${a.y}`, { 'marker-end': 'url(#arrow-branch)' });
   } else {
-    // learn edge (root or code node -> DEEPER/ASK, or PLAN's parent query)
-    edge(parent, n, 'edge-learn', (a, b) => elbow(a.x + pw / 2, a.y, b.x - nw / 2, b.y));
+    edge(parent, n, 'edge-learn', (a, b) => vcurve(a.x, a.y + ph / 2, b.x, b.y - nh / 2));
   }
 }
 
+// 2.5) merge edges — the second-parent link (mergeFromNodeId), drawn
+// separately since it never appears in the parentId-driven childMap.
+for (const n of nodes) {
+  if (n.kind !== 'MERGE' || !n.mergeFromNodeId) continue;
+  const src = byId.get(n.mergeFromNodeId);
+  const [sw] = dims(src), [mw] = dims(n);
+  const sp = pos[src.id], mp = pos[n.id];
+  const d = mp.x >= sp.x
+    ? `M ${sp.x + sw / 2} ${sp.y} L ${mp.x - mw / 2} ${mp.y}`
+    : `M ${sp.x - sw / 2} ${sp.y} L ${mp.x + mw / 2} ${mp.y}`;
+  svg.appendChild(el('path', { class: 'edge-merge', d, 'marker-end': 'url(#arrow-merge)' }));
+}
+
 // 3) node cards, rendered as HTML inside foreignObject — same DOM shape the
-//    real MindMap uses (<g translate> > foreignObject > .node-card)
+//    real MindMap uses (<g translate> > foreignObject > .node-card). A
+//    collapsed segment (id starting "seg:") renders as a slim dashed pill
+//    with no kicker/icon/commit-pill; a MERGE card shows a "PR" kicker plus
+//    an open/merged status chip instead of a commit pill.
 function cardHTML(n) {
+  if (n.id.startsWith('seg:')) return `<div class="node-card node-card--segment">${n.title}</div>`;
   const kindClass = n.kind === 'PLAN' ? 'node-card--plan'
     : n.kind === 'CODE' ? 'node-card--code'
     : n.kind === 'BRANCH' ? 'node-card--branch'
+    : n.kind === 'MERGE' ? 'node-card--merge'
     : 'node-card--learn';
-  const kicker = n.kind === 'QUERY' ? 'Query' : (n.kind === 'DEEPER' || n.kind === 'ASK') ? 'Learn' : n.kind.charAt(0) + n.kind.slice(1).toLowerCase();
+  const kicker = n.kind === 'QUERY' ? 'Query'
+    : (n.kind === 'DEEPER' || n.kind === 'ASK') ? 'Learn'
+    : n.kind === 'MERGE' ? 'PR'
+    : n.kind.charAt(0) + n.kind.slice(1).toLowerCase();
+  const statusChip = n.kind === 'MERGE' ? `<span class="pr-status-chip pr-status-chip--${n.prStatus}">${n.prStatus}</span>` : '';
   const pill = (n.kind === 'CODE' || n.kind === 'BRANCH' || (n.kind === 'PLAN' && n.branch))
     ? `<div class="node-card-top"><span class="commit-pill">⎇ ${n.branch}${n.kind === 'PLAN' ? ' · from ' : ' · '}${n.commit}</span></div>` : '';
-  return `<div class="node-card ${kindClass}">${pill}<div class="node-card-main"><span class="node-card-emoji">${n.emoji || ''}</span><div class="node-card-text"><div class="node-card-kicker">${kicker}</div><div class="node-card-label">${n.title}</div></div></div></div>`;
+  return `<div class="node-card ${kindClass}">${pill}<div class="node-card-main"><span class="node-card-emoji">${n.emoji || ''}</span><div class="node-card-text"><div class="node-card-kicker">${kicker}${statusChip}</div><div class="node-card-label">${n.title}</div></div></div></div>`;
 }
 for (const n of nodes) {
   const [w, h] = dims(n);

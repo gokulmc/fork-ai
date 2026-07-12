@@ -36,13 +36,15 @@
   /* ── forkai-code: kind accents ──────────────────────────────
      Subtle, desaturated — tint a card's border/kicker/pill, never
      the whole card surface. Chosen to sit apart from --accent (grey)
-     and from each other at a glance: violet / teal / amber. */
-  --kind-plan: #6d5fa3;
-  --kind-plan-soft: #efedf7;
-  --kind-code: #3f7a68;
-  --kind-code-soft: #eaf3ef;
-  --kind-branch: #a3703f;
-  --kind-branch-soft: #f6eee3;
+     and from each other at a glance: blue / amber / green / violet. */
+  --kind-code: #4a72a8;
+  --kind-code-soft: #edf3f9;
+  --kind-plan: #b0793a;
+  --kind-plan-soft: #f9f1e6;
+  --kind-branch: #4d8a63;
+  --kind-branch-soft: #ebf4ee;
+  --kind-merge: #7d5fb3;
+  --kind-merge-soft: #f1edf8;
 
   /* ── forkai-code: commit pill ───────────────────────────────
      Neutral mono chip — deliberately NOT tinted by kind, since the
@@ -95,12 +97,14 @@
   --shadow-2: 0 6px 18px rgba(0, 0, 0, 0.5);
   --shadow-3: 0 14px 36px rgba(0, 0, 0, 0.55);
 
-  --kind-plan: #b3a8dd;
-  --kind-plan-soft: #2a2735;
-  --kind-code: #7fc4ab;
-  --kind-code-soft: #1d2b26;
-  --kind-branch: #d9ac7c;
-  --kind-branch-soft: #332821;
+  --kind-code: #8fb0d9;
+  --kind-code-soft: #1e2733;
+  --kind-plan: #d9ab7c;
+  --kind-plan-soft: #332a21;
+  --kind-branch: #86c29e;
+  --kind-branch-soft: #202e26;
+  --kind-merge: #b3a0e0;
+  --kind-merge-soft: #2a2438;
 
   --commit-pill-bg: #242422;
   --commit-pill-ink: #c9c7bd;
