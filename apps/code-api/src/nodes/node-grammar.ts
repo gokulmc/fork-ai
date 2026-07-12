@@ -24,7 +24,8 @@ export const ALLOWED_CHILD_KINDS: Record<NodeKind, NodeKind[]> = {
   // node) — the generic create route (CreateNodeDto) still only accepts
   // DEEPER/ASK, so a QUERY can never be minted under CODE any other way.
   CODE: ['CODE', 'BRANCH', 'DEEPER', 'ASK', 'QUERY'],
-  BRANCH: ['CODE'],
+  BRANCH: ['CODE', 'DEEPER', 'ASK'],
+  MERGE: ['CODE'],
 };
 
 export function assertKindAllowed(parentKind: NodeKind, childKind: NodeKind): void {

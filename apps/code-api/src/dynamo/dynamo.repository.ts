@@ -220,12 +220,20 @@ export class DynamoRepository {
   async updateNode(
     sessionId: string,
     nodeId: string,
-    updates: Partial<Pick<NodeItem, 'title' | 'lede' | 'starred' | 'commitSha' | 'branchName' | 'commitMessage' | 'diffSummary' | 'agentStatus' | 'imported'>>,
+    updates: Partial<Pick<NodeItem, 'title' | 'lede' | 'starred' | 'commitSha' | 'branchName' | 'commitMessage' | 'diffSummary' | 'agentStatus' | 'imported' | 'prStatus'>>,
   ): Promise<void> {
     await this.nodeModel.update(
       { PK: this.sessionPk(sessionId), SK: this.nodeSk(nodeId) },
       updates,
     );
+  }
+
+  // Repo-import writes hundreds of nodes at once (see repo-import.service.ts) —
+  // BatchWriteItem caps at 25 items per call, same chunking as batchDeleteNodes.
+  async batchPutNodes(items: NodeItem[]): Promise<void> {
+    if (!items.length) return;
+    const chunks = chunk(items, 25);
+    await Promise.all(chunks.map((c) => this.nodeModel.batchPut(c.map((n) => this.clean(n)))));
   }
 
   async batchDeleteNodes(sessionId: string, nodeIds: string[]): Promise<void> {

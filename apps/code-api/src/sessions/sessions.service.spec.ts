@@ -9,6 +9,7 @@ import { UsersService } from '@/users/users.service';
 const mockDb = {
   putNode: jest.fn(),
   putSessionMeta: jest.fn(),
+  batchPutNodes: jest.fn(),
   getSessionMeta: jest.fn(),
   listSessionMeta: jest.fn(),
   updateSessionMeta: jest.fn(),
@@ -311,6 +312,61 @@ describe('SessionsService', () => {
     });
   });
 
+  describe('createRootNodeStreaming — fill-root, from-scratch BRANCH root (D1/D3)', () => {
+    const branchRootNode = {
+      nodeId: 'branch-root-1', parentId: null, kind: 'BRANCH', branchName: 'main', commitSha: 'abc123',
+      title: 'A billing dashboard…', query: 'A billing dashboard with Stripe.', sections: [], createdAt: NOW,
+    };
+    const seededMeta = { ...sessionMeta, title: 'My Project', emoji: '', lede: '', rootNodeId: 'branch-root-1', nodeCount: 1, projectId: 'proj-1' };
+
+    beforeEach(() => {
+      mockUsers.checkCredit.mockResolvedValue(undefined);
+      mockUsers.billUsage.mockResolvedValue(undefined);
+      mockDb.getSessionMeta.mockResolvedValue(seededMeta);
+      mockDb.queryNodes.mockResolvedValue([branchRootNode]);
+      mockDb.putNode.mockResolvedValue(undefined);
+      mockDb.updateSessionMeta.mockResolvedValue(undefined);
+      mockLlm.streamAnswerQuery.mockReturnValue(fakeStream());
+    });
+
+    it('streams the answer INTO the existing BRANCH root — init carries the SAME nodeId, no new node is put', async () => {
+      const events: Array<{ type: string; sessionId?: string; nodeId?: string }> = [];
+      await service.createRootNodeStreaming(SUB, SESSION_ID, { query: 'A billing dashboard with Stripe.' }, (d) => events.push(d as never));
+
+      expect(events[0]).toEqual({ type: 'init', sessionId: SESSION_ID, nodeId: 'branch-root-1' });
+      expect(events.map((e) => e.type)).toEqual(['init', 'meta', 'section', 'section', 'done']);
+      // Every putNode call targets the root's own id — never a fresh nodeId.
+      for (const [node] of mockDb.putNode.mock.calls) expect(node.nodeId).toBe('branch-root-1');
+      expect(mockDb.putNode.mock.calls[mockDb.putNode.mock.calls.length - 1][0].kind).toBe('BRANCH');
+    });
+
+    it('patches BOTH the node and the session title/emoji/lede at done', async () => {
+      await service.createRootNodeStreaming(SUB, SESSION_ID, { query: 'A billing dashboard with Stripe.' }, jest.fn());
+
+      const finalNode = mockDb.putNode.mock.calls[mockDb.putNode.mock.calls.length - 1][0];
+      expect(finalNode.title).toBe('Neural Nets');
+      expect(finalNode.sections).toHaveLength(2);
+
+      const doneMetaUpdate = mockDb.updateSessionMeta.mock.calls[mockDb.updateSessionMeta.mock.calls.length - 1];
+      expect(doneMetaUpdate[2]).toEqual({ title: 'Neural Nets', emoji: '🧠', lede: 'How neural networks work.' });
+    });
+
+    it('rejects a re-fill once the root already has sections, before any SSE write or persistence', async () => {
+      mockDb.queryNodes.mockResolvedValue([{ ...branchRootNode, sections: [{ id: 's1', heading: 'H', body: 'B' }] }]);
+      const send = jest.fn();
+
+      await expect(service.createRootNodeStreaming(SUB, SESSION_ID, { query: 'Q' }, send)).rejects.toBeInstanceOf(BadRequestException);
+      expect(send).not.toHaveBeenCalled();
+      expect(mockDb.putNode).not.toHaveBeenCalled();
+    });
+
+    it('bills usage against the existing root nodeId', async () => {
+      const events: Array<{ type: string; nodeId?: string }> = [];
+      await service.createRootNodeStreaming(SUB, SESSION_ID, { query: 'Q' }, (d) => events.push(d as never));
+      expect(mockUsers.billUsage).toHaveBeenCalledWith(SUB, 100, 50, 'QUERY', SESSION_ID, 'branch-root-1', expect.any(String));
+    });
+  });
+
   describe('createProjectSession', () => {
     const TITLE = 'My Project';
 
@@ -397,6 +453,68 @@ describe('SessionsService', () => {
       const [node] = mockDb.putNode.mock.calls[0];
       expect(node.imported).toBeUndefined();
       expect(node.commitMessage).toBe('Initial commit');
+    });
+  });
+
+  describe('createProjectSession — from-scratch (rootQuery set, D1)', () => {
+    const TITLE = 'My Project';
+
+    it('seeds a single BRANCH root carrying the rootQuery, with empty sections', async () => {
+      const sessionId = await service.createProjectSession(
+        SUB, TITLE, { defaultBranch: 'main', first: null, head: null, imported: false }, 'A billing dashboard with Stripe.',
+      );
+
+      expect(mockDb.putNode).toHaveBeenCalledTimes(1);
+      const [node] = mockDb.putNode.mock.calls[0];
+      expect(node.kind).toBe('BRANCH');
+      expect(node.parentId).toBeNull();
+      expect(node.branchName).toBe('main');
+      expect(node.query).toBe('A billing dashboard with Stripe.');
+      expect(node.sections).toEqual([]);
+      expect(node.commitSha).toMatch(/^[0-9a-f]{40}$/);
+      expect(node.model).toBeDefined();
+
+      const [meta] = mockDb.putSessionMeta.mock.calls[0];
+      expect(meta.sessionId).toBe(sessionId);
+      expect(meta.rootNodeId).toBe(node.nodeId);
+      expect(meta.nodeCount).toBe(1);
+      expect(meta.title).toBe(TITLE); // the project name, not the rootQuery
+    });
+
+    it('ignores any seed.first/head — a from-scratch project never seeds real commits', async () => {
+      await service.createProjectSession(
+        SUB, TITLE,
+        { defaultBranch: 'main', first: { sha: 'x', message: 'm', date: '2026-01-01T00:00:00Z' }, head: null, imported: true },
+        'Some question',
+      );
+      expect(mockDb.putNode).toHaveBeenCalledTimes(1);
+      expect(mockDb.putNode.mock.calls[0][0].kind).toBe('BRANCH');
+    });
+  });
+
+  describe('createImportedProjectSession', () => {
+    const TITLE = 'My Project';
+    const SESSION_ID = 'sess-imported';
+    const nodes = [
+      { PK: `SESSION#${SESSION_ID}`, SK: 'NODE#n1', nodeId: 'n1', parentId: null, kind: 'CODE', title: 'Initial commit' },
+      { PK: `SESSION#${SESSION_ID}`, SK: 'NODE#n2', nodeId: 'n2', parentId: 'n1', kind: 'CODE', title: 'Add feature' },
+    ] as unknown as Parameters<typeof service.createImportedProjectSession>[3];
+
+    beforeEach(() => {
+      mockDb.batchPutNodes.mockResolvedValue(undefined);
+      mockDb.putSessionMeta.mockResolvedValue(undefined);
+    });
+
+    it('batch-writes the given nodes and points SessionMeta at the parentless root', async () => {
+      const result = await service.createImportedProjectSession(SUB, TITLE, SESSION_ID, nodes);
+
+      expect(result).toBe(SESSION_ID);
+      expect(mockDb.batchPutNodes).toHaveBeenCalledWith(nodes);
+      const [meta] = mockDb.putSessionMeta.mock.calls[0];
+      expect(meta.sessionId).toBe(SESSION_ID);
+      expect(meta.rootNodeId).toBe('n1');
+      expect(meta.nodeCount).toBe(2);
+      expect(meta.title).toBe(TITLE);
     });
   });
 

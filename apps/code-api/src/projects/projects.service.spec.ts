@@ -4,6 +4,7 @@ import { ProjectsService } from './projects.service';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
 import { SessionsService } from '@/sessions/sessions.service';
 import { GithubService } from '@/github/github.service';
+import { RepoImportService } from './repo-import.service';
 
 const mockDb = {
   putProject: jest.fn(),
@@ -14,10 +15,18 @@ const mockDb = {
 
 const mockSessions = {
   createProjectSession: jest.fn(),
+  createImportedProjectSession: jest.fn(),
 };
 
 const mockGithub = {
   getRepoSeed: jest.fn(),
+};
+
+// Defaults to null (no import) so every existing test below — which only
+// exercises the synthesized-seed fallback path — is unaffected; the
+// "full-history import" describe block below overrides this per-test.
+const mockRepoImport = {
+  buildImportedNodes: jest.fn(),
 };
 
 const SUB = 'user-sub-123';
@@ -44,12 +53,14 @@ describe('ProjectsService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockRepoImport.buildImportedNodes.mockResolvedValue(null);
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ProjectsService,
         { provide: DynamoRepository, useValue: mockDb },
         { provide: SessionsService, useValue: mockSessions },
         { provide: GithubService, useValue: mockGithub },
+        { provide: RepoImportService, useValue: mockRepoImport },
       ],
     }).compile();
     service = module.get<ProjectsService>(ProjectsService);
@@ -69,7 +80,7 @@ describe('ProjectsService', () => {
         first: null,
         head: null,
         imported: false,
-      });
+      }, undefined);
       expect(mockDb.putProject).toHaveBeenCalledWith(
         expect.objectContaining({ name: mockDto.name, sessionId: 'sess-1', plugins: mockDto.plugins, repoRef: mockDto.repoRef }),
       );
@@ -107,7 +118,7 @@ describe('ProjectsService', () => {
         first: { sha: 'first-sha', message: 'Initial commit', date: '2026-01-01T00:00:00Z' },
         head: { sha: 'head-sha', message: 'Latest work', date: '2026-02-01T00:00:00Z' },
         imported: true,
-      });
+      }, undefined);
     });
 
     it('degrades to a synthesized seed (never fails project creation) when the GitHub fetch throws', async () => {
@@ -123,7 +134,7 @@ describe('ProjectsService', () => {
         first: null,
         head: null,
         imported: false,
-      });
+      }, undefined);
       expect(result.sessionId).toBe('sess-1');
     });
 
@@ -140,7 +151,83 @@ describe('ProjectsService', () => {
         first: null,
         head: null,
         imported: true,
+      }, undefined);
+    });
+  });
+
+  describe('create — github provider, full-history import', () => {
+    const importedNodes = [
+      { PK: 'SESSION#sess-imported', SK: 'NODE#n1', nodeId: 'n1', parentId: null, kind: 'CODE', title: 'Initial commit' },
+      { PK: 'SESSION#sess-imported', SK: 'NODE#n2', nodeId: 'n2', parentId: 'n1', kind: 'CODE', title: 'Add feature' },
+    ] as unknown as Parameters<typeof mockSessions.createImportedProjectSession>[3];
+
+    it('uses the imported nodes and skips getRepoSeed entirely when the import succeeds', async () => {
+      mockRepoImport.buildImportedNodes.mockResolvedValue(importedNodes);
+      mockSessions.createImportedProjectSession.mockResolvedValue('sess-imported');
+      mockDb.putProject.mockResolvedValue(undefined);
+      mockDb.updateSessionMeta.mockResolvedValue(undefined);
+
+      const result = await service.create(SUB, githubDto);
+
+      expect(mockRepoImport.buildImportedNodes).toHaveBeenCalledWith(SUB, githubDto.repoRef, expect.any(String));
+      expect(mockGithub.getRepoSeed).not.toHaveBeenCalled();
+      expect(mockSessions.createProjectSession).not.toHaveBeenCalled();
+      expect(mockSessions.createImportedProjectSession).toHaveBeenCalledWith(SUB, githubDto.name, expect.any(String), importedNodes);
+      expect(result.sessionId).toBe('sess-imported');
+    });
+
+    it('falls back to the synthesized 2-node seed when the import returns null', async () => {
+      mockRepoImport.buildImportedNodes.mockResolvedValue(null);
+      mockGithub.getRepoSeed.mockResolvedValue({
+        defaultBranch: 'main',
+        first: { sha: 'first-sha', message: 'Initial commit', date: '2026-01-01T00:00:00Z' },
+        head: { sha: 'head-sha', message: 'Latest work', date: '2026-02-01T00:00:00Z' },
       });
+      mockSessions.createProjectSession.mockResolvedValue('sess-1');
+      mockDb.putProject.mockResolvedValue(undefined);
+      mockDb.updateSessionMeta.mockResolvedValue(undefined);
+
+      const result = await service.create(SUB, githubDto);
+
+      expect(mockGithub.getRepoSeed).toHaveBeenCalledWith(SUB, 'acme', 'widgets', 'main');
+      expect(mockSessions.createImportedProjectSession).not.toHaveBeenCalled();
+      expect(result.sessionId).toBe('sess-1');
+    });
+  });
+
+  describe('create — new (from-scratch) provider', () => {
+    const newDto = {
+      name: 'Widget Service',
+      repoRef: { provider: 'new' as const, owner: 'you', repo: 'widget-service', defaultBranch: 'main', url: 'mock://new/widget-service' },
+      plugins: [] as string[],
+      rootQuery: 'A billing dashboard with Stripe subscriptions.',
+    };
+
+    it('never calls GitHub and forwards rootQuery through to createProjectSession', async () => {
+      mockSessions.createProjectSession.mockResolvedValue('sess-1');
+      mockDb.putProject.mockResolvedValue(undefined);
+      mockDb.updateSessionMeta.mockResolvedValue(undefined);
+
+      await service.create(SUB, newDto);
+
+      expect(mockGithub.getRepoSeed).not.toHaveBeenCalled();
+      expect(mockSessions.createProjectSession).toHaveBeenCalledWith(SUB, newDto.name, {
+        defaultBranch: 'main',
+        first: null,
+        head: null,
+        imported: false,
+      }, newDto.rootQuery);
+    });
+
+    it('does not forward rootQuery for a non-new provider, even if the DTO carried one', async () => {
+      mockSessions.createProjectSession.mockResolvedValue('sess-1');
+      mockDb.putProject.mockResolvedValue(undefined);
+      mockDb.updateSessionMeta.mockResolvedValue(undefined);
+
+      await service.create(SUB, { ...mockDto, rootQuery: 'should be ignored' });
+
+      const [, , , rootQueryArg] = mockSessions.createProjectSession.mock.calls[0];
+      expect(rootQueryArg).toBeUndefined();
     });
   });
 

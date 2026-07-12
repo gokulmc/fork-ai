@@ -38,13 +38,15 @@
   /* ── forkai-code: kind accents ──────────────────────────────
      Subtle, desaturated — tint a card's border/kicker/pill, never
      the whole card surface. Chosen to sit apart from --accent (grey)
-     and from each other at a glance: violet / teal / amber. */
-  --kind-plan: #6d5fa3;
-  --kind-plan-soft: #efedf7;
-  --kind-code: #3f7a68;
-  --kind-code-soft: #eaf3ef;
-  --kind-branch: #a3703f;
-  --kind-branch-soft: #f6eee3;
+     and from each other at a glance: blue / amber / green / violet. */
+  --kind-code: #4a72a8;
+  --kind-code-soft: #edf3f9;
+  --kind-plan: #b0793a;
+  --kind-plan-soft: #f9f1e6;
+  --kind-branch: #4d8a63;
+  --kind-branch-soft: #ebf4ee;
+  --kind-merge: #7d5fb3;
+  --kind-merge-soft: #f1edf8;
 
   /* ── forkai-code: commit pill ───────────────────────────────
      Neutral mono chip — deliberately NOT tinted by kind, since the
@@ -100,12 +102,14 @@
   --shadow-2: 0 6px 18px rgba(0, 0, 0, 0.5);
   --shadow-3: 0 14px 36px rgba(0, 0, 0, 0.55);
 
-  --kind-plan: #b3a8dd;
-  --kind-plan-soft: #2a2735;
-  --kind-code: #7fc4ab;
-  --kind-code-soft: #1d2b26;
-  --kind-branch: #d9ac7c;
-  --kind-branch-soft: #332821;
+  --kind-code: #8fb0d9;
+  --kind-code-soft: #1e2733;
+  --kind-plan: #d9ab7c;
+  --kind-plan-soft: #332a21;
+  --kind-branch: #86c29e;
+  --kind-branch-soft: #202e26;
+  --kind-merge: #b3a0e0;
+  --kind-merge-soft: #2a2438;
 
   --commit-pill-bg: #242422;
   --commit-pill-ink: #c9c7bd;
@@ -1165,10 +1169,15 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 .mindmap-svg:active { cursor: grabbing; }
 .mindmap-svg .branch { fill: none; stroke: var(--ink-3); stroke-opacity: 0.4; stroke-width: 1.25; }
 .mindmap-svg .branch.active { stroke: var(--accent); stroke-opacity: 0.9; stroke-width: 1.5; }
-/* Git-graph rail edges (see layoutGitGraph.ts): same-lane continuation is a
-   straight line; a fork (either side of a BRANCH node) is a tinted elbow. */
+/* Git-graph rail edges (see layoutGitGraph.ts): same-lane continuation (incl.
+   BRANCH/MERGE parents) is a straight vertical line; a fork (BRANCH child) is
+   a tinted strict-horizontal line with an arrowhead (see the <marker> defs in
+   MindMap.tsx) since the child now shares its parent's row. */
 .mindmap-svg .branch-lane { stroke: var(--lane-line); stroke-opacity: 1; stroke-width: 1.75; }
 .mindmap-svg .branch-fork { stroke: var(--kind-branch); stroke-opacity: 0.8; stroke-width: 1.75; }
+/* Merge edge — second-parent link (mergeFromNodeId) from a source commit to
+   its MERGE node, drawn separately from the childMap-driven edges above. */
+.mindmap-svg .branch-merge { stroke: var(--kind-merge); stroke-opacity: 0.85; stroke-width: 1.75; }
 .mindmap-svg .lane-rail { stroke: var(--lane-line); stroke-width: 1; stroke-dasharray: 2 4; }
 
 .mm-node { cursor: pointer; user-select: none; }
@@ -1217,9 +1226,29 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 .mm-node[data-kind="PLAN"] .pill { stroke: color-mix(in oklab, var(--kind-plan) 40%, var(--line-strong)); }
 .mm-node[data-kind="CODE"] .pill { stroke: color-mix(in oklab, var(--kind-code) 40%, var(--line-strong)); }
 .mm-node[data-kind="BRANCH"] .pill { stroke: color-mix(in oklab, var(--kind-branch) 40%, var(--line-strong)); }
+.mm-node[data-kind="MERGE"] .pill { stroke: color-mix(in oklab, var(--kind-merge) 40%, var(--line-strong)); }
 .mm-node[data-kind="PLAN"] .mm-kicker { color: var(--kind-plan); }
 .mm-node[data-kind="CODE"] .mm-kicker { color: var(--kind-code); }
 .mm-node[data-kind="BRANCH"] .mm-kicker { color: var(--kind-branch); }
+.mm-node[data-kind="MERGE"] .mm-kicker { color: var(--kind-merge); }
+
+/* PR flow (Phase F) — target-column highlight, step 2 of the two-step select */
+.mm-node--pr-target .pill { stroke: var(--kind-merge) !important; stroke-width: 2; stroke-dasharray: none; }
+.mm-pr-status {
+  font-family: var(--sans); font-size: 9px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  padding: 1px 6px; border-radius: 999px; line-height: 1.5;
+}
+.mm-pr-status--open { color: var(--kind-merge); border: 1px solid color-mix(in oklab, var(--kind-merge) 50%, var(--line)); }
+.mm-pr-status--merged { color: #fff; background: var(--kind-merge); }
+
+/* Collapsed commit-chain segment (repo-import full history — see
+   lib/collapseSegments.ts): a slimmer dashed pill with just a centered
+   "⋯ N commits" label, no kicker/icon/commit-pill. */
+.mm-node--segment .pill { fill: var(--kind-code-soft); stroke: var(--kind-code); stroke-width: 1; stroke-dasharray: 3 3; }
+.mm-node--segment.active .pill { fill: var(--kind-code) !important; stroke: var(--kind-code) !important; }
+.mm-card--segment { display: flex; align-items: center; justify-content: center; height: 100%; text-align: center; }
+.mm-seg-label { font-size: 11.5px; font-weight: 500; color: var(--ink-3); font-family: var(--sans); }
+.mm-node--segment.active .mm-seg-label { color: var(--bg); }
 
 .mm-fo { pointer-events: none; overflow: hidden; }
 /* Column layout so CODE/BRANCH cards can stack a commit-pill row (.mm-card-top)
@@ -1255,7 +1284,7 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 .mm-card-ic svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.75; fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .mm-emoji { font-size: 20px; line-height: 1; display: inline-block; font-family: "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui,sans-serif; font-variant-emoji: emoji; }
 .mm-card-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.mm-kicker { font-size: 9px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mm-kicker { display: flex; align-items: center; gap: 6px; font-size: 9px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mm-label { font-size: 12.5px; font-weight: 500; color: var(--ink); line-height: 1.22; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
 .mm-node.active .mm-card-ic { color: var(--bg); }
 .mm-node.active .mm-kicker { color: var(--bg); opacity: 0.6; }
@@ -1278,6 +1307,74 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 .workspace-inner { -webkit-user-select: none; user-select: none; }
 .workspace-inner .section-body { -webkit-user-select: text; user-select: text; }
 .workspace-inner .agent-log-selectable { -webkit-user-select: text; user-select: text; }
+
+/* Reserves room at the bottom of the scroll column so the last section isn't
+   hidden under the absolutely-positioned .code-composer (see below) — applied
+   only while the composer can actually render (canSpawn(active.kind,'CODE')). */
+.workspace-inner--composer { padding-bottom: 140px; }
+
+/* ============================================================
+   Code composer — bottom-docked instruction bar (workspace pane)
+   ============================================================
+   Pinned to the bottom of .workspace's own box via absolute positioning
+   (.workspace is `position: relative`), not `position: sticky` — the pane's
+   content should scroll *behind* the bar rather than the bar only appearing
+   once you've scrolled to the end. The fade lets the last line of text ease
+   out from under it instead of a hard clip. */
+.code-composer {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  padding: 20px var(--content-pad-x) 20px;
+  background: linear-gradient(to bottom, transparent, var(--bg) 45%);
+  pointer-events: none; /* only the pill itself is interactive — the gutters let clicks reach content behind it */
+}
+.code-composer-inner {
+  pointer-events: all;
+  max-width: 760px; margin: 0 auto;
+  display: flex; flex-direction: column; gap: 6px;
+  background: var(--paper); border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-2);
+  padding: 8px 10px;
+}
+.code-composer-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 2px; }
+.code-composer-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  max-width: 220px;
+  padding: 3px 6px 3px 9px;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 999px;
+  font-family: var(--mono); font-size: 11px; color: var(--ink-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.code-composer-chip button {
+  flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; border-radius: 50%; border: none;
+  background: transparent; color: var(--ink-3); cursor: pointer; padding: 0;
+}
+.code-composer-chip button:hover { background: var(--line); color: var(--ink); }
+.code-composer-chip--error { color: #c4452e; border-color: color-mix(in oklab, #c4452e 35%, var(--line)); white-space: normal; }
+.code-composer-row { display: flex; align-items: flex-end; gap: 6px; }
+.code-composer-attach-btn, .code-composer-send-btn {
+  flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px;
+  border: 1px solid var(--line); border-radius: 50%;
+  background: var(--panel); color: var(--ink-2);
+  cursor: pointer; transition: opacity .15s, background .15s;
+}
+.code-composer-attach-btn:hover { background: var(--hover); }
+.code-composer-send-btn { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.code-composer-send-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.code-composer-send-btn:not(:disabled):hover { opacity: 0.82; }
+.code-composer-file-input { display: none; }
+.code-composer-textarea {
+  flex: 1; min-width: 0; resize: none;
+  background: transparent; border: none; outline: none;
+  font-family: var(--sans); font-size: 13.5px; color: var(--ink); line-height: 1.45;
+  padding: 5px 2px;
+  overflow-y: auto;
+}
+.code-composer-textarea::placeholder { color: var(--ink-3); }
 
 .ws-meta { display: flex; align-items: center; gap: 8px; font-family: var(--sans); font-size: 12px; color: var(--ink-3); margin-bottom: 16px; }
 .ws-meta .pill { border: 1px solid var(--line); border-radius: 4px; padding: 2px 8px; background: var(--paper); display: inline-flex; align-items: center; gap: 5px; font-weight: 500; }
@@ -1982,7 +2079,12 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
      bar and query box use smaller type on desktop). !important beats the login
      bar's inline font-size. The Ask AI popup textarea autofocuses on open, so it
      needs the same ≥16px floor or the page zooms in the moment it appears. */
-  .auth-input, .query-box input, .followup-pop textarea, .branch-popup-input { font-size: 16px !important; }
+  .auth-input, .query-box input, .followup-pop textarea, .branch-popup-input, .code-composer-textarea { font-size: 16px !important; }
+
+  /* Composer sits above the home-bar/gesture area on notched phones; the
+     scroll column needs a matching bump so content still clears it. */
+  .code-composer { padding-bottom: calc(20px + env(safe-area-inset-bottom)); }
+  .workspace-inner--composer { padding-bottom: calc(140px + env(safe-area-inset-bottom)); }
 
   /* Tweaks panel: cap to the *visible* viewport (100dvh, minus safe areas + the
      nav bar) — plain 100vh includes the area behind the browser/status bars, so
@@ -2103,11 +2205,45 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
 .mm-mixer-btn:hover { background: var(--hover); color: var(--ink); }
 .mm-mixer-btn--active { color: #ef4444; border-color: #fecaca; background: #fef2f2; }
 .mm-mixer-btn--active:hover { color: #dc2626; background: #fee2e2; }
+
+/* Plan toolbar button — same shape as .mm-mixer-btn, tinted with --kind-plan
+   instead of the mixer's red when active. */
+.mm-plan-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 28px; padding: 0 10px;
+  font-family: var(--sans); font-size: 12px; font-weight: 500;
+  border: 1px solid var(--line); border-radius: 4px;
+  background: var(--paper); color: var(--ink-2);
+  cursor: pointer;
+  box-shadow: var(--shadow-1);
+  transition: color 0.15s, background 0.15s;
+  pointer-events: all;
+}
+.mm-plan-btn:hover { background: var(--hover); color: var(--ink); }
+.mm-plan-btn--active { color: var(--kind-plan); border-color: color-mix(in oklab, var(--kind-plan) 45%, var(--line)); background: var(--kind-plan-soft); }
+.mm-plan-btn--active:hover { background: color-mix(in oklab, var(--kind-plan-soft) 70%, var(--hover)); }
+
+/* PR toolbar button (Phase F) — same shape as .mm-mixer-btn/.mm-plan-btn,
+   tinted with --kind-merge when active. */
+.mm-pr-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 28px; padding: 0 10px;
+  font-family: var(--sans); font-size: 12px; font-weight: 500;
+  border: 1px solid var(--line); border-radius: 4px;
+  background: var(--paper); color: var(--ink-2);
+  cursor: pointer;
+  box-shadow: var(--shadow-1);
+  transition: color 0.15s, background 0.15s;
+  pointer-events: all;
+}
+.mm-pr-btn:hover { background: var(--hover); color: var(--ink); }
+.mm-pr-btn--active { color: var(--kind-merge); border-color: color-mix(in oklab, var(--kind-merge) 45%, var(--line)); background: var(--kind-merge-soft); }
+.mm-pr-btn--active:hover { background: color-mix(in oklab, var(--kind-merge-soft) 70%, var(--hover)); }
 /* Narrow mindmap pane (container query — fires when the pane itself is narrow,
    regardless of screen size; covers both the drag-slider case on desktop and mobile) */
 @container mindmap (max-width: 560px) {
-  .mm-mixer-btn { padding: 0 8px; }
-  .mm-mixer-label { display: none; }
+  .mm-mixer-btn, .mm-plan-btn, .mm-pr-btn { padding: 0 8px; }
+  .mm-mixer-label, .mm-plan-label, .mm-pr-label { display: none; }
   .mm-notion-long { display: none; }
   .mindmap-header .zoom .zoom-step { display: none; }
   .mm-node-label { display: none; }
@@ -2115,8 +2251,8 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
 /* Mobile fallback — same rules via viewport media query for any browser that
    doesn't support container queries (rare, but safe) */
 @media (max-width: 640px) {
-  .mm-mixer-btn { padding: 0 8px; }
-  .mm-mixer-label { display: none; }
+  .mm-mixer-btn, .mm-plan-btn, .mm-pr-btn { padding: 0 8px; }
+  .mm-mixer-label, .mm-plan-label, .mm-pr-label { display: none; }
   .mm-notion-long { display: none; }
   .mindmap-header .zoom .zoom-step { display: none; }
   .mm-node-label { display: none; }
@@ -2150,6 +2286,27 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
   transition: opacity 0.4s ease;
 }
 .mixer-overlay--collapsing { opacity: 0; pointer-events: none; }
+/* Plan mode reuses the same overlay markup, tinted with --kind-plan instead of
+   the mixer's neutral theme. */
+.mixer-overlay--plan .mixer-hint,
+.mixer-overlay--plan .mixer-chips,
+.mixer-overlay--plan .mixer-question-row {
+  border-color: color-mix(in oklab, var(--kind-plan) 35%, var(--line));
+}
+.mixer-overlay--plan .mixer-spawn-btn { background: var(--kind-plan); border-color: var(--kind-plan); }
+/* PR overlay (Phase F) — reuses the mixer-hint shell; the confirm step below
+   is its own row (no chips/question-input, just a preview line + two buttons). */
+.mixer-overlay--pr .mixer-hint { border-color: color-mix(in oklab, var(--kind-merge) 35%, var(--line)); }
+.pr-confirm-row {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px 14px;
+  background: var(--paper); border: 1px solid color-mix(in oklab, var(--kind-merge) 35%, var(--line));
+  border-radius: 8px; box-shadow: var(--shadow-1);
+}
+.pr-confirm-text { font-family: var(--sans); font-size: 13px; color: var(--ink); }
+.pr-confirm-text strong { font-family: var(--mono); font-weight: 600; color: var(--kind-merge); }
+.pr-confirm-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.pr-confirm-btn { background: var(--kind-merge); border-color: var(--kind-merge); }
 .mixer-hint {
   display: flex; align-items: center; gap: 7px;
   padding: 8px 14px;
@@ -2252,23 +2409,6 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
 .mixer-pop { animation: mixer-pop 0.3s cubic-bezier(0.34,1.56,0.64,1) both; }
 
 /* ============================================================
-   forkai-code Phase 4 — mixer Plan checkbox
-   ============================================================ */
-.mixer-plan-row {
-  display: flex; align-items: center; gap: 9px;
-  padding: 9px 12px;
-  background: var(--paper); border: 1px solid var(--line);
-  border-radius: 8px; box-shadow: var(--shadow-1);
-  font-family: var(--sans); font-size: 12.5px; color: var(--ink-2);
-  cursor: pointer; user-select: none;
-}
-.mixer-plan-row input[type="checkbox"] { accent-color: var(--kind-plan); width: 14px; height: 14px; cursor: pointer; }
-.mixer-plan-row span { color: var(--ink); font-weight: 500; }
-.mixer-plan-row--disabled { cursor: not-allowed; opacity: 0.55; }
-.mixer-plan-row--disabled input[type="checkbox"] { cursor: not-allowed; }
-.mixer-plan-hint { font-family: var(--sans); font-size: 11px; color: var(--ink-3); text-align: center; margin: -2px 0 0; }
-
-/* ============================================================
    forkai-code Phase 4 — Projects page
    ============================================================ */
 .proj-page {
@@ -2327,10 +2467,18 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
 .proj-modal-title { font-family: var(--sans); font-size: 14px; font-weight: 600; color: var(--ink); }
 .proj-modal-close { background: none; border: none; cursor: pointer; color: var(--ink-2); padding: 3px 7px; border-radius: 4px; display: inline-flex; }
 .proj-modal-close:hover { background: var(--hover); }
+.proj-modal-tabs { display: flex; gap: 4px; padding: 12px 20px 0; border-bottom: 1px solid var(--line); }
+.proj-tab { font-family: var(--sans); font-size: 12.5px; font-weight: 600; color: var(--ink-3); background: none; border: none; padding: 0 2px 10px; cursor: pointer; border-bottom: 2px solid transparent; margin-right: 14px; }
+.proj-tab:hover { color: var(--ink-2); }
+.proj-tab.active { color: var(--ink); border-bottom-color: var(--ink); }
 .proj-modal-body { padding: 18px 20px 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
 .proj-field-label { font-family: var(--sans); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; }
 .proj-field-input { width: 100%; height: 36px; padding: 0 11px; box-sizing: border-box; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--panel); color: var(--ink); font-family: var(--sans); font-size: 13.5px; outline: none; }
 .proj-field-input:focus { border-color: var(--ink-3); background: var(--paper); }
+.proj-field-textarea { width: 100%; max-height: 168px; padding: 9px 11px; box-sizing: border-box; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--panel); color: var(--ink); font-family: var(--sans); font-size: 13.5px; line-height: 1.45; outline: none; resize: none; overflow-y: auto; }
+.proj-field-textarea:focus { border-color: var(--ink-3); background: var(--paper); }
+.proj-field-hint { font-family: var(--mono); font-size: 11px; color: var(--ink-3); margin-top: 6px; }
+.proj-field-caption { font-family: var(--sans); font-size: 11px; color: var(--ink-3); margin-top: 6px; line-height: 1.4; }
 .proj-field-error { font-family: var(--sans); font-size: 11.5px; color: #c0392b; }
 .proj-modal-foot { padding: 14px 20px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; }
 
@@ -2438,4 +2586,39 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
 }
 .agent-ask-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 .agent-ask-btn:not(:disabled):hover { opacity: 0.82; }
+
+/* ============================================================
+   forkai-code Phase F — PR pane (MERGE node workspace body)
+   ============================================================ */
+.pill-kind--merge { border-color: color-mix(in oklab, var(--kind-merge) 45%, var(--line)); color: var(--kind-merge); }
+
+.pr-status-pill {
+  font-family: var(--sans); font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  padding: 2px 9px; border-radius: 999px; line-height: 1.6;
+}
+.pr-status-pill--open { color: var(--kind-merge); border: 1px solid color-mix(in oklab, var(--kind-merge) 50%, var(--line)); }
+.pr-status-pill--merged { color: #fff; background: var(--kind-merge); }
+
+.pr-branches-row { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; }
+.pr-branches-arrow { color: var(--ink-3); flex-shrink: 0; }
+
+.pr-merge-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 34px; padding: 0 16px;
+  background: var(--kind-merge); color: #fff; border: 1px solid var(--kind-merge); border-radius: var(--radius);
+  font-family: var(--sans); font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: opacity .15s;
+}
+.pr-merge-btn:hover:not(:disabled) { opacity: .85; }
+.pr-merge-btn:disabled { opacity: .45; cursor: not-allowed; }
+.pr-merge-error { font-family: var(--sans); font-size: 12px; color: #c0392b; margin: 8px 0 0; }
+
+.pr-merged-row { display: inline-flex; align-items: center; gap: 12px; cursor: pointer; }
+.pr-merged-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--sans); font-size: 12.5px; font-weight: 600; color: #fff;
+  background: var(--kind-merge); padding: 5px 12px; border-radius: 999px;
+}
+.pr-merged-link { font-family: var(--sans); font-size: 12.5px; color: var(--kind-merge); text-decoration: underline; }
+.pr-merged-row:hover .pr-merged-link { opacity: .8; }
 

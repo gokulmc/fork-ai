@@ -5,6 +5,7 @@ import type { ProjectItem } from '@/dynamo/dynamo.interfaces';
 import { SessionsService } from '@/sessions/sessions.service';
 import type { ProjectSeed } from '@/sessions/sessions.service';
 import { GithubService } from '@/github/github.service';
+import { RepoImportService } from './repo-import.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 
 @Injectable()
@@ -15,14 +16,17 @@ export class ProjectsService {
     private readonly db: DynamoRepository,
     private readonly sessions: SessionsService,
     private readonly github: GithubService,
+    private readonly repoImport: RepoImportService,
   ) {}
 
   async create(sub: string, dto: CreateProjectDto): Promise<ProjectItem> {
-    const seed = await this.buildSeed(sub, dto);
-
-    // The session is the project's map — seed it with the repo's root commit
-    // (and HEAD, if it differs) as CODE nodes before any learn/code node exists.
-    const sessionId = await this.sessions.createProjectSession(sub, dto.name, seed);
+    // The session is the project's map. provider 'new' has no repo to seed
+    // from — instead it seeds a BRANCH root carrying dto.rootQuery, which the
+    // frontend immediately fills via the fill-root stream
+    // (createRootNodeStreaming). provider 'github' tries a full-history import
+    // first (RepoImportService); a synthesized 2-node seed (buildSeed) is the
+    // fallback for every other case, including a failed/empty import.
+    const sessionId = await this.buildSession(sub, dto);
 
     const projectId = ulid();
     const now = new Date().toISOString();
@@ -45,6 +49,20 @@ export class ProjectsService {
     // (already-created) session as a follow-up patch rather than at seed time.
     await this.db.updateSessionMeta(sub, sessionId, { projectId });
     return project;
+  }
+
+  // provider 'github': try the full-history import first — it never throws
+  // (buildImportedNodes catches internally), returning null for "no real repo
+  // history to import" (fetch failure, or a genuinely empty repo). Every other
+  // case (mock, new, or a null import) falls back to the synthesized 2-node seed.
+  private async buildSession(sub: string, dto: CreateProjectDto): Promise<string> {
+    if (dto.repoRef.provider === 'github') {
+      const sessionId = ulid();
+      const nodes = await this.repoImport.buildImportedNodes(sub, dto.repoRef, sessionId);
+      if (nodes) return this.sessions.createImportedProjectSession(sub, dto.name, sessionId, nodes);
+    }
+    const seed = await this.buildSeed(sub, dto);
+    return this.sessions.createProjectSession(sub, dto.name, seed, dto.repoRef.provider === 'new' ? dto.rootQuery : undefined);
   }
 
   // A mock repo has no real commit history to seed from — every non-github

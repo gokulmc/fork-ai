@@ -1,0 +1,226 @@
+'use client';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { CreateProjectPayload, GithubRepo, GithubStatus, RepoRef } from '@/lib/api';
+import { getGithubStatus, getGithubAuthUrl, listGithubRepos, ApiError } from '@/lib/api';
+import { MOCK_REPOS, PLUGINS } from '@/lib/mockGithub';
+import { X as XIcon, Github } from './Icons';
+
+interface NewProjectModalProps {
+  idToken: string;
+  onClose: () => void;
+  onCreate: (payload: CreateProjectPayload) => Promise<void>;
+}
+
+// Real repos (once GitHub is connected) and mock fixtures share this shape for
+// the picker; a real repo's description falls back to its full name.
+type RepoOption = Pick<RepoRef, 'provider' | 'owner' | 'repo' | 'defaultBranch' | 'url'> & { description: string };
+
+function toRepoOption(r: GithubRepo): RepoOption {
+  return { provider: 'github', owner: r.owner, repo: r.repo, defaultBranch: r.defaultBranch, url: r.url, description: r.description || r.fullName };
+}
+
+// Slugifies a project name into the synthesized owner/repo shown for a
+// from-scratch ('new' provider) project — no real repo exists to name it.
+function slugify(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'project';
+}
+
+const MAX_ROOT_QUERY_ROWS = 6;
+
+type Tab = 'new' | 'attach';
+
+// Extracted out of ProjectsPage (D2) and given two tabs: "New repo" seeds a
+// from-scratch project with a rootQuery that fills the map's BRANCH root right
+// after creation (see App.tsx's submitFillRoot); "Attach existing" is the
+// original GitHub/mock repo picker, unchanged.
+export function NewProjectModal({ idToken, onClose, onCreate }: NewProjectModalProps) {
+  const [tab, setTab] = useState<Tab>('new');
+  const [name, setName] = useState('');
+  const [rootQuery, setRootQuery] = useState('');
+  const [selectedRepo, setSelectedRepo] = useState<RepoOption>(MOCK_REPOS[0]);
+  const [plugins, setPlugins] = useState<Set<string>>(new Set());
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [ghStatus, setGhStatus] = useState<GithubStatus | null>(null);
+  const [ghRepos, setGhRepos] = useState<GithubRepo[]>([]);
+  const [ghConnecting, setGhConnecting] = useState(false);
+  const [ghHint, setGhHint] = useState<string | null>(null);
+
+  useEffect(() => {
+    getGithubStatus(idToken)
+      .then(status => {
+        setGhStatus(status);
+        if (status.connected) listGithubRepos(idToken).then(setGhRepos).catch(() => {});
+      })
+      .catch(() => setGhStatus({ connected: false }));
+  }, [idToken]);
+
+  const connectGithub = async () => {
+    setGhConnecting(true);
+    setGhHint(null);
+    try {
+      const { url } = await getGithubAuthUrl(idToken);
+      window.location.href = url;
+    } catch (err) {
+      setGhHint(err instanceof ApiError && err.status === 503 ? 'GitHub OAuth not configured' : 'Could not start GitHub connect — try again.');
+      setGhConnecting(false);
+    }
+  };
+
+  const togglePlugin = (id: string) => {
+    setPlugins(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  // Auto-grow 1→6 rows, same technique as CodeComposer's textarea.
+  const rootQueryRef = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = rootQueryRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 20;
+    el.style.height = `${Math.min(el.scrollHeight, lineHeight * MAX_ROOT_QUERY_ROWS)}px`;
+  }, [rootQuery]);
+
+  const slug = slugify(name);
+  const canSubmit = tab === 'new' ? !!name.trim() && !!rootQuery.trim() : !!name.trim();
+
+  const submit = async () => {
+    if (!canSubmit || creating) return;
+    setCreating(true);
+    setError(null);
+    try {
+      if (tab === 'new') {
+        // No real repo exists yet — owner/url are synthesized placeholders
+        // consistent with the mock fixtures' shape (RepoRefDto.url just needs
+        // to be a non-empty string).
+        await onCreate({
+          name: name.trim(),
+          repoRef: { provider: 'new', owner: 'you', repo: slug, defaultBranch: 'main', url: `mock://new/${slug}` },
+          plugins: [...plugins],
+          rootQuery: rootQuery.trim(),
+        });
+      } else {
+        const { provider, owner, repo, defaultBranch, url } = selectedRepo;
+        await onCreate({ name: name.trim(), repoRef: { provider, owner, repo, defaultBranch, url }, plugins: [...plugins] });
+      }
+    } catch {
+      setError('Failed to create project — please try again.');
+      setCreating(false);
+    }
+  };
+
+  return (
+    <div className="proj-modal-overlay" onClick={e => { if (e.currentTarget === e.target) onClose(); }}>
+      <div className="proj-modal">
+        <div className="proj-modal-head">
+          <div className="proj-modal-title">New project</div>
+          <button className="proj-modal-close" onClick={onClose} aria-label="Close"><XIcon size={14} /></button>
+        </div>
+        <div className="proj-modal-tabs">
+          <button type="button" className={`proj-tab${tab === 'new' ? ' active' : ''}`} onClick={() => setTab('new')}>New repo</button>
+          <button type="button" className={`proj-tab${tab === 'attach' ? ' active' : ''}`} onClick={() => setTab('attach')}>Attach existing</button>
+        </div>
+        <div className="proj-modal-body">
+          <div>
+            <div className="proj-field-label">{tab === 'new' ? 'Project & repo name' : 'Name'}</div>
+            <input
+              className="proj-field-input"
+              type="text"
+              value={name}
+              placeholder="billing-service"
+              onChange={e => setName(e.target.value)}
+              autoFocus
+            />
+            {tab === 'new' && name.trim() && <div className="proj-field-hint">you/{slug}</div>}
+          </div>
+
+          {tab === 'new' ? (
+            <div>
+              <div className="proj-field-label">What are you building?</div>
+              <textarea
+                ref={rootQueryRef}
+                className="proj-field-textarea"
+                rows={1}
+                value={rootQuery}
+                placeholder="A billing dashboard with Stripe subscriptions and usage metering…"
+                onChange={e => setRootQuery(e.target.value)}
+              />
+              <div className="proj-field-caption">The repository is simulated for now — GitHub write access ships later.</div>
+            </div>
+          ) : (
+            <div>
+              <div className="proj-field-label">Repository</div>
+              {ghStatus?.connected ? (
+                <div className="proj-gh-chip"><Github size={12} /> {ghStatus.login}</div>
+              ) : (
+                <button type="button" className="proj-gh-connect" disabled={ghConnecting} onClick={connectGithub}>
+                  {ghConnecting ? <span className="spinner" style={{ width: 11, height: 11 }} /> : <Github size={13} />}
+                  Connect GitHub (read-only — we only ever read, never push)
+                </button>
+              )}
+              {ghHint && <div className="proj-field-error">{ghHint}</div>}
+              <div className="proj-repo-list">
+                {ghRepos.map(repo => (
+                  <div
+                    key={repo.url}
+                    className={`proj-repo-row${repo.url === selectedRepo.url ? ' selected' : ''}`}
+                    onClick={() => setSelectedRepo(toRepoOption(repo))}
+                    title={repo.description}
+                  >
+                    <span className="proj-repo-name">{repo.fullName}</span>
+                    {repo.private && <span className="mock-tag">private</span>}
+                  </div>
+                ))}
+                {ghRepos.length > 0 && <div className="proj-repo-divider">mock repos</div>}
+                {MOCK_REPOS.map(repo => (
+                  <div
+                    key={repo.url}
+                    className={`proj-repo-row${repo.url === selectedRepo.url ? ' selected' : ''}`}
+                    onClick={() => setSelectedRepo(repo)}
+                    title={repo.description}
+                  >
+                    <span className="proj-repo-name">{repo.owner}/{repo.repo}</span>
+                    <span className="mock-tag">mock</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <div className="proj-field-label">Plugins</div>
+            {PLUGINS.map(p => (
+              <div className="proj-plugin-row" key={p.id}>
+                <div>
+                  <div className="proj-plugin-name">{p.name}</div>
+                  <div className="proj-plugin-desc">{p.desc}</div>
+                </div>
+                <button
+                  type="button"
+                  className={`proj-switch${plugins.has(p.id) ? ' on' : ''}`}
+                  role="switch"
+                  aria-checked={plugins.has(p.id)}
+                  aria-label={p.name}
+                  onClick={() => togglePlugin(p.id)}
+                />
+              </div>
+            ))}
+          </div>
+          {error && <div className="proj-field-error">{error}</div>}
+        </div>
+        <div className="proj-modal-foot">
+          <button className="proj-btn-primary" disabled={!canSubmit || creating} onClick={submit}>
+            {creating
+              ? <><span className="spinner" style={{ width: 11, height: 11 }} /> {tab === 'attach' && selectedRepo.provider === 'github' ? 'Importing repository…' : 'Creating…'}</>
+              : 'Create'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

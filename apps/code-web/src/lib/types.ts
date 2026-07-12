@@ -19,7 +19,7 @@ export interface DiffSummary {
 export interface ForkNode {
   id: string;
   parentId: string | null;
-  kind: 'QUERY' | 'DEEPER' | 'ASK' | 'MIX' | 'PLAN' | 'CODE' | 'BRANCH';
+  kind: 'QUERY' | 'DEEPER' | 'ASK' | 'MIX' | 'PLAN' | 'CODE' | 'BRANCH' | 'MERGE';
   title: string;
   emoji: string | null;
   query: string;
@@ -42,6 +42,9 @@ export interface ForkNode {
   diffSummary?: DiffSummary;
   agentStatus?: 'running' | 'done' | 'error';
   imported?: boolean;
+  // ── forkai-code: MERGE rail nodes — second parent, render-only (ADR-0005) ──
+  mergeFromNodeId?: string;
+  prStatus?: 'open' | 'merged';
 }
 
 export type NodeKind = ForkNode['kind'];

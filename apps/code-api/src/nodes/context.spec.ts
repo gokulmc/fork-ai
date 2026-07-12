@@ -59,6 +59,24 @@ describe('findRailChain', () => {
     expect(chain.branchNode).toBeNull();
     expect(chain.codeAncestors).toEqual([]);
   });
+
+  it('passes through a MERGE node via parentId (ignoring mergeFromNodeId) so a post-merge CODE child keeps the target lane\'s commit history', () => {
+    const branch = node({ nodeId: 'branch1', kind: 'BRANCH', parentId: null, branchName: 'main' });
+    const targetTip = node({ nodeId: 'target-tip', kind: 'CODE', parentId: 'branch1', branchName: 'main' });
+    const sourceCommit = node({ nodeId: 'source-commit', kind: 'CODE', parentId: 'branch1', branchName: 'fork/x' });
+    const merge = node({
+      nodeId: 'merge1', kind: 'MERGE', parentId: 'target-tip', branchName: 'main',
+      mergeFromNodeId: 'source-commit',
+    });
+    const mergeCommit = node({ nodeId: 'merge-commit', kind: 'CODE', parentId: 'merge1', branchName: 'main' });
+    const nodeById = new Map([branch, targetTip, sourceCommit, merge, mergeCommit].map((n) => [n.nodeId, n]));
+
+    const chain = findRailChain(nodeById, 'merge-commit');
+    // codeAncestors walks straight through the MERGE node to the target lane's
+    // real history — it never follows mergeFromNodeId to the source commit.
+    expect(chain.codeAncestors.map((n) => n.nodeId)).toEqual(['merge-commit', 'target-tip']);
+    expect(chain.branchNode?.nodeId).toBe('branch1');
+  });
 });
 
 describe('planDocOf', () => {

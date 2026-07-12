@@ -143,6 +143,10 @@ export const NodeSchema = new dynamoose.Schema({
   diffSummary: { type: Object, required: false, schema: DIFF_SUMMARY_SCHEMA },
   agentStatus: { type: String, required: false },
   imported: { type: Boolean, required: false },
+  // saveUnknown is off table-wide — any field missing here is silently stripped
+  // on write/read (see root CLAUDE.md "Dynamoose saveUnknown" gotcha).
+  mergeFromNodeId: { type: String, required: false },
+  prStatus: { type: String, required: false },
 });
 
 export const AnnotationSchema = new dynamoose.Schema({

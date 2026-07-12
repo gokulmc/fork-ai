@@ -1,22 +1,21 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsIn, IsOptional, IsInt, IsArray, IsBoolean, ArrayMinSize, ArrayMaxSize, MinLength } from 'class-validator';
+import { IsString, IsIn, IsOptional, IsInt, IsArray, IsBoolean, ArrayMaxSize, MinLength } from 'class-validator';
 
 export class CreateMixNodeDto {
   @ApiProperty({ description: 'ID of the base node (A) — becomes parentId of the new MIX node' })
   @IsString()
   parentNodeId!: string;
 
-  @ApiProperty({
-    description: 'IDs of 1–5 additional nodes whose content will be synthesized (must not include parentNodeId)',
-    minItems: 1,
+  @ApiPropertyOptional({
+    description: 'IDs of up to 5 additional nodes whose content will be synthesized (must not include parentNodeId). Optional for plan mode, where the base node alone may supply the source material.',
     maxItems: 5,
     type: [String],
   })
+  @IsOptional()
   @IsArray()
-  @ArrayMinSize(1)
   @ArrayMaxSize(5)
   @IsString({ each: true })
-  sourceNodeIds!: string[];
+  sourceNodeIds?: string[];
 
   @ApiProperty({ description: 'User synthesis question — guides what the LLM focuses on' })
   @IsString()

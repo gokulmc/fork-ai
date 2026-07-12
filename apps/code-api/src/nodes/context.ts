@@ -33,6 +33,14 @@ export function findRailChain(nodeById: Map<string, NodeItem>, fromNodeId: strin
       cur = n.parentId ?? null;
       continue;
     }
+    // A MERGE node sits ON the target lane (its parentId is the target tip
+    // CODE node) — pass straight through via parentId, deliberately ignoring
+    // mergeFromNodeId (the source/second parent), so a post-merge CODE child
+    // still walks back through the target branch's real commit history.
+    if (n.kind === 'MERGE') {
+      cur = n.parentId ?? null;
+      continue;
+    }
     if (n.kind === 'BRANCH') { branchNode = n; break; }
     if (n.kind === 'PLAN') { planNode = n; break; }
     break; // defensive: any other kind ends the rail (shouldn't occur per node-grammar)

@@ -22,6 +22,7 @@ function makeModelMock() {
     update: jest.fn(),
     delete: jest.fn(),
     batchDelete: jest.fn(),
+    batchPut: jest.fn(),
     query: jest.fn(),
   };
   // query().eq().using().sort().where().beginsWith().limit().all().exec() chain
@@ -204,6 +205,20 @@ describe('DynamoRepository', () => {
       const ids = Array.from({ length: 30 }, (_, i) => `n${i}`);
       await repo.batchDeleteNodes(SESSION_ID, ids);
       expect(node.mock.batchDelete).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('batchPutNodes', () => {
+    it('does nothing for empty array', async () => {
+      await repo.batchPutNodes([]);
+      expect(node.mock.batchPut).not.toHaveBeenCalled();
+    });
+
+    it('chunks into groups of 25', async () => {
+      node.mock.batchPut.mockResolvedValue({});
+      const items = Array.from({ length: 30 }, (_, i) => ({ PK: `SESSION#${SESSION_ID}`, SK: `NODE#n${i}`, nodeId: `n${i}` }));
+      await repo.batchPutNodes(items as never);
+      expect(node.mock.batchPut).toHaveBeenCalledTimes(2);
     });
   });
 

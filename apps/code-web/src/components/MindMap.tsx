@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import type { ForkNode } from '@/lib/types';
 import { clamp } from '@/lib/utils';
-import { Hash, Search, Sparkles, CornerDownRight, GitBranch, Map, Minus, Plus, Maximize, Filter, Blend, X, ClipboardList, Code } from './Icons';
+import { Hash, Search, Sparkles, CornerDownRight, GitBranch, GitMerge, Map, Minus, Plus, Maximize, Filter, Blend, X, ClipboardList, Code } from './Icons';
 import { NODE_W, NODE_H, layoutTree, layoutGitGraph, hasRailNode } from '@/lib/layoutGitGraph';
 import { BranchPopup } from './BranchPopup';
 
@@ -37,13 +37,27 @@ interface MindMapProps {
   onForkBranch?: (nodeId: string, branchName: string) => void;
   loadingIds?: Set<string>;
   readIds?: Set<string>;
-  // Mixer props
-  mixerMode?: boolean;
+  // Mixer/Plan select-mode props — selection mechanics (base/selected/onSelect)
+  // are shared between the two modes; only the mode itself decides which
+  // toggle button is highlighted.
+  selectMode?: 'mixer' | 'plan' | 'pr' | null;
   mixerBaseId?: string | null;
   mixerSelectedIds?: string[];
   onMixerSelect?: (id: string) => void;
   onMixerToggleMode?: () => void;
+  onPlanToggleMode?: () => void;
   showMixer?: boolean;
+  showPlan?: boolean;
+  // PR select-mode (Phase F) — a two-step flow (pick source commit, then pick
+  // any node on the target branch) so it doesn't share mixer/plan's
+  // multi-select mechanics above; App.tsx owns prSourceId/prTargetId state and
+  // the confirm overlay, MindMap only resolves clicks + renders the highlight.
+  showPr?: boolean;
+  onPrToggleMode?: () => void;
+  prSourceId?: string | null;
+  prTargetId?: string | null;
+  onPrSourceSelect?: (id: string) => void;
+  onPrTargetSelect?: (id: string) => void;
   nodeRefs?: React.MutableRefObject<Map<string, SVGGElement>>;
 }
 
@@ -56,12 +70,20 @@ export function MindMap({
   onForkBranch,
   loadingIds = new Set(),
   readIds = new Set(),
-  mixerMode = false,
+  selectMode = null,
   mixerBaseId = null,
   mixerSelectedIds = [],
   onMixerSelect,
   onMixerToggleMode,
+  onPlanToggleMode,
   showMixer = false,
+  showPlan = false,
+  showPr = false,
+  onPrToggleMode,
+  prSourceId = null,
+  prTargetId = null,
+  onPrSourceSelect,
+  onPrTargetSelect,
   nodeRefs,
 }: MindMapProps) {
   const svgRef = useRef<SVGSVGElement>(null);
@@ -86,7 +108,7 @@ export function MindMap({
   // (vertical columns); pure-research sessions keep the plain vertical mind
   // map (no regression) — same function, same edges, untouched.
   const gitLayout = useMemo(() => hasRailNode(nodes), [nodes]);
-  const { pos, bounds, childMap, depthMap, laneRails } = useMemo(
+  const { pos, bounds, childMap, depthMap, laneRails, colOf = {} } = useMemo(
     () => (gitLayout ? layoutGitGraph(nodes, rootId) : layoutTree(nodes, rootId)),
     [gitLayout, nodes, rootId],
   );
@@ -271,38 +293,51 @@ export function MindMap({
     animateTo(size.w / 2 - cx * scale, size.h / 2 - cy * scale, scale, 380);
   };
 
-  // Edge routing: a straight lane line for same-column rail continuation (CODE
-  // following PLAN/CODE), a rounded elbow bézier for a fork/plan-entry point
-  // (either side of a BRANCH node, or a PLAN entering from a learn parent),
-  // and — ONLY when the git-graph layout is active — that same elbow rotated
-  // 90° (right-center -> left-center) for learn edges too, since columns now
-  // flow vertically and learn subtrees hang to the right instead of below.
-  // Legacy learn-only sessions (gitLayout false) keep the original vertical
-  // bézier untouched. Geometrically 'fork' and 'learn' share the same curve —
-  // only the CSS class (colour) differs, matching map-git-graph.html.
+  // Edge routing: a straight lane line for same-column rail continuation
+  // (CODE/BRANCH/MERGE following PLAN/CODE/BRANCH/MERGE), a strict horizontal
+  // line with an arrowhead for a fork (BRANCH child — after layoutGitGraph's
+  // B1 change a BRANCH shares its parent's y, so parent-right-center to
+  // child-left-center is exactly horizontal), and — for learn edges — the
+  // legacy vertical bézier (parent bottom-center -> child top-center), since
+  // learn subtrees now hang BELOW their rail anchor in both layouts alike.
   const edges: { pid: string; cid: string; d: string; kind: 'lane' | 'fork' | 'learn' }[] = [];
   Object.keys(childMap).forEach(pid => {
     childMap[pid].forEach(cid => {
       const a = pos[pid], b = pos[cid];
       if (!a || !b) return;
       const cKind = nodes[cid]?.kind, pKind = nodes[pid]?.kind;
-      const isFork = cKind === 'BRANCH' || pKind === 'BRANCH';
-      const isLane = !isFork && cKind === 'CODE' && (pKind === 'PLAN' || pKind === 'CODE');
+      const isFork = cKind === 'BRANCH';
+      const isLane = !isFork && cKind === 'CODE' && (pKind === 'PLAN' || pKind === 'CODE' || pKind === 'BRANCH' || pKind === 'MERGE');
       if (isLane) {
         const x = a.x + NODE_W / 2;
         edges.push({ pid, cid, kind: 'lane', d: `M ${x} ${a.y + NODE_H} L ${x} ${b.y}` });
-      } else if (gitLayout) {
-        const x1 = a.x + NODE_W, y1 = a.y + NODE_H / 2;
-        const x2 = b.x, y2 = b.y + NODE_H / 2;
-        const mx = (x1 + x2) / 2;
-        edges.push({ pid, cid, kind: isFork ? 'fork' : 'learn', d: `M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}` });
+      } else if (isFork) {
+        const y = a.y + NODE_H / 2; // parent and child share y post-B1 — a strict horizontal
+        edges.push({ pid, cid, kind: 'fork', d: `M ${a.x + NODE_W} ${y} L ${b.x} ${y}` });
       } else {
         const x1 = a.x + NODE_W / 2, y1 = a.y + NODE_H;
         const x2 = b.x + NODE_W / 2, y2 = b.y;
         const my = (y1 + y2) / 2;
-        edges.push({ pid, cid, kind: isFork ? 'fork' : 'learn', d: `M ${x1} ${y1} C ${x1} ${my}, ${x2} ${my}, ${x2} ${y2}` });
+        edges.push({ pid, cid, kind: 'learn', d: `M ${x1} ${y1} C ${x1} ${my}, ${x2} ${my}, ${x2} ${y2}` });
       }
     });
+  });
+
+  // Merge edges: a straight line from the SOURCE commit's right (or left, if
+  // the MERGE landed to its left) to the MERGE node's opposite side — a second
+  // parent link (mergeFromNodeId) that childMap/the edges loop above never
+  // sees, since it only walks parentId.
+  const mergeEdges: { id: string; d: string }[] = [];
+  Object.values(nodes).forEach(n => {
+    if (n.kind !== 'MERGE' || !n.mergeFromNodeId) return;
+    const src = pos[n.mergeFromNodeId];
+    const dst = pos[n.id];
+    if (!src || !dst) return;
+    const srcY = src.y + NODE_H / 2, dstY = dst.y + NODE_H / 2;
+    const d = dst.x >= src.x
+      ? `M ${src.x + NODE_W} ${srcY} L ${dst.x} ${dstY}`
+      : `M ${src.x} ${srcY} L ${dst.x + NODE_W} ${dstY}`;
+    mergeEdges.push({ id: n.id, d });
   });
 
   const isOnPath = (pid: string, cid: string) => {
@@ -323,6 +358,7 @@ export function MindMap({
     if (kind === 'PLAN') return ClipboardList;
     if (kind === 'CODE') return Code;
     if (kind === 'BRANCH') return GitBranch;
+    if (kind === 'MERGE') return GitMerge;
     return GitBranch;
   }
 
@@ -338,13 +374,35 @@ export function MindMap({
         <div className="mm-right-controls">
           {showMixer && onMixerToggleMode && (
             <button
-              className={`mm-mixer-btn${mixerMode ? ' mm-mixer-btn--active' : ''}`}
+              className={`mm-mixer-btn${selectMode === 'mixer' ? ' mm-mixer-btn--active' : ''}`}
               onClick={onMixerToggleMode}
-              title={mixerMode ? 'Cancel mixer (Esc)' : 'Mixer — synthesize multiple nodes'}
+              title={selectMode === 'mixer' ? 'Cancel mixer (Esc)' : 'Mixer — synthesize multiple nodes'}
               style={{ pointerEvents: 'auto' }}
             >
-              {mixerMode ? <X size={13} /> : <Filter size={13} />}
-              <span className="mm-mixer-label">{mixerMode ? 'Cancel' : 'Mixer'}</span>
+              {selectMode === 'mixer' ? <X size={13} /> : <Filter size={13} />}
+              <span className="mm-mixer-label">{selectMode === 'mixer' ? 'Cancel' : 'Mixer'}</span>
+            </button>
+          )}
+          {showPlan && onPlanToggleMode && (
+            <button
+              className={`mm-plan-btn${selectMode === 'plan' ? ' mm-plan-btn--active' : ''}`}
+              onClick={onPlanToggleMode}
+              title={selectMode === 'plan' ? 'Cancel plan (Esc)' : 'Plan — draft an implementation plan'}
+              style={{ pointerEvents: 'auto' }}
+            >
+              {selectMode === 'plan' ? <X size={13} /> : <ClipboardList size={13} />}
+              <span className="mm-plan-label">{selectMode === 'plan' ? 'Cancel' : 'Plan'}</span>
+            </button>
+          )}
+          {showPr && onPrToggleMode && (
+            <button
+              className={`mm-pr-btn${selectMode === 'pr' ? ' mm-pr-btn--active' : ''}`}
+              onClick={onPrToggleMode}
+              title={selectMode === 'pr' ? 'Cancel PR (Esc)' : 'PR — merge one branch into another'}
+              style={{ pointerEvents: 'auto' }}
+            >
+              {selectMode === 'pr' ? <X size={13} /> : <GitMerge size={13} />}
+              <span className="mm-pr-label">{selectMode === 'pr' ? 'Cancel' : 'PR'}</span>
             </button>
           )}
           <div className="zoom">
@@ -364,16 +422,39 @@ export function MindMap({
         onPointerCancel={onPointerUp}
         onPointerLeave={onPointerUp}
       >
+        <defs>
+          {/* Arrowhead for fork edges (BRANCH child) — mm-arrow-merge is unused
+              until Phase F wires up MERGE edges, defined here so both share
+              the same <defs> block. */}
+          <marker id="mm-arrow" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+            <path d="M 0 0 L 8 4 L 0 8 z" fill="var(--kind-branch)" />
+          </marker>
+          <marker id="mm-arrow-merge" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+            <path d="M 0 0 L 8 4 L 0 8 z" fill="var(--kind-merge)" />
+          </marker>
+        </defs>
         <g transform={`translate(${view.tx} ${view.ty}) scale(${view.scale})`}>
           {laneRails?.map((r, i) => (
             <line key={`lane-${i}`} x1={r.x} y1={r.y1} x2={r.x} y2={r.y2} className="lane-rail" />
           ))}
           {edges.map((e, i) => (
-            <path key={i} d={e.d} className={`branch branch-${e.kind}${isOnPath(e.pid, e.cid) ? ' active' : ''}`} />
+            <path
+              key={i}
+              d={e.d}
+              className={`branch branch-${e.kind}${isOnPath(e.pid, e.cid) ? ' active' : ''}`}
+              markerEnd={e.kind === 'fork' ? 'url(#mm-arrow)' : undefined}
+            />
+          ))}
+          {mergeEdges.map(e => (
+            <path key={`merge-${e.id}`} d={e.d} className="branch branch-merge" markerEnd="url(#mm-arrow-merge)" />
           ))}
           {Object.values(nodes).map(n => {
             const p = pos[n.id];
             if (!p) return null;
+            // Collapsed commit-chain placeholder from lib/collapseSegments.ts —
+            // renders as a slimmer, unlabelled dashed pill (see the isSegment
+            // branches below) and is otherwise inert (no context menu, mixer-select).
+            const isSegment = n.id.startsWith('seg:');
             const isActive = n.id === activeId;
             const depth = depthMap[n.id] ?? 0;
             const isRoot = depth === 0;
@@ -395,30 +476,55 @@ export function MindMap({
                         ? 'Commit'
                         : n.kind === 'BRANCH'
                           ? 'Branch'
-                          : 'Branch';
+                          : n.kind === 'MERGE'
+                            ? 'PR'
+                            : 'Branch';
 
             // CODE/BRANCH cards grow upward to fit the commit pill above the title —
             // a PLAN card only does when it actually carries a branchName (plans
             // created before the plan-creates-a-branch iteration have none, and
-            // shouldn't grow to fit a pill they don't render).
-            const hasPill = n.kind === 'CODE' || n.kind === 'BRANCH' || (n.kind === 'PLAN' && !!n.branchName);
+            // shouldn't grow to fit a pill they don't render). A segment placeholder
+            // never grows — it has no kicker/icon/commit-pill (see collapseSegments.ts).
+            const hasPill = !isSegment && (n.kind === 'CODE' || n.kind === 'BRANCH' || (n.kind === 'PLAN' && !!n.branchName));
             const boxY = hasPill ? -PILL_H : 0;
             const boxH = hasPill ? NODE_H + PILL_H : NODE_H;
             const commitShaShort = n.kind === 'CODE'
               ? (n.commitSha ? n.commitSha.slice(0, 7) : '—')
               : n.kind === 'PLAN'
                 ? `from ${(n.commitSha ?? '').slice(0, 7) || '—'}`
-                : `fork @${(n.commitSha ?? nodes[n.parentId ?? '']?.commitSha ?? '').slice(0, 7) || '—'}`;
+                : n.kind === 'MERGE'
+                  ? '—' // Phase F decides the MERGE pill; hasPill excludes MERGE for now, so this is unused
+                  : `fork @${(n.commitSha ?? nodes[n.parentId ?? '']?.commitSha ?? '').slice(0, 7) || '—'}`;
 
-            const isMixerBase = mixerMode && n.id === mixerBaseId;
-            const isMixerSelected = mixerMode && mixerSelectedIds.includes(n.id);
-            const isMixerSelectable = mixerMode && n.id !== mixerBaseId;
+            const selecting = selectMode != null;
+            const isPr = selectMode === 'pr';
+            const isMixerBase = selecting && !isPr && n.id === mixerBaseId;
+            const isMixerSelected = selecting && !isPr && mixerSelectedIds.includes(n.id);
+            const isMixerSelectable = selecting && !isPr && n.id !== mixerBaseId && !isSegment;
+
+            // PR two-step selection: step 1 picks the source commit (any CODE
+            // node with a commit), step 2 picks any node on a DIFFERENT column
+            // (branch) than the source — clicking it sets prTargetId, which
+            // App.tsx turns into a confirm overlay. Highlighting the whole
+            // target column (not just the clicked node) needs colOf, which
+            // only the git-graph layout computes.
+            const isPrSourceCandidate = isPr && prSourceId == null && !isSegment && n.kind === 'CODE' && !!n.commitSha;
+            const isPrTargetCandidate = isPr && prSourceId != null && !isSegment
+              && colOf[n.id] !== undefined && colOf[n.id] !== colOf[prSourceId];
+            const isPrSourceMarked = isPr && n.id === prSourceId;
+            const isPrTargetHighlighted = isPr && prTargetId != null
+              && colOf[n.id] !== undefined && colOf[n.id] === colOf[prTargetId];
 
             const handleClick = (e: React.MouseEvent) => {
               e.stopPropagation();
-              if (mixerMode && isMixerSelectable && onMixerSelect) {
+              if (isPr) {
+                if (isPrSourceCandidate) onPrSourceSelect?.(n.id);
+                else if (isPrTargetCandidate) onPrTargetSelect?.(n.id);
+                return;
+              }
+              if (selecting && isMixerSelectable && onMixerSelect) {
                 onMixerSelect(n.id);
-              } else if (!mixerMode) {
+              } else if (!selecting) {
                 onSelect(n.id);
               }
             };
@@ -427,13 +533,13 @@ export function MindMap({
               <g
                 key={n.id}
                 ref={el => { if (nodeRefs && el) nodeRefs.current.set(n.id, el); }}
-                className={`mm-node${isActive ? ' active' : ''}${isRoot ? ' root' : ''}${loading ? ' loading' : ''}${isRead ? ' read' : ''}${starred ? ' starred' : ''}${isMixerBase ? ' mixer-base' : ''}${isMixerSelected ? ' mixer-selected' : ''}${isMixerSelectable ? ' mixer-selectable' : ''}`}
+                className={`mm-node${isActive ? ' active' : ''}${isRoot ? ' root' : ''}${loading ? ' loading' : ''}${isRead ? ' read' : ''}${starred ? ' starred' : ''}${isMixerBase ? ' mixer-base' : ''}${isMixerSelected ? ' mixer-selected' : ''}${isMixerSelectable ? ' mixer-selectable' : ''}${isPrSourceMarked ? ' mixer-base' : ''}${(isPrSourceCandidate || isPrTargetCandidate) ? ' mixer-selectable' : ''}${isPrTargetHighlighted ? ' mm-node--pr-target' : ''}${isSegment ? ' mm-node--segment' : ''}`}
                 data-depth={Math.min(depth, 6)}
                 data-kind={n.kind}
                 transform={`translate(${p.x} ${p.y})`}
                 onClick={handleClick}
                 onContextMenu={e => {
-                  if (mixerMode) { e.preventDefault(); return; }
+                  if (selecting || isSegment) { e.preventDefault(); return; }
                   e.preventDefault();
                   e.stopPropagation();
                   onContextMenu?.(n.id, e.clientX, e.clientY);
@@ -448,36 +554,47 @@ export function MindMap({
                   {isRead && <path className="pill-read" d={topRightBracket(NODE_W, boxY, boxH, RX, 1)} />}
                   {starred && <path className="pill-star" d={starEdge(boxY, boxH, RX)} />}
                   <foreignObject x="0" y={boxY} width={NODE_W} height={boxH} className="mm-fo" overflow="hidden">
-                    <div className="mm-card">
-                      {hasPill && n.branchName && (
-                        <div className="mm-card-top">
-                          <span
-                            className={`mm-commit-pill${n.kind === 'CODE' ? ' mm-commit-pill--clickable' : ''}`}
-                            onClick={e => {
-                              e.stopPropagation();
-                              if (n.kind !== 'CODE' || !onForkBranch) return;
-                              const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                              setBranchPopup({ nodeId: n.id, rect: { left: r.left, top: r.top, width: r.width, height: r.height, bottom: r.bottom } });
-                            }}
-                          >
-                            ⎇ {n.branchName} · {commitShaShort}
-                          </span>
-                        </div>
-                      )}
-                      <div className="mm-card-main">
-                        <div className="mm-card-ic">
-                          {n.emoji && /\p{Emoji}/u.test(n.emoji)
-                            ? <span className="mm-emoji">{n.emoji}</span>
-                            : <NodeIcon size={16} />}
-                        </div>
-                        <div className="mm-card-text">
-                          <div className="mm-kicker">{kicker}</div>
-                          <div className="mm-label" title={n.title || 'Untitled'}>{n.title || 'Untitled'}</div>
-                        </div>
-                        {n.sources?.length ? <span className="mm-search-badge">🔍</span> : null}
-                        {n.kind === 'MIX' ? <span className="mm-mix-badge"><Filter size={11} /></span> : null}
+                    {isSegment ? (
+                      <div className="mm-card mm-card--segment">
+                        <div className="mm-seg-label">{n.title}</div>
                       </div>
-                    </div>
+                    ) : (
+                      <div className="mm-card">
+                        {hasPill && n.branchName && (
+                          <div className="mm-card-top">
+                            <span
+                              className={`mm-commit-pill${n.kind === 'CODE' ? ' mm-commit-pill--clickable' : ''}`}
+                              onClick={e => {
+                                e.stopPropagation();
+                                if (n.kind !== 'CODE' || !onForkBranch) return;
+                                const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                setBranchPopup({ nodeId: n.id, rect: { left: r.left, top: r.top, width: r.width, height: r.height, bottom: r.bottom } });
+                              }}
+                            >
+                              ⎇ {n.branchName} · {commitShaShort}
+                            </span>
+                          </div>
+                        )}
+                        <div className="mm-card-main">
+                          <div className="mm-card-ic">
+                            {n.emoji && /\p{Emoji}/u.test(n.emoji)
+                              ? <span className="mm-emoji">{n.emoji}</span>
+                              : <NodeIcon size={16} />}
+                          </div>
+                          <div className="mm-card-text">
+                            <div className="mm-kicker">
+                              {kicker}
+                              {n.kind === 'MERGE' && n.prStatus && (
+                                <span className={`mm-pr-status mm-pr-status--${n.prStatus}`}>{n.prStatus}</span>
+                              )}
+                            </div>
+                            <div className="mm-label" title={n.title || 'Untitled'}>{n.title || 'Untitled'}</div>
+                          </div>
+                          {n.sources?.length ? <span className="mm-search-badge">🔍</span> : null}
+                          {n.kind === 'MIX' ? <span className="mm-mix-badge"><Filter size={11} /></span> : null}
+                        </div>
+                      </div>
+                    )}
                   </foreignObject>
                 </g>
               </g>

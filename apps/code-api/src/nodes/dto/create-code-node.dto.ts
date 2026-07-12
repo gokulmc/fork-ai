@@ -1,15 +1,32 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsIn, IsOptional, MaxLength, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ArrayMaxSize, IsArray, IsIn, IsOptional, IsString, MaxLength, MinLength, ValidateNested } from 'class-validator';
+
+// A composer-attached text file — feeds the agent prompt only (see
+// buildPrompt in mock-agent.service.ts). Never persisted on the NodeItem, so
+// the Dynamoose saveUnknown:false stripping (root CLAUDE.md) doesn't apply.
+class AttachmentDto {
+  @ApiProperty({ description: 'File name (display only)', minLength: 1, maxLength: 200 })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(200)
+  name!: string;
+
+  @ApiProperty({ description: 'File contents (plain text, read client-side)', maxLength: 65536 })
+  @IsString()
+  @MaxLength(65536)
+  content!: string;
+}
 
 export class CreateCodeNodeDto {
   @ApiProperty({ description: 'ID of the parent node — PLAN, CODE, or BRANCH' })
   @IsString()
   parentNodeId!: string;
 
-  @ApiProperty({ description: 'Natural-language instruction for the coding agent', minLength: 1, maxLength: 2000 })
+  @ApiProperty({ description: 'Natural-language instruction for the coding agent', minLength: 1, maxLength: 10000 })
   @IsString()
   @MinLength(1)
-  @MaxLength(2000)
+  @MaxLength(10000)
   instruction!: string;
 
   @ApiPropertyOptional({
@@ -19,4 +36,12 @@ export class CreateCodeNodeDto {
   @IsOptional()
   @IsIn(['haiku', 'sonnet', 'opus', 'gemini-pro', 'gemini-flash', 'gemini-flash-lite', 'deepseek-pro', 'deepseek-flash', 'glm', 'glm-air'])
   model?: 'haiku' | 'sonnet' | 'opus' | 'gemini-pro' | 'gemini-flash' | 'gemini-flash-lite' | 'deepseek-pro' | 'deepseek-flash' | 'glm' | 'glm-air';
+
+  @ApiPropertyOptional({ description: 'Small text-file attachments from the composer, appended to the agent prompt', type: [AttachmentDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(3)
+  @ValidateNested({ each: true })
+  @Type(() => AttachmentDto)
+  attachments?: AttachmentDto[];
 }

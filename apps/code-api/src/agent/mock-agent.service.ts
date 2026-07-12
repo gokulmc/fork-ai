@@ -16,6 +16,7 @@ export interface AgentRunContext {
   plugins: string[];
   ancestorCodeSummaries: Array<{ commitMessage: string; filePaths: string[]; additions: number; deletions: number }>;
   model?: string;
+  attachments?: Array<{ name: string; content: string }>;
 }
 
 export interface AgentRunResult {
@@ -82,8 +83,11 @@ export class MockAgentService {
           .join('\n')}`
       : '';
     const toolsSection = ctx.plugins.length ? `\n\nEnabled tools: ${ctx.plugins.join(', ')}.` : '\n\nNo additional tools are enabled.';
+    const attachmentsSection = ctx.attachments?.length
+      ? `\n\n${ctx.attachments.map((a) => `--- Attached file: ${a.name} ---\n\`\`\`\n${a.content}\n\`\`\``).join('\n\n')}`
+      : '';
 
-    return `You are simulating a coding agent working in repo ${repo} on branch "${ctx.branchName}". Task: ${ctx.instruction}.${planSection}${priorCommits}${toolsSection}
+    return `You are simulating a coding agent working in repo ${repo} on branch "${ctx.branchName}". Task: ${ctx.instruction}.${planSection}${priorCommits}${toolsSection}${attachmentsSection}
 
 Return ONLY valid JSON, no prose, no markdown fences. Shape:
 {

@@ -5,21 +5,13 @@ import { getAgentRun, type AgentEvent, type Project } from '@/lib/api';
 import { modelDisplayName } from '@/lib/utils';
 import { Code, GitBranch, ArrowUpRight, Sparkles } from './Icons';
 
-interface Rect {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-  bottom: number;
-}
-
 interface AgentLogPaneProps {
   node: ForkNode; // kind CODE or BRANCH
   events?: AgentEvent[]; // live in-memory log while streaming (agentLogs[node.id] in App.tsx)
   project: Project | null;
   idToken: string;
   sessionId: string;
-  onImplement: (rect: Rect) => void; // "Implement" (BRANCH) / "Continue" (CODE, once its own run is done)
+  onImplement: () => void; // "Implement" (BRANCH) / "Continue" (CODE, once its own run is done) — focuses the bottom composer
   onAskAboutCommit: (question: string) => void; // CODE only
   askLoading: boolean;
 }
@@ -43,7 +35,6 @@ function LogLine({ event }: { event: AgentEvent }) {
 
 export function AgentLogPane({ node, events, project, idToken, sessionId, onImplement, onAskAboutCommit, askLoading }: AgentLogPaneProps) {
   const logRef = useRef<HTMLDivElement>(null);
-  const implementBtnRef = useRef<HTMLButtonElement>(null);
   const [fetchedEvents, setFetchedEvents] = useState<AgentEvent[] | null>(null);
   const [fetchLoading, setFetchLoading] = useState(false);
   const [askQ, setAskQ] = useState('');
@@ -82,14 +73,7 @@ export function AgentLogPane({ node, events, project, idToken, sessionId, onImpl
           {node.branchName && <span className="commit-pill">⎇ {node.branchName}{shortSha ? ` · ${shortSha}` : ''}</span>}
         </div>
         <p className="ws-instruction">Forked from <code>{shortSha ?? '—'}</code></p>
-        <button
-          ref={implementBtnRef}
-          className="proj-btn-primary"
-          onClick={() => {
-            const r = implementBtnRef.current?.getBoundingClientRect();
-            onImplement(r ? { left: r.left, top: r.top, width: r.width, height: r.height, bottom: r.bottom } : { left: 0, top: 0, width: 0, height: 0, bottom: 0 });
-          }}
-        >
+        <button className="proj-btn-primary" onClick={onImplement}>
           <Code size={13} /> Implement
         </button>
       </div>
@@ -107,14 +91,7 @@ export function AgentLogPane({ node, events, project, idToken, sessionId, onImpl
           {node.agentStatus ?? 'done'}
         </span>
         {node.agentStatus !== 'running' && (
-          <button
-            ref={implementBtnRef}
-            className="pill pill-code-cta"
-            onClick={() => {
-              const r = implementBtnRef.current?.getBoundingClientRect();
-              onImplement(r ? { left: r.left, top: r.top, width: r.width, height: r.height, bottom: r.bottom } : { left: 0, top: 0, width: 0, height: 0, bottom: 0 });
-            }}
-          >
+          <button className="pill pill-code-cta" onClick={onImplement}>
             <Code size={12} className="ic" /> Continue
           </button>
         )}
@@ -167,7 +144,9 @@ export function AgentLogPane({ node, events, project, idToken, sessionId, onImpl
             <a className="gh-btn" href={`${project.repoRef.url}/commit/${node.commitSha}`} target="_blank" rel="noopener noreferrer">
               View on GitHub <ArrowUpRight size={12} />
             </a>
-            <span className="mock-tag">mock</span>
+            {/* Only mock/synthesized repos get the "mock" tag — a real 'github'
+                repo's commitSha/url are genuine, so the link should read as real. */}
+            {project.repoRef.provider !== 'github' && <span className="mock-tag">mock</span>}
           </>
         )}
       </div>

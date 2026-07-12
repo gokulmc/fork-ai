@@ -13,7 +13,8 @@ export const ALLOWED_CHILD_KINDS: Record<NodeKind, NodeKind[]> = {
   MIX: LEARN_CHILDREN,
   PLAN: ['CODE', 'DEEPER', 'ASK'],
   CODE: ['CODE', 'BRANCH', 'DEEPER', 'ASK'],
-  BRANCH: ['CODE'],
+  BRANCH: ['CODE', 'DEEPER', 'ASK'],
+  MERGE: ['CODE'],
 };
 
 export function canSpawn(parentKind: NodeKind, childKind: NodeKind): boolean {

@@ -201,6 +201,23 @@ export class SessionsService {
       return;
     }
 
+    // Fill-root (D1/D3): a from-scratch ("new repo") project seeds a BRANCH
+    // root carrying the user's opening question with empty sections — the LLM
+    // answer streams INTO that node itself (same runRootQueryStream machinery,
+    // same event vocabulary), rather than spawning a QUERY child, so the root
+    // ends up looking exactly like a normal root query once it's filled in.
+    // Only allowed once — a filled root can't be re-filled.
+    const rootNodeExisting = existing.find((n) => n.parentId === null);
+    if (rootNodeExisting?.kind === 'BRANCH') {
+      if (rootNodeExisting.sections.length > 0) {
+        throw new BadRequestException('Root BRANCH node already has content — the fill-root route can only run once');
+      }
+      const emit = (data: object) => { try { send(data); } catch { /* client gone */ } };
+      emit({ type: 'init', sessionId, nodeId: rootNodeExisting.nodeId });
+      await this.runRootQueryStream(sub, sessionId, rootNodeExisting, dto, emit);
+      return;
+    }
+
     // Seeded project session (D1): the first learn question anchors under the
     // CODE root instead of minting a new tree. Only allowed once — a session
     // that already has a learn node has already used this route.
@@ -547,17 +564,58 @@ export class SessionsService {
     return message.split(/\s+/).filter(Boolean).slice(0, 5).join(' ') || 'Initial commit';
   }
 
-  // Creates a Project's map session, seeded with a CODE root node for the
-  // repo's first commit (plus a second CODE node for HEAD, if it differs from
-  // the first) — replaces the old createEmpty bare-session helper so a Project
-  // never starts as an empty map. `seed.imported` marks a real GitHub fetch,
-  // but the root node is only actually flagged `imported` when there's a real
-  // first commit to point at — an empty repo still falls back to a synthesized
-  // root, same as the mock provider (see ProjectsService.buildSeed).
-  async createProjectSession(sub: string, title: string, seed: ProjectSeed): Promise<string> {
+  // Creates a Project's map session. Two shapes:
+  //  - `rootQuery` set (provider 'new', no repo yet): seeds a single BRANCH
+  //    root carrying the user's opening question — the frontend immediately
+  //    streams the LLM answer into it (see createRootNodeStreaming's fill-root
+  //    mode below), so the user lands straight in a filled-in session.
+  //  - otherwise: the original behaviour — a CODE root node for the repo's
+  //    first commit (plus a second CODE node for HEAD, if it differs from the
+  //    first). `seed.imported` marks a real GitHub fetch, but the root node is
+  //    only actually flagged `imported` when there's a real first commit to
+  //    point at — an empty repo still falls back to a synthesized root, same
+  //    as the mock provider (see ProjectsService.buildSeed).
+  async createProjectSession(sub: string, title: string, seed: ProjectSeed, rootQuery?: string): Promise<string> {
     const sessionId = ulid();
     const now = new Date().toISOString();
     const rootNodeId = ulid();
+
+    if (rootQuery) {
+      const rootNode: NodeItem = {
+        PK: `SESSION#${sessionId}`,
+        SK: `NODE#${rootNodeId}`,
+        nodeId: rootNodeId,
+        parentId: null,
+        kind: 'BRANCH',
+        title: this.tempTitle(rootQuery),
+        emoji: null,
+        query: rootQuery,
+        lede: '',
+        sections: [],
+        fromSection: null,
+        fromText: null,
+        createdAt: now,
+        branchName: seed.defaultBranch,
+        commitSha: randomBytes(20).toString('hex'),
+        model: ROOT_MODEL,
+      };
+      const sessionMeta: SessionMetaItem = {
+        PK: this.userPk(sub),
+        SK: this.sessionSk(sessionId),
+        sessionId,
+        title,
+        emoji: '',
+        lede: '',
+        rootNodeId,
+        nodeCount: 1,
+        createdAt: now,
+        updatedAt: now,
+        gsi1pk: this.userPk(sub),
+        gsi1sk: `UPDATED#${now}`,
+      };
+      await Promise.all([this.db.putNode(rootNode), this.db.putSessionMeta(sessionMeta)]);
+      return sessionId;
+    }
 
     const rootMessage = seed.first?.message || 'Initial commit';
     const rootNode: NodeItem = {
@@ -623,6 +681,31 @@ export class SessionsService {
     };
 
     await Promise.all([...nodes.map((n) => this.db.putNode(n)), this.db.putSessionMeta(sessionMeta)]);
+    return sessionId;
+  }
+
+  // Creates a Project's map session from a fully-built node list (repo-import
+  // full-history path — see RepoImportService.buildImportedNodes). The nodes
+  // already carry the given sessionId's PK, so this is just persistence:
+  // batch-write the nodes and write the SessionMeta row pointing at the root.
+  async createImportedProjectSession(sub: string, title: string, sessionId: string, nodes: NodeItem[]): Promise<string> {
+    const now = new Date().toISOString();
+    const rootNode = nodes.find((n) => !n.parentId);
+    const sessionMeta: SessionMetaItem = {
+      PK: this.userPk(sub),
+      SK: this.sessionSk(sessionId),
+      sessionId,
+      title,
+      emoji: '',
+      lede: '',
+      rootNodeId: rootNode?.nodeId ?? nodes[0].nodeId,
+      nodeCount: nodes.length,
+      createdAt: now,
+      updatedAt: now,
+      gsi1pk: this.userPk(sub),
+      gsi1sk: `UPDATED#${now}`,
+    };
+    await Promise.all([this.db.batchPutNodes(nodes), this.db.putSessionMeta(sessionMeta)]);
     return sessionId;
   }
 

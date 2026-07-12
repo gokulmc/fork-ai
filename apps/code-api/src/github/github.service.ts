@@ -29,9 +29,28 @@ export interface RepoSeed {
 interface GithubCommitApi {
   sha: string;
   commit: { message: string; author: { date: string } | null };
+  parents?: Array<{ sha: string }>;
+}
+
+export interface GithubBranch {
+  name: string;
+  headSha: string;
+}
+
+export interface RepoCommit extends RepoSeedCommit {
+  parents: string[];
+}
+
+export interface RepoCompare {
+  mergeBaseSha: string;
+  commits: RepoSeedCommit[];
 }
 
 const GITHUB_API = 'https://api.github.com';
+// listBranches hard-stops here — a repo-import fan-out over more branches than
+// this isn't worth the API calls (see repo-import.service.ts's BRANCH_COUNT_CAP,
+// which independently re-caps whatever this returns).
+const MAX_BRANCHES = 20;
 
 @Injectable()
 export class GithubService {
@@ -200,6 +219,68 @@ export class GithubService {
     }
     return user.githubAccessToken;
   }
+
+  // ── Full history import (repo-import.service.ts) ───────────────────────────
+
+  async listBranches(sub: string, owner: string, repo: string): Promise<GithubBranch[]> {
+    const token = await this.requireToken(sub);
+    const headers = this.authHeaders(token);
+    const branches: GithubBranch[] = [];
+    let url: string | null = `${GITHUB_API}/repos/${owner}/${repo}/branches?per_page=100`;
+    while (url && branches.length < MAX_BRANCHES) {
+      const res = await fetch(url, { headers });
+      if (!res.ok) throw new UnauthorizedException(`Failed to list branches for ${owner}/${repo}`);
+      const data = (await res.json()) as Array<{ name: string; commit: { sha: string } }>;
+      for (const b of data) {
+        if (branches.length >= MAX_BRANCHES) break;
+        branches.push({ name: b.name, headSha: b.commit.sha });
+      }
+      url = parseNextPageUrl(res.headers.get('link'));
+    }
+    return branches;
+  }
+
+  async listCommits(sub: string, owner: string, repo: string, branch: string, cap: number): Promise<RepoCommit[]> {
+    const token = await this.requireToken(sub);
+    const headers = this.authHeaders(token);
+    const commits: RepoCommit[] = [];
+    let url: string | null = `${GITHUB_API}/repos/${owner}/${repo}/commits?sha=${encodeURIComponent(branch)}&per_page=100`;
+    while (url && commits.length < cap) {
+      const res = await fetch(url, { headers });
+      if (res.status === 409) {
+        // Empty repo — GitHub 409s "Git Repository is empty" instead of a 200 with [].
+        // Only possible on the first page; a later page 409ing would mean an
+        // already-fetched earlier page lied, which can't happen.
+        break;
+      }
+      if (!res.ok) throw new UnauthorizedException(`Failed to list commits for ${owner}/${repo}@${branch}`);
+      const data = (await res.json()) as GithubCommitApi[];
+      for (const c of data) {
+        if (commits.length >= cap) break;
+        commits.push({ ...toRepoSeedCommit(c), parents: (c.parents ?? []).map((p) => p.sha) });
+      }
+      url = parseNextPageUrl(res.headers.get('link'));
+    }
+    return commits;
+  }
+
+  async compareCommits(sub: string, owner: string, repo: string, base: string, head: string): Promise<RepoCompare> {
+    const token = await this.requireToken(sub);
+    const headers = this.authHeaders(token);
+    const res = await fetch(
+      `${GITHUB_API}/repos/${owner}/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`,
+      { headers },
+    );
+    if (!res.ok) throw new UnauthorizedException(`Failed to compare ${base}...${head} for ${owner}/${repo}`);
+    const data = (await res.json()) as {
+      merge_base_commit: GithubCommitApi;
+      commits: GithubCommitApi[];
+    };
+    return {
+      mergeBaseSha: data.merge_base_commit.sha,
+      commits: data.commits.map(toRepoSeedCommit),
+    };
+  }
 }
 
 function toRepoSeedCommit(c: GithubCommitApi): RepoSeedCommit {
@@ -211,6 +292,15 @@ function toRepoSeedCommit(c: GithubCommitApi): RepoSeedCommit {
 function parseLastPageUrl(link: string | null): string | null {
   if (!link) return null;
   const part = link.split(',').find((p) => p.includes('rel="last"'));
+  const match = part?.match(/<([^>]+)>/);
+  return match ? match[1] : null;
+}
+
+// Same shape as parseLastPageUrl but for rel="next" — drives listBranches'/
+// listCommits' page-by-page walk.
+function parseNextPageUrl(link: string | null): string | null {
+  if (!link) return null;
+  const part = link.split(',').find((p) => p.includes('rel="next"'));
   const match = part?.match(/<([^>]+)>/);
   return match ? match[1] : null;
 }

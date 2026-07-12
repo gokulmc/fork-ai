@@ -5,6 +5,7 @@ import { useSession, signOut, getSession as getAuthSession } from 'next-auth/rea
 import type { ForkNode, Annotation, HlMenuState, FollowUpState, ContextMenuState, PersistentHighlight, HighlightRecord } from '@/lib/types';
 import { uid, short5, stripMarkdown, stripCite, getRangeOffsets, modelDisplayName, cleanHeading } from '@/lib/utils';
 import { rangeToMarkdown } from '@/lib/htmlToMarkdown';
+import { collapseSegments } from '@/lib/collapseSegments';
 
 const CSS_HL_SUPPORTED = typeof window !== 'undefined' && typeof CSS !== 'undefined' && 'highlights' in CSS;
 
@@ -18,14 +19,39 @@ const HL_FG = [null, '#b91c1c', '#1d4ed8', '#047857'];
 // the colour picker.
 const BRANCH_HL = 'branch';
 
-// Mirrors backend LEARN_KINDS (apps/code-api/src/nodes/node-grammar.ts) — a PLAN
-// node is only ever spawned via the mixer's plan:true route, never the generic
-// create-node grammar, so it isn't expressed in nodeGrammar.ts's canSpawn table.
-const MIXER_PLAN_BASE_KINDS = new Set<ForkNode['kind']>(['QUERY', 'DEEPER', 'ASK', 'MIX']);
-// Same set, reused to gate the project first-question interstitial — a seeded
-// project session has a CODE root (and maybe a HEAD child) but no learn-kind
-// node until the user's first question lands.
-const LEARN_KINDS = MIXER_PLAN_BASE_KINDS;
+// Mirrors backend LEARN_KINDS (apps/code-api/src/nodes/node-grammar.ts) — used
+// to gate the project first-question interstitial: a seeded project session has
+// a CODE root (and maybe a HEAD child) but no learn-kind node until the user's
+// first question lands.
+const LEARN_KINDS = new Set<ForkNode['kind']>(['QUERY', 'DEEPER', 'ASK', 'MIX']);
+
+// A node can be a Plan base when it's a learn kind, or a BRANCH node that
+// already carries content — a plain fork BRANCH has nothing to plan from yet.
+// A PLAN node is only ever spawned via the plan:true mix route, never the
+// generic create-node grammar, so it isn't expressed in nodeGrammar.ts's
+// canSpawn table.
+function canBePlanBase(node: ForkNode | null | undefined): boolean {
+  if (!node) return false;
+  if (LEARN_KINDS.has(node.kind)) return true;
+  return node.kind === 'BRANCH' && node.sections.length > 0;
+}
+
+// Client-side mirror of the backend's findLaneBranchName (nodes.service.ts) —
+// walks parentId upward (inclusive) to the nearest ancestor carrying a
+// branchName. Used only for the PR overlay's confirm-text preview; the actual
+// lane resolution that decides what gets merged happens server-side in
+// createPrNode, so a mismatch here would just show a wrong preview, never a
+// wrong merge.
+function resolveLaneBranchName(nodes: Record<string, ForkNode>, fromId: string | null): string | null {
+  let cur = fromId;
+  while (cur) {
+    const n = nodes[cur];
+    if (!n) break;
+    if (n.branchName) return n.branchName;
+    cur = n.parentId;
+  }
+  return null;
+}
 
 function hlName(bg: string | null, fg: string | null | undefined): string {
   const b = (bg ?? '#fef08a').replace('#', '');
@@ -88,9 +114,12 @@ import {
   createNode,
   createMixNode,
   createBranchNode,
+  createPrNode,
+  mergePr,
   createCodeNodeStream,
   listProjects,
   createProject,
+  getProject,
   renameNode as apiRenameNode,
   setNodeStar as apiSetNodeStar,
   deleteNode as apiDeleteNode,
@@ -126,14 +155,15 @@ import { HistoryPage } from './HistoryPage';
 import { TweaksPanel } from './TweaksPanel';
 import { AccountButton } from './AccountButton';
 import { MindMapPill } from './MindMapPill';
-import { ProjectsPage } from './ProjectsPage';
+import { NewProjectModal } from './NewProjectModal';
 import { ProjectStart } from './ProjectStart';
 import { AgentLogPane } from './AgentLogPane';
-import { CodeInstructionPopup } from './CodeInstructionPopup';
+import { PrPane } from './PrPane';
+import { CodeComposer, type CodeComposerHandle, type ComposerAttachment } from './CodeComposer';
 import {
   Search, Bookmark, ChevronRight, Sparkles, CornerDownRight, Hash,
   Quote, AlertCircle, ArrowUpRight, Pencil, Trash, Clock, FileText, Home,
-  Blend, Filter, X as XIcon, ClipboardList, Code,
+  Blend, Filter, X as XIcon, ClipboardList, Code, GitBranch, GitMerge,
 } from './Icons';
 import { exportNodePdf } from '@/lib/sessionPdf';
 
@@ -292,6 +322,11 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   // Nodes the user has read — active for ≥2s (debounced). Drives the bold
   // corner-bracket marker on the mind map. Persisted per session in localStorage.
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
+  // Collapsed commit-chain segments (repo-import full history) — stores which
+  // segments the user has manually EXPANDED (default is collapsed), so a
+  // fresh session always opens with long import chains folded away. See
+  // lib/collapseSegments.ts.
+  const [expandedSegIds, setExpandedSegIds] = useState<Set<string>>(new Set());
   // Start in loading state if hash or localStorage session present — prevents landing flash on refresh
   const [loadingRoot, setLoadingRoot] = useState(() => {
     if (typeof window === 'undefined') return false;
@@ -324,24 +359,34 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   const [highlightsList, setHighlightsList] = useState<HighlightRecord[]>([]);
   const [lastHlColors, setLastHlColors] = useState<{ bg: string; fg: string | null }>({ bg: '#fef08a', fg: null });
 
-  // ── Mixer state ─────────────────────────────────────────────────────────────
-  const [mixerMode, setMixerMode] = useState(false);
+  // ── Mixer / Plan select-mode state ──────────────────────────────────────────
+  const [selectMode, setSelectMode] = useState<'mixer' | 'plan' | 'pr' | null>(null);
   const [mixerSelectedIds, setMixerSelectedIds] = useState<string[]>([]);
   const [mixerQuestion, setMixerQuestion] = useState('');
   const [mixerAnimating, setMixerAnimating] = useState(false);
   const [mixerCollapsing, setMixerCollapsing] = useState(false);
-  // When checked, spawnMix synthesizes a PLAN node (plan:true) instead of a MIX node.
-  const [mixerPlan, setMixerPlan] = useState(false);
   // Refs to each SVG node <g> element — used to compute ghost start positions
   const nodeRefs = useRef<Map<string, SVGGElement>>(new Map());
 
+  // PR select-mode (Phase F) — two-step flow, separate from mixer/plan's
+  // multi-select mechanics: prSourceId is set on step 1 (pick the commit),
+  // prTargetId on step 2 (pick any node on the target branch), then the
+  // overlay's Confirm button fires confirmPr.
+  const [prSourceId, setPrSourceId] = useState<string | null>(null);
+  const [prTargetId, setPrTargetId] = useState<string | null>(null);
+  const [prSubmitting, setPrSubmitting] = useState(false);
+  const [prConfirmError, setPrConfirmError] = useState<string | null>(null);
+
   const exitMixer = useCallback(() => {
-    setMixerMode(false);
+    setSelectMode(null);
     setMixerSelectedIds([]);
     setMixerQuestion('');
     setMixerAnimating(false);
     setMixerCollapsing(false);
-    setMixerPlan(false);
+    setPrSourceId(null);
+    setPrTargetId(null);
+    setPrSubmitting(false);
+    setPrConfirmError(null);
   }, []);
 
   // ── Code-node (git-graph rail) state ──────────────────────────────────────
@@ -349,13 +394,13 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   // createCodeNodeStream streams; AgentLogPane falls back to GET .../agent-run
   // when a node has no in-memory log (e.g. a reload landed on a finished run).
   const [agentLogs, setAgentLogs] = useState<Record<string, AgentEvent[]>>({});
-  const [codeInstrOpen, setCodeInstrOpen] = useState<{
-    rect: { left: number; top: number; width: number; height: number; bottom: number };
-    mode: 'implement' | 'continue';
-    parentNodeId: string;
-  } | null>(null);
-  const codeBtnRef = useRef<HTMLButtonElement>(null);
+  const composerRef = useRef<CodeComposerHandle>(null);
+  const [codeSubmitLoading, setCodeSubmitLoading] = useState(false);
   const [askCommitLoading, setAskCommitLoading] = useState(false);
+  // { nodeId } tags the error to the MERGE node it happened on, so PrPane only
+  // shows it while that node is still active — navigating away silently clears it.
+  const [prMergeError, setPrMergeError] = useState<{ nodeId: string; message: string } | null>(null);
+  const [prMerging, setPrMerging] = useState(false);
 
   const [creditBalance, setCreditBalance] = useState<number | null>(null);
   const [rootQueryOutOfCredit, setRootQueryOutOfCredit] = useState(false);
@@ -503,11 +548,10 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       .finally(() => setLoadingProjects(false));
   }, [idToken]);
 
-  const handleCreateProject = useCallback(async (payload: CreateProjectPayload): Promise<Project> => {
-    const project = await createProject(idToken, payload);
-    setProjects(prev => [project, ...prev]);
-    return project;
-  }, [idToken]);
+  // handleCreateProject is declared further down (after openProject and
+  // submitFillRoot, which it calls) — see the "Hook ordering caveat" in root
+  // CLAUDE.md: a hook that closes over another hook declared later in the
+  // component throws `ReferenceError: Cannot access '...' before initialization`.
 
   // GitHub OAuth callback landing: code-api's /github/callback redirects back
   // here with ?github=connected|error. Strip it immediately (it's a one-shot
@@ -622,6 +666,16 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       setAnnotations(session.annotations.map(toAnnotation));
       setPersistentHl(toHlMap(session.highlights));
       setHighlightsList(toHighlightRecords(session.highlights, nodeMap));
+      // A session opened from History (or restored from a URL hash/localStorage)
+      // carries no Project in memory — refetch it whenever the session belongs to
+      // one, so ProjectStart gating and AgentLogPane's "View on GitHub" link work
+      // the same as opening via openProject(). Cleared for a plain session so a
+      // stale project from a previous session doesn't linger.
+      if (session.projectId) {
+        getProject(idToken, session.projectId).then(setActiveProject).catch(() => setActiveProject(null));
+      } else {
+        setActiveProject(null);
+      }
     } catch (err) {
       console.error('Failed to load session', err);
       // A stale stored session id that no longer loads (deleted / not ours) would
@@ -642,10 +696,13 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   }, [idToken]);
 
   // Opening a project = load its (possibly empty) session + remember the
-  // Project itself, since nodes/sessions carry no projectId client-side.
+  // Project itself. Sets it synchronously (loadSession's own projectId-based
+  // refetch would otherwise land a frame later) and returns loadSession's
+  // promise so callers that need the session in state before proceeding
+  // (handleCreateProject's fill-root kickoff) can await it.
   const openProject = useCallback((project: Project) => {
     setActiveProject(project);
-    void loadSession(project.sessionId);
+    return loadSession(project.sessionId);
   }, [loadSession]);
 
   // ── Persist active session to URL hash + localStorage (survive refresh) ────
@@ -716,6 +773,21 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       setReadIds(new Set(raw ? (JSON.parse(raw) as string[]) : []));
     } catch { setReadIds(new Set()); }
   }, [sessionId]);
+
+  // Restore which commit-chain segments the user expanded (reset on session
+  // switch — a fresh session always opens fully collapsed).
+  useEffect(() => {
+    if (!sessionId) { setExpandedSegIds(new Set()); return; }
+    try {
+      const raw = localStorage.getItem(`fork.ai.collapsed.${sessionId}`);
+      setExpandedSegIds(new Set(raw ? (JSON.parse(raw) as string[]) : []));
+    } catch { setExpandedSegIds(new Set()); }
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    try { localStorage.setItem(`fork.ai.collapsed.${sessionId}`, JSON.stringify([...expandedSegIds])); } catch { /* quota */ }
+  }, [expandedSegIds, sessionId]);
 
   // Mark a node "read" once it has stayed the active node for ≥5s (debounced).
   useEffect(() => {
@@ -1060,6 +1132,80 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     );
   }, [idToken, consumeRootStream]);
 
+  // Fills an already-existing, still-empty BRANCH root with the LLM answer to
+  // its rootQuery (D1/D3 — a from-scratch "new repo" project). Unlike
+  // submitRootQuery/submitProjectQuery this never creates an optimistic temp
+  // node: the root node already exists (seeded by ProjectsService.create,
+  // already in `nodes` via the loadSession that ran right before this is
+  // called) and keeps the same id throughout — events just patch it in place.
+  const submitFillRoot = useCallback(async (sid: string, query: string) => {
+    if (!idToken) return;
+    const nodeId = rootIdRef.current;
+    if (!nodeId) return;
+
+    setNodes(prev => prev[nodeId] ? { ...prev, [nodeId]: { ...prev[nodeId], loading: true } } : prev);
+    setLoadingRoot(true);
+
+    track('root_query', { webSearch: tweaksRef.current.webSearch, project: true, newRepo: true });
+    try {
+      await createRootQueryInSessionStream(idToken, sid, {
+        query,
+        sectionCount: tweaksRef.current.maxSections,
+        webSearch: tweaksRef.current.webSearch,
+      }, event => {
+        if (event.type === 'meta') {
+          setNodes(prev => {
+            const node = prev[nodeId];
+            if (!node) return prev;
+            return { ...prev, [nodeId]: { ...node, title: event.title, emoji: event.emoji, lede: event.lede } };
+          });
+        } else if (event.type === 'section') {
+          setNodes(prev => {
+            const node = prev[nodeId];
+            if (!node) return prev;
+            return { ...prev, [nodeId]: { ...node, sections: [...node.sections, { id: event.id, heading: event.heading, body: event.body }] } };
+          });
+        } else if (event.type === 'done') {
+          const doneSections = event.sections;
+          const doneSources = event.sources;
+          const doneModel = event.model;
+          setNodes(prev => {
+            const node = prev[nodeId];
+            if (!node) return prev;
+            return {
+              ...prev,
+              [nodeId]: {
+                ...node,
+                loading: false,
+                ...(doneModel ? { model: doneModel } : {}),
+                ...(doneSections ? { sections: doneSections } : {}),
+                ...(doneSources?.length ? { sources: doneSources } : {}),
+              },
+            };
+          });
+          refreshCredit();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to fill project root', err);
+      const { msg, status } = nodeErrorDisplay(err);
+      setNodes(prev => prev[nodeId] ? { ...prev, [nodeId]: { ...prev[nodeId], loading: false, error: msg, errorStatus: status } } : prev);
+    } finally {
+      setLoadingRoot(false);
+    }
+  }, [idToken, refreshCredit]);
+
+  const handleCreateProject = useCallback(async (payload: CreateProjectPayload): Promise<void> => {
+    const project = await createProject(idToken, payload);
+    setProjects(prev => [project, ...prev]);
+    await openProject(project);
+    // No ProjectStart interstitial for a from-scratch project — the opening
+    // question was already asked in the modal, so stream straight into the map.
+    if (project.repoRef.provider === 'new' && payload.rootQuery) {
+      void submitFillRoot(project.sessionId, payload.rootQuery);
+    }
+  }, [idToken, openProject, submitFillRoot]);
+
   // ── Document upload: build a whole mind-map in one stream ──────────────────
   // Authed-only (Landing routes guests to login). Mirrors submitRootQuery's
   // optimistic/persist-first shape, but the backend streams the whole tree:
@@ -1397,11 +1543,59 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     }
   }, [nodes, idToken, scrollWsTop]);
 
-  // ── CODE node: "Implement"/"Continue" — runs the mocked coding agent ─────
+  // ── PR: open + merge (git-graph select-mode 'pr') ─────────────────────────
+  // No optimistic node — unlike the other branch flows, a PR isn't created
+  // until the user explicitly confirms in the overlay, so there's nothing to
+  // show mid-flight; a failure is surfaced via prConfirmError in the overlay
+  // itself instead of on a temp node.
 
-  const submitCodeNode = useCallback(async (parentNodeId: string, instruction: string) => {
+  const confirmPr = useCallback(async () => {
+    const sid = sessionIdRef.current;
+    if (!sid || !idToken || !prSourceId || !prTargetId) return;
+    setPrSubmitting(true);
+    setPrConfirmError(null);
+    try {
+      const apiNode = await createPrNode(idToken, sid, { sourceNodeId: prSourceId, targetNodeId: prTargetId });
+      const mergeNode = toForkNode(apiNode);
+      setNodes(prev => ({ ...prev, [mergeNode.id]: mergeNode }));
+      setActiveId(mergeNode.id);
+      scrollWsTop();
+      refreshCredit();
+      track('branch_created', { kind: 'MERGE' });
+      exitMixer();
+    } catch (err) {
+      const { msg } = nodeErrorDisplay(err);
+      setPrConfirmError(msg);
+    } finally {
+      setPrSubmitting(false);
+    }
+  }, [idToken, prSourceId, prTargetId, exitMixer, scrollWsTop]);
+
+  const mergeOpenPr = useCallback(async (nodeId: string) => {
     const sid = sessionIdRef.current;
     if (!sid || !idToken) return;
+    setPrMerging(true);
+    setPrMergeError(null);
+    try {
+      const { mergeNode: apiMergeNode, commitNode: apiCommitNode } = await mergePr(idToken, sid, nodeId);
+      const mergeNode = toForkNode(apiMergeNode);
+      const commitNode = toForkNode(apiCommitNode);
+      setNodes(prev => ({ ...prev, [mergeNode.id]: mergeNode, [commitNode.id]: commitNode }));
+      track('branch_created', { kind: 'MERGE' });
+    } catch (err) {
+      const { msg } = nodeErrorDisplay(err);
+      setPrMergeError({ nodeId, message: msg });
+    } finally {
+      setPrMerging(false);
+    }
+  }, [idToken]);
+
+  // ── CODE node: "Implement"/"Continue" — runs the mocked coding agent ─────
+
+  const submitCodeNode = useCallback(async (instruction: string, attachments: ComposerAttachment[]) => {
+    const sid = sessionIdRef.current;
+    if (!sid || !idToken || !activeId) return;
+    const parentNodeId = activeId;
     const parent = nodes[parentNodeId];
     if (!parent) return;
 
@@ -1427,37 +1621,49 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     setActiveId(tempId);
     scrollWsTop();
     setLoadingNodes(prev => new Set(prev).add(tempId));
+    setCodeSubmitLoading(true);
 
     let realNodeId = tempId;
     try {
-      await createCodeNodeStream(idToken, sid, { parentNodeId, instruction, model: tweaksRef.current.branchModel }, (event) => {
-        if (event.type === 'init') {
-          // Real node is already persisted (agentStatus 'running') — swap the
-          // temp id now so the map shows the node on its lane immediately.
-          const real = toForkNode(event.node);
-          realNodeId = real.id;
-          setNodes(prev => {
-            const next = { ...prev };
-            delete next[tempId];
-            next[real.id] = { ...real, loading: true };
-            return next;
-          });
-          setActiveId(prev => (prev === tempId ? real.id : prev));
-          setAgentLogs(prev => ({ ...prev, [real.id]: [] }));
-          setLoadingNodes(prev => { const n = new Set(prev); n.delete(tempId); n.add(real.id); return n; });
-        } else if (event.type === 'agent-event') {
-          setAgentLogs(prev => ({ ...prev, [realNodeId]: [...(prev[realNodeId] ?? []), event.event] }));
-        } else if (event.type === 'commit') {
-          setNodes(prev => prev[realNodeId]
-            ? { ...prev, [realNodeId]: { ...prev[realNodeId], commitSha: event.sha, branchName: event.branchName, commitMessage: event.message, diffSummary: event.diffSummary } }
-            : prev);
-        } else if (event.type === 'done') {
-          const real = toForkNode(event.node);
-          setNodes(prev => ({ ...prev, [realNodeId]: { ...real, loading: false } }));
-          refreshCredit();
-          track('branch_created', { kind: 'CODE', model: tweaksRef.current.branchModel });
-        }
-      });
+      await createCodeNodeStream(
+        idToken,
+        sid,
+        { parentNodeId, instruction, model: tweaksRef.current.branchModel, attachments: attachments.length ? attachments : undefined },
+        (event) => {
+          if (event.type === 'branch-init') {
+            // A parallel instruction auto-forked a BRANCH node ahead of the CODE
+            // node below — drop it straight into state (it's already fully
+            // persisted, not a loading placeholder) so the map shows the fork.
+            const branch = toForkNode(event.node);
+            setNodes(prev => ({ ...prev, [branch.id]: branch }));
+          } else if (event.type === 'init') {
+            // Real node is already persisted (agentStatus 'running') — swap the
+            // temp id now so the map shows the node on its lane immediately.
+            const real = toForkNode(event.node);
+            realNodeId = real.id;
+            setNodes(prev => {
+              const next = { ...prev };
+              delete next[tempId];
+              next[real.id] = { ...real, loading: true };
+              return next;
+            });
+            setActiveId(prev => (prev === tempId ? real.id : prev));
+            setAgentLogs(prev => ({ ...prev, [real.id]: [] }));
+            setLoadingNodes(prev => { const n = new Set(prev); n.delete(tempId); n.add(real.id); return n; });
+          } else if (event.type === 'agent-event') {
+            setAgentLogs(prev => ({ ...prev, [realNodeId]: [...(prev[realNodeId] ?? []), event.event] }));
+          } else if (event.type === 'commit') {
+            setNodes(prev => prev[realNodeId]
+              ? { ...prev, [realNodeId]: { ...prev[realNodeId], commitSha: event.sha, branchName: event.branchName, commitMessage: event.message, diffSummary: event.diffSummary } }
+              : prev);
+          } else if (event.type === 'done') {
+            const real = toForkNode(event.node);
+            setNodes(prev => ({ ...prev, [realNodeId]: { ...real, loading: false } }));
+            refreshCredit();
+            track('branch_created', { kind: 'CODE', model: tweaksRef.current.branchModel });
+          }
+        },
+      );
     } catch (err) {
       const { msg, status, code } = nodeErrorDisplay(err);
       track('node_error', { kind: 'CODE', status, message: msg });
@@ -1466,8 +1672,9 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         : prev);
     } finally {
       setLoadingNodes(prev => { const n = new Set(prev); n.delete(tempId); n.delete(realNodeId); return n; });
+      setCodeSubmitLoading(false);
     }
-  }, [nodes, idToken, scrollWsTop, refreshCredit]);
+  }, [nodes, idToken, activeId, scrollWsTop, refreshCredit]);
 
   // "Ask about this commit" on a CODE node's AgentLogPane — spawns an ASK node
   // with no highlight selection, so the commit message stands in as the anchor
@@ -1640,13 +1847,13 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [activeId]);
 
-  // Escape exits mixer mode
+  // Escape exits mixer/plan select mode
   useEffect(() => {
-    if (!mixerMode) return;
+    if (!selectMode) return;
     const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') exitMixer(); };
     document.addEventListener('keydown', onEsc);
     return () => document.removeEventListener('keydown', onEsc);
-  }, [mixerMode, exitMixer]);
+  }, [selectMode, exitMixer]);
 
   // Native Cmd/Ctrl+C (and right-click → Copy) over section prose copies markdown,
   // matching the highlight-menu copy button. Only overrides selections inside a
@@ -1812,7 +2019,18 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
 
   // ── Map interactions ──────────────────────────────────────────────────────
 
-  const onMapSelect = (id: string) => { setActiveId(id); scrollWsTop(); };
+  const onMapSelect = (id: string) => {
+    if (id.startsWith('seg:')) {
+      setExpandedSegIds(prev => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id); else next.add(id);
+        return next;
+      });
+      return;
+    }
+    setActiveId(id);
+    scrollWsTop();
+  };
   const onMapContext = (id: string, x: number, y: number) => setContextMenu({ x, y, nodeId: id });
 
   const onMixerSelect = useCallback((id: string) => {
@@ -1824,7 +2042,10 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   }, []);
 
   const spawnMix = useCallback(async () => {
-    if (!activeId || !sessionId || !idToken || mixerSelectedIds.length === 0 || !mixerQuestion.trim()) return;
+    const isPlanMode = selectMode === 'plan';
+    // Plan mode may spawn from the base node alone — zero selected sources is valid.
+    if (!activeId || !sessionId || !idToken || !mixerQuestion.trim()) return;
+    if (!isPlanMode && mixerSelectedIds.length === 0) return;
 
     const trimmed = mixerQuestion.trim();
     const expanded = SHORTHANDS[trimmed] ?? trimmed;
@@ -1896,8 +2117,8 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     const optimisticNode: ForkNode = {
       id: tempId,
       parentId: activeId,
-      kind: mixerPlan ? 'PLAN' : 'MIX',
-      title: mixerPlan ? 'Planning…' : 'Synthesizing…',
+      kind: isPlanMode ? 'PLAN' : 'MIX',
+      title: isPlanMode ? 'Planning…' : 'Synthesizing…',
       emoji: null,
       query: expanded,
       lede: '',
@@ -1917,7 +2138,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         query: expanded,
         sectionCount: tweaksRef.current.maxSections,
         model: tweaksRef.current.branchModel,
-        ...(mixerPlan ? { plan: true } : {}),
+        ...(isPlanMode ? { plan: true } : {}),
       });
 
       const realNode = toForkNode(result);
@@ -1952,7 +2173,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       if (baseCardEl) baseCardEl.classList.remove('mixer-shaking');
       exitMixer();
     }
-  }, [activeId, sessionId, idToken, mixerSelectedIds, mixerQuestion, mixerPlan, nodes, exitMixer, scrollWsTop]);
+  }, [activeId, sessionId, idToken, mixerSelectedIds, mixerQuestion, selectMode, nodes, exitMixer, scrollWsTop]);
 
   const renameNodeLocal = (id: string) => {
     const name = prompt('Rename node (max 5 words)', nodes[id]?.title);
@@ -2013,10 +2234,39 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
 
   // ── Derived state ─────────────────────────────────────────────────────────
 
+  // Nodes a collapse pass must never fold into a segment's hidden interior —
+  // the active node (covers a URL-hash deep link landing mid-chain too, since
+  // collapseSegments treats a protected node's chain as un-extendable past it)
+  // and whatever's mid-selection in mixer/plan mode.
+  const segProtectedIds = useMemo(
+    () => new Set([activeId, ...mixerSelectedIds].filter((id): id is string => !!id)),
+    [activeId, mixerSelectedIds],
+  );
+  const { displayNodes } = useMemo(
+    () => collapseSegments(nodes, expandedSegIds, segProtectedIds),
+    [nodes, expandedSegIds, segProtectedIds],
+  );
+
   const active = activeId ? nodes[activeId] : null;
-  // The mixer's base node is always the current activeId (fixed for the
-  // duration of a mixer session — selecting nodes doesn't change activeId).
-  const canMixerPlan = active ? MIXER_PLAN_BASE_KINDS.has(active.kind) : false;
+  // The mixer/plan base node is always the current activeId (fixed for the
+  // duration of a select-mode session — selecting nodes doesn't change activeId).
+  const showPlan = !!idToken && canBePlanBase(active);
+  // PR needs at least two branches (distinct branchName values) to merge
+  // between — every rail node that carries one contributes, so this is a
+  // simple distinct-count rather than needing to filter by rail kind first.
+  const showPr = useMemo(() => {
+    if (!idToken) return false;
+    const branchNames = new Set(Object.values(nodes).map(n => n.branchName).filter((b): b is string => !!b));
+    return branchNames.size >= 2;
+  }, [idToken, nodes]);
+  // MERGE never spawns via the bottom composer (canSpawn(MERGE,'CODE') is true
+  // per node-grammar.ts, but the merge commit is only ever produced
+  // deterministically by mergeOpenPr — see PrPane's own Merge button).
+  const showComposer = !!active && active.kind !== 'MERGE' && canSpawn(active.kind, 'CODE');
+  // A from-scratch project's root is a BRANCH node the LLM answer streams
+  // into (D3) — once it has sections (or is mid-stream), it renders like a
+  // normal learn node instead of the empty-BRANCH AgentLogPane stub.
+  const branchHasContent = !!active && active.kind === 'BRANCH' && (active.sections.length > 0 || !!active.loading);
 
   const breadcrumbs = useMemo(() => {
     if (!activeId) return [] as ForkNode[];
@@ -2092,29 +2342,26 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   if (!rootId) {
     let inner;
     if (loadingRoot) inner = <ResearchingScreen sessions={sessions} />;
-    else if (view === 'history') inner = (
+    // History IS home now (D2) — an authed user with no active session always
+    // lands here, regardless of `view` (the dedicated Projects page is gone;
+    // a project's map session shows up as a session card like any other).
+    // `view === 'history'` alone still reaches it for a logged-out visitor who
+    // clicked History from Landing.
+    else if (view === 'history' || status === 'authenticated') inner = (
       <HistoryPage
         sessions={sessions}
         loading={loadingSessions}
-        onLoadSession={sid => { setActiveProject(null); loadSession(sid); }}
+        onLoadSession={loadSession}
         onDeleteSession={handleDeleteSession}
-        onBack={() => setView('landing')}
-      />
-    );
-    else if (status === 'authenticated') inner = (
-      <ProjectsPage
-        projects={projects}
-        loading={loadingProjects}
+        onBack={status === 'authenticated' ? undefined : () => setView('landing')}
         idToken={idToken}
-        onOpenProject={openProject}
         onCreateProject={handleCreateProject}
-        onShowHistory={() => setView('history')}
         initialModalOpen={githubJustConnected}
       />
     );
     else inner = (
       // Only reached by a logged-out new visitor (authed users with no active
-      // session are routed to ProjectsPage above) — loggedIn is always false here.
+      // session are routed to HistoryPage above) — loggedIn is always false here.
       <Landing
         onSubmit={q => { setRootQueryOutOfCredit(false); submitRootQuery(q); }}
         onSubmitDocument={(text, fileName) => { setRootQueryOutOfCredit(false); submitDocument(text, fileName); }}
@@ -2130,8 +2377,13 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
 
   // A seeded project session loads straight into the Workspace below (rootId
   // is already the imported CODE root) — intercept here, before the commit map
-  // renders, when there's no learn-kind node yet asking what to build.
-  if (activeProject && sessionId && !projectStartDismissed && !Object.values(nodes).some(n => LEARN_KINDS.has(n.kind))) {
+  // renders, when there's no learn-kind node yet asking what to build. A
+  // from-scratch project's root is a BRANCH the opening question already
+  // streams into (D3) — once it has content (or is mid-stream), skip this
+  // interstitial too, since the question was already asked in the New Project modal.
+  const rootBranch = rootId ? nodes[rootId] : null;
+  const rootIsFillingOrFilledBranch = !!rootBranch && rootBranch.kind === 'BRANCH' && (rootBranch.sections.length > 0 || !!rootBranch.loading);
+  if (activeProject && sessionId && !projectStartDismissed && !rootIsFillingOrFilledBranch && !Object.values(nodes).some(n => LEARN_KINDS.has(n.kind))) {
     return (
       <>
         {persistentBrand}
@@ -2201,7 +2453,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       <section className="mindmap-pane" ref={mapPaneRef}>
         {Object.keys(nodes).length > 0 ? (
           <MindMap
-            nodes={nodes}
+            nodes={displayNodes}
             rootId={rootId}
             activeId={activeId}
             onSelect={onMapSelect}
@@ -2209,60 +2461,83 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
             onForkBranch={forkBranch}
             loadingIds={loadingNodes}
             readIds={readIds}
-            mixerMode={mixerMode}
+            selectMode={selectMode}
             mixerBaseId={activeId}
             mixerSelectedIds={mixerSelectedIds}
             onMixerSelect={onMixerSelect}
-            onMixerToggleMode={() => mixerMode ? exitMixer() : setMixerMode(true)}
+            onMixerToggleMode={() => selectMode === 'mixer' ? exitMixer() : setSelectMode('mixer')}
+            onPlanToggleMode={() => selectMode === 'plan' ? exitMixer() : setSelectMode('plan')}
             showMixer={!!idToken}
+            showPlan={showPlan}
+            showPr={showPr}
+            onPrToggleMode={() => selectMode === 'pr' ? exitMixer() : setSelectMode('pr')}
+            prSourceId={prSourceId}
+            prTargetId={prTargetId}
+            onPrSourceSelect={id => setPrSourceId(id)}
+            onPrTargetSelect={id => setPrTargetId(id)}
             nodeRefs={nodeRefs}
           />
         ) : (
           <div className="mm-empty">Mind map will populate as you branch</div>
         )}
 
-        {/* ── Mixer overlay — floats over the mind map ─────────────────── */}
-        {mixerMode && (
-          <div className={`mixer-overlay${mixerCollapsing ? ' mixer-overlay--collapsing' : ''}`}>
-            {mixerSelectedIds.length === 0 ? (
+        {/* ── PR overlay — separate two-step flow, own overlay shell ───── */}
+        {selectMode === 'pr' && (
+          <div className="mixer-overlay mixer-overlay--pr">
+            {!prSourceId ? (
+              <p className="mixer-hint"><GitMerge size={13} className="ic" /> Select the commit to merge (source)</p>
+            ) : !prTargetId ? (
+              <p className="mixer-hint"><GitMerge size={13} className="ic" /> Click any node on the target branch</p>
+            ) : (
+              <div className="pr-confirm-row">
+                <span className="pr-confirm-text">
+                  Merge <strong>{resolveLaneBranchName(nodes, prSourceId) ?? '—'}</strong> into <strong>{resolveLaneBranchName(nodes, prTargetId) ?? '—'}</strong>?
+                </span>
+                {prConfirmError && <p className="pr-merge-error">{prConfirmError}</p>}
+                <div className="pr-confirm-actions">
+                  <button className="mm-mixer-btn" onClick={() => setPrTargetId(null)}>Back</button>
+                  <button className="mixer-spawn-btn pr-confirm-btn" disabled={prSubmitting} onClick={() => void confirmPr()}>
+                    {prSubmitting ? <span className="spinner" style={{ width: 11, height: 11 }} /> : <><GitMerge size={13} /> Confirm</>}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Mixer/Plan overlay — floats over the mind map ─────────────── */}
+        {(selectMode === 'mixer' || selectMode === 'plan') && (
+          <div className={`mixer-overlay${mixerCollapsing ? ' mixer-overlay--collapsing' : ''}${selectMode === 'plan' ? ' mixer-overlay--plan' : ''}`}>
+            {mixerSelectedIds.length === 0 && selectMode === 'mixer' ? (
               <p className="mixer-hint">
                 <Filter size={13} className="ic" /> Click nodes to select them for synthesis (up to 5)
               </p>
             ) : (
               <>
-                <div className="mixer-chips">
-                  {mixerSelectedIds.map(sid => (
-                    <span key={sid} className="mixer-chip">
-                      <span className="mixer-chip-label">{nodes[sid]?.title ?? sid}</span>
-                      <button
-                        className="mixer-chip-remove"
-                        onClick={() => setMixerSelectedIds(prev => prev.filter(x => x !== sid))}
-                        aria-label={`Remove ${nodes[sid]?.title}`}
-                      ><XIcon size={10} /></button>
-                    </span>
-                  ))}
-                </div>
-                {mixerCollapsing ? null : (
-                  <>
-                    <label className={`mixer-plan-row${canMixerPlan ? '' : ' mixer-plan-row--disabled'}`}>
-                      <input
-                        type="checkbox"
-                        checked={mixerPlan}
-                        disabled={!canMixerPlan}
-                        onChange={e => setMixerPlan(e.target.checked)}
-                      />
-                      <span>Create implementation plan</span>
-                    </label>
-                    {!canMixerPlan && (
-                      <p className="mixer-plan-hint">Plans can only be created from Query, Deep dive, Ask AI, or Synthesis nodes.</p>
-                    )}
-                  </>
+                {mixerSelectedIds.length > 0 && (
+                  <div className="mixer-chips">
+                    {mixerSelectedIds.map(sid => (
+                      <span key={sid} className="mixer-chip">
+                        <span className="mixer-chip-label">{nodes[sid]?.title ?? sid}</span>
+                        <button
+                          className="mixer-chip-remove"
+                          onClick={() => setMixerSelectedIds(prev => prev.filter(x => x !== sid))}
+                          aria-label={`Remove ${nodes[sid]?.title}`}
+                        ><XIcon size={10} /></button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {selectMode === 'plan' && mixerSelectedIds.length === 0 && !mixerCollapsing && (
+                  <p className="mixer-hint">
+                    <ClipboardList size={13} className="ic" /> Optionally click nodes to include as extra context (up to 5)
+                  </p>
                 )}
                 <div className={`mixer-question-row${mixerCollapsing ? ' mixer-question-row--hidden' : ''}`}>
                   <input
                     className="mixer-question-input"
                     type="text"
-                    placeholder="What should I synthesize?"
+                    placeholder={selectMode === 'plan' ? 'What should the plan achieve?' : 'What should I synthesize?'}
                     value={mixerQuestion}
                     onChange={e => setMixerQuestion(e.target.value)}
                     autoFocus
@@ -2280,12 +2555,12 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
                   >
                     {mixerAnimating
                       ? <span className="spinner" style={{ width: 11, height: 11 }} />
-                      : mixerPlan
+                      : selectMode === 'plan'
                         ? <><ClipboardList size={13} /> Plan &amp; Spawn</>
                         : <><Blend size={13} /> Mix &amp; Spawn</>}
                   </button>
                 </div>
-                <span className="mixer-shortcut-hint">⌘ + ⏎ to mix · Esc to cancel</span>
+                <span className="mixer-shortcut-hint">⌘ + ⏎ to {selectMode === 'plan' ? 'plan' : 'mix'} · Esc to cancel</span>
               </>
             )}
           </div>
@@ -2300,20 +2575,31 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       />
 
       <section className="workspace" ref={wsRef}>
-        <div className="workspace-inner" ref={wsInnerRef}>
-          {active && (active.kind === 'CODE' || active.kind === 'BRANCH') && sessionId && (
+        <div className={`workspace-inner${showComposer ? ' workspace-inner--composer' : ''}`} ref={wsInnerRef}>
+          {active && (active.kind === 'CODE' || (active.kind === 'BRANCH' && !branchHasContent)) && sessionId && (
             <AgentLogPane
               node={active}
               events={agentLogs[active.id]}
               project={activeProject}
               idToken={idToken}
               sessionId={sessionId}
-              onImplement={rect => setCodeInstrOpen({ rect, mode: active.kind === 'CODE' ? 'continue' : 'implement', parentNodeId: active.id })}
+              onImplement={() => composerRef.current?.focus()}
               onAskAboutCommit={q => askAboutCommit(active.id, q)}
               askLoading={askCommitLoading}
             />
           )}
-          {active && active.kind !== 'CODE' && active.kind !== 'BRANCH' && (
+          {active && active.kind === 'MERGE' && (
+            <PrPane
+              node={active}
+              sourceNode={active.mergeFromNodeId ? nodes[active.mergeFromNodeId] ?? null : null}
+              mergedCommitNode={Object.values(nodes).find(n => n.parentId === active.id && n.kind === 'CODE') ?? null}
+              merging={prMerging}
+              mergeError={prMergeError && prMergeError.nodeId === active.id ? prMergeError.message : null}
+              onMerge={() => void mergeOpenPr(active.id)}
+              onOpenCommit={id => { setActiveId(id); scrollWsTop(); }}
+            />
+          )}
+          {active && active.kind !== 'CODE' && active.kind !== 'MERGE' && (active.kind !== 'BRANCH' || branchHasContent) && (
             <>
               <div className="ws-meta">
                 <button
@@ -2323,7 +2609,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
                   onClick={() => toggleStar(active)}
                   title={active.starred ? 'Starred — click to unstar' : 'Star this node'}
                 >
-                  {/* CODE/BRANCH never reach this block — they render via AgentLogPane above. */}
+                  {/* CODE, and an empty BRANCH, never reach this block — they render via AgentLogPane above. */}
                   {active.kind === 'ASK'
                     ? <><Sparkles size={12} className="ic" /> Follow-up</>
                     : active.kind === 'DEEPER'
@@ -2332,7 +2618,9 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
                         ? <><Blend size={12} className="ic" /> Synthesis</>
                         : active.kind === 'PLAN'
                           ? <><ClipboardList size={12} className="ic" /> Plan</>
-                          : <><Search size={12} className="ic" /> Query</>}
+                          : active.kind === 'BRANCH'
+                            ? <><GitBranch size={12} className="ic" /> Branch</>
+                            : <><Search size={12} className="ic" /> Query</>}
                 </button>
                 {active.kind === 'QUERY' && (
                   <span className="pill"><Hash size={12} className="ic" /> {active.sections.length || '—'} sections</span>
@@ -2383,21 +2671,12 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
                     <Sparkles size={12} className="ic" /> Ask AI
                   </button>
                 )}
-                {/* Only PLAN reaches here (CODE/BRANCH render via AgentLogPane, which
-                    has its own Implement/Continue trigger) — canSpawn still gates it
-                    explicitly so this stays correct if that ever changes. */}
+                {/* Only PLAN and a filled/filling BRANCH root reach here (CODE and an
+                    empty BRANCH render via AgentLogPane, which has its own
+                    Implement/Continue trigger) — canSpawn still gates it explicitly
+                    so this stays correct if that ever changes. */}
                 {!active.loading && !active.error && canSpawn(active.kind, 'CODE') && (
-                  <button
-                    ref={codeBtnRef}
-                    className="pill pill-code-cta"
-                    onClick={() => {
-                      const r = codeBtnRef.current?.getBoundingClientRect();
-                      const rect = r
-                        ? { left: r.left, top: r.top, width: r.width, height: r.height, bottom: r.bottom }
-                        : { left: 0, top: 0, width: 0, height: 0, bottom: 0 };
-                      setCodeInstrOpen({ rect, mode: 'implement', parentNodeId: active.id });
-                    }}
-                  >
+                  <button className="pill pill-code-cta" onClick={() => composerRef.current?.focus()}>
                     <Code size={12} className="ic" /> Implement
                   </button>
                 )}
@@ -2475,6 +2754,13 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
             </>
           )}
         </div>
+        {showComposer && (
+          <CodeComposer
+            ref={composerRef}
+            onSubmit={(instruction, attachments) => void submitCodeNode(instruction, attachments)}
+            disabled={codeSubmitLoading}
+          />
+        )}
       </section>
 
       {isNarrow && Object.keys(nodes).length > 0 && (
@@ -2505,19 +2791,6 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
           loading={followUp.loading}
           onClose={() => setFollowUp(null)}
           onSubmit={q => askFromHighlight(q, followUp)}
-        />
-      )}
-
-      {codeInstrOpen && (
-        <CodeInstructionPopup
-          rect={codeInstrOpen.rect}
-          mode={codeInstrOpen.mode}
-          onSubmit={instruction => {
-            const parentNodeId = codeInstrOpen.parentNodeId;
-            setCodeInstrOpen(null);
-            void submitCodeNode(parentNodeId, instruction);
-          }}
-          onClose={() => setCodeInstrOpen(null)}
         />
       )}
 

@@ -1,8 +1,9 @@
 'use client';
-import { useState } from 'react';
-import { ArrowLeft, Highlighter, GitBranch, Trash } from './Icons';
+import { useEffect, useState } from 'react';
+import { ArrowLeft, Highlighter, GitBranch, Plus, Trash } from './Icons';
 import { HistoryBubbles } from './HistoryBubbles';
-import type { SessionSummary } from '@/lib/api';
+import { NewProjectModal } from './NewProjectModal';
+import type { CreateProjectPayload, SessionSummary } from '@/lib/api';
 import { stripCite } from '@/lib/utils';
 
 interface HistoryPageProps {
@@ -10,7 +11,13 @@ interface HistoryPageProps {
   loading: boolean;
   onLoadSession: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => void;
-  onBack: () => void;
+  // Present only for a logged-out visitor who reached History from Landing —
+  // History is home for an authed user, so there's nothing to go "back" to.
+  onBack?: () => void;
+  idToken: string;
+  onCreateProject: (payload: CreateProjectPayload) => Promise<void>;
+  // Auto-opens the New Project modal once, after a `?github=connected` round-trip.
+  initialModalOpen?: boolean;
 }
 
 function dayKey(iso: string): string {
@@ -32,8 +39,14 @@ function dividerLabel(dayIso: string): string {
   return d.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
-export function HistoryPage({ sessions, loading, onLoadSession, onDeleteSession, onBack }: HistoryPageProps) {
+export function HistoryPage({ sessions, loading, onLoadSession, onDeleteSession, onBack, idToken, onCreateProject, initialModalOpen }: HistoryPageProps) {
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+  const [showModal, setShowModal] = useState(false);
+  // initialModalOpen can flip true AFTER this component has already mounted
+  // (App.tsx sets it once the `?github=connected` query param is parsed) — a
+  // reactive effect, not a useState initializer, so the late arrival still opens it.
+  useEffect(() => { if (initialModalOpen) setShowModal(true); }, [initialModalOpen]);
+
   const groups: Array<{ day: string; items: SessionSummary[] }> = [];
   for (const s of sessions) {
     const day = dayKey(s.updatedAt);
@@ -48,9 +61,14 @@ export function HistoryPage({ sessions, loading, onLoadSession, onDeleteSession,
     <div className="history-page">
       <header className="history-topbar">
         <div style={{ flex: 1 }} />
-        <button className="icon-btn" onClick={onBack}>
-          <ArrowLeft size={14} /> Back
+        <button className="proj-btn-primary" onClick={() => setShowModal(true)}>
+          <Plus size={14} /> New project
         </button>
+        {onBack && (
+          <button className="icon-btn" onClick={onBack}>
+            <ArrowLeft size={14} /> Back
+          </button>
+        )}
       </header>
 
       {isEmpty ? (
@@ -132,6 +150,17 @@ export function HistoryPage({ sessions, loading, onLoadSession, onDeleteSession,
       )}
 
       {!isEmpty && <div className="landing-foot">FORK AI · V0.1 · BRANCHING RESEARCH, BY YOU</div>}
+
+      {showModal && (
+        <NewProjectModal
+          idToken={idToken}
+          onClose={() => setShowModal(false)}
+          onCreate={async payload => {
+            await onCreateProject(payload);
+            setShowModal(false);
+          }}
+        />
+      )}
     </div>
   );
 }

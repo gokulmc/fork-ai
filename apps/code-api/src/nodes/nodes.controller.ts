@@ -22,6 +22,7 @@ import { CreateNodeDto } from './dto/create-node.dto';
 import { CreateMixNodeDto } from './dto/create-mix-node.dto';
 import { CreateBranchNodeDto } from './dto/create-branch-node.dto';
 import { CreateCodeNodeDto } from './dto/create-code-node.dto';
+import { CreatePrNodeDto } from './dto/create-pr-node.dto';
 import { UpdateNodeDto } from './dto/update-node.dto';
 
 @ApiTags('nodes')
@@ -60,6 +61,29 @@ export class NodesController {
     @Body() dto: CreateBranchNodeDto,
   ) {
     return this.nodesService.createBranchNode(user.sub, sessionId, dto);
+  }
+
+  @Post('pr')
+  @ApiOperation({ summary: 'Open a PR — creates a MERGE node onto the target branch tip, no LLM call' })
+  @ApiParam({ name: 'sessionId', description: 'ULID session ID' })
+  createPr(
+    @CurrentUser() user: CognitoUser,
+    @Param('sessionId') sessionId: string,
+    @Body() dto: CreatePrNodeDto,
+  ) {
+    return this.nodesService.createPrNode(user.sub, sessionId, dto);
+  }
+
+  @Post(':nodeId/merge')
+  @ApiOperation({ summary: 'Merge an open PR — spawns the merge commit CODE node, no LLM call' })
+  @ApiParam({ name: 'sessionId', description: 'ULID session ID' })
+  @ApiParam({ name: 'nodeId', description: 'ULID node ID — the open MERGE node' })
+  mergePr(
+    @CurrentUser() user: CognitoUser,
+    @Param('sessionId') sessionId: string,
+    @Param('nodeId') nodeId: string,
+  ) {
+    return this.nodesService.mergePrNode(user.sub, sessionId, nodeId);
   }
 
   @Post('code/stream')

@@ -15,7 +15,7 @@ export function setSessionRefresher(fn: () => Promise<string | null>) { sessionR
 export interface ApiNode {
   id: string;
   parentId: string | null;
-  kind: 'QUERY' | 'DEEPER' | 'ASK' | 'MIX' | 'PLAN' | 'CODE' | 'BRANCH';
+  kind: 'QUERY' | 'DEEPER' | 'ASK' | 'MIX' | 'PLAN' | 'CODE' | 'BRANCH' | 'MERGE';
   title: string;
   emoji: string | null;
   query: string;
@@ -33,6 +33,8 @@ export interface ApiNode {
   diffSummary?: DiffSummary;
   agentStatus?: 'running' | 'done' | 'error';
   imported?: boolean;
+  mergeFromNodeId?: string;
+  prStatus?: 'open' | 'merged';
 }
 
 export interface ApiAnnotation {
@@ -65,6 +67,9 @@ export interface SessionSummary {
   updatedAt: string;
   nodeCount: number;
   highlightCount: number;
+  // Set when this session is a Project's map (see ProjectsService.create) — used
+  // to re-fetch and set activeProject when a session is opened from History.
+  projectId?: string;
 }
 
 export interface FullSession extends SessionSummary {
@@ -101,6 +106,8 @@ export function toForkNode(n: ApiNode): ForkNode {
     diffSummary: n.diffSummary,
     agentStatus: n.agentStatus,
     imported: n.imported,
+    mergeFromNodeId: n.mergeFromNodeId,
+    prStatus: n.prStatus,
   };
 }
 
@@ -247,7 +254,7 @@ export interface UsageEvent {
   usageId: string;
   costUsd: number;
   createdAt: string;
-  kind?: 'QUERY' | 'DEEPER' | 'ASK' | 'MIX' | 'PLAN' | 'CODE' | 'BRANCH';
+  kind?: 'QUERY' | 'DEEPER' | 'ASK' | 'MIX' | 'PLAN' | 'CODE' | 'BRANCH' | 'MERGE';
   inputTokens?: number;
   outputTokens?: number;
   sessionId?: string;
@@ -368,7 +375,7 @@ export type StreamEvent =
 // NodeItem (nodeId, not id) — feed it through toForkNode like createNode does.
 export type DocumentStreamEvent =
   | { type: 'init'; sessionId: string; nodeId: string }
-  | { type: 'skeleton'; nodes: Array<{ id: string; parentId: string | null; kind: 'QUERY' | 'DEEPER' | 'ASK' | 'MIX' | 'PLAN' | 'CODE' | 'BRANCH'; title: string; emoji: string | null }> }
+  | { type: 'skeleton'; nodes: Array<{ id: string; parentId: string | null; kind: 'QUERY' | 'DEEPER' | 'ASK' | 'MIX' | 'PLAN' | 'CODE' | 'BRANCH' | 'MERGE'; title: string; emoji: string | null }> }
   | { type: 'node-done'; node: ApiNode }
   | { type: 'done'; sessionId: string; nodeCount: number; title: string; emoji: string; lede: string }
   | { type: 'error'; message: string; status?: number };
@@ -550,6 +557,29 @@ export function createBranchNode(
   });
 }
 
+// ── Git-graph: open + merge a PR ────────────────────────────────────────────
+
+export function createPrNode(
+  idToken: string,
+  sessionId: string,
+  payload: { sourceNodeId: string; targetNodeId: string },
+): Promise<ApiNode> {
+  return apiFetch<ApiNode>(`/sessions/${sessionId}/nodes/pr`, idToken, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function mergePr(
+  idToken: string,
+  sessionId: string,
+  nodeId: string,
+): Promise<{ mergeNode: ApiNode; commitNode: ApiNode }> {
+  return apiFetch<{ mergeNode: ApiNode; commitNode: ApiNode }>(`/sessions/${sessionId}/nodes/${nodeId}/merge`, idToken, {
+    method: 'POST',
+  });
+}
+
 // ── Annotations ───────────────────────────────────────────────────────────────
 
 export interface CreateAnnotationPayload {
@@ -615,7 +645,7 @@ export function deleteHighlight(
 // ── Projects ──────────────────────────────────────────────────────────────
 
 export interface RepoRef {
-  provider: 'github-mock' | 'github';
+  provider: 'github-mock' | 'github' | 'new';
   owner: string;
   repo: string;
   defaultBranch: string;
@@ -636,6 +666,10 @@ export interface CreateProjectPayload {
   name: string;
   repoRef: RepoRef;
   plugins: string[];
+  // Only meaningful for repoRef.provider 'new' — seeds the project's BRANCH
+  // root; the caller streams the answer into it right after creation (see
+  // App.tsx's submitFillRoot).
+  rootQuery?: string;
 }
 
 export function listProjects(idToken: string): Promise<Project[]> {
@@ -736,9 +770,14 @@ export interface CreateCodeNodePayload {
   parentNodeId: string;
   instruction: string;
   model?: 'haiku' | 'sonnet' | 'opus' | 'gemini-pro' | 'gemini-flash' | 'gemini-flash-lite' | 'deepseek-pro' | 'deepseek-flash' | 'glm' | 'glm-air';
+  attachments?: Array<{ name: string; content: string }>;
 }
 
 export type CodeStreamEvent =
+  // Emitted only when a parallel instruction auto-forked a BRANCH node ahead
+  // of this CODE node — always arrives before `init` (see root CLAUDE.md's
+  // auto-branch note / apps/code-api nodes.service.ts createCodeNodeStreaming).
+  | { type: 'branch-init'; node: ApiNode }
   | { type: 'init'; node: ApiNode }
   | { type: 'agent-event'; event: AgentEvent }
   | { type: 'commit'; sha: string; branchName: string; message: string; diffSummary: DiffSummary }

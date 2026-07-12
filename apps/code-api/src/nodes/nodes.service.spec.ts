@@ -68,6 +68,7 @@ const parentNode = {
   query: 'Root query',
   title: 'Root Title',
   kind: 'QUERY',
+  sections: [] as Array<{ heading: string; body: string }>,
 };
 
 // getSession now returns a FullSession shape — nodes array is what createNode uses
@@ -358,12 +359,12 @@ describe('NodesService', () => {
       await expect(service.createNode(SUB, SESSION_ID, dto)).resolves.toBeDefined();
     });
 
-    it('rejects DEEPER/ASK under a BRANCH parent', async () => {
+    it('allows DEEPER/ASK under a BRANCH parent', async () => {
       mockSessions.getSession.mockResolvedValue({
         ...fullSession,
         nodes: [{ ...parentNode, kind: 'BRANCH' }],
       });
-      await expect(service.createNode(SUB, SESSION_ID, dto)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.createNode(SUB, SESSION_ID, dto)).resolves.toBeDefined();
     });
   });
 
@@ -441,6 +442,46 @@ describe('NodesService', () => {
       });
       await expect(service.createMixNode(SUB, SESSION_ID, mixDto)).resolves.toBeDefined();
     });
+
+    it('plan:false with zero sources is rejected', async () => {
+      mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [parentNode] });
+      await expect(service.createMixNode(SUB, SESSION_ID, { ...mixDto, sourceNodeIds: [] }))
+        .rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('plan:true with zero sources succeeds, using the base node itself as the sole source', async () => {
+      const base = { ...parentNode, sections: [{ id: 's1', heading: 'H', body: 'Body text' }] };
+      mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [base] });
+      const result = await service.createMixNode(SUB, SESSION_ID, { ...mixDto, sourceNodeIds: [], plan: true });
+      expect(result.kind).toBe('PLAN');
+      expect(mockLlm.mixNodes).toHaveBeenCalledWith(
+        expect.anything(),
+        [{ title: base.title, sections: [{ heading: 'H', body: 'Body text' }] }],
+        expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.anything(),
+        undefined, // persona (none set for this user) — expect.anything() does not match undefined
+        true,
+      );
+    });
+
+    it('plan:true allows a BRANCH base node that has sections', async () => {
+      const branchBase = {
+        ...parentNode, kind: 'BRANCH', branchName: 'fork/x', commitSha: 'sha1',
+        sections: [{ id: 's1', heading: 'H', body: 'B' }],
+      };
+      mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [branchBase, sourceNode] });
+      const result = await service.createMixNode(SUB, SESSION_ID, { ...mixDto, plan: true });
+      expect(result.kind).toBe('PLAN');
+    });
+
+    it('plan:true rejects a BRANCH base node with no sections', async () => {
+      const branchBase = {
+        ...parentNode, kind: 'BRANCH', branchName: 'fork/x', commitSha: 'sha1',
+        sections: [] as Array<{ heading: string; body: string }>,
+      };
+      mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [branchBase, sourceNode] });
+      await expect(service.createMixNode(SUB, SESSION_ID, { ...mixDto, plan: true }))
+        .rejects.toBeInstanceOf(BadRequestException);
+    });
   });
 
   describe('createMixNode — plan forks a branch off the main CODE chain (F1)', () => {
@@ -449,6 +490,7 @@ describe('NodesService', () => {
     const codeRoot = {
       nodeId: 'code-root', parentId: null, kind: 'CODE', branchName: 'main', commitSha: 'root-sha',
       title: 'Root', query: 'root commit', createdAt: '2026-01-01T00:00:00.000Z',
+      sections: [] as Array<{ heading: string; body: string }>,
     };
     const codeHead = {
       nodeId: 'code-head', parentId: 'code-root', kind: 'CODE', branchName: 'main', commitSha: 'head-sha',
@@ -498,6 +540,17 @@ describe('NodesService', () => {
       expect(result.commitSha).toBe('root-sha');
     });
 
+    it('plan-from-a-fresh-BRANCH-root forks from the BRANCH node\'s own commit when the lane has no CODE commits yet (Phase D lane-tip fallback)', async () => {
+      const freshBranchRoot = {
+        nodeId: 'branch-root', parentId: null, kind: 'BRANCH', branchName: 'main', commitSha: 'branch-sha',
+        title: 'branch', query: 'q', sections: [{ id: 's1', heading: 'H', body: 'B' }] as Array<{ id: string; heading: string; body: string }>,
+      };
+      mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [freshBranchRoot] });
+      const result = await service.createMixNode(SUB, SESSION_ID, { ...planMixDto, parentNodeId: 'branch-root', sourceNodeIds: [] });
+      expect(result.branchName).toBe('fork/mix-result');
+      expect(result.commitSha).toBe('branch-sha');
+    });
+
     it('omits branchName/commitSha when the session has no CODE root (legacy learn-only session)', async () => {
       mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [parentNode] });
       const result = await service.createMixNode(SUB, SESSION_ID, { ...planMixDto, parentNodeId: PARENT_NODE_ID });
@@ -507,7 +560,9 @@ describe('NodesService', () => {
 
     it('never sets branchName/commitSha on a plain MIX node (plan:false)', async () => {
       mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [codeRoot, codeHead, codeUser, learnBase] });
-      const result = await service.createMixNode(SUB, SESSION_ID, { ...planMixDto, plan: false });
+      // A non-plan mix requires at least one source (unlike plan mode) — planMixDto's
+      // empty sourceNodeIds is plan-only, so this override supplies one.
+      const result = await service.createMixNode(SUB, SESSION_ID, { ...planMixDto, plan: false, sourceNodeIds: ['code-root'] });
       expect(result.kind).toBe('MIX');
       expect(result.branchName).toBeUndefined();
       expect(result.commitSha).toBeUndefined();
@@ -558,6 +613,175 @@ describe('NodesService', () => {
     it('throws NotFoundException when parent node does not exist', async () => {
       mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [] });
       await expect(service.createBranchNode(SUB, SESSION_ID, dto)).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('createPrNode', () => {
+    const mainRoot = {
+      nodeId: 'main-root', parentId: null, kind: 'CODE', branchName: 'main', commitSha: 'root-sha',
+      title: 'Root', query: 'root', createdAt: '2026-01-01T00:00:00.000Z', sections: [] as Array<{ heading: string; body: string }>,
+    };
+    const featureBranch = {
+      nodeId: 'branch1', parentId: 'main-root', kind: 'BRANCH', branchName: 'feature/x', commitSha: 'root-sha',
+      title: 'branch', query: 'q', createdAt: '2026-01-01T00:00:01.000Z', sections: [] as Array<{ heading: string; body: string }>,
+    };
+    const featureCommit = {
+      nodeId: 'feature-commit', parentId: 'branch1', kind: 'CODE', branchName: 'feature/x', commitSha: 'feat-sha',
+      title: 'Feat', query: 'feat', createdAt: '2026-01-01T00:00:02.000Z', sections: [] as Array<{ heading: string; body: string }>,
+    };
+    const dto = { sourceNodeId: 'feature-commit', targetNodeId: 'main-root' };
+
+    beforeEach(() => {
+      mockDb.putNode.mockResolvedValue(undefined);
+      mockSessions.touchUpdatedAt.mockResolvedValue(undefined);
+      mockSessions.incrementNodeCount.mockResolvedValue(undefined);
+    });
+
+    it('creates a MERGE node parented on the target tip, with mergeFromNodeId/prStatus set', async () => {
+      mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [mainRoot, featureBranch, featureCommit] });
+      const result = await service.createPrNode(SUB, SESSION_ID, dto);
+      expect(result.kind).toBe('MERGE');
+      expect(result.parentId).toBe('main-root'); // main has no further commits — root IS the tip
+      expect(result.branchName).toBe('main');
+      expect(result.mergeFromNodeId).toBe('feature-commit');
+      expect(result.prStatus).toBe('open');
+    });
+
+    it('rejects when source and target resolve to the same branch', async () => {
+      mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [mainRoot, featureBranch, featureCommit] });
+      await expect(
+        service.createPrNode(SUB, SESSION_ID, { sourceNodeId: 'feature-commit', targetNodeId: 'branch1' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rejects a source node with no commit (e.g. a BRANCH node)', async () => {
+      mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [mainRoot, featureBranch, featureCommit] });
+      await expect(
+        service.createPrNode(SUB, SESSION_ID, { sourceNodeId: 'branch1', targetNodeId: 'main-root' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rejects opening a second PR onto a target tip that already has one open', async () => {
+      const existingOpenPr = {
+        nodeId: 'merge-existing', parentId: 'main-root', kind: 'MERGE', branchName: 'main', prStatus: 'open',
+        mergeFromNodeId: 'feature-commit', title: 'PR', query: 'PR', createdAt: '2026-01-01T00:00:03.000Z', sections: [],
+      };
+      mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [mainRoot, featureBranch, featureCommit, existingOpenPr] });
+      await expect(service.createPrNode(SUB, SESSION_ID, dto)).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('throws NotFoundException when the source node does not exist', async () => {
+      mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [mainRoot] });
+      await expect(service.createPrNode(SUB, SESSION_ID, dto)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('throws NotFoundException when the target node does not exist', async () => {
+      mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [featureBranch, featureCommit] });
+      await expect(service.createPrNode(SUB, SESSION_ID, dto)).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('mergePrNode', () => {
+    const mainRoot = {
+      nodeId: 'main-root', parentId: null, kind: 'CODE', branchName: 'main', commitSha: 'root-sha',
+      title: 'Root', query: 'root', createdAt: '2026-01-01T00:00:00.000Z', sections: [] as Array<{ heading: string; body: string }>,
+    };
+    const featureBranch = {
+      nodeId: 'branch1', parentId: 'main-root', kind: 'BRANCH', branchName: 'feature/x', commitSha: 'root-sha',
+      title: 'branch', query: 'q', createdAt: '2026-01-01T00:00:01.000Z', sections: [] as Array<{ heading: string; body: string }>,
+    };
+    const featureCommit = {
+      nodeId: 'feature-commit', parentId: 'branch1', kind: 'CODE', branchName: 'feature/x', commitSha: 'feat-sha',
+      title: 'Feat', query: 'feat', createdAt: '2026-01-01T00:00:02.000Z', sections: [] as Array<{ heading: string; body: string }>,
+    };
+    const openMerge = {
+      nodeId: 'merge1', parentId: 'main-root', kind: 'MERGE', branchName: 'main', prStatus: 'open',
+      mergeFromNodeId: 'feature-commit', title: 'PR', query: 'PR', createdAt: '2026-01-01T00:00:03.000Z',
+      sections: [] as Array<{ heading: string; body: string }>,
+    };
+
+    beforeEach(() => {
+      mockDb.putNode.mockResolvedValue(undefined);
+      mockDb.updateNode.mockResolvedValue(undefined);
+      mockSessions.touchUpdatedAt.mockResolvedValue(undefined);
+      mockSessions.incrementNodeCount.mockResolvedValue(undefined);
+    });
+
+    it('spawns a merge-commit CODE node and flips the MERGE node to merged', async () => {
+      mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [mainRoot, featureBranch, featureCommit, openMerge] });
+      const result = await service.mergePrNode(SUB, SESSION_ID, 'merge1');
+
+      expect(result.commitNode.kind).toBe('CODE');
+      expect(result.commitNode.parentId).toBe('merge1');
+      expect(result.commitNode.branchName).toBe('main');
+      expect(result.commitNode.commitMessage).toContain('feature/x');
+      expect(result.commitNode.commitMessage).toContain('main');
+      expect(result.mergeNode.prStatus).toBe('merged');
+      expect(mockDb.updateNode).toHaveBeenCalledWith(SESSION_ID, 'merge1', { prStatus: 'merged' });
+      expect(mockSessions.incrementNodeCount).toHaveBeenCalledWith(SUB, SESSION_ID, 1);
+    });
+
+    it('rejects merging a PR that is already merged', async () => {
+      const merged = { ...openMerge, prStatus: 'merged' };
+      mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [mainRoot, featureBranch, featureCommit, merged] });
+      await expect(service.mergePrNode(SUB, SESSION_ID, 'merge1')).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rejects merging a node that is not a MERGE node', async () => {
+      mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [mainRoot, featureBranch, featureCommit, openMerge] });
+      await expect(service.mergePrNode(SUB, SESSION_ID, 'main-root')).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('throws NotFoundException when the node does not exist', async () => {
+      mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [mainRoot] });
+      await expect(service.mergePrNode(SUB, SESSION_ID, 'missing')).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('walkLaneTip traverses through a merged MERGE to the new commit tip', () => {
+    // main-root --(merge1, merged)--> merge-commit; a plan based off a learn
+    // node hanging past the merge commit should fork from merge-commit's sha,
+    // not main-root's — proving findLaneChainTip (used by createMixNode's plan
+    // branch resolution) walks through a merged MERGE node.
+    const mainRoot = {
+      nodeId: 'main-root', parentId: null, kind: 'CODE', branchName: 'main', commitSha: 'root-sha',
+      title: 'Root', query: 'root', createdAt: '2026-01-01T00:00:00.000Z', sections: [] as Array<{ heading: string; body: string }>,
+    };
+    const mergedMerge = {
+      nodeId: 'merge1', parentId: 'main-root', kind: 'MERGE', branchName: 'main', prStatus: 'merged',
+      mergeFromNodeId: 'src1', title: 'PR', query: 'PR', createdAt: '2026-01-01T00:00:01.000Z',
+      sections: [] as Array<{ heading: string; body: string }>,
+    };
+    const mergeCommit = {
+      nodeId: 'merge-commit', parentId: 'merge1', kind: 'CODE', branchName: 'main', commitSha: 'merge-sha',
+      title: 'Merge', query: 'Merge', createdAt: '2026-01-01T00:00:02.000Z', sections: [] as Array<{ heading: string; body: string }>,
+    };
+    const learnBase = {
+      nodeId: 'learn-base', parentId: 'merge-commit', kind: 'ASK', title: 'Learn', query: 'q',
+      sections: [] as Array<{ heading: string; body: string }>,
+    };
+    const planMixDto = { parentNodeId: 'learn-base', sourceNodeIds: [] as string[], query: 'Build the thing', plan: true };
+
+    beforeEach(() => {
+      mockLlm.mixNodes.mockResolvedValue({ ...llmResult, title: 'Mix Result' });
+      mockDb.putNode.mockResolvedValue(undefined);
+      mockSessions.touchUpdatedAt.mockResolvedValue(undefined);
+      mockSessions.incrementNodeCount.mockResolvedValue(undefined);
+    });
+
+    it('forks from the merge-commit tip, not the pre-merge root', async () => {
+      mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [mainRoot, mergedMerge, mergeCommit, learnBase] });
+      const result = await service.createMixNode(SUB, SESSION_ID, planMixDto);
+      expect(result.branchName).toBe('fork/mix-result');
+      expect(result.commitSha).toBe('merge-sha');
+    });
+
+    it('a still-open PR (no merge commit yet) never becomes the tip — falls back to the pre-merge commit', async () => {
+      const openMerge = { ...mergedMerge, prStatus: 'open' };
+      const learnBaseOnRoot = { ...learnBase, parentId: 'main-root' };
+      mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [mainRoot, openMerge, learnBaseOnRoot] });
+      const result = await service.createMixNode(SUB, SESSION_ID, planMixDto);
+      expect(result.commitSha).toBe('root-sha');
     });
   });
 
@@ -765,6 +989,76 @@ describe('NodesService', () => {
     it('throws NotFoundException when the parent node does not exist', async () => {
       mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [] });
       await expect(service.createCodeNodeStreaming(SUB, SESSION_ID, dto, jest.fn())).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('threads attachments into the mock agent prompt context', async () => {
+      const attachments = [{ name: 'notes.md', content: '# context' }];
+      await service.createCodeNodeStreaming(SUB, SESSION_ID, { ...dto, attachments }, jest.fn());
+      const ctxArg = mockAgent.generate.mock.calls[0][0];
+      expect(ctxArg.attachments).toEqual(attachments);
+    });
+
+    it('leaves attachments undefined when none are sent', async () => {
+      await service.createCodeNodeStreaming(SUB, SESSION_ID, dto, jest.fn());
+      const ctxArg = mockAgent.generate.mock.calls[0][0];
+      expect(ctxArg.attachments).toBeUndefined();
+    });
+
+    describe('auto-branch on a parallel instruction', () => {
+      const codeParent = {
+        nodeId: 'code-1', parentId: 'plan-1', kind: 'CODE', title: 'Base commit', query: 'Base commit',
+        sections: [], commitSha: 'basecommitsha1234567890', branchName: 'main',
+      };
+      const codeDto = { parentNodeId: 'code-1', instruction: 'Add a caching layer' };
+
+      function childOf(status: 'running' | 'done' | 'error') {
+        return {
+          nodeId: 'code-2', parentId: 'code-1', kind: 'CODE', title: 'child', query: 'child',
+          sections: [], agentStatus: status, createdAt: '2026-01-01T00:00:00.000Z',
+        };
+      }
+
+      it('forks a BRANCH node and emits branch-init BEFORE init when the existing CODE child is done', async () => {
+        mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [planNode, codeParent, childOf('done')] });
+        const received: Array<{ type: string; node?: { nodeId: string; kind: string; parentId: string; commitSha: string } }> = [];
+
+        await service.createCodeNodeStreaming(SUB, SESSION_ID, codeDto, (d) => received.push(d as typeof received[number]));
+
+        expect(received[0].type).toBe('branch-init');
+        expect(received[0].node!.kind).toBe('BRANCH');
+        expect(received[0].node!.parentId).toBe('code-1');
+        expect(received[0].node!.commitSha).toBe(codeParent.commitSha);
+        expect(received[1].type).toBe('init');
+        expect(received[1].node!.parentId).toBe(received[0].node!.nodeId);
+        // Branch persisted (+1 node count) then the CODE node itself (+1 more).
+        expect(mockDb.putNode).toHaveBeenCalledWith(expect.objectContaining({ kind: 'BRANCH', parentId: 'code-1' }));
+        expect(mockSessions.incrementNodeCount).toHaveBeenCalledTimes(2);
+      });
+
+      it.each([['running'], ['error']] as const)(
+        'does NOT branch when the existing CODE child is %s — retry semantics, direct child',
+        async (status) => {
+          mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [planNode, codeParent, childOf(status)] });
+          const received: Array<{ type: string; node?: { parentId: string } }> = [];
+
+          await service.createCodeNodeStreaming(SUB, SESSION_ID, codeDto, (d) => received.push(d as typeof received[number]));
+
+          expect(received.some((e) => e.type === 'branch-init')).toBe(false);
+          expect(received[0].type).toBe('init');
+          expect(received[0].node!.parentId).toBe('code-1');
+          expect(mockSessions.incrementNodeCount).toHaveBeenCalledTimes(1);
+        },
+      );
+
+      it('does not branch when the CODE parent has no existing CODE children', async () => {
+        mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [planNode, codeParent] });
+        const received: Array<{ type: string }> = [];
+
+        await service.createCodeNodeStreaming(SUB, SESSION_ID, codeDto, (d) => received.push(d as { type: string }));
+
+        expect(received.some((e) => e.type === 'branch-init')).toBe(false);
+        expect(received[0].type).toBe('init');
+      });
     });
   });
 });

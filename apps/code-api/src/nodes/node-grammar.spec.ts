@@ -2,7 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { NodeKind } from '@/llm/llm.types';
 import { ALLOWED_CHILD_KINDS, assertKindAllowed, LEARN_KINDS } from './node-grammar';
 
-const ALL_KINDS: NodeKind[] = ['QUERY', 'DEEPER', 'ASK', 'MIX', 'PLAN', 'CODE', 'BRANCH'];
+const ALL_KINDS: NodeKind[] = ['QUERY', 'DEEPER', 'ASK', 'MIX', 'PLAN', 'CODE', 'BRANCH', 'MERGE'];
 
 describe('node-grammar', () => {
   it('LEARN_KINDS is exactly the four research kinds', () => {
@@ -38,11 +38,15 @@ describe('node-grammar', () => {
     expect(ALLOWED_CHILD_KINDS.CODE.sort()).toEqual(['ASK', 'BRANCH', 'CODE', 'DEEPER', 'QUERY']);
   });
 
-  it('BRANCH allows only CODE', () => {
-    expect(ALLOWED_CHILD_KINDS.BRANCH).toEqual(['CODE']);
+  it('BRANCH allows CODE/DEEPER/ASK', () => {
+    expect(ALLOWED_CHILD_KINDS.BRANCH.sort()).toEqual(['ASK', 'CODE', 'DEEPER']);
+  });
+
+  it('MERGE allows only CODE', () => {
+    expect(ALLOWED_CHILD_KINDS.MERGE).toEqual(['CODE']);
   });
 
   it('rejects with a message naming both kinds', () => {
-    expect(() => assertKindAllowed('BRANCH', 'DEEPER')).toThrow(/BRANCH/);
+    expect(() => assertKindAllowed('BRANCH', 'MIX')).toThrow(/BRANCH/);
   });
 });

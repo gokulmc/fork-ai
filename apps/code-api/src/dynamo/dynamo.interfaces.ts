@@ -86,7 +86,7 @@ export interface NodeItem {
   SK: string;
   nodeId: string;
   parentId?: string | null;
-  kind: 'QUERY' | 'DEEPER' | 'ASK' | 'MIX' | 'PLAN' | 'CODE' | 'BRANCH';
+  kind: 'QUERY' | 'DEEPER' | 'ASK' | 'MIX' | 'PLAN' | 'CODE' | 'BRANCH' | 'MERGE';
   title: string;
   emoji?: string | null;
   query: string;
@@ -105,6 +105,9 @@ export interface NodeItem {
   diffSummary?: DiffSummary;
   agentStatus?: 'running' | 'done' | 'error';
   imported?: boolean;
+  // MERGE node fields — second parent, render-only (ADR-0005).
+  mergeFromNodeId?: string;
+  prStatus?: 'open' | 'merged';
 }
 
 export interface AnnotationItem {
@@ -145,7 +148,7 @@ export interface HighlightItem {
 }
 
 export interface RepoRef {
-  provider: 'github-mock' | 'github';
+  provider: 'github-mock' | 'github' | 'new';
   owner: string;
   repo: string;
   defaultBranch: string;
