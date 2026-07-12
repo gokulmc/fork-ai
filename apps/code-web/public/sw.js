@@ -9,7 +9,7 @@
 //     installed PWA still launches on bad/no internet instead of a white screen.
 //   - Everything else (API calls, next-auth, RSC payloads, SSE streams) is never
 //     intercepted — straight to the network, always fresh.
-const CACHE_VERSION = 'forkai-shell-v1';
+const CACHE_VERSION = 'forkai-shell-v2';
 
 const STATIC_DEST = ['style', 'script', 'font', 'image'];
 

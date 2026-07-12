@@ -1,6 +1,6 @@
 import type { MetadataRoute } from 'next';
 
-const SITE = 'https://forkai.in';
+const SITE = 'https://code.forkai.in';
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   return [

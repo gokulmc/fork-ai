@@ -4,7 +4,7 @@ import { CookiePreferencesLink } from '@/components/CookiePreferencesLink';
 
 export const metadata: Metadata = {
   title: 'Privacy Policy',
-  description: 'How fork ai collects, uses, and protects your data.',
+  description: 'How forkai code collects, uses, and protects your data.',
 };
 
 const LAST_UPDATED = '7 June 2026';
@@ -15,8 +15,8 @@ export default function PrivacyPolicyPage() {
   return (
     <LegalShell title="Privacy Policy" updated={LAST_UPDATED}>
       <p>
-        This policy explains what information fork ai (&ldquo;we&rdquo;, &ldquo;us&rdquo;) collects when you
-        use the fork ai website and mobile apps (the &ldquo;Service&rdquo;), how we use it, and the choices
+        This policy explains what information forkai code (&ldquo;we&rdquo;, &ldquo;us&rdquo;) collects when you
+        use the forkai code website and mobile apps (the &ldquo;Service&rdquo;), how we use it, and the choices
         you have. By using the Service you agree to this policy.
       </p>
 

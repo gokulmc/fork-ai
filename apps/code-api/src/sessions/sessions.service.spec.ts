@@ -11,6 +11,7 @@ const mockDb = {
   putSessionMeta: jest.fn(),
   batchPutNodes: jest.fn(),
   getSessionMeta: jest.fn(),
+  getProject: jest.fn(),
   listSessionMeta: jest.fn(),
   updateSessionMeta: jest.fn(),
   deleteSessionMeta: jest.fn(),
@@ -80,6 +81,9 @@ describe('SessionsService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    // Default to no project — most tests don't seed one; the fill-root
+    // describe below overrides this per-test to exercise the init.md seed.
+    mockDb.getProject.mockResolvedValue(null);
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SessionsService,
@@ -364,6 +368,82 @@ describe('SessionsService', () => {
       const events: Array<{ type: string; nodeId?: string }> = [];
       await service.createRootNodeStreaming(SUB, SESSION_ID, { query: 'Q' }, (d) => events.push(d as never));
       expect(mockUsers.billUsage).toHaveBeenCalledWith(SUB, 100, 50, 'QUERY', SESSION_ID, 'branch-root-1', expect.any(String));
+    });
+  });
+
+  describe('createRootNodeStreaming — fill-root, deterministic init.md seed', () => {
+    const branchRootNode = {
+      nodeId: 'branch-root-1', parentId: null, kind: 'BRANCH', branchName: 'main', commitSha: 'abc123',
+      title: 'A billing dashboard…', query: 'A billing dashboard with Stripe.', sections: [], createdAt: NOW,
+    };
+    const seededMeta = { ...sessionMeta, title: 'My Project', emoji: '', lede: '', rootNodeId: 'branch-root-1', nodeCount: 1, projectId: 'proj-1' };
+    const projectWithPlugins = {
+      projectId: 'proj-1', name: 'My Project', sessionId: SESSION_ID,
+      repoRef: { provider: 'new', owner: 'acme', repo: 'widgets', defaultBranch: 'main', url: 'https://mock.git/acme/widgets' },
+      plugins: ['graphify', 'tdd'],
+      createdAt: NOW, updatedAt: NOW,
+    };
+
+    // Mimics streamAnswerQuery when webSearch citation-processing rewrites section
+    // bodies at `done` — used to verify the offset doesn't clobber the seed.
+    async function* fakeStreamWithCitations() {
+      yield { type: 'meta', title: 'Neural Nets', emoji: '🧠', lede: 'How neural networks work.' };
+      yield { type: 'section', heading: 'Intro', body: 'Introduction text.' };
+      yield { type: 'section', heading: 'Layers', body: 'Layer text.' };
+      yield {
+        type: 'done',
+        usage: { inputTokens: 100, outputTokens: 50 },
+        sections: [
+          { heading: 'Intro', body: 'Introduction text with [1] citation.' },
+          { heading: 'Layers', body: 'Layer text with [2] citation.' },
+        ],
+      };
+    }
+
+    beforeEach(() => {
+      mockUsers.checkCredit.mockResolvedValue(undefined);
+      mockUsers.billUsage.mockResolvedValue(undefined);
+      mockDb.getSessionMeta.mockResolvedValue(seededMeta);
+      mockDb.queryNodes.mockResolvedValue([branchRootNode]);
+      mockDb.putNode.mockResolvedValue(undefined);
+      mockDb.updateSessionMeta.mockResolvedValue(undefined);
+      mockLlm.streamAnswerQuery.mockReturnValue(fakeStream());
+    });
+
+    it('prepends an init.md section, built from the project plugins, before the LLM meta/sections', async () => {
+      mockDb.getProject.mockResolvedValue(projectWithPlugins);
+      const events: Array<{ type: string; heading?: string }> = [];
+      await service.createRootNodeStreaming(SUB, SESSION_ID, { query: 'A billing dashboard with Stripe.' }, (d) => events.push(d as never));
+
+      const firstSection = events.find((e) => e.type === 'section');
+      expect(firstSection?.heading).toBe('init.md');
+
+      const finalNode = mockDb.putNode.mock.calls[mockDb.putNode.mock.calls.length - 1][0];
+      expect(finalNode.sections[0].heading).toBe('init.md');
+      expect(finalNode.sections[0].body).toContain('Graphify');
+      expect(finalNode.sections[0].body).toContain('TDD');
+    });
+
+    it('emits no init.md section when the project has no plugins selected', async () => {
+      mockDb.getProject.mockResolvedValue({ ...projectWithPlugins, plugins: [] });
+      const events: Array<{ type: string; heading?: string }> = [];
+      await service.createRootNodeStreaming(SUB, SESSION_ID, { query: 'Q' }, (d) => events.push(d as never));
+
+      expect(events.some((e) => e.type === 'section' && e.heading === 'init.md')).toBe(false);
+      const finalNode = mockDb.putNode.mock.calls[mockDb.putNode.mock.calls.length - 1][0];
+      expect(finalNode.sections.some((s: { heading: string }) => s.heading === 'init.md')).toBe(false);
+    });
+
+    it('patches citation-processed bodies onto the LLM sections only, never the init.md seed (index offset)', async () => {
+      mockDb.getProject.mockResolvedValue(projectWithPlugins);
+      mockLlm.streamAnswerQuery.mockReturnValue(fakeStreamWithCitations());
+      await service.createRootNodeStreaming(SUB, SESSION_ID, { query: 'Q' }, jest.fn());
+
+      const finalNode = mockDb.putNode.mock.calls[mockDb.putNode.mock.calls.length - 1][0];
+      expect(finalNode.sections[0].heading).toBe('init.md');
+      expect(finalNode.sections[0].body).not.toContain('citation');
+      expect(finalNode.sections[1].body).toBe('Introduction text with [1] citation.');
+      expect(finalNode.sections[2].body).toBe('Layer text with [2] citation.');
     });
   });
 

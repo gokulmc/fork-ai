@@ -34,7 +34,7 @@ const FAQ_ITEMS = [
     a: 'Yes — a whole session pushes as a real Notion page, with a mind-map diagram at the top and every branch as a collapsible section underneath.',
   },
   {
-    q: 'Which AI models does fork ai use?',
+    q: 'Which AI models does forkai code use?',
     a: 'Claude, Gemini, DeepSeek, and GLM — you pick the model for each branch. The first question always uses a fast default.',
   },
 ];
@@ -181,7 +181,7 @@ export function Epilogue() {
 
             <div className="wp-calc-result">
               <div className="wp-calc-result-main">
-                About <strong>${money(monthly)}/month</strong> with fork ai&rsquo;s pay-as-you-go
+                About <strong>${money(monthly)}/month</strong> with forkai code&rsquo;s pay-as-you-go
                 credit, at {queriesPerMonth} questions/month on the {TIER_LABELS[tier].label.toLowerCase()} tier.
               </div>
               {savings > 0 ? (
@@ -249,7 +249,7 @@ export function Epilogue() {
 
         <div className="wp-cta-block">
           <div className="wp-cta-serif wp-reveal">It&rsquo;s 9 PM somewhere.</div>
-          <a className="wp-cta-pill" href="/">Try fork ai free</a>
+          <a className="wp-cta-pill" href="/">Try forkai code free</a>
           <div className="wp-cta-tagline">Ask once. Branch forever.</div>
           <div className="wp-cta-mono">No signup needed for a first session</div>
           {SHARE_URL && (

@@ -1,5 +1,5 @@
 import { randomBytes } from 'crypto';
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { ulid } from 'ulid';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
 import type { NodeItem, AgentRunItem } from '@/dynamo/dynamo.interfaces';
@@ -8,7 +8,7 @@ import { resolveBranchModel } from '@/llm/models';
 import { NodeKind } from '@/llm/llm.types';
 import { SessionsService } from '@/sessions/sessions.service';
 import { UsersService } from '@/users/users.service';
-import { MockAgentService, AgentRunContext } from '@/agent/mock-agent.service';
+import { AGENT_RUNNER, AgentRunner, AgentRunFinal, AgentRunContext } from '@/agent/agent-runner';
 import { AgentEvent, serializeEventsCapped } from '@/agent/agent-run.util';
 import { CreateNodeDto } from './dto/create-node.dto';
 import { CreateMixNodeDto } from './dto/create-mix-node.dto';
@@ -19,15 +19,6 @@ import { UpdateNodeDto } from './dto/update-node.dto';
 import { assertKindAllowed, LEARN_KINDS } from './node-grammar';
 import { findRailChain, planDocOf, codeSummaryOf, codeContextBlockOf } from './context';
 
-// Pacing between replayed agent events on the CODE-node stream — simulates a
-// live run instead of dumping the whole mocked transcript at once.
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-function jitterMs(): number {
-  return 100 + Math.floor(Math.random() * 500);
-}
-
 @Injectable()
 export class NodesService {
   constructor(
@@ -35,7 +26,7 @@ export class NodesService {
     private readonly llm: LlmService,
     private readonly sessions: SessionsService,
     private readonly users: UsersService,
-    private readonly mockAgent: MockAgentService,
+    @Inject(AGENT_RUNNER) private readonly agentRunner: AgentRunner,
   ) {}
 
   async createNode(sub: string, sessionId: string, dto: CreateNodeDto): Promise<NodeItem> {
@@ -631,7 +622,7 @@ export class NodesService {
       const tip = existingCodeChildren.length
         ? existingCodeChildren.reduce((a, b) => (a.createdAt > b.createdAt ? a : b))
         : null;
-      if (tip?.agentStatus === 'done') {
+      if (tip?.agentStatus === 'done' && parentNode.commitSha) {
         const existingBranchNames = new Set(
           session.nodes.filter((n) => n.branchName).map((n) => n.branchName as string),
         );
@@ -646,14 +637,14 @@ export class NodesService {
           kind: 'BRANCH',
           title: newBranchName,
           emoji: null,
-          query: `Fork from ${parentNode.commitSha!.slice(0, 7)}`,
+          query: `Fork from ${parentNode.commitSha.slice(0, 7)}`,
           lede: '',
           sections: [],
           fromSection: null,
           fromText: null,
           createdAt: branchNow,
           branchName: newBranchName,
-          commitSha: parentNode.commitSha!,
+          commitSha: parentNode.commitSha,
         };
         await this.db.putNode(autoBranchNode);
         nodeById.set(branchNodeId, autoBranchNode);
@@ -677,6 +668,8 @@ export class NodesService {
     const branchName = chain.branchNode?.branchName ?? chain.planNode?.branchName ?? project?.repoRef.defaultBranch ?? 'main';
     const baseCommitSha = parentNode.commitSha ?? null;
 
+    const nodeId = ulid();
+
     const ctx: AgentRunContext = {
       instruction: dto.instruction,
       planDoc: chain.planNode ? planDocOf(chain.planNode) : null,
@@ -690,12 +683,17 @@ export class NodesService {
       // below (Dynamoose saveUnknown:false would silently strip them anyway,
       // but the node schema doesn't declare the field at all; see root CLAUDE.md).
       attachments: dto.attachments?.map((a) => ({ name: a.name, content: a.content })),
+      runId: nodeId,
+      // Prototype-only: a local runner needs a working copy of the repo, and
+      // there's no GitHub clone/checkout wired up yet, so it's env-plumbed
+      // straight from the box running this process.
+      repo: process.env.LOCAL_AGENT_REPO_PATH
+        ? { localPath: process.env.LOCAL_AGENT_REPO_PATH }
+        : process.env.LOCAL_AGENT_REPO_URL
+          ? { cloneUrl: process.env.LOCAL_AGENT_REPO_URL }
+          : undefined,
     };
 
-    const nodeId = ulid();
-    // No real git backend exists yet (mock-first per ADR-0001) — a random SHA-1-
-    // shaped hex string stands in for the commit this run "produces".
-    const commitSha = randomBytes(20).toString('hex');
     const now = new Date().toISOString();
 
     const node: NodeItem = {
@@ -714,7 +712,6 @@ export class NodesService {
       createdAt: now,
       model,
       branchName,
-      commitSha,
       agentStatus: 'running',
     };
     const agentRun: AgentRunItem = {
@@ -732,42 +729,50 @@ export class NodesService {
     await Promise.all([this.db.putNode(node), this.db.putAgentRun(agentRun)]);
     emit({ type: 'init', node });
 
-    let result;
+    const events: AgentEvent[] = [];
+    let final: AgentRunFinal | null = null;
+    let lastPersistAt = Date.now();
+    let seq = 0;
     try {
-      result = await this.mockAgent.generate(ctx);
+      for await (const item of this.agentRunner.run(ctx)) {
+        if (item.type === 'result') { final = item.result; continue; }
+        const event: AgentEvent = { ...item.event, seq: seq++ }; // server owns seq numbering
+        events.push(event);
+        emit({ type: 'agent-event', event });
+        if (events.length % 10 === 0 || Date.now() - lastPersistAt >= 2000) {
+          await this.db.updateAgentRun(sessionId, nodeId, { events: serializeEventsCapped(events), updatedAt: new Date().toISOString() });
+          lastPersistAt = Date.now();
+        }
+      }
+      if (!final) throw new Error('Agent runner ended without a result');
     } catch (err) {
-      const message = friendlyLlmError(err as Error);
+      // persist events accumulated so far — a refresh after a mid-run failure must
+      // show the log up to the failure, not a stale snapshot
       await Promise.all([
         this.db.updateNode(sessionId, nodeId, { agentStatus: 'error' }),
-        this.db.updateAgentRun(sessionId, nodeId, { status: 'error', updatedAt: new Date().toISOString() }),
+        this.db.updateAgentRun(sessionId, nodeId, { status: 'error', events: serializeEventsCapped(events), updatedAt: new Date().toISOString() }),
       ]);
-      emit({ type: 'error', message });
+      emit({ type: 'error', message: friendlyLlmError(err as Error) });
       return;
     }
 
-    const events: AgentEvent[] = [];
-    let lastPersistAt = Date.now();
-    for (const event of result.events) {
-      await sleep(jitterMs());
-      events.push(event);
-      emit({ type: 'agent-event', event });
-      if (events.length % 10 === 0 || Date.now() - lastPersistAt >= 2000) {
-        await this.db.updateAgentRun(sessionId, nodeId, { events: serializeEventsCapped(events), updatedAt: new Date().toISOString() });
-        lastPersistAt = Date.now();
-      }
-    }
+    // No real git backend exists yet (mock-first per ADR-0001) — a random
+    // SHA-1-shaped hex string stands in for the commit this run "produces"
+    // when the runner itself doesn't supply a real one.
+    const commitSha = final.commitSha ?? randomBytes(20).toString('hex');
 
     // No extra LLM call for title/lede — a simple truncation of the commit
     // message is enough for the map card and breadcrumb.
-    const title = result.commitMessage.split(/\s+/).filter(Boolean).slice(0, 5).join(' ') || node.title;
-    const lede = result.commitMessage.length > 140 ? `${result.commitMessage.slice(0, 140)}…` : result.commitMessage;
+    const title = final.commitMessage.split(/\s+/).filter(Boolean).slice(0, 5).join(' ') || node.title;
+    const lede = final.commitMessage.length > 140 ? `${final.commitMessage.slice(0, 140)}…` : final.commitMessage;
 
     await Promise.all([
       this.db.updateNode(sessionId, nodeId, {
         title,
         lede,
-        commitMessage: result.commitMessage,
-        diffSummary: result.diffSummary,
+        commitSha,
+        commitMessage: final.commitMessage,
+        diffSummary: final.diffSummary,
         agentStatus: 'done',
       }),
       this.db.updateAgentRun(sessionId, nodeId, {
@@ -775,21 +780,30 @@ export class NodesService {
         events: serializeEventsCapped(events),
         commitSha,
         branchName,
-        commitMessage: result.commitMessage,
-        diffSummary: result.diffSummary,
+        commitMessage: final.commitMessage,
+        diffSummary: final.diffSummary,
         updatedAt: new Date().toISOString(),
       }),
     ]);
     await Promise.all([
       this.sessions.touchUpdatedAt(sub, sessionId),
       this.sessions.incrementNodeCount(sub, sessionId, 1),
-      this.users.billUsage(sub, result.inputTokens, result.outputTokens, 'CODE', sessionId, nodeId, result.model),
+      this.users.billUsage(sub, final.inputTokens, final.outputTokens, 'CODE', sessionId, nodeId, final.model),
     ]);
 
-    emit({ type: 'commit', sha: commitSha, branchName, message: result.commitMessage, diffSummary: result.diffSummary });
+    emit({ type: 'commit', sha: commitSha, branchName, message: final.commitMessage, diffSummary: final.diffSummary });
     emit({
       type: 'done',
-      node: { ...node, title, lede, commitMessage: result.commitMessage, diffSummary: result.diffSummary, agentStatus: 'done' },
+      node: {
+        ...node,
+        title,
+        lede,
+        commitMessage: final.commitMessage,
+        diffSummary: final.diffSummary,
+        agentStatus: 'done',
+        commitSha,
+        ...(final.workspace ? { workspace: final.workspace } : {}),
+      },
     });
   }
 

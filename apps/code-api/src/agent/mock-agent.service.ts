@@ -1,6 +1,7 @@
 import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import { LlmService } from '@/llm/llm.service';
 import { BRANCH_DEFAULT_MODEL } from '@/llm/models';
+import { pluginLine } from '@/projects/plugin-catalog';
 import type { DiffSummary, RepoRef } from '@/dynamo/dynamo.interfaces';
 import type { AgentEvent } from './agent-run.util';
 
@@ -17,6 +18,11 @@ export interface AgentRunContext {
   ancestorCodeSummaries: Array<{ commitMessage: string; filePaths: string[]; additions: number; deletions: number }>;
   model?: string;
   attachments?: Array<{ name: string; content: string }>;
+  // Prototype-only fields, plumbed straight from env in nodes.service.ts — the
+  // mock ignores both; a future local/cloud runner reads them to know where to
+  // work.
+  runId?: string; // the CODE nodeId — workspace naming / log correlation
+  repo?: { cloneUrl?: string; localPath?: string; authToken?: string };
 }
 
 export interface AgentRunResult {
@@ -82,7 +88,9 @@ export class MockAgentService {
           .map((c) => `- "${c.commitMessage}" (${c.filePaths.join(', ') || 'no files recorded'}, +${c.additions}/-${c.deletions})`)
           .join('\n')}`
       : '';
-    const toolsSection = ctx.plugins.length ? `\n\nEnabled tools: ${ctx.plugins.join(', ')}.` : '\n\nNo additional tools are enabled.';
+    const toolsSection = ctx.plugins.length
+      ? `\n\nEnabled project plugins:\n${ctx.plugins.map(pluginLine).map((l) => `- ${l}`).join('\n')}`
+      : '\n\nNo additional tools are enabled.';
     const attachmentsSection = ctx.attachments?.length
       ? `\n\n${ctx.attachments.map((a) => `--- Attached file: ${a.name} ---\n\`\`\`\n${a.content}\n\`\`\``).join('\n\n')}`
       : '';
@@ -101,7 +109,7 @@ Return ONLY valid JSON, no prose, no markdown fences. Shape:
   "events": [ { "kind": "text" | "tool_call" | "tool_result" | "terminal" | "file_edit", "payload": "..." } ]
 }
 
-Produce between 20 and 35 events forming a plausible transcript of the agent's work: reading relevant files, using the enabled tools where natural to the task, running the toolchain (installs, a brief FAILING test excerpt followed by a PASSING one after a fix), editing files with realistic paths for this repo, and short first-person "text" reflections. Every "payload" must be a plain string — stringify any structured content. File paths in "events" and "diffSummary.files" must be consistent with each other and with the repo. Escape double-quotes inside JSON strings.`;
+Produce between 20 and 35 events forming a plausible transcript of the agent's work: reading relevant files, following the enabled plugins where natural to the task, running the toolchain (installs, a brief FAILING test excerpt followed by a PASSING one after a fix), editing files with realistic paths for this repo, and short first-person "text" reflections. Every "payload" must be a plain string — stringify any structured content. File paths in "events" and "diffSummary.files" must be consistent with each other and with the repo. Escape double-quotes inside JSON strings.`;
   }
 
   // Mirrors LlmService.parseJson's fence-stripping + brace-extraction, then

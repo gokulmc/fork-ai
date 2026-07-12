@@ -199,7 +199,7 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
           order_id: order.orderId,
           amount: rzpAmount,
           currency: order.currency,
-          name: 'fork ai',
+          name: 'forkai code',
           description,
           theme: { color: '#0a0a0a' },
           handler: async (response: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {

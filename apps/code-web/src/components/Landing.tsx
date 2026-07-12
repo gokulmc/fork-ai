@@ -3,9 +3,10 @@ import { useRef, useState } from 'react';
 import { Search, ArrowRight, ArrowUpRight, Clock, FileText, Plus } from './Icons';
 import { CookiePreferencesLink } from './CookiePreferencesLink';
 import { extractText } from '@/lib/extractDocument';
+import { SKILL_PLUGINS, HARNESS_PLUGINS } from '@/lib/mockGithub';
 
 interface LandingProps {
-  onSubmit: (query: string) => void;
+  onSubmit: (query: string, plugins: string[]) => void;
   onSubmitDocument?: (text: string, fileName: string) => void;
   loading: boolean;
   onShowHistory: () => void;
@@ -20,6 +21,7 @@ interface LandingProps {
 
 export function Landing({ onSubmit, onSubmitDocument, loading, onShowHistory, outOfCredit, initialTopics = [], loggedIn, onLogin, onOpenNewProject }: LandingProps) {
   const [q, setQ] = useState('');
+  const [plugins, setPlugins] = useState<Set<string>>(new Set());
   const [leaving, setLeaving] = useState(false);
   const [reading, setReading] = useState(false);
   const [ocrProgress, setOcrProgress] = useState<{ msg: string; pct: number } | null>(null);
@@ -31,7 +33,15 @@ export function Landing({ onSubmit, onSubmitDocument, loading, onShowHistory, ou
   const onGo = () => {
     if (!q.trim() || loading) return;
     setLeaving(true);
-    setTimeout(() => onSubmit(q.trim()), 100);
+    setTimeout(() => onSubmit(q.trim(), [...plugins]), 100);
+  };
+
+  const togglePlugin = (id: string) => {
+    setPlugins(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
   };
 
   const processFile = async (file: File) => {
@@ -161,6 +171,37 @@ export function Landing({ onSubmit, onSubmitDocument, loading, onShowHistory, ou
               <>Begin <ArrowRight size={13} /></>
             )}
           </button>
+
+          {loggedIn && q.trim().length > 0 && !leaving && (
+            <div className="plugin-drop" role="group" aria-label="Skills and harnesses">
+              <div className="plugin-drop-head">
+                <span className="plugin-drop-title">Set up your repo</span>
+                <span className="plugin-drop-count">{plugins.size > 0 ? `${plugins.size} selected` : 'optional'}</span>
+              </div>
+              <div className="plugin-drop-cols">
+                {[{ label: 'Skills', items: SKILL_PLUGINS }, { label: 'Harnesses', items: HARNESS_PLUGINS }].map(g => (
+                  <div className="plugin-drop-col" key={g.label}>
+                    <div className="plugin-drop-kicker">{g.label}</div>
+                    {g.items.map(p => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        title={p.desc}
+                        aria-pressed={plugins.has(p.id)}
+                        className={`plugin-row${plugins.has(p.id) ? ' on' : ''}`}
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => togglePlugin(p.id)}
+                      >
+                        <span className="plugin-row-icon">{p.icon}</span>
+                        <span className="plugin-row-name">{p.name}</span>
+                        <span className="plugin-row-check" aria-hidden="true">✓</span>
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {dragOver && (

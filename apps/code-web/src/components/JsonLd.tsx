@@ -1,6 +1,6 @@
 // Server component — emits structured data for search engines (Organization +
 // WebSite + SoftwareApplication). Rendered once in the root layout.
-const SITE_URL = 'https://forkai.in';
+const SITE_URL = 'https://code.forkai.in';
 const DESCRIPTION = 'A plan-first AI coding agent workspace — learn, plan, then commit one step at a time on a live git-graph map.';
 
 const graph = {
@@ -31,19 +31,19 @@ const graph = {
     {
       '@type': 'WebSite',
       '@id': `${SITE_URL}/#website`,
-      name: 'fork ai',
+      name: 'forkai code',
       url: SITE_URL,
       description: DESCRIPTION,
       publisher: { '@id': `${SITE_URL}/#organization` },
     },
     {
       '@type': 'SoftwareApplication',
-      name: 'fork ai code',
+      name: 'forkai code',
       applicationCategory: 'DeveloperApplication',
       operatingSystem: 'Web',
       url: SITE_URL,
       description:
-        'fork ai code is a plan-first AI coding agent workspace. Learn the concepts, synthesize an implementation plan, then watch the agent commit one reviewable step at a time on a live git-graph map — fork a new approach from any commit without losing the one that already works.',
+        'forkai code is a plan-first AI coding agent workspace. Learn the concepts, synthesize an implementation plan, then watch the agent commit one reviewable step at a time on a live git-graph map — fork a new approach from any commit without losing the one that already works.',
       offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
     },
   ],

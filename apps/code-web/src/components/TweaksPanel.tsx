@@ -475,7 +475,7 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, 
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexShrink: 0 }}>
               <div style={{ fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>
-                How to use fork ai
+                How to use forkai code
               </div>
               <button onClick={() => setHowToOpen(false)} style={{ background: 'none', border: 0, cursor: 'pointer', fontSize: 14, color: 'var(--ink-3)', lineHeight: 1 }}>✕</button>
             </div>
@@ -651,7 +651,7 @@ function HowToContent() {
   return (
     <div>
       <div style={h2}>Getting Started</div>
-      <p style={p}>Type any question into the search bar and press Enter. fork ai generates a structured answer split into focused sections — each covering a different angle on your topic.</p>
+      <p style={p}>Type any question into the search bar and press Enter. forkai code generates a structured answer split into focused sections — each covering a different angle on your topic.</p>
 
       <div style={h2}>Mind Map</div>
       <p style={p}>Every question creates a node on the mind map (left panel). As you branch deeper, new nodes appear connected to their parent — giving you a live visual overview of your entire research tree. Drag to pan, scroll to zoom. The map re-fits automatically when you add branches.</p>

@@ -1219,11 +1219,11 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   // "New repo" tab uses, just skipping the modal since the query box already
   // asked the opening question. Project name follows the same ≤5-word/≤60-char
   // truncation style used elsewhere for titles (short5 + a hard char cap).
-  const submitLandingProject = useCallback(async (query: string) => {
+  const submitLandingProject = useCallback(async (query: string, plugins: string[]) => {
     const name = short5(query).slice(0, 60);
     setLoadingRoot(true);
     try {
-      await handleCreateProject({ name, repoRef: synthesizeNewRepoRef(name), plugins: [], rootQuery: query });
+      await handleCreateProject({ name, repoRef: synthesizeNewRepoRef(name), plugins, rootQuery: query });
     } catch (err) {
       console.error('Failed to create project from query', err);
       setLoadingRoot(false);
@@ -2339,7 +2339,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   const goHome = () => { setRootId(null); setNodes({}); setSessionId(null); setActiveId(null); setActiveProject(null); setView('landing'); };
   const persistentBrand = (
     <div className="app-brand" onClick={goHome} title="Go to home">
-      <span className="brand-logo" aria-hidden="true" /> fork ai
+      <span className="brand-logo" aria-hidden="true" /> forkai code
     </div>
   );
 
@@ -2380,11 +2380,11 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     );
     else inner = (
       <Landing
-        onSubmit={q => {
+        onSubmit={(q, plugins) => {
           setRootQueryOutOfCredit(false);
           // Authed: the query becomes a from-scratch project's opening question.
           // Logged-out: unchanged plain research session.
-          if (status === 'authenticated') void submitLandingProject(q);
+          if (status === 'authenticated') void submitLandingProject(q, plugins);
           else submitRootQuery(q);
         }}
         onSubmitDocument={(text, fileName) => { setRootQueryOutOfCredit(false); submitDocument(text, fileName); }}

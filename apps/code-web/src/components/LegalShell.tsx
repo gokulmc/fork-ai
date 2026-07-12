@@ -42,7 +42,7 @@ export function LegalShell({ title, updated, children }: { title: string; update
         `}</style>
 
         <main className="legal">
-          <a className="back" href="/">← fork ai</a>
+          <a className="back" href="/">← forkai code</a>
           <h1>{title}</h1>
           <p className="updated">Last updated: {updated}</p>
           {children}

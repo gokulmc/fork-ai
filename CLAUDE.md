@@ -46,7 +46,7 @@ npx nx run @fork-ai/web:dev
 
 A second product pair scaffolded alongside the original — `apps/code-api` (NestJS, port **4000**) and `apps/code-web` (Next.js, port **4001**), forked from `apps/api`/`apps/web` on the `feat/forkai-code` branch (this worktree, `/Users/gokulmc/fork ai-code`). Own DynamoDB table: `forkai-code-main` (required env, no fallback default — missing `DYNAMO_TABLE_NAME` fails boot, to prevent an accidental write to `forkai-main`). It is a stripped-down fork: no Notion export, no guest/share/trial mode, no admin dashboard, no blog, no referrals, no transactional email — see each app's own `CLAUDE.md` for specifics. Run with `npm run dev:code` (both) or `npm run dev:code-api` / `npm run dev:code-web`.
 
-**Live at `https://code.forkai.in`** (web) / `https://code-api.forkai.in` (API) — deploy branch is `code-prod` (separate from the main app's `prod` branch, since both live in this same repo). See "Deployment — forkai-code" below.
+**Live at `https://code.forkai.in`** (web) / `https://code-api.forkai.in` (API). Branch flow: **`main-code`** is the development trunk for forkai-code, **`code-prod`** is the deploy branch (separate from the main app's `main`/`prod` pair, since both products live in this same repo). See "Deployment — forkai-code" below.
 
 ---
 
@@ -366,7 +366,7 @@ A fully separate deploy pipeline from the `forkai.in` stack above — own EB app
 | API — EC2 instance role | `forkai-code-api-role` / `forkai-code-api-instance-profile` — scoped to the `forkai-code-main` table and the `forkai-code-api` ECR repo only (mirrors, doesn't share, `forkai-api-role`) |
 | API — HTTPS | Reuses the existing `forkai.in` / `*.forkai.in` ACM cert — `code-api.forkai.in` is a single-label subdomain, no separate cert/DNS-validation needed |
 | Web — Amplify app | `forkai-code-web` (AppId `d27dutiigiiwjn`), root `apps/code-web`, branch `code-prod` → PRODUCTION |
-| Deploy trigger | `git push origin code-prod` (branch off `feat/forkai-code`, not `main` — the code product hasn't merged upstream yet) |
+| Deploy trigger | `git push origin code-prod` (merge from `main-code`, the forkai-code trunk — not `main`; the code product hasn't merged upstream yet) |
 
 **Critical constraints (hard-won):**
 - **`apps/code-api/Dockerfile` and `buildspec.yml` were unedited copies of `apps/api`'s** until this was fixed — they still pointed at the `forkai-api` ECR repo/EB app/environment and built `apps/api/`'s source. Any CodeBuild project created against the old buildspec would have deployed straight into the *main app's* production environment. Always diff a forked app's deploy files against the original before wiring up a CodeBuild project — a scaffold-by-copy silently inherits the original's deploy target.

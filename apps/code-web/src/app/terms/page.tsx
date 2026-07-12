@@ -3,7 +3,7 @@ import { LegalShell } from '@/components/LegalShell';
 
 export const metadata: Metadata = {
   title: 'Terms & Conditions',
-  description: 'The terms and conditions for using fork ai.',
+  description: 'The terms and conditions for using forkai code.',
   alternates: { canonical: '/terms' },
 };
 
@@ -15,20 +15,20 @@ export default function TermsPage() {
     <LegalShell title="Terms &amp; Conditions" updated={LAST_UPDATED}>
       <h2>1. Agreement</h2>
       <p>
-        By accessing or using fork ai, you agree to be bound by these Terms and Conditions. If you
+        By accessing or using forkai code, you agree to be bound by these Terms and Conditions. If you
         disagree with any part, please do not use the service.
       </p>
 
-      <h2>2. About fork ai</h2>
+      <h2>2. About forkai code</h2>
       <p>
-        fork ai is an AI-powered branching research workspace operated by{' '}
+        forkai code is an AI-powered branching research workspace operated by{' '}
         <strong>CURIOSTEM LEARNING PRIVATE LIMITED</strong> — RSF No 34/3, Door No 155/1, Sakthi Nagar,
         Thindal, Erode – 638012, Tamil Nadu, India. GST: 33AAMCC6984A1ZM.
       </p>
 
       <h2>3. Accounts &amp; Eligibility</h2>
       <ul>
-        <li>You must be at least 13 years old to use fork ai.</li>
+        <li>You must be at least 13 years old to use forkai code.</li>
         <li>You are responsible for maintaining the security of your account credentials.</li>
         <li>One account per person. We reserve the right to terminate duplicate accounts.</li>
         <li>You agree to provide accurate information when creating your account.</li>
@@ -36,7 +36,7 @@ export default function TermsPage() {
 
       <h2>4. Credits &amp; Billing</h2>
       <ul>
-        <li>fork ai operates on a prepaid credit model. Credits are denominated in USD.</li>
+        <li>forkai code operates on a prepaid credit model. Credits are denominated in USD.</li>
         <li>
           New accounts receive a one-time complimentary signup credit. The amount is subject to change
           without notice.
@@ -62,7 +62,7 @@ export default function TermsPage() {
       <p>You agree not to:</p>
       <ul>
         <li>Reverse-engineer, scrape, or exploit the service beyond its intended purpose.</li>
-        <li>Use fork ai to generate harmful, illegal, deceptive, or abusive content.</li>
+        <li>Use forkai code to generate harmful, illegal, deceptive, or abusive content.</li>
         <li>Attempt to circumvent usage limits, billing, or authentication.</li>
         <li>Resell, sublicense, or redistribute access to the service.</li>
         <li>Use automated scripts to generate content at scale without prior written consent.</li>
@@ -86,7 +86,7 @@ export default function TermsPage() {
           limited, non-exclusive licence to process them solely to provide the service.
         </li>
         <li>
-          The fork ai platform, brand, design, and codebase are owned by CURIOSTEM LEARNING PRIVATE
+          The forkai code platform, brand, design, and codebase are owned by CURIOSTEM LEARNING PRIVATE
           LIMITED. All rights reserved.
         </li>
       </ul>
@@ -95,14 +95,14 @@ export default function TermsPage() {
       <p>
         To the maximum extent permitted by applicable law, CURIOSTEM LEARNING PRIVATE LIMITED shall not be
         liable for any indirect, incidental, special, or consequential damages arising from your use of
-        fork ai. Our total aggregate liability for any claim shall not exceed the credit balance held in
+        forkai code. Our total aggregate liability for any claim shall not exceed the credit balance held in
         your account at the time of the claim.
       </p>
 
       <h2>9. Privacy &amp; Data</h2>
       <p>
         Your research sessions are stored in AWS infrastructure (ap-south-1). Queries are processed
-        through third-party AI model providers. We do not sell your personal data. By using fork ai you
+        through third-party AI model providers. We do not sell your personal data. By using forkai code you
         consent to this processing. See our <a href="/privacy-policy">Privacy Policy</a> for details.
       </p>
 
@@ -120,7 +120,7 @@ export default function TermsPage() {
 
       <h2>12. Changes to These Terms</h2>
       <p>
-        We may update these Terms at any time. Continued use of fork ai after changes are published
+        We may update these Terms at any time. Continued use of forkai code after changes are published
         constitutes your acceptance of the revised Terms. Material changes will be communicated via email
         where practicable.
       </p>

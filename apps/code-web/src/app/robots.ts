@@ -1,6 +1,6 @@
 import type { MetadataRoute } from 'next';
 
-const SITE_URL = 'https://forkai.in';
+const SITE_URL = 'https://code.forkai.in';
 
 export default function robots(): MetadataRoute.Robots {
   return {

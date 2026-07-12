@@ -35,7 +35,7 @@ export default function NotFound() {
             textTransform: 'uppercase',
           }}
         >
-          <Link href="/" style={{ color: 'var(--ink-3)', textDecoration: 'none' }}>← fork ai</Link>
+          <Link href="/" style={{ color: 'var(--ink-3)', textDecoration: 'none' }}>← forkai code</Link>
           <span style={{ color: 'var(--ink-3)' }}>404 — page not found</span>
         </div>
         <p className="history-game-tagline">Nothing here</p>
