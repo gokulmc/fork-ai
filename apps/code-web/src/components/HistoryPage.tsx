@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { ArrowLeft, Highlighter, GitBranch, Plus, Trash } from './Icons';
+import { Highlighter, GitBranch, Plus, Trash } from './Icons';
 import { HistoryBubbles } from './HistoryBubbles';
 import { NewProjectModal } from './NewProjectModal';
 import type { CreateProjectPayload, SessionSummary } from '@/lib/api';
@@ -11,8 +11,6 @@ interface HistoryPageProps {
   loading: boolean;
   onLoadSession: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => void;
-  // Landing is home — History is a page reached from it, so this always goes back there.
-  onBack: () => void;
   idToken: string;
   onCreateProject: (payload: CreateProjectPayload) => Promise<void>;
 }
@@ -36,7 +34,7 @@ function dividerLabel(dayIso: string): string {
   return d.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
-export function HistoryPage({ sessions, loading, onLoadSession, onDeleteSession, onBack, idToken, onCreateProject }: HistoryPageProps) {
+export function HistoryPage({ sessions, loading, onLoadSession, onDeleteSession, idToken, onCreateProject }: HistoryPageProps) {
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
   const [showModal, setShowModal] = useState(false);
 
@@ -57,9 +55,6 @@ export function HistoryPage({ sessions, loading, onLoadSession, onDeleteSession,
         <button className="proj-btn-primary" onClick={() => setShowModal(true)}>
           <Plus size={14} /> New project
         </button>
-        <button className="icon-btn" onClick={onBack}>
-          <ArrowLeft size={14} /> Back
-        </button>
       </header>
 
       {isEmpty ? (
@@ -70,7 +65,7 @@ export function HistoryPage({ sessions, loading, onLoadSession, onDeleteSession,
       ) : (
         <div className="history-body">
           <div className="history-title">
-            <h2>Research history</h2>
+            <h2>Projects</h2>
             <p className="history-sub">Pick up where you left off</p>
           </div>
 

@@ -2374,7 +2374,6 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         loading={loadingSessions}
         onLoadSession={loadSession}
         onDeleteSession={handleDeleteSession}
-        onBack={() => setView('landing')}
         idToken={idToken}
         onCreateProject={handleCreateProject}
       />
