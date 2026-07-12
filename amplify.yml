@@ -21,3 +21,21 @@ applications:
         paths:
           - .npm/**/*
           - .next/cache/**/*
+  - appRoot: apps/code-web
+    frontend:
+      phases:
+        preBuild:
+          commands:
+            - cd $(pwd)/../../
+            - npm ci --prefer-offline --no-audit --no-fund --cache apps/code-web/.npm
+        build:
+          commands:
+            - npm run build
+      artifacts:
+        baseDirectory: .next
+        files:
+          - '**/*'
+      cache:
+        paths:
+          - .npm/**/*
+          - .next/cache/**/*

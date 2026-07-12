@@ -6,6 +6,11 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
+### forkai-code: buildspec.yml and Dockerfile would have deployed apps/api into forkai-api's production environment
+- **Symptom:** Discovered while wiring up production infra for `code.forkai.in`/`code-api.forkai.in` — no user-visible symptom yet, since no CodeBuild project had ever pointed at `apps/code-api/buildspec.yml`.
+- **Cause:** Both files were unedited copies from the `apps/api` scaffold. `buildspec.yml` still set `IMAGE_REPO_NAME`/`EB_APP_NAME`/`EB_ENV_NAME` to `forkai-api`/`forkai-api-prod` and built `apps/api/Dockerfile`; the Dockerfile itself still `COPY`'d and compiled `apps/api/`. Had a CodeBuild project been created pointing at this buildspec before the fix, its first build would have pushed the wrong image straight into the main app's production Elastic Beanstalk environment.
+- **Fix:** Retargeted both files to `apps/code-api`/`forkai-code-api`/`forkai-code-api-prod`, and gave the S3 artifact upload a `code-api/` key prefix (the buildspec's `IMAGE_TAG` is the git commit SHA, shared with `apps/api`'s build since both live in the same repo — an unprefixed key would let the two buildspecs clobber each other's `app-bundle.zip` on the same commit). (commit: pending)
+
 ### forkai-code: code-web landing page fetched a `/topics` endpoint that no longer exists on code-api
 - **Symptom:** Every SSR render of `apps/code-web`'s `/` route made a failing `fetch(`${API_BASE}/topics`)` call (404), silently swallowed by the existing try/catch fallback — no user-visible breakage, but a guaranteed-failing request on every page load.
 - **Cause:** `page.tsx` was still carrying `apps/web`'s research-topics fetch (`GET /topics`), an endpoint that was never implemented on `code-api` (this fork has no topic-suggestion feature) — leftover from the original scaffold-by-copy.

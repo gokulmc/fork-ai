@@ -3,11 +3,11 @@ FROM public.ecr.aws/docker/library/node:22-alpine AS builder
 WORKDIR /repo
 
 COPY package.json package-lock.json ./
-COPY apps/api/package.json apps/api/package.json
+COPY apps/code-api/package.json apps/code-api/package.json
 RUN npm ci --no-audit --no-fund
 
-COPY apps/api/ apps/api/
-WORKDIR /repo/apps/api
+COPY apps/code-api/ apps/code-api/
+WORKDIR /repo/apps/code-api
 # Compile TypeScript, then rewrite @/ aliases to relative paths so dist/ is self-contained
 RUN npx tsc -p tsconfig.build.json && npx tsc-alias -p tsconfig.build.json
 
@@ -15,10 +15,10 @@ RUN npx tsc -p tsconfig.build.json && npx tsc-alias -p tsconfig.build.json
 FROM public.ecr.aws/docker/library/node:22-alpine
 WORKDIR /app
 
-COPY apps/api/package.json ./package.json
+COPY apps/code-api/package.json ./package.json
 RUN npm install --omit=dev --no-audit --no-fund
 
-COPY --from=builder /repo/apps/api/dist ./dist
+COPY --from=builder /repo/apps/code-api/dist ./dist
 
 ENV NODE_ENV=production
 EXPOSE 8080

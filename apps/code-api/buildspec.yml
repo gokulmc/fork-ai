@@ -3,13 +3,15 @@ version: 0.2
 env:
   variables:
     AWS_DEFAULT_REGION: ap-south-1
-    IMAGE_REPO_NAME: forkai-api
-    EB_APP_NAME: forkai-api
-    EB_ENV_NAME: forkai-api-prod
+    IMAGE_REPO_NAME: forkai-code-api
+    EB_APP_NAME: forkai-code-api
+    EB_ENV_NAME: forkai-code-api-prod
     S3_BUCKET: forkai-eb-artifacts
+    # Same repo/commit SHAs as apps/api's build — prefix the S3 key so the two
+    # buildspecs' app-bundle.zip uploads never collide on IMAGE_TAG.
+    S3_PREFIX: code-api
   secrets-manager:
     ANTHROPIC_API_KEY: forkai/anthropic-api-key
-    NOTION_CLIENT_SECRET: forkai/notion-client-secret
     GEMINI_API_KEY: forkai/gemini-api-key
     DEEPSEEK_API_KEY: forkai/deepseek-api-key
     GLM_API_KEY: forkai/glm-api-key
@@ -23,7 +25,7 @@ phases:
       - IMAGE_TAG=$CODEBUILD_RESOLVED_SOURCE_VERSION
   build:
     commands:
-      - docker build -f apps/api/Dockerfile -t $ECR_REPO:$IMAGE_TAG -t $ECR_REPO:latest .
+      - docker build -f apps/code-api/Dockerfile -t $ECR_REPO:$IMAGE_TAG -t $ECR_REPO:latest .
   post_build:
     commands:
       - docker push $ECR_REPO:$IMAGE_TAG
@@ -31,13 +33,13 @@ phases:
       - printf '{"AWSEBDockerrunVersion":"1","Image":{"Name":"%s","Update":"true"},"Ports":[{"ContainerPort":8080}]}' $ECR_REPO:$IMAGE_TAG > Dockerrun.aws.json
       # Bundle Dockerrun + .platform hooks (nginx proxy timeouts) into a zip. A bare
       # Dockerrun.aws.json source bundle silently ignores .platform; a zip applies it.
-      - cp -r apps/api/.platform .platform
+      - cp -r apps/code-api/.platform .platform
       - zip -r app-bundle.zip Dockerrun.aws.json .platform
-      - aws s3 cp app-bundle.zip s3://$S3_BUCKET/$IMAGE_TAG/app-bundle.zip
+      - aws s3 cp app-bundle.zip s3://$S3_BUCKET/$S3_PREFIX/$IMAGE_TAG/app-bundle.zip
       # Create EB application version (no-op if this commit was already registered)
-      - aws elasticbeanstalk create-application-version --application-name $EB_APP_NAME --version-label $IMAGE_TAG --source-bundle S3Bucket=$S3_BUCKET,S3Key=$IMAGE_TAG/app-bundle.zip --region $AWS_DEFAULT_REGION || true
+      - aws elasticbeanstalk create-application-version --application-name $EB_APP_NAME --version-label $IMAGE_TAG --source-bundle S3Bucket=$S3_BUCKET,S3Key=$S3_PREFIX/$IMAGE_TAG/app-bundle.zip --region $AWS_DEFAULT_REGION || true
       # Deploy new version and inject secrets in one call to avoid OperationInProgress conflict
-      - aws elasticbeanstalk update-environment --application-name $EB_APP_NAME --environment-name $EB_ENV_NAME --version-label $IMAGE_TAG --region $AWS_DEFAULT_REGION --option-settings "Namespace=aws:elasticbeanstalk:application:environment,OptionName=ANTHROPIC_API_KEY,Value=$ANTHROPIC_API_KEY" "Namespace=aws:elasticbeanstalk:application:environment,OptionName=NOTION_CLIENT_SECRET,Value=$NOTION_CLIENT_SECRET" "Namespace=aws:elasticbeanstalk:application:environment,OptionName=GEMINI_API_KEY,Value=$GEMINI_API_KEY" "Namespace=aws:elasticbeanstalk:application:environment,OptionName=DEEPSEEK_API_KEY,Value=$DEEPSEEK_API_KEY" "Namespace=aws:elasticbeanstalk:application:environment,OptionName=GLM_API_KEY,Value=$GLM_API_KEY"
+      - aws elasticbeanstalk update-environment --application-name $EB_APP_NAME --environment-name $EB_ENV_NAME --version-label $IMAGE_TAG --region $AWS_DEFAULT_REGION --option-settings "Namespace=aws:elasticbeanstalk:application:environment,OptionName=ANTHROPIC_API_KEY,Value=$ANTHROPIC_API_KEY" "Namespace=aws:elasticbeanstalk:application:environment,OptionName=GEMINI_API_KEY,Value=$GEMINI_API_KEY" "Namespace=aws:elasticbeanstalk:application:environment,OptionName=DEEPSEEK_API_KEY,Value=$DEEPSEEK_API_KEY" "Namespace=aws:elasticbeanstalk:application:environment,OptionName=GLM_API_KEY,Value=$GLM_API_KEY"
 
 artifacts:
   files:
