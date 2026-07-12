@@ -46,6 +46,8 @@ npx nx run @fork-ai/web:dev
 
 A second product pair scaffolded alongside the original — `apps/code-api` (NestJS, port **4000**) and `apps/code-web` (Next.js, port **4001**), forked from `apps/api`/`apps/web` on the `feat/forkai-code` branch (this worktree, `/Users/gokulmc/fork ai-code`). Own DynamoDB table: `forkai-code-main` (required env, no fallback default — missing `DYNAMO_TABLE_NAME` fails boot, to prevent an accidental write to `forkai-main`). It is a stripped-down fork: no Notion export, no guest/share/trial mode, no admin dashboard, no blog, no referrals, no transactional email — see each app's own `CLAUDE.md` for specifics. Run with `npm run dev:code` (both) or `npm run dev:code-api` / `npm run dev:code-web`.
 
+**Live at `https://code.forkai.in`** (web) / `https://code-api.forkai.in` (API) — deploy branch is `code-prod` (separate from the main app's `prod` branch, since both live in this same repo). See "Deployment — forkai-code" below.
+
 ---
 
 ## Architecture: how the two apps connect
@@ -349,6 +351,29 @@ aws codebuild start-build --project-name forkai-api-deploy \
   1. `secret: process.env.NEXTAUTH_SECRET` — next-auth v5 reads `AUTH_SECRET` internally (in node_modules, not webpack-transformed). Pass it explicitly so the constructor receives the build-time-inlined value.
   2. `AUTH_SECRET: process.env.NEXTAUTH_SECRET` in the `next.config.ts` `env` block — belt-and-suspenders so it's also available as a real env var.
   3. `trustHost: true` — next-auth v5 validates the request host against `AUTH_URL`; without this it rejects all requests at non-localhost URLs. Required for any CDN/serverless deployment.
+
+---
+
+### Deployment — forkai-code (`code.forkai.in` / `code-api.forkai.in`)
+
+A fully separate deploy pipeline from the `forkai.in` stack above — own EB app/environment, own Amplify app, own IAM role, own deploy branch (`code-prod`, not `prod`) — so a code-api/code-web release can never touch the main app's production resources.
+
+| Resource | Value |
+|---|---|
+| API — EB app / env | `forkai-code-api` / `forkai-code-api-prod` (ap-south-1, Docker on AL2023, t3.small, Classic LB) |
+| API — ECR repo | `forkai-code-api` |
+| API — CodeBuild project | `forkai-code-api-deploy`, buildspec `apps/code-api/buildspec.yml`, webhook on push to `code-prod` |
+| API — EC2 instance role | `forkai-code-api-role` / `forkai-code-api-instance-profile` — scoped to the `forkai-code-main` table and the `forkai-code-api` ECR repo only (mirrors, doesn't share, `forkai-api-role`) |
+| API — HTTPS | Reuses the existing `forkai.in` / `*.forkai.in` ACM cert — `code-api.forkai.in` is a single-label subdomain, no separate cert/DNS-validation needed |
+| Web — Amplify app | `forkai-code-web` (AppId `d27dutiigiiwjn`), root `apps/code-web`, branch `code-prod` → PRODUCTION |
+| Deploy trigger | `git push origin code-prod` (branch off `feat/forkai-code`, not `main` — the code product hasn't merged upstream yet) |
+
+**Critical constraints (hard-won):**
+- **`apps/code-api/Dockerfile` and `buildspec.yml` were unedited copies of `apps/api`'s** until this was fixed — they still pointed at the `forkai-api` ECR repo/EB app/environment and built `apps/api/`'s source. Any CodeBuild project created against the old buildspec would have deployed straight into the *main app's* production environment. Always diff a forked app's deploy files against the original before wiring up a CodeBuild project — a scaffold-by-copy silently inherits the original's deploy target.
+- **The two buildspecs share commit SHAs** (`apps/api` and `apps/code-api` live in the same repo, so `$CODEBUILD_RESOLVED_SOURCE_VERSION` is identical for both on any given commit). `apps/code-api/buildspec.yml`'s S3 artifact upload therefore uses a `code-api/` key prefix (`s3://forkai-eb-artifacts/code-api/$IMAGE_TAG/app-bundle.zip`) — an unprefixed key would let the two buildspecs clobber each other's `app-bundle.zip` on the same commit.
+- **Root `amplify.yml` now has two `applications` entries** (`apps/web` and `apps/code-web`). With more than one entry, `AMPLIFY_MONOREPO_APP_ROOT` must be set at the **Amplify app level** (`aws amplify update-app --environment-variables AMPLIFY_MONOREPO_APP_ROOT=apps/code-web`), not just the branch level — branch-level alone produced `!!! CustomerError: Build spec does not contain any app roots` (the orchestrator needs the app root before it injects branch env vars into the build container). `forkai-web`'s single-entry app never needed this because Amplify doesn't need to disambiguate when there's only one `applications` block.
+- **Amplify rejects any env var name starting with `AWS`** (`BadRequestException: Environment variables cannot start with the reserved prefix "AWS"`) — so `AWS_REGION`/`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` can't be set as Amplify env vars at all. This turned out to be moot: per the Amplify WEB_COMPUTE IAM note above, the app's server routes are deliberately designed to never need IAM credentials (`change-password` uses the user-scoped `ChangePassword` API, not the admin one) — `AWS_REGION` just falls back to its `next.config.ts` default (`'ap-south-1'`).
+- **`GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET` are still blank** on `forkai-code-api-prod` — no GitHub OAuth App has been registered yet (that's a manual github.com/settings/developers step, no API for it). `GITHUB_REDIRECT_URI` on the EB environment is pre-set to `https://code-api.forkai.in/github/callback`, so once an OAuth App is created with that exact callback URL, only the two secret values need adding via `aws elasticbeanstalk update-environment`.
 
 ---
 
