@@ -25,6 +25,16 @@ function slugify(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'project';
 }
 
+// Synthesizes the placeholder repoRef for a from-scratch ('new' provider)
+// project — no real repo exists yet, so owner/repo/url are derived from the
+// name. Shared with App.tsx's Landing-submit-creates-project flow (authed
+// query box skips this modal entirely) so both paths produce the same repoRef
+// shape for the same name.
+export function synthesizeNewRepoRef(name: string): RepoRef {
+  const slug = slugify(name);
+  return { provider: 'new', owner: 'you', repo: slug, defaultBranch: 'main', url: `mock://new/${slug}` };
+}
+
 const MAX_ROOT_QUERY_ROWS = 6;
 
 type Tab = 'new' | 'attach';
@@ -100,7 +110,7 @@ export function NewProjectModal({ idToken, onClose, onCreate }: NewProjectModalP
         // to be a non-empty string).
         await onCreate({
           name: name.trim(),
-          repoRef: { provider: 'new', owner: 'you', repo: slug, defaultBranch: 'main', url: `mock://new/${slug}` },
+          repoRef: synthesizeNewRepoRef(name),
           plugins: [...plugins],
           rootQuery: rootQuery.trim(),
         });

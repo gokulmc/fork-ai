@@ -1,6 +1,6 @@
 'use client';
 import { useRef, useState } from 'react';
-import { Search, ArrowRight, ArrowUpRight, Clock, FileText } from './Icons';
+import { Search, ArrowRight, ArrowUpRight, Clock, FileText, Plus } from './Icons';
 import { CookiePreferencesLink } from './CookiePreferencesLink';
 import { extractText } from '@/lib/extractDocument';
 
@@ -13,9 +13,12 @@ interface LandingProps {
   initialTopics?: string[];
   loggedIn?: boolean;
   onLogin?: () => void;
+  // Authed only — opens the "attach an existing GitHub repo" modal that
+  // HistoryPage also hosts. Absent for a logged-out visitor.
+  onOpenNewProject?: () => void;
 }
 
-export function Landing({ onSubmit, onSubmitDocument, loading, onShowHistory, outOfCredit, initialTopics = [], loggedIn, onLogin }: LandingProps) {
+export function Landing({ onSubmit, onSubmitDocument, loading, onShowHistory, outOfCredit, initialTopics = [], loggedIn, onLogin, onOpenNewProject }: LandingProps) {
   const [q, setQ] = useState('');
   const [leaving, setLeaving] = useState(false);
   const [reading, setReading] = useState(false);
@@ -99,6 +102,11 @@ export function Landing({ onSubmit, onSubmitDocument, loading, onShowHistory, ou
         <button className="icon-btn" onClick={onShowHistory}>
           <Clock size={14} /> History
         </button>
+        {loggedIn && onOpenNewProject && (
+          <button className="icon-btn" onClick={onOpenNewProject}>
+            <Plus size={14} /> New project
+          </button>
+        )}
         {!loggedIn && (
           <button className="icon-btn" onClick={onLogin}>
             <ArrowUpRight size={14} /> Login

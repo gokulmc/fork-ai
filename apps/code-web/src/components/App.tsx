@@ -155,7 +155,7 @@ import { HistoryPage } from './HistoryPage';
 import { TweaksPanel } from './TweaksPanel';
 import { AccountButton } from './AccountButton';
 import { MindMapPill } from './MindMapPill';
-import { NewProjectModal } from './NewProjectModal';
+import { NewProjectModal, synthesizeNewRepoRef } from './NewProjectModal';
 import { ProjectStart } from './ProjectStart';
 import { AgentLogPane } from './AgentLogPane';
 import { PrPane } from './PrPane';
@@ -568,6 +568,14 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     if (gh === 'connected') setGithubJustConnected(true);
     else console.warn('GitHub connection failed');
   }, []);
+
+  // The New Project modal (attach an existing GitHub repo, or start a fresh
+  // one) — hosted here rather than inside Landing so the githubJustConnected
+  // round-trip above (which always lands back on Landing, the OAuth redirect
+  // target strips any ?view=history) can auto-open it without Landing needing
+  // its own idToken plumbing. HistoryPage still hosts its own separate copy.
+  const [showNewProjectModal, setShowNewProjectModal] = useState(false);
+  useEffect(() => { if (githubJustConnected) setShowNewProjectModal(true); }, [githubJustConnected]);
 
   // Project first-question gate: a seeded project session loads WITH nodes (a
   // CODE root, maybe a HEAD child) — shown when there's no learn-kind node yet.
@@ -1205,6 +1213,22 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       void submitFillRoot(project.sessionId, payload.rootQuery);
     }
   }, [idToken, openProject, submitFillRoot]);
+
+  // Landing (authed): a plain query kicks off a from-scratch project rather
+  // than a plain research session — same synthesized repoRef the NewProjectModal
+  // "New repo" tab uses, just skipping the modal since the query box already
+  // asked the opening question. Project name follows the same ≤5-word/≤60-char
+  // truncation style used elsewhere for titles (short5 + a hard char cap).
+  const submitLandingProject = useCallback(async (query: string) => {
+    const name = short5(query).slice(0, 60);
+    setLoadingRoot(true);
+    try {
+      await handleCreateProject({ name, repoRef: synthesizeNewRepoRef(name), plugins: [], rootQuery: query });
+    } catch (err) {
+      console.error('Failed to create project from query', err);
+      setLoadingRoot(false);
+    }
+  }, [handleCreateProject]);
 
   // ── Document upload: build a whole mind-map in one stream ──────────────────
   // Authed-only (Landing routes guests to login). Mirrors submitRootQuery's
@@ -2342,37 +2366,53 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   if (!rootId) {
     let inner;
     if (loadingRoot) inner = <ResearchingScreen sessions={sessions} />;
-    // History IS home now (D2) — an authed user with no active session always
-    // lands here, regardless of `view` (the dedicated Projects page is gone;
-    // a project's map session shows up as a session card like any other).
-    // `view === 'history'` alone still reaches it for a logged-out visitor who
-    // clicked History from Landing.
-    else if (view === 'history' || status === 'authenticated') inner = (
+    // Landing is home again for everyone — History is a regular page reached
+    // via Landing's own History button (or a logged-out visitor's, same as before).
+    else if (view === 'history') inner = (
       <HistoryPage
         sessions={sessions}
         loading={loadingSessions}
         onLoadSession={loadSession}
         onDeleteSession={handleDeleteSession}
-        onBack={status === 'authenticated' ? undefined : () => setView('landing')}
+        onBack={() => setView('landing')}
         idToken={idToken}
         onCreateProject={handleCreateProject}
-        initialModalOpen={githubJustConnected}
       />
     );
     else inner = (
-      // Only reached by a logged-out new visitor (authed users with no active
-      // session are routed to HistoryPage above) — loggedIn is always false here.
       <Landing
-        onSubmit={q => { setRootQueryOutOfCredit(false); submitRootQuery(q); }}
+        onSubmit={q => {
+          setRootQueryOutOfCredit(false);
+          // Authed: the query becomes a from-scratch project's opening question.
+          // Logged-out: unchanged plain research session.
+          if (status === 'authenticated') void submitLandingProject(q);
+          else submitRootQuery(q);
+        }}
         onSubmitDocument={(text, fileName) => { setRootQueryOutOfCredit(false); submitDocument(text, fileName); }}
         loading={loadingRoot}
         onShowHistory={() => setView('history')}
         outOfCredit={rootQueryOutOfCredit}
         initialTopics={initialTopics}
         onLogin={() => setForceLogin(true)}
+        loggedIn={status === 'authenticated'}
+        onOpenNewProject={status === 'authenticated' ? () => setShowNewProjectModal(true) : undefined}
       />
     );
-    return <>{persistentBrand}{inner}<AccountButton creditBalance={creditBalance} onCreditUpdated={setCreditBalance} /><TweaksPanel tweaks={tweaks} setTweak={setTweak} fontPairOptions={FONT_PAIR_OPTIONS} userEmail={authSession?.user?.email ?? ''} userName={authSession?.user?.name ?? ''} /></>;
+    return (
+      <>
+        {persistentBrand}
+        {inner}
+        {showNewProjectModal && idToken && (
+          <NewProjectModal
+            idToken={idToken}
+            onClose={() => setShowNewProjectModal(false)}
+            onCreate={async payload => { await handleCreateProject(payload); setShowNewProjectModal(false); }}
+          />
+        )}
+        <AccountButton creditBalance={creditBalance} onCreditUpdated={setCreditBalance} />
+        <TweaksPanel tweaks={tweaks} setTweak={setTweak} fontPairOptions={FONT_PAIR_OPTIONS} userEmail={authSession?.user?.email ?? ''} userName={authSession?.user?.name ?? ''} />
+      </>
+    );
   }
 
   // A seeded project session loads straight into the Workspace below (rootId

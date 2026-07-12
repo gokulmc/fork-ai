@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { ArrowLeft, Highlighter, GitBranch, Plus, Trash } from './Icons';
 import { HistoryBubbles } from './HistoryBubbles';
 import { NewProjectModal } from './NewProjectModal';
@@ -11,13 +11,10 @@ interface HistoryPageProps {
   loading: boolean;
   onLoadSession: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => void;
-  // Present only for a logged-out visitor who reached History from Landing —
-  // History is home for an authed user, so there's nothing to go "back" to.
-  onBack?: () => void;
+  // Landing is home — History is a page reached from it, so this always goes back there.
+  onBack: () => void;
   idToken: string;
   onCreateProject: (payload: CreateProjectPayload) => Promise<void>;
-  // Auto-opens the New Project modal once, after a `?github=connected` round-trip.
-  initialModalOpen?: boolean;
 }
 
 function dayKey(iso: string): string {
@@ -39,13 +36,9 @@ function dividerLabel(dayIso: string): string {
   return d.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
-export function HistoryPage({ sessions, loading, onLoadSession, onDeleteSession, onBack, idToken, onCreateProject, initialModalOpen }: HistoryPageProps) {
+export function HistoryPage({ sessions, loading, onLoadSession, onDeleteSession, onBack, idToken, onCreateProject }: HistoryPageProps) {
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
   const [showModal, setShowModal] = useState(false);
-  // initialModalOpen can flip true AFTER this component has already mounted
-  // (App.tsx sets it once the `?github=connected` query param is parsed) — a
-  // reactive effect, not a useState initializer, so the late arrival still opens it.
-  useEffect(() => { if (initialModalOpen) setShowModal(true); }, [initialModalOpen]);
 
   const groups: Array<{ day: string; items: SessionSummary[] }> = [];
   for (const s of sessions) {
@@ -64,11 +57,9 @@ export function HistoryPage({ sessions, loading, onLoadSession, onDeleteSession,
         <button className="proj-btn-primary" onClick={() => setShowModal(true)}>
           <Plus size={14} /> New project
         </button>
-        {onBack && (
-          <button className="icon-btn" onClick={onBack}>
-            <ArrowLeft size={14} /> Back
-          </button>
-        )}
+        <button className="icon-btn" onClick={onBack}>
+          <ArrowLeft size={14} /> Back
+        </button>
       </header>
 
       {isEmpty ? (
