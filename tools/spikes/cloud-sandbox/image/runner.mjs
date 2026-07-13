@@ -25,6 +25,17 @@ function redact(text) {
   return text.replace(/https:\/\/[^@/\s]+@/g, 'https://***@');
 }
 
+// Env for anything the sandbox user can reach (openvscode-server and every
+// terminal it spawns): no platform ANTHROPIC_API_KEY, no RUN_TOKEN. The key
+// arrives per-run in the POST /run body (TLS + bearer-authed), lives only in
+// this process, and is handed ONLY to the spawned claude process — a user
+// poking around their own sandbox mid-run must never be able to read the
+// shared platform key out of a child env.
+function sanitizedEnv() {
+  const { ANTHROPIC_API_KEY: _key, RUN_TOKEN: _runToken, ...rest } = process.env;
+  return rest;
+}
+
 function sseSend(res, obj) {
   res.write(`data: ${JSON.stringify(obj)}\n\n`);
 }
@@ -79,7 +90,7 @@ async function ensureVscode(res) {
   spawn(
     '/opt/openvscode/bin/openvscode-server',
     ['--host', '0.0.0.0', '--port', '3000', '--connection-token', VSCODE_TOKEN, '--default-folder', WORKDIR],
-    { stdio: 'ignore', detached: true },
+    { stdio: 'ignore', detached: true, env: sanitizedEnv() },
   ).unref();
   const up = await waitForPort(3000, 30_000);
   sseSend(res, up ? { type: 'vscode-ready' } : { type: 'warn', message: 'openvscode-server did not come up within 30s' });
@@ -176,9 +187,17 @@ async function handleRun(req, res) {
     sseSend(res, { type: 'error', message: 'invalid JSON body' });
     return res.end();
   }
-  const { repoUrl, branch, baseRef, instruction } = body;
+  const { repoUrl, branch, baseRef, instruction, anthropicApiKey } = body;
   if (!repoUrl || !branch || !instruction) {
     sseSend(res, { type: 'error', message: 'repoUrl, branch, and instruction are required' });
+    return res.end();
+  }
+  // Body key preferred (see sanitizedEnv above); the machine-env fallback keeps
+  // the original spike client (run-spike.ts, which still sets the key as
+  // machine env) working. Product clients must send it in the body.
+  const claudeKey = anthropicApiKey || process.env.ANTHROPIC_API_KEY;
+  if (!claudeKey) {
+    sseSend(res, { type: 'error', message: 'no anthropicApiKey in body and no ANTHROPIC_API_KEY in env' });
     return res.end();
   }
 
@@ -215,7 +234,7 @@ async function handleRun(req, res) {
   const child = spawn(
     'claude',
     ['-p', instruction, '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions', '--max-turns', '40'],
-    { cwd: WORKDIR, env: process.env },
+    { cwd: WORKDIR, env: { ...sanitizedEnv(), ANTHROPIC_API_KEY: claudeKey } },
   );
 
   let resultText = '';

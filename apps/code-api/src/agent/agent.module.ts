@@ -28,7 +28,27 @@ import { AGENT_RUNNER } from './agent-runner';
             keepWorkspace: process.env.LOCAL_AGENT_KEEP_WORKSPACE !== '0',
           });
         }
-        // 'cloud' runner lands in a later step; unknown values fall back to mock.
+        if (mode === 'cloud') {
+          // Allowed in production — this IS the production runner.
+          const apiToken = process.env.FLY_API_TOKEN;
+          const image = process.env.FLY_SANDBOX_IMAGE;
+          if (!apiToken) throw new Error('AGENT_RUNNER=cloud requires FLY_API_TOKEN');
+          if (!image) throw new Error('AGENT_RUNNER=cloud requires FLY_SANDBOX_IMAGE');
+          // Lazy import to mirror 'local' — not for an SDK dependency (the
+          // cloud path has none) but so the mock-only default path never loads
+          // provider code it doesn't use.
+          const { CloudAgentRunner } = await import('./cloud/cloud-agent-runner');
+          return new CloudAgentRunner({
+            apiToken,
+            orgSlug: process.env.FLY_ORG ?? 'personal',
+            image,
+            // sin, not bom: bom returned insufficient_capacity for
+            // shared-cpu-2x on 2026-07-13; sin passed the live spike.
+            region: process.env.FLY_REGION ?? 'sin',
+            anthropicApiKey: config.get<string>('anthropic.apiKey')!,
+          });
+        }
+        // Unknown values fall back to mock.
         return new MockAgentRunner(mock);
       },
     },
