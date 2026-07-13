@@ -340,7 +340,11 @@ export function HistoryBubbles({ sessions, onLoadSession }: HistoryBubblesProps)
     };
   }, [signature, bubbles]);
 
-  if (bubbles.length === 0) return null;
+  // A single lonely topic bubble (or none) dominates the page for new users
+  // without adding useful signal — only show the cluster once there's an
+  // actual grouping to browse. "Others" doesn't count as a real topic.
+  const realBubbleCount = bubbles.filter(b => b.key !== OTHER_KEY).length;
+  if (realBubbleCount < 2) return null;
   const active = bubbles.find(b => b.key === activeKey) ?? null;
 
   return (

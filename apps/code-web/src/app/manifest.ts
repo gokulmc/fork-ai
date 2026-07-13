@@ -2,8 +2,8 @@ import type { MetadataRoute } from 'next';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'fork ai',
-    short_name: 'fork ai',
+    name: 'forkai code',
+    short_name: 'forkai code',
     description: 'A branching research workspace — ask once, branch forever.',
     start_url: '/',
     display: 'standalone',

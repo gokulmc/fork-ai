@@ -356,12 +356,8 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, 
           </div>
           <div className="twk-body">
             <TweakAccordion label="Appearance" open={appearanceOpen} onToggle={() => setAppearanceOpen(o => !o)}>
-              <TweakRadio
-                label="Theme"
-                value={tweaks.theme}
-                options={[{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }]}
-                onChange={v => setTweak('theme', v as Tweaks['theme'])}
-              />
+              {/* Dark theme is disabled for now (see useTweaks.ts / ThemeScript.tsx) —
+                  the `theme` tweak key is kept for a non-breaking return later. */}
               <TweakRadio
                 label="Density"
                 value={tweaks.density}
@@ -475,7 +471,7 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, 
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexShrink: 0 }}>
               <div style={{ fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>
-                How to use fork ai
+                How to use forkai code
               </div>
               <button onClick={() => setHowToOpen(false)} style={{ background: 'none', border: 0, cursor: 'pointer', fontSize: 14, color: 'var(--ink-3)', lineHeight: 1 }}>✕</button>
             </div>
@@ -651,7 +647,7 @@ function HowToContent() {
   return (
     <div>
       <div style={h2}>Getting Started</div>
-      <p style={p}>Type any question into the search bar and press Enter. fork ai generates a structured answer split into focused sections — each covering a different angle on your topic.</p>
+      <p style={p}>Type any question into the search bar and press Enter. forkai code generates a structured answer split into focused sections — each covering a different angle on your topic.</p>
 
       <div style={h2}>Mind Map</div>
       <p style={p}>Every question creates a node on the mind map (left panel). As you branch deeper, new nodes appear connected to their parent — giving you a live visual overview of your entire research tree. Drag to pan, scroll to zoom. The map re-fits automatically when you add branches.</p>
@@ -689,7 +685,6 @@ function HowToContent() {
       <div style={h2}>Tweaks Panel</div>
       <p style={p}>Click ⚙ (bottom-right, always visible) to open the Tweaks panel. You can drag it anywhere on screen. Options:</p>
       <ul style={{ paddingLeft: 16, margin: '0 0 10px' }}>
-        <li style={li}><strong>Theme</strong> — Light or Dark</li>
         <li style={li}><strong>Density</strong> — Cozy or Compact (affects spacing and font sizes)</li>
         <li style={li}><strong>Font pairing</strong> — change the heading and body typeface</li>
         <li style={li}><strong>Max sections</strong> — 4 to 8 sections per answer</li>

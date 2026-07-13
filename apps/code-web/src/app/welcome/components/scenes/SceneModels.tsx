@@ -4,35 +4,35 @@ import { useInView } from '../useInView';
 import { useStory } from '../StoryContext';
 import { GO_DEEPER_ANSWER } from '../storyContent';
 
-// Approximate per-query cost multipliers vs. the cheapest tier, derived from
-// apps/api/src/llm/models.ts MODEL_PRICING using the same assumed token
-// profile as pricingConstants.ts. Cosmetic only — not wired to real billing.
+// Real per-branch cost multipliers vs. Claude Haiku (1×), matching
+// apps/code-web/src/components/TweaksPanel.tsx MODEL_OPTIONS exactly (which
+// mirrors apps/code-api/src/llm/models.ts MODEL_PRICING).
 const MODEL_GROUPS = [
   { group: 'Claude', options: [
     { value: 'haiku', label: 'Haiku', cost: 1, tier: 1 },
-    { value: 'sonnet', label: 'Sonnet', cost: 3, tier: 2 },
-    { value: 'opus', label: 'Opus', cost: 15, tier: 3 },
+    { value: 'sonnet', label: 'Sonnet', cost: 5, tier: 2 },
+    { value: 'opus', label: 'Opus', cost: 40, tier: 3 },
   ] },
   { group: 'Gemini', options: [
-    { value: 'gemini-flash-lite', label: 'Flash Lite', cost: 0.1, tier: 1 },
-    { value: 'gemini-flash', label: 'Flash', cost: 0.5, tier: 1 },
-    { value: 'gemini-pro', label: 'Pro', cost: 1.9, tier: 2 },
+    { value: 'gemini-flash-lite', label: 'Flash-Lite', cost: 0.04, tier: 1 },
+    { value: 'gemini-flash', label: 'Flash', cost: 0.2, tier: 1 },
+    { value: 'gemini-pro', label: 'Pro', cost: 1, tier: 2 },
   ] },
   { group: 'DeepSeek', options: [
-    { value: 'deepseek-flash', label: 'Flash', cost: 0.1, tier: 1 },
-    { value: 'deepseek-pro', label: 'Pro', cost: 0.8, tier: 1 },
+    { value: 'deepseek-flash', label: 'Flash', cost: 0.03, tier: 1 },
+    { value: 'deepseek-pro', label: 'Pro', cost: 0.3, tier: 1 },
   ] },
   { group: 'GLM', options: [
-    { value: 'glm-air', label: 'Air', cost: 0.2, tier: 1 },
-    { value: 'glm', label: '5.2', cost: 0.9, tier: 1 },
+    { value: 'glm-air', label: 'Air', cost: 0.07, tier: 1 },
+    { value: 'glm', label: '5.2', cost: 1, tier: 1 },
   ] },
 ];
 
 const ALL_OPTIONS = MODEL_GROUPS.flatMap(g => g.options.map(o => ({ ...o, group: g.group })));
 const MAX_COST = Math.max(...ALL_OPTIONS.map(o => o.cost));
-// Log-scale meter width so the 0.1x–15x range stays legible.
+// Log-scale meter width so the 0.03x–40x range stays legible.
 function meterPct(cost: number) {
-  const min = 0.1;
+  const min = 0.03;
   const logMin = Math.log10(min);
   const logMax = Math.log10(MAX_COST);
   const logV = Math.log10(Math.max(min, cost));
@@ -53,7 +53,7 @@ export function SceneModels() {
     setValue(v);
     if (!changed) {
       setChanged(true);
-      addNode({ id: 'moderating-factors', parentId: 'root', label: 'Moderating factors', kind: 'story', ring: true });
+      addNode({ id: 'moderating-factors', parentId: 'root', label: 'Sliding window, in production', kind: 'story', ring: true });
     }
   };
 
@@ -95,7 +95,7 @@ export function SceneModels() {
           </div>
 
           <div className="wp-branch-card wp-branch-card-show" data-model-tier={selected.tier}>
-            <span className="wp-branch-kicker">GO DEEPER · MODERATING FACTORS · {selected.group.toUpperCase()} {selected.label.toUpperCase()}</span>
+            <span className="wp-branch-kicker">GO DEEPER · SLIDING WINDOW · {selected.group.toUpperCase()} {selected.label.toUpperCase()}</span>
             <p className="wp-branch-body">{GO_DEEPER_ANSWER}</p>
           </div>
         </div>

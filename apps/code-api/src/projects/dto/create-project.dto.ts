@@ -1,11 +1,11 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { ArrayMaxSize, IsArray, IsIn, IsOptional, IsString, MaxLength, MinLength, ValidateNested } from 'class-validator';
+import { ALLOWED_PLUGINS } from '../plugin-catalog';
 
-// Plugin ids a Project may enable. Kept as a plain array (not an enum) so it's
-// easy to reuse both as the class-validator allowlist and the Swagger enum.
-export const ALLOWED_PLUGINS = ['mem-palace', 'graphify', 'playwright-testing'] as const;
-export type PluginName = (typeof ALLOWED_PLUGINS)[number];
+// Re-exported so existing importers of the allowlist from this DTO module keep
+// working — the catalog (id/name/icon/instruction) now lives in plugin-catalog.ts.
+export { ALLOWED_PLUGINS };
 
 class RepoRefDto {
   @ApiProperty({ enum: ['github-mock', 'github', 'new'], description: 'Repo provider — github-mock is a synthesized fixture, github is a real linked repo, new is a from-scratch project with no repo yet' })

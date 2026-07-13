@@ -71,7 +71,7 @@ gtag('config', '${GA_ID}');`}
           }}
         >
           <span style={{ flex: 1, minWidth: 220, color: 'var(--ink-2)' }}>
-            We use privacy-friendly analytics to improve fork ai. No tracking until you accept.{' '}
+            We use privacy-friendly analytics to improve forkai code. No tracking until you accept.{' '}
             <a href="/privacy-policy" style={{ color: 'var(--ink)', textDecoration: 'underline' }}>
               Learn more
             </a>

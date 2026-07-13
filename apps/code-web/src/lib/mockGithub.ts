@@ -60,24 +60,36 @@ export const MOCK_REPOS: MockRepo[] = [
 export interface Plugin {
   id: string;
   name: string;
+  icon: string;
   desc: string;
+  category: 'skill' | 'harness';
 }
 
-// Ids must match ALLOWED_PLUGINS in apps/code-api/src/projects/dto/create-project.dto.ts.
+// Ids must match the catalog in apps/code-api/src/projects/plugin-catalog.ts.
 export const PLUGINS: Plugin[] = [
-  {
-    id: 'mem-palace',
-    name: 'Mem Palace',
-    desc: "Mine this project's history into a searchable memory palace as code nodes land.",
-  },
-  {
-    id: 'graphify',
-    name: 'Graphify',
-    desc: 'Build a structural AST index of the repo before the agent starts searching.',
-  },
-  {
-    id: 'playwright-testing',
-    name: 'Playwright testing',
-    desc: 'Run a headless browser check after each code node that touches the frontend.',
-  },
+  { id: 'caveman', name: 'Caveman', icon: '🗿', category: 'skill', desc: 'Ultra-terse output mode — cuts filler, keeps technical substance' },
+  { id: 'graphify', name: 'Graphify', icon: '🕸️', category: 'skill', desc: 'Structural AST index of the repo — classes, functions, call graph' },
+  { id: 'mem-palace', name: 'Mem Palace', icon: '🏛️', category: 'skill', desc: 'Mines project history into a searchable memory palace' },
+  { id: 'karpathy-guidelines', name: 'Karpathy Guidelines', icon: '📏', category: 'skill', desc: 'Guardrails against common LLM coding mistakes' },
+  { id: 'handoff', name: 'Handoff', icon: '🤝', category: 'skill', desc: 'Compacts session state into a handoff document' },
+  { id: 'zoom-out', name: 'Zoom Out', icon: '🔭', category: 'skill', desc: 'Periodic architecture-level reassessment' },
+  { id: 'status', name: 'Status', icon: '📊', category: 'skill', desc: 'Running progress ledger any agent can resume from' },
+  { id: 'adr', name: 'ADR', icon: '📜', category: 'skill', desc: 'Short architecture decision records before implementing' },
+  { id: 'issue-log', name: 'Issue Log', icon: '🐛', category: 'skill', desc: 'Symptom/Cause/Fix log for every bug fix' },
+  { id: 'tdd', name: 'TDD', icon: '🔴', category: 'harness', desc: 'Red-green-refactor loop for every feature and fix' },
+  { id: 'diagnose', name: 'Diagnose', icon: '🩺', category: 'harness', desc: 'Disciplined debugging loop for hard bugs' },
+  { id: 'grill-me', name: 'Grill Me', icon: '🔥', category: 'harness', desc: 'Adversarial plan interrogation before building' },
+  { id: 'prototype', name: 'Prototype', icon: '🧪', category: 'harness', desc: 'Throwaway prototypes to de-risk designs' },
+  { id: 'playwright-testing', name: 'Playwright Testing', icon: '🎭', category: 'harness', desc: 'Headless browser checks after frontend changes' },
+  { id: 'ship', name: 'Ship', icon: '🚀', category: 'harness', desc: 'Commit → push → PR → merge in one pass' },
+  { id: 'deep-research', name: 'Deep Research', icon: '📚', category: 'harness', desc: 'Multi-source research with adversarial verification' },
+  { id: 'code-review', name: 'Code Review', icon: '🔎', category: 'harness', desc: 'Self-review pass on every diff' },
+  { id: 'verify', name: 'Verify', icon: '✅', category: 'harness', desc: 'End-to-end check of the changed flow before calling it done' },
+  { id: 'cascade', name: 'Cascade', icon: '♻️', category: 'harness', desc: 'Recovery discipline — revert after two failed fixes' },
+  { id: 'security-review', name: 'Security Review', icon: '🛡️', category: 'harness', desc: 'Security pass on auth, input, and secret changes' },
+  { id: 'simplify', name: 'Simplify', icon: '📝', category: 'harness', desc: 'Reuse and simplification sweep after features land' },
+  { id: 'benchmark', name: 'Benchmark', icon: '⏱️', category: 'harness', desc: 'Measure before/after for performance changes' },
 ];
+
+export const SKILL_PLUGINS = PLUGINS.filter(p => p.category === 'skill');
+export const HARNESS_PLUGINS = PLUGINS.filter(p => p.category === 'harness');

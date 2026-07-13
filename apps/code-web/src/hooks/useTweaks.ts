@@ -8,7 +8,11 @@ function loadFromStorage(defaults: Tweaks): Tweaks {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaults;
-    return { ...defaults, ...JSON.parse(raw) };
+    const merged: Tweaks = { ...defaults, ...JSON.parse(raw) };
+    // Dark is disabled until the full dark theme ships — a previously stored
+    // 'dark' preference is intentionally ignored here, not migrated away.
+    if (merged.theme === 'dark') merged.theme = 'light';
+    return merged;
   } catch {
     return defaults;
   }

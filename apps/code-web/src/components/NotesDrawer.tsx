@@ -21,7 +21,7 @@ export function NotesDrawer({ open, onClose, highlights, callouts, onJump, onRem
   return (
     <>
       <div className={`drawer-scrim${open ? ' open' : ''}`} onClick={onClose} />
-      <aside className={`drawer${open ? ' open' : ''}`} aria-hidden={!open}>
+      <aside className={`drawer${open ? ' open' : ''}`} aria-hidden={!open} inert={!open}>
         <div className="drawer-head">
           <h3><Bookmark className="ic" /> Highlights &amp; Callouts</h3>
           <button className="icon-btn" onClick={onClose} aria-label="Close">

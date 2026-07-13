@@ -1,10 +1,11 @@
 'use client';
 import { useState } from 'react';
-import { Highlighter, GitBranch, Plus, Trash } from './Icons';
+import { Highlighter, GitBranch, Plus, Trash, Check, X } from './Icons';
 import { HistoryBubbles } from './HistoryBubbles';
 import { NewProjectModal } from './NewProjectModal';
 import type { CreateProjectPayload, SessionSummary } from '@/lib/api';
 import { stripCite } from '@/lib/utils';
+import { BRAND_TAGLINE } from '@/lib/brand';
 
 interface HistoryPageProps {
   sessions: SessionSummary[];
@@ -18,6 +19,18 @@ interface HistoryPageProps {
 function dayKey(iso: string): string {
   const d = new Date(iso);
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).toISOString();
+}
+
+function relativeTime(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diffMs / 60_000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
 function dividerLabel(dayIso: string): string {
@@ -37,6 +50,9 @@ function dividerLabel(dayIso: string): string {
 export function HistoryPage({ sessions, loading, onLoadSession, onDeleteSession, idToken, onCreateProject }: HistoryPageProps) {
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
   const [showModal, setShowModal] = useState(false);
+  // Arms a card for delete confirmation; reset on rerender (e.g. list refresh) is fine
+  // since it's a transient UI state, not something that needs to survive a re-fetch.
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
   const groups: Array<{ day: string; items: SessionSummary[] }> = [];
   for (const s of sessions) {
@@ -60,7 +76,7 @@ export function HistoryPage({ sessions, loading, onLoadSession, onDeleteSession,
       {isEmpty ? (
         <div className="history-game-wrapper">
           <p className="history-game-tagline">Nothing here yet</p>
-          <p className="history-game-sub">FORK AI · V0.1 · BRANCHING RESEARCH, BY YOU</p>
+          <p className="history-game-sub">{BRAND_TAGLINE}</p>
         </div>
       ) : (
         <div className="history-body">
@@ -95,21 +111,64 @@ export function HistoryPage({ sessions, loading, onLoadSession, onDeleteSession,
                           onClick={() => onLoadSession(s.sessionId)}
                           onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') onLoadSession(s.sessionId); }}
                         >
-                          <button
-                            className="session-card-delete"
-                            aria-label="Delete session"
-                            title="Delete session"
-                            disabled={isDeleting}
-                            onClick={e => {
-                              e.stopPropagation();
-                              setDeletingIds(prev => new Set(prev).add(s.sessionId));
-                              onDeleteSession(s.sessionId);
-                            }}
-                          >
-                            {isDeleting
-                              ? <span className="spinner" style={{ width: 12, height: 12 }} />
-                              : <Trash size={13} />}
-                          </button>
+                          {confirmingId === s.sessionId ? (
+                            <div
+                              className="session-card-confirm"
+                              // Disarm when focus leaves the whole confirm group (click elsewhere,
+                              // tab away) — relatedTarget is null for a mouse click outside any
+                              // focusable element, which also correctly disarms.
+                              onBlur={e => {
+                                if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                                  setConfirmingId(null);
+                                }
+                              }}
+                              onKeyDown={e => {
+                                if (e.key === 'Escape') { e.stopPropagation(); setConfirmingId(null); }
+                              }}
+                            >
+                              <span className="session-card-confirm-label">Delete?</span>
+                              <button
+                                className="session-card-confirm-btn session-card-confirm-yes"
+                                aria-label="Confirm delete"
+                                title="Confirm delete"
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  setConfirmingId(null);
+                                  setDeletingIds(prev => new Set(prev).add(s.sessionId));
+                                  onDeleteSession(s.sessionId);
+                                }}
+                              >
+                                <Check size={13} />
+                              </button>
+                              <button
+                                className="session-card-confirm-btn session-card-confirm-no"
+                                aria-label="Cancel delete"
+                                title="Cancel"
+                                // Autofocus the safe (cancel) action: gives the group focus so the
+                                // onBlur-outside-click handler above can fire, and means a stray
+                                // Enter keypress cancels rather than deletes.
+                                autoFocus
+                                onClick={e => { e.stopPropagation(); setConfirmingId(null); }}
+                              >
+                                <X size={13} />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              className="session-card-delete"
+                              aria-label="Delete session"
+                              title="Delete session"
+                              disabled={isDeleting}
+                              onClick={e => {
+                                e.stopPropagation();
+                                setConfirmingId(s.sessionId);
+                              }}
+                            >
+                              {isDeleting
+                                ? <span className="spinner" style={{ width: 12, height: 12 }} />
+                                : <Trash size={13} />}
+                            </button>
+                          )}
                           <span className="session-card-emoji">{s.emoji}</span>
                           <div className="session-card-body">
                             <div className="session-card-title">{s.title}</div>
@@ -121,6 +180,7 @@ export function HistoryPage({ sessions, loading, onLoadSession, onDeleteSession,
                               <span className="meta-chip" title={`${s.highlightCount} highlight${s.highlightCount !== 1 ? 's' : ''}`}>
                                 <Highlighter size={11} /> {s.highlightCount}
                               </span>
+                              <span className="session-card-time" title={new Date(s.updatedAt).toLocaleString()}>{relativeTime(s.updatedAt)}</span>
                             </div>
                           </div>
                         </div>
@@ -135,7 +195,7 @@ export function HistoryPage({ sessions, loading, onLoadSession, onDeleteSession,
         </div>
       )}
 
-      {!isEmpty && <div className="landing-foot">FORK AI · V0.1 · BRANCHING RESEARCH, BY YOU</div>}
+      {!isEmpty && <div className="landing-foot">{BRAND_TAGLINE}</div>}
 
       {showModal && (
         <NewProjectModal

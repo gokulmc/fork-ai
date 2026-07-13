@@ -1861,7 +1861,7 @@ h2.wp-h2 {
   font-family: var(--sans, sans-serif); font-weight: 600; font-size: 19px;
   letter-spacing: -0.01em; color: var(--wp-ink); text-decoration: none; }
 .wp-nav-logo { width: 30px; height: 30px; flex-shrink: 0;
-  background: url('/mark-t-48.png') center / contain no-repeat; }
+  background: url('/mark-t-48.png?v=2') center / contain no-repeat; }
 .wp-nav-cta { font-family: var(--sans, sans-serif); font-size: 13px; font-weight: 500;
   background: var(--wp-ink); color: var(--wp-paper);
   padding: 9px 18px; border-radius: 999px; text-decoration: none;

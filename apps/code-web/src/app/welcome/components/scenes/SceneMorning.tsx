@@ -3,28 +3,27 @@ import { useEffect, useState } from 'react';
 import { ChevronRight, Copy, Check } from '@/components/Icons';
 import { useInView } from '../useInView';
 import { useStory } from '../StoryContext';
-import { SHARE_URL } from '../storyContent';
 
 const TOGGLES = [
-  { id: 'overview', title: 'Overview', body: 'Access to urban green space is consistently associated with reduced stress, improved mood, and lower depression risk across dozens of observational studies.' },
-  { id: 'moderators', title: 'Mood improvement', body: 'Individuals with greater proximity to or more frequent use of green areas report lower rates of depressive symptoms and higher self-reported happiness.' },
-  { id: 'askai', title: 'Ask AI — highlighted sentence', body: 'The strongest citation is White et al. (2013, Psychological Science) — a fixed-effects panel study of ~10,000 households that tracks the same people over time.' },
+  { id: 'summary', title: 'Summary', body: 'Adds per-user rate limiting to the API with a Redis-backed sliding-window counter. Fixes the boundary-burst issue where fixed windows let a client send up to 2x its limit across a reset.' },
+  { id: 'changes', title: 'Changes', body: 'src/rateLimiter.ts (new), src/rateLimiter.test.ts (new), src/app.ts (+6 −1) — middleware wired in ahead of the existing routes.' },
+  { id: 'testplan', title: 'Test plan', body: 'rateLimiter.test.ts covers the boundary case directly. Full suite green locally: 42 passing, 0 failing.' },
 ];
 
-const DISPLAY_LINK = SHARE_URL ?? 'https://forkai.in/?sk=8f2a1c9d3e';
+const PR_LINK = 'github.com/acme-labs/billing-service/pull/42';
 
-// Beat: Sunday night ends; the whole session lands in Notion, then the
-// advisor opens the link Monday morning and branches as a guest — no
-// account needed.
+// Beat: Sunday night ends; the project persists exactly as it was, and by
+// morning a teammate has already reviewed the PR on GitHub — no waiting for
+// Alex to walk them through it.
 export function SceneMorning() {
   const { ref, inView } = useInView<HTMLDivElement>(0.3);
   const { addNode, ensureStoryNodes } = useStory();
-  const [open, setOpen] = useState<Record<string, boolean>>({ overview: true });
+  const [open, setOpen] = useState<Record<string, boolean>>({ summary: true });
   const [copied, setCopied] = useState(false);
-  const [guestArrived, setGuestArrived] = useState(false);
+  const [reviewArrived, setReviewArrived] = useState(false);
 
-  // Fast scrollers who land here directly still see the full session behind
-  // the "advisor branched anyway" beat, not just the guest node in isolation.
+  // Fast scrollers who land here directly still see the full project behind
+  // the "teammate reviewed anyway" beat, not just the review node in isolation.
   useEffect(() => {
     if (inView) ensureStoryNodes();
   }, [inView, ensureStoryNodes]);
@@ -32,8 +31,8 @@ export function SceneMorning() {
   useEffect(() => {
     if (!inView) return;
     const t = window.setTimeout(() => {
-      addNode({ id: 'advisor', parentId: 'root', label: 'Advisor · 8:32 AM (no account)', kind: 'guest' });
-      setGuestArrived(true);
+      addNode({ id: 'teammate', parentId: 'root', label: 'Priya · PR review', kind: 'guest' });
+      setReviewArrived(true);
     }, 1200);
     return () => window.clearTimeout(t);
   }, [inView, addNode]);
@@ -42,7 +41,7 @@ export function SceneMorning() {
 
   const onCopy = async () => {
     try {
-      await navigator.clipboard.writeText(DISPLAY_LINK);
+      await navigator.clipboard.writeText(PR_LINK);
     } catch {
       // Clipboard API unavailable — link stays visible/selectable.
     }
@@ -58,6 +57,10 @@ export function SceneMorning() {
           <span className="wp-stamp-rule" />
         </div>
         <h2 className="wp-h2 wp-reveal">It survives the night</h2>
+        <p className="wp-sub wp-reveal">
+          Monday morning: she reopens the project from Projects. Same map, same commits, exactly
+          where she left them.
+        </p>
 
         <div ref={ref} className={`wp-morning-body ${inView ? 'wp-in-view' : ''}`}>
           <div className="wp-notion-toggles">
@@ -78,21 +81,21 @@ export function SceneMorning() {
           </div>
 
           <div className="wp-share-row">
-            <span className="wp-share-link">{DISPLAY_LINK}</span>
+            <span className="wp-share-link">{PR_LINK}</span>
             <button type="button" className="wp-btn-outline wp-share-copy" onClick={onCopy}>
               {copied ? <Check size={14} /> : <Copy size={14} />} {copied ? 'Copied' : 'Copy'}
             </button>
           </div>
 
-          {guestArrived && (
+          {reviewArrived && (
             <p className="wp-morning-caption wp-fade-in-el">
-              8:32 AM — her advisor opened the link on the train. No account. Branched anyway.
+              8:32 AM — Priya opened the PR from her phone. Left one comment. Approved.
             </p>
           )}
 
-          <p className="wp-compare-note">If they sign up later, their branches follow them.</p>
+          <p className="wp-compare-note">Reopen it anytime — the whole map, every commit, is still there.</p>
 
-          <p className="wp-why">№4 — It ends as notes in Notion, not a transcript you&rsquo;ll never reopen.</p>
+          <p className="wp-why">№4 — It ends as a reviewable PR, not a transcript you&rsquo;ll never reopen.</p>
         </div>
       </div>
     </section>

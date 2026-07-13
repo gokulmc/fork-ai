@@ -1,14 +1,15 @@
 // Snapshot of backend pricing for the /welcome marketing calculator ONLY.
 // This is a hand-copied illustrative snapshot, not read from the API — if
 // backend pricing changes this file will silently drift. Same pattern as
-// apps/web/src/components/TweaksPanel.tsx's MODEL_OPTIONS.cost field.
-// Source of truth: apps/api/src/llm/models.ts (MODEL_PRICING) and
-// apps/api/src/config/configuration.ts (SIGNUP_CREDIT_USD, CREDIT_MULTIPLIER).
+// apps/code-web/src/components/TweaksPanel.tsx's MODEL_OPTIONS.cost field.
+// Source of truth: apps/code-api/src/llm/models.ts (MODEL_PRICING) and
+// apps/code-api/src/config/configuration.ts (SIGNUP_CREDIT_USD, CREDIT_MULTIPLIER).
 
 export const CREDIT_MULTIPLIER = 1.5;
 export const SIGNUP_CREDIT_USD = 5.0;
 
-// USD per 1,000,000 tokens, mirrors apps/api/src/llm/models.ts MODEL_PRICING.
+// USD per 1,000,000 tokens, mirrors apps/code-api/src/llm/models.ts MODEL_PRICING
+// (Claude tiers only — same rates as the research app's models.ts).
 export const MODEL_PRICE_PER_MTOK = {
   haiku: { input: 1, output: 5 },
   sonnet: { input: 3, output: 15 },

@@ -1,0 +1,58 @@
+<!--
+  Static iframe-embedding smoke test for openvscode-server.
+
+  This file must be served from http://localhost:4001 (the code-web dev
+  origin) — NOT opened as a file:// URL and not served from some other port —
+  because the whole point is to prove openvscode-server can be iframed from
+  the product's own origin (localhost:4001 today, code.forkai.in in prod).
+  Browsers apply X-Frame-Options / frame-ancestors CSP checks per-origin, so a
+  file:// or different-port test would not catch a same-origin-only allowance.
+
+  How to serve it from :4001 for this spike (pick one):
+    1. `npx serve -l 4001 tools/spikes/cloud-sandbox/src` and open
+       http://localhost:4001/iframe-test.html
+    2. Temporarily copy this file into apps/code-web/public/iframe-test.html
+       and run the normal `npm run dev:code-web` (port 4001), then open
+       http://localhost:4001/iframe-test.html — remove the copy afterwards,
+       it must never ship to prod.
+-->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>cloud-sandbox iframe test</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 0; padding: 16px; display: flex; flex-direction: column; gap: 12px; height: 100vh; box-sizing: border-box; }
+      #bar { display: flex; gap: 8px; }
+      #url { flex: 1; padding: 6px 8px; font: inherit; }
+      button { padding: 6px 14px; font: inherit; cursor: pointer; }
+      #frameWrap { flex: 1; border: 1px solid #ccc; }
+      iframe { width: 100%; height: 100%; border: 0; }
+      #status { font: 12px monospace; color: #555; }
+    </style>
+  </head>
+  <body>
+    <div id="bar">
+      <input id="url" type="text" placeholder="paste the vscodeUrl printed by run-spike.ts (https://forkai-sbx-xxxx.fly.dev:10300/?tkn=...)" />
+      <button id="load">Load in iframe</button>
+    </div>
+    <div id="status">served from: <span id="origin"></span> — waiting for a URL</div>
+    <div id="frameWrap"></div>
+    <script>
+      document.getElementById('origin').textContent = location.origin;
+      document.getElementById('load').addEventListener('click', () => {
+        const url = document.getElementById('url').value.trim();
+        if (!url) return;
+        const wrap = document.getElementById('frameWrap');
+        wrap.innerHTML = '';
+        const iframe = document.createElement('iframe');
+        iframe.src = url;
+        iframe.addEventListener('load', () => {
+          document.getElementById('status').textContent = 'iframe load event fired for ' + url + ' — if the pane is blank, check the console for a refused-to-connect / X-Frame-Options error.';
+        });
+        wrap.appendChild(iframe);
+        document.getElementById('status').textContent = 'loading ' + url + ' …';
+      });
+    </script>
+  </body>
+</html>

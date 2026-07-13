@@ -4,10 +4,11 @@ import { ulid } from 'ulid';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
 import type { NodeItem, AnnotationItem, HighlightItem, SessionMetaItem } from '@/dynamo/dynamo.interfaces';
 import { LlmService } from '@/llm/llm.service';
-import { ROOT_MODEL, resolveBranchModel } from '@/llm/models';
+import { ROOT_MODEL, resolveBranchModel, providerNameFor } from '@/llm/models';
 import { UsersService } from '@/users/users.service';
 import { LEARN_KINDS, assertKindAllowed } from '@/nodes/node-grammar';
 import type { NodeKind } from '@/llm/llm.types';
+import { buildInitMd, INIT_SECTION_HEADING } from '@/projects/plugin-catalog';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { CreateDocumentDto } from './dto/create-document.dto';
 import { UpdateSessionDto } from './dto/update-session.dto';
@@ -207,14 +208,23 @@ export class SessionsService {
     // same event vocabulary), rather than spawning a QUERY child, so the root
     // ends up looking exactly like a normal root query once it's filled in.
     // Only allowed once — a filled root can't be re-filled.
-    const rootNodeExisting = existing.find((n) => n.parentId === null);
+    const rootNodeExisting = existing.find((n) => (n.parentId ?? null) === null);
     if (rootNodeExisting?.kind === 'BRANCH') {
       if (rootNodeExisting.sections.length > 0) {
         throw new BadRequestException('Root BRANCH node already has content — the fill-root route can only run once');
       }
       const emit = (data: object) => { try { send(data); } catch { /* client gone */ } };
+      // Deterministic init.md seed: built from the project's selected plugins, not
+      // the LLM — prepended so the repo's agent-bootstrap file leads the answer.
+      const project = meta.projectId ? await this.db.getProject(sub, meta.projectId) : null;
+      const targetFile = providerNameFor(ROOT_MODEL) === 'gemini' ? 'GEMINI.md' : 'CLAUDE.md';
+      const initBody = project?.plugins?.length
+        ? buildInitMd(project.plugins, targetFile, `${project.repoRef.owner}/${project.repoRef.repo}`)
+        : null;
+      const seedSections = initBody ? [{ id: ulid(), heading: INIT_SECTION_HEADING, body: initBody }] : [];
       emit({ type: 'init', sessionId, nodeId: rootNodeExisting.nodeId });
-      await this.runRootQueryStream(sub, sessionId, rootNodeExisting, dto, emit);
+      for (const s of seedSections) emit({ type: 'section', ...s });
+      await this.runRootQueryStream(sub, sessionId, rootNodeExisting, dto, emit, true, seedSections);
       return;
     }
 
@@ -225,7 +235,7 @@ export class SessionsService {
       throw new BadRequestException('Session already has a learn node — the first-question route can only run once');
     }
 
-    const parentId = meta.rootNodeId || existing.find((n) => n.parentId === null)?.nodeId;
+    const parentId = meta.rootNodeId || existing.find((n) => (n.parentId ?? null) === null)?.nodeId;
     const parentNode = parentId ? existing.find((n) => n.nodeId === parentId) : undefined;
     if (!parentNode) throw new NotFoundException(`Session ${sessionId} has no root node to anchor the first question`);
     assertKindAllowed(parentNode.kind as NodeKind, 'QUERY');
@@ -279,12 +289,13 @@ export class SessionsService {
     dto: CreateSessionDto,
     emit: (data: object) => void,
     patchSessionMetaAtDone: boolean = true,
+    seedSections: Array<{ id: string; heading: string; body: string }> = [],
   ): Promise<void> {
     const nodeId = rootNode.nodeId;
     let title = '';
     let emoji = '';
     let lede = '';
-    const sections: Array<{ id: string; heading: string; body: string }> = [];
+    const sections = [...seedSections];
 
     const persona = await this.users.getPersona(sub);
     for await (const event of this.llm.streamAnswerQuery(dto.query, dto.sectionCount ?? 5, dto.webSearch ?? false, persona)) {
@@ -302,8 +313,11 @@ export class SessionsService {
       } else if (event.type === 'done') {
         // Citation-processed bodies arrive only at done; map them onto the streamed
         // sections by index to preserve their ids. Sources are persisted on the node.
+        // Offset by seedSections.length: the LLM never sees or emits the init.md
+        // seed, so its own section 0 is sections[seedSections.length], not sections[0]
+        // — without the offset, a webSearch citation pass would clobber init.md's body.
         if (event.sections) {
-          event.sections.forEach((s, i) => { if (sections[i]) sections[i].body = s.body; });
+          event.sections.forEach((s, i) => { if (sections[i + seedSections.length]) sections[i + seedSections.length].body = s.body; });
         }
         const sourcesPatch = event.sources?.length ? { sources: event.sources } : {};
         // The SessionMeta row already exists (written up-front so the session is

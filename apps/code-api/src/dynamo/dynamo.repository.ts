@@ -60,6 +60,20 @@ export class DynamoRepository {
     return items.map((i) => this.toPlain<T>(i));
   }
 
+  // Dynamoose strips a null parentId on write (see `clean` below), so a root
+  // node written with parentId: null round-trips as parentId: undefined. Callers
+  // (e.g. SessionsService's fill-root gate) do a strict `=== null` check to find
+  // the root — normalize here so every NodeItem leaving the repository has
+  // parentId: string | null, never undefined.
+  private toNode(item: any): NodeItem {
+    const plain = this.toPlain<NodeItem>(item);
+    return { ...plain, parentId: plain.parentId ?? null };
+  }
+
+  private toNodeArray(items: any[]): NodeItem[] {
+    return items.map((i) => this.toNode(i));
+  }
+
   // Dynamoose v4 rejects null for typed String/Number fields even when
   // required: false. Strip nulls so DynamoDB stores absence instead.
   private clean<T extends object>(obj: T): Partial<T> {
@@ -195,7 +209,7 @@ export class DynamoRepository {
       PK: this.sessionPk(sessionId),
       SK: this.nodeSk(nodeId),
     });
-    return item ? this.toPlain<NodeItem>(item) : null;
+    return item ? this.toNode(item) : null;
   }
 
   async putNode(data: NodeItem): Promise<void> {
@@ -214,7 +228,7 @@ export class DynamoRepository {
       .beginsWith('NODE#')
       .all()
       .exec();
-    return this.toPlainArray<NodeItem>(items);
+    return this.toNodeArray(items);
   }
 
   async updateNode(

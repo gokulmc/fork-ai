@@ -36,6 +36,50 @@ function canBePlanBase(node: ForkNode | null | undefined): boolean {
   return node.kind === 'BRANCH' && node.sections.length > 0;
 }
 
+// ProjectStart gate persistence — dismissal must survive reopening the same
+// session (a plain boolean that reset on every sessionId change meant "Open
+// map" forgot itself on next visit). Keyed by sessionId, capped so the list
+// can't grow unbounded across a long-lived browser profile.
+const PROJECT_START_DISMISSED_KEY = 'forkai-code.projectStartDismissed';
+const PROJECT_START_DISMISSED_CAP = 50;
+
+function readDismissedProjectStarts(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(PROJECT_START_DISMISSED_KEY);
+    return raw ? (JSON.parse(raw) as string[]) : [];
+  } catch { return []; }
+}
+
+function isProjectStartDismissed(sessionId: string): boolean {
+  return readDismissedProjectStarts().includes(sessionId);
+}
+
+function markProjectStartDismissed(sessionId: string): void {
+  if (typeof window === 'undefined') return;
+  const ids = readDismissedProjectStarts();
+  if (ids.includes(sessionId)) return;
+  ids.push(sessionId);
+  if (ids.length > PROJECT_START_DISMISSED_CAP) ids.splice(0, ids.length - PROJECT_START_DISMISSED_CAP);
+  try { localStorage.setItem(PROJECT_START_DISMISSED_KEY, JSON.stringify(ids)); } catch { /* best-effort — worst case dismissal doesn't survive reload */ }
+}
+
+// A session is "effectively empty" (ProjectStart-eligible) only when it has no
+// nodes at all, or a single unfilled seeded root (parentless, no sections, not
+// mid-stream). Any other content — CODE commits, branches, a filled root, or a
+// learn node — means real work already exists, so the gate below skips
+// straight to the workspace instead of hiding it behind the interstitial.
+// Trade-off (recorded, not a bug): an imported-repo project whose commits
+// have no learn node yet now opens the workspace directly and never sees
+// ProjectStart.
+function isProjectSessionEmpty(nodes: Record<string, ForkNode>): boolean {
+  const all = Object.values(nodes);
+  if (all.length === 0) return true;
+  if (all.length > 1) return false;
+  const only = all[0];
+  return only.parentId === null && only.sections.length === 0 && !only.loading;
+}
+
 // Client-side mirror of the backend's findLaneBranchName (nodes.service.ts) —
 // walks parentId upward (inclusive) to the nearest ancestor carrying a
 // branchName. Used only for the PR overlay's confirm-text preview; the actual
@@ -101,7 +145,8 @@ type RetryInfo =
   | { kind: 'ROOT'; query: string }
   | { kind: 'ROOT_IN_SESSION'; sessionId: string; query: string }
   | { kind: 'DEEPER'; parentNodeId: string; section: { id: string; heading: string; body: string }; boost?: boolean }
-  | { kind: 'ASK'; question: string; source: FollowUpState; boost?: boolean };
+  | { kind: 'ASK'; question: string; source: FollowUpState; boost?: boolean }
+  | { kind: 'ASK_COMMIT'; parentNodeId: string; question: string };
 import { useTweaks } from '@/hooks/useTweaks';
 import { initAnalytics, track, identifyUser } from '@/lib/analytics';
 import { getCachedSession, putCachedSession, deleteCachedSession } from '@/lib/sessionCache';
@@ -142,8 +187,10 @@ import {
   type Project,
   type CreateProjectPayload,
   type AgentEvent,
+  type AgentRun,
 } from '@/lib/api';
 import { canSpawn } from '@/lib/nodeGrammar';
+import { kindLabel } from '@/lib/kindLabels';
 import { SkeletonSections } from './SkeletonSections';
 import { HighlightMenu } from './HighlightMenu';
 import { FollowUpPop, SHORTHANDS } from './FollowUpPop';
@@ -582,7 +629,9 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   // "Open map ↗" locally dismisses it so imported history stays browsable
   // without answering. Reset whenever the active session changes.
   const [projectStartDismissed, setProjectStartDismissed] = useState(false);
-  useEffect(() => { setProjectStartDismissed(false); }, [sessionId]);
+  // Re-check persisted dismissal on session change — do NOT reset to false
+  // unconditionally, or a project already dismissed forgets that on reopen.
+  useEffect(() => { setProjectStartDismissed(sessionId ? isProjectStartDismissed(sessionId) : false); }, [sessionId]);
 
   useEffect(() => {
     if (!idToken) return;
@@ -636,12 +685,16 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     }).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps — intentionally once on mount
 
-  const loadSession = useCallback(async (sid: string, targetNodeId?: string) => {
+  // Returns the loaded root node id (or null) so callers that need it before the
+  // next node create — e.g. handleCreateProject's fill-root kickoff — don't have
+  // to race rootIdRef against this function's own state updates settling.
+  const loadSession = useCallback(async (sid: string, targetNodeId?: string): Promise<string | null> => {
     // Skip the loading overlay if the early-paint already showed the workspace.
     if (!hasCachePaintedRef.current) setLoadingRoot(true);
     // Cache-first: paint the last local snapshot instantly (IndexedDB), then let
     // the network result below — always authoritative — replace it when it lands.
     let paintedFromCache = false;
+    let cachedRootId: string | null = null;
     try {
       const cached = await getCachedSession(sid);
       if (cached && Object.keys(cached.nodes).length) {
@@ -656,6 +709,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         setHighlightsList(cached.highlightsList);
         setLoadingRoot(false);
         paintedFromCache = true;
+        cachedRootId = cached.rootId;
       }
     } catch { /* cache is best-effort — fall through to the network */ }
     try {
@@ -664,13 +718,22 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       const nodeMap: Record<string, ForkNode> = {};
       for (const n of forkNodes) nodeMap[n.id] = n;
       const root = forkNodes.find(n => n.parentId === null);
-      const activeTarget = (targetNodeId && nodeMap[targetNodeId]) ? targetNodeId : (root?.id ?? null);
+      // No explicit target (fresh load, not a deep-link) — land on an in-progress
+      // CODE run rather than the root, so a mid-run refresh resumes where it left
+      // off instead of stranding the user on a finished ancestor.
+      const runningNode = targetNodeId ? undefined : forkNodes.find(n => n.agentStatus === 'running');
+      const activeTarget = (targetNodeId && nodeMap[targetNodeId]) ? targetNodeId : (runningNode?.id ?? root?.id ?? null);
       setSessionId(session.sessionId);
       setNodes(nodeMap);
       setRootId(root?.id ?? null);
       // Don't yank the user off a node they navigated to while the cache copy
       // was showing — keep the current node if it still exists server-side.
-      setActiveId(prev => (prev && nodeMap[prev]) ? prev : activeTarget);
+      // Exception: an in-progress CODE run always wins. The cache-paint block
+      // above already set activeId (usually to the root) before this network
+      // apply runs, so "prev exists in nodeMap" can't distinguish user
+      // navigation from our own cache paint — and the running node's pane is
+      // what re-attaches polling after a mid-run reload.
+      setActiveId(prev => runningNode ? runningNode.id : ((prev && nodeMap[prev]) ? prev : activeTarget));
       setAnnotations(session.annotations.map(toAnnotation));
       setPersistentHl(toHlMap(session.highlights));
       setHighlightsList(toHighlightRecords(session.highlights, nodeMap));
@@ -684,6 +747,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       } else {
         setActiveProject(null);
       }
+      return root?.id ?? null;
     } catch (err) {
       console.error('Failed to load session', err);
       // A stale stored session id that no longer loads (deleted / not ours) would
@@ -697,7 +761,11 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         if (paintedFromCache) {
           setSessionId(null); setNodes({}); setRootId(null); setActiveId(null);
         }
+        return null;
       }
+      // Network blip, cache already painted a root — fall back to that rather
+      // than reporting no root at all.
+      return cachedRootId;
     } finally {
       setLoadingRoot(false);
     }
@@ -706,8 +774,9 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   // Opening a project = load its (possibly empty) session + remember the
   // Project itself. Sets it synchronously (loadSession's own projectId-based
   // refetch would otherwise land a frame later) and returns loadSession's
-  // promise so callers that need the session in state before proceeding
-  // (handleCreateProject's fill-root kickoff) can await it.
+  // promise — resolving to the loaded root node id — so callers that need it
+  // before proceeding (handleCreateProject's fill-root kickoff) can await it
+  // instead of racing rootIdRef against loadSession's state updates settling.
   const openProject = useCallback((project: Project) => {
     setActiveProject(project);
     return loadSession(project.sessionId);
@@ -988,6 +1057,28 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
           setNodes(prev => {
             const node = prev[tempId];
             if (!node) return prev;
+            // Defensive: the fill-root match (an empty BRANCH project root) makes
+            // the backend resolve the query onto an id that ALREADY exists in
+            // `nodes` (the root itself), distinct from tempId. Merging the
+            // optimistic temp node's fields over that entry would overwrite its
+            // real parentId/kind with the temp node's (parentId: rootId itself,
+            // kind: QUERY) — a root whose parent is its own id infinite-loops
+            // buildChildMap. Merge the streamed content onto the EXISTING node
+            // instead and drop the temp entry. Ordinary (non-collision) callers
+            // are unaffected — this only fires when the two ids actually collide.
+            const existing = realNodeId !== tempId ? prev[realNodeId] : undefined;
+            if (existing) {
+              const merged: ForkNode = {
+                ...existing,
+                loading: false,
+                ...(doneModel ? { model: doneModel } : {}),
+                ...(doneSections ? { sections: doneSections } : {}),
+                ...(doneSources?.length ? { sources: doneSources } : {}),
+              };
+              const next = { ...prev, [realNodeId]: merged };
+              delete next[tempId];
+              return next;
+            }
             const realNode: ForkNode = {
               ...node,
               id: realNodeId,
@@ -1146,9 +1237,13 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   // node: the root node already exists (seeded by ProjectsService.create,
   // already in `nodes` via the loadSession that ran right before this is
   // called) and keeps the same id throughout — events just patch it in place.
-  const submitFillRoot = useCallback(async (sid: string, query: string) => {
+  // `rootNodeId` is the source of truth (callers get it from openProject's/
+  // loadSession's return value); rootIdRef is only a fallback for the rare
+  // caller that hasn't threaded the id through yet — reading the ref alone
+  // races loadSession's state settling and silently drops the query.
+  const submitFillRoot = useCallback(async (sid: string, query: string, rootNodeId?: string | null) => {
     if (!idToken) return;
-    const nodeId = rootIdRef.current;
+    const nodeId = rootNodeId ?? rootIdRef.current;
     if (!nodeId) return;
 
     setNodes(prev => prev[nodeId] ? { ...prev, [nodeId]: { ...prev[nodeId], loading: true } } : prev);
@@ -1206,11 +1301,11 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   const handleCreateProject = useCallback(async (payload: CreateProjectPayload): Promise<void> => {
     const project = await createProject(idToken, payload);
     setProjects(prev => [project, ...prev]);
-    await openProject(project);
+    const loadedRootId = await openProject(project);
     // No ProjectStart interstitial for a from-scratch project — the opening
     // question was already asked in the modal, so stream straight into the map.
     if (project.repoRef.provider === 'new' && payload.rootQuery) {
-      void submitFillRoot(project.sessionId, payload.rootQuery);
+      void submitFillRoot(project.sessionId, payload.rootQuery, loadedRootId);
     }
   }, [idToken, openProject, submitFillRoot]);
 
@@ -1219,16 +1314,35 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   // "New repo" tab uses, just skipping the modal since the query box already
   // asked the opening question. Project name follows the same ≤5-word/≤60-char
   // truncation style used elsewhere for titles (short5 + a hard char cap).
-  const submitLandingProject = useCallback(async (query: string) => {
+  const submitLandingProject = useCallback(async (query: string, plugins: string[]) => {
     const name = short5(query).slice(0, 60);
     setLoadingRoot(true);
     try {
-      await handleCreateProject({ name, repoRef: synthesizeNewRepoRef(name), plugins: [], rootQuery: query });
+      await handleCreateProject({ name, repoRef: synthesizeNewRepoRef(name), plugins, rootQuery: query });
     } catch (err) {
       console.error('Failed to create project from query', err);
       setLoadingRoot(false);
     }
   }, [handleCreateProject]);
+
+  // Restores a query typed on Landing while logged out. The onSubmit wiring
+  // below stashes it here before forcing the login screen — submitRootQuery's
+  // own `!idToken` bail would otherwise just drop it — and this effect replays
+  // it as a from-scratch project once auth settles. Must be declared after
+  // submitLandingProject (see root CLAUDE.md's hook-ordering caveat: an effect
+  // closing over a useCallback declared later throws in the temporal dead zone).
+  const pendingQueryFiredRef = useRef(false);
+  useEffect(() => {
+    if (status !== 'authenticated' || !idToken || pendingQueryFiredRef.current) return;
+    const raw = localStorage.getItem('forkai-code.pendingQuery');
+    if (!raw) return;
+    pendingQueryFiredRef.current = true; // guard against StrictMode's double-invoke
+    localStorage.removeItem('forkai-code.pendingQuery');
+    try {
+      const { query, plugins } = JSON.parse(raw) as { query: string; plugins: string[] };
+      void submitLandingProject(query, plugins);
+    } catch { /* malformed stash — nothing to replay */ }
+  }, [status, idToken, submitLandingProject]);
 
   // ── Document upload: build a whole mind-map in one stream ──────────────────
   // Authed-only (Landing routes guests to login). Mirrors submitRootQuery's
@@ -1616,14 +1730,17 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
 
   // ── CODE node: "Implement"/"Continue" — runs the mocked coding agent ─────
 
-  const submitCodeNode = useCallback(async (instruction: string, attachments: ComposerAttachment[]) => {
+  const submitCodeNode = useCallback(async (instruction: string, attachments: ComposerAttachment[], reuseNodeId?: string) => {
     const sid = sessionIdRef.current;
-    if (!sid || !idToken || !activeId) return;
-    const parentNodeId = activeId;
+    // Retry re-runs against the failed node's own parent — activeId at that
+    // point is the failed CODE node itself (AgentLogPane renders for `active`).
+    const parentNodeId = reuseNodeId ? (nodes[reuseNodeId]?.parentId ?? null) : activeId;
+    if (!sid || !idToken || !parentNodeId) return;
     const parent = nodes[parentNodeId];
     if (!parent) return;
 
-    const tempId = uid();
+    // Retry reuses the failed node's id so the card flips back to loading in place.
+    const tempId = reuseNodeId ?? uid();
     setNodes(prev => ({
       ...prev,
       [tempId]: {
@@ -1700,17 +1817,49 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     }
   }, [nodes, idToken, activeId, scrollWsTop, refreshCredit]);
 
+  // AgentLogPane's own Retry (for a failed run) — separate from the generic
+  // retryInfoRef/ws-error banner mechanism, since CODE nodes never render into
+  // that banner (they render via AgentLogPane, which has its own error strip).
+  const onRetryRun = useCallback((nodeId: string) => {
+    const node = nodes[nodeId];
+    if (!node) return;
+    void submitCodeNode(node.query, [], nodeId);
+  }, [nodes, submitCodeNode]);
+
+  // AgentLogPane polls the persisted AgentRun on a mid-run refresh (no SSE to
+  // resume into) and calls this once it resolves — patch in what the 'done'/
+  // 'error' SSE event would have applied, since that event never reached this tab.
+  const handleRunResolved = useCallback((nodeId: string, run: AgentRun) => {
+    setNodes(prev => {
+      const node = prev[nodeId];
+      if (!node) return prev;
+      const patch: Partial<ForkNode> = { agentStatus: run.status, loading: false };
+      if (run.commitSha !== undefined) patch.commitSha = run.commitSha;
+      if (run.branchName !== undefined) patch.branchName = run.branchName;
+      if (run.commitMessage !== undefined) patch.commitMessage = run.commitMessage;
+      if (run.diffSummary !== undefined) patch.diffSummary = run.diffSummary;
+      // The persist-first placeholder title (query.slice(0,60)) never got replaced
+      // because the `done` SSE event never reached this tab — derive it from the
+      // commit message the same way nodes.service.ts does server-side (nodes.service.ts:766).
+      if (run.commitMessage && node.title === node.query.slice(0, 60)) {
+        patch.title = run.commitMessage.split(/\s+/).filter(Boolean).slice(0, 5).join(' ') || node.title;
+      }
+      return { ...prev, [nodeId]: { ...node, ...patch } };
+    });
+  }, []);
+
   // "Ask about this commit" on a CODE node's AgentLogPane — spawns an ASK node
   // with no highlight selection, so the commit message stands in as the anchor
   // text (the ASK route requires non-empty highlightText).
-  const askAboutCommit = useCallback(async (nodeId: string, question: string) => {
+  const askAboutCommit = useCallback(async (nodeId: string, question: string, reuseNodeId?: string) => {
     const sid = sessionIdRef.current;
     if (!sid || !idToken) return;
     const parent = nodes[nodeId];
     if (!parent) return;
     const anchorText = parent.commitMessage || parent.title;
 
-    const tempId = uid();
+    // Retry reuses the failed node's id so the card flips back to loading in place.
+    const tempId = reuseNodeId ?? uid();
     setAskCommitLoading(true);
     setLoadingNodes(prev => new Set(prev).add(tempId));
     setNodes(prev => ({
@@ -1756,6 +1905,9 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     } catch (err) {
       const { msg, status, code } = nodeErrorDisplay(err);
       track('node_error', { kind: 'ASK', status, message: msg });
+      if (status !== 402) {
+        retryInfoRef.current[tempId] = { kind: 'ASK_COMMIT', parentNodeId: nodeId, question };
+      }
       setNodes(prev => ({ ...prev, [tempId]: { ...prev[tempId], loading: false, error: msg, errorStatus: status, errorCode: code } }));
     } finally {
       setAskCommitLoading(false);
@@ -1773,8 +1925,9 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     if (info.kind === 'ROOT') void submitRootQuery(info.query);
     else if (info.kind === 'ROOT_IN_SESSION') void submitProjectQuery(info.sessionId, info.query, failedId);
     else if (info.kind === 'DEEPER') void expandSectionAsChild(info.parentNodeId, info.section, failedId, info.boost);
+    else if (info.kind === 'ASK_COMMIT') void askAboutCommit(info.parentNodeId, info.question, failedId);
     else void askFromHighlight(info.question, info.source, failedId, info.boost);
-  }, [submitRootQuery, submitProjectQuery, expandSectionAsChild, askFromHighlight]);
+  }, [submitRootQuery, submitProjectQuery, expandSectionAsChild, askFromHighlight, askAboutCommit]);
 
   // ── Text selection → highlight menu ──────────────────────────────────────
 
@@ -2339,7 +2492,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   const goHome = () => { setRootId(null); setNodes({}); setSessionId(null); setActiveId(null); setActiveProject(null); setView('landing'); };
   const persistentBrand = (
     <div className="app-brand" onClick={goHome} title="Go to home">
-      <span className="brand-logo" aria-hidden="true" /> fork ai
+      <span className="brand-logo" aria-hidden="true" /> forkai code
     </div>
   );
 
@@ -2380,12 +2533,19 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     );
     else inner = (
       <Landing
-        onSubmit={q => {
+        onSubmit={(q, plugins) => {
           setRootQueryOutOfCredit(false);
           // Authed: the query becomes a from-scratch project's opening question.
-          // Logged-out: unchanged plain research session.
-          if (status === 'authenticated') void submitLandingProject(q);
-          else submitRootQuery(q);
+          // Logged-out: stash it and force the login screen directly — routing
+          // through submitRootQuery would hit its own `!idToken` bail and just
+          // discard the query. The stash is replayed by the pendingQuery effect
+          // once auth settles (see submitLandingProject).
+          if (status === 'authenticated') {
+            void submitLandingProject(q, plugins);
+          } else {
+            localStorage.setItem('forkai-code.pendingQuery', JSON.stringify({ query: q, plugins }));
+            setForceLogin(true);
+          }
         }}
         onSubmitDocument={(text, fileName) => { setRootQueryOutOfCredit(false); submitDocument(text, fileName); }}
         loading={loadingRoot}
@@ -2416,21 +2576,41 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
 
   // A seeded project session loads straight into the Workspace below (rootId
   // is already the imported CODE root) — intercept here, before the commit map
-  // renders, when there's no learn-kind node yet asking what to build. A
-  // from-scratch project's root is a BRANCH the opening question already
-  // streams into (D3) — once it has content (or is mid-stream), skip this
-  // interstitial too, since the question was already asked in the New Project modal.
+  // renders, but ONLY when the session is effectively empty (see
+  // isProjectSessionEmpty above). The gate is computed purely from `nodes`,
+  // not from rootBranch.kind/sections or a LEARN_KINDS scan — a content-ful
+  // session (CODE commits, branches, a filled root, learn nodes) always skips
+  // straight to the workspace, so `activeProject` arriving a frame late via
+  // getProject on reopen can never flip an already-content-ful session into
+  // this interstitial (activeProject && sessionId stay prerequisites only
+  // because ProjectStart needs the project object to render).
   const rootBranch = rootId ? nodes[rootId] : null;
-  const rootIsFillingOrFilledBranch = !!rootBranch && rootBranch.kind === 'BRANCH' && (rootBranch.sections.length > 0 || !!rootBranch.loading);
-  if (activeProject && sessionId && !projectStartDismissed && !rootIsFillingOrFilledBranch && !Object.values(nodes).some(n => LEARN_KINDS.has(n.kind))) {
+  if (activeProject && sessionId && !projectStartDismissed && isProjectSessionEmpty(nodes)) {
     return (
       <>
         {persistentBrand}
         <ProjectStart
           project={activeProject}
           loading={loadingRoot}
-          onSubmit={q => { setRootQueryOutOfCredit(false); void submitProjectQuery(sessionId, q); }}
-          onOpenMap={() => setProjectStartDismissed(true)}
+          onSubmit={q => {
+            setRootQueryOutOfCredit(false);
+            // An empty BRANCH root (from-scratch project whose opening question
+            // wasn't asked yet — reached via History rather than the New Project
+            // modal) must fill the EXISTING root via the backend's fill-root match,
+            // not spawn a new optimistic QUERY child: the stream's init/done events
+            // then carry the root's own id, and consumeRootStream's temp-id swap
+            // would otherwise clobber the root's parentId/kind with the temp
+            // node's, making the root its own parent (see consumeRootStream).
+            if (rootBranch && rootBranch.kind === 'BRANCH' && rootBranch.sections.length === 0) {
+              void submitFillRoot(sessionId, q, rootId);
+            } else {
+              void submitProjectQuery(sessionId, q);
+            }
+          }}
+          onOpenMap={() => {
+            if (sessionId) markProjectStartDismissed(sessionId);
+            setProjectStartDismissed(true);
+          }}
         />
         <AccountButton creditBalance={creditBalance} onCreditUpdated={setCreditBalance} />
         <TweaksPanel tweaks={tweaks} setTweak={setTweak} fontPairOptions={FONT_PAIR_OPTIONS} userEmail={authSession?.user?.email ?? ''} userName={authSession?.user?.name ?? ''} />
@@ -2625,6 +2805,8 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
               onImplement={() => composerRef.current?.focus()}
               onAskAboutCommit={q => askAboutCommit(active.id, q)}
               askLoading={askCommitLoading}
+              onRunResolved={handleRunResolved}
+              onRetryRun={onRetryRun}
             />
           )}
           {active && active.kind === 'MERGE' && (
@@ -2650,16 +2832,16 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
                 >
                   {/* CODE, and an empty BRANCH, never reach this block — they render via AgentLogPane above. */}
                   {active.kind === 'ASK'
-                    ? <><Sparkles size={12} className="ic" /> Follow-up</>
+                    ? <><Sparkles size={12} className="ic" /> {kindLabel('ASK')}</>
                     : active.kind === 'DEEPER'
-                      ? <><CornerDownRight size={12} className="ic" /> Deep dive</>
+                      ? <><CornerDownRight size={12} className="ic" /> {kindLabel('DEEPER')}</>
                       : active.kind === 'MIX'
-                        ? <><Blend size={12} className="ic" /> Synthesis</>
+                        ? <><Blend size={12} className="ic" /> {kindLabel('MIX')}</>
                         : active.kind === 'PLAN'
-                          ? <><ClipboardList size={12} className="ic" /> Plan</>
+                          ? <><ClipboardList size={12} className="ic" /> {kindLabel('PLAN')}</>
                           : active.kind === 'BRANCH'
-                            ? <><GitBranch size={12} className="ic" /> Branch</>
-                            : <><Search size={12} className="ic" /> Query</>}
+                            ? <><GitBranch size={12} className="ic" /> {kindLabel('BRANCH')}</>
+                            : <><Search size={12} className="ic" /> {kindLabel('QUERY')}</>}
                 </button>
                 {active.kind === 'QUERY' && (
                   <span className="pill"><Hash size={12} className="ic" /> {active.sections.length || '—'} sections</span>
@@ -2764,20 +2946,28 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
               )}
               {active.loading && !active.sections.length && <SkeletonSections />}
 
-              {active.sections.map((s, i) => (
-                <Section
-                  key={s.id}
-                  idx={i}
-                  section={s}
-                  node={active}
-                  onDeeper={sec => expandSectionAsChild(active.id, sec)}
-                  deeperLoading={sectionLoading === s.id}
-                  sectionChildren={childrenBySection[s.id] ?? []}
-                  onChildClick={cid => { setActiveId(cid); scrollWsTop(); }}
-                  calloutsForSection={annotations.filter(a => a.kind === 'callout' && a.nodeId === active.id && a.sectionId === s.id)}
-                  onRemoveCallout={removeAnnotation}
-                />
-              ))}
+              {active.sections.flatMap((s, i) => {
+                const els = [
+                  <Section
+                    key={s.id}
+                    idx={i}
+                    section={s}
+                    node={active}
+                    onDeeper={sec => expandSectionAsChild(active.id, sec)}
+                    deeperLoading={sectionLoading === s.id}
+                    sectionChildren={childrenBySection[s.id] ?? []}
+                    onChildClick={cid => { setActiveId(cid); scrollWsTop(); }}
+                    calloutsForSection={annotations.filter(a => a.kind === 'callout' && a.nodeId === active.id && a.sectionId === s.id)}
+                    onRemoveCallout={removeAnnotation}
+                  />,
+                ];
+                // Discoverability nudge for the highlight-to-Ask flow — shown once,
+                // right after the first section, only once real content has landed.
+                if (i === 0 && !active.loading) {
+                  els.push(<p key={`${s.id}-hint`} className="ws-highlight-hint">Select any passage to ask about it</p>);
+                }
+                return els;
+              })}
               {active.sources?.length ? (
                 <div className="ws-sources">
                   <div className="ws-sources-label">Sources</div>

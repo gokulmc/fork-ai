@@ -6,6 +6,96 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
+### forkai-code: History page and 404 still carried the research product's brand ("FORK AI · V0.1 · BRANCHING RESEARCH")
+- **Symptom:** Landing said "FORKAI CODE · V0.2 · PLAN-FIRST CODING" while the 404 page and both History footers claimed a different product and version.
+- **Cause:** Four hardcoded copies of the tagline drifted independently.
+- **Fix:** Single `BRAND_TAGLINE` constant in `lib/brand.ts` consumed by Landing, LandingHero, not-found, and HistoryPage (LoginPage's "FORK · NODE NETWORK" ritual intentionally untouched). (commit: 44e8270)
+
+### forkai-code: agent log rendered raw serialized tool JSON; diff summary buried below it
+- **Symptom:** The run log showed lines like `{"path":"src/cli.ts","content":"import …\n…"}` — escaped file bodies the user had to mentally deserialize — and the DIFF SUMMARY (the review artifact) rendered below the full log. Also: no timestamps on History cards, a single lonely topic bubble dominated History for new users, plain mouse-wheel over the map zoomed 80→38% in one gesture, and highlight→Ask AI had no discoverability hint.
+- **Cause:** tool_call/file_edit/terminal payloads rendered verbatim; pane order put the log first; wheel handler had no modifier gate; no hint existed.
+- **Fix:** Humanized tool lines ("→ Wrote src/routes/health.ts") with the raw JSON behind a `<details>` disclosure — covering live tool_call events AND persisted file_edit/terminal replays; DIFF SUMMARY moved above AGENT LOG; relative timestamps on session cards; Topics bubbles hidden under 2 real topics; plain wheel pans / ctrl-or-cmd+wheel (trackpad pinch) zooms; one muted "Select any passage to ask about it" hint under the first section; LoginPage decoy input's phantom 8×6px box zeroed. (commit: 44e8270)
+
+### forkai-code: reopening a project could hide all its work behind an empty "What are we building?" screen
+- **Symptom:** Opening a project from History sometimes landed on the ProjectStart interstitial with an empty prompt even though the project held a full map of commits — and sometimes went straight to the workspace. Which one you got depended on invisible timing.
+- **Cause:** The gate keyed on `LEARN_KINDS` membership plus the async `getProject` fetch settling, so sessions holding only CODE/BRANCH nodes always re-showed ProjectStart, and `projectStartDismissed` reset on every sessionId change.
+- **Fix:** ProjectStart shows only for an *effectively empty* session (`isProjectSessionEmpty`: no nodes, or a single unfilled non-loading seeded root), computed purely from `nodes`; dismissal persists per-session in `localStorage['forkai-code.projectStartDismissed']`. Recorded trade-off: imported-repo projects open the workspace directly. (commit: 97ef6ac)
+
+### forkai-code: mind map silently dropped nodes whose parent chain didn't reach the root
+- **Symptom:** The reading pane could show a node (e.g. a branch created during an error flow) that didn't exist anywhere on the map — the map's count badge and canvas disagreed with the pane.
+- **Cause:** `layoutGitGraph`/`layoutTree` only positioned nodes reachable from `rootId` via `childMap`; MindMap skips nodes without positions.
+- **Fix:** `placeOrphans` lays out unplaced nodes in a fallback row below the graph bounds (and stamps their depth), on all three layout exit paths; edge drawing already guarded missing endpoints. (commit: 97ef6ac)
+
+### forkai-code: node kinds had two vocabularies — map said COMMIT/BRANCH where the pane said Code/Follow-up
+- **Symptom:** The same node was labeled "BRANCH" on the map and "Follow-up" in the reading pane; code runs were "COMMIT" on the map and "Code" in the pane. "Branch" ambiguously covered git branches AND conversational follow-ups.
+- **Cause:** Three independent inline label ternaries (MindMap kicker, App pane pill, AgentLogPane pill).
+- **Fix:** Single `kindLabel()` map in `lib/kindLabels.ts` consumed by all three; ASK→Follow-up everywhere, CODE→Commit everywhere, Branch reserved for kind BRANCH. (commit: 97ef6ac)
+
+### forkai-code: derived commit titles kept trailing punctuation ("feat: Scaffold CLI with Commander,")
+- **Symptom:** Node cards, breadcrumbs, and the pane title showed the first-5-words commit-message cut with a dangling comma.
+- **Cause:** `commitMessage.split(/\s+/).slice(0, 5).join(' ')` cuts mid-clause.
+- **Fix:** Trim trailing `,;:.` after the cut (nodes.service.ts) + regression spec. (commit: 74bc714)
+
+### forkai-code: mobile bottom bar pile-up made the composer untappable
+- **Symptom:** At 390px the "Mindmap" pill sat on top of the composer input (clipping the placeholder and intercepting taps); the ⚙ trigger and status chips crowded the same band.
+- **Cause:** `.mm-pill` fixed at bottom+16px, `.twk-trigger` at bottom 24px with no mobile reposition, both inside the composer's band (composer top ≈ bottom+94px on mobile).
+- **Fix:** Mobile-only offsets: pill and trigger at `safe-area + 106px`, status chips at `+150px` — measured against the composer's real height with clearance. Mixer-mode hiding preserved. (commit: d4f750d)
+
+### forkai-code: dark-mode selects rendered as garbled zigzag glyph rows
+- **Symptom:** With the Dark theme active, the Tweaks panel's Font-pairing and Model selects displayed as rows of repeated triangles — unreadable.
+- **Cause:** `[data-theme="dark"] .twk-field` used the `background:` shorthand (resets `background-repeat`/`position`, outranks `select.twk-field`'s no-repeat rule); the dark select rule then re-added only `background-image`, so the dropdown-arrow SVG tiled across the control.
+- **Fix:** Dark rules use `background-color` only, leaving image/repeat/position to the select-specific rules. The Theme toggle itself is removed until a full dark theme ships (`useTweaks` coerces stored dark→light; ThemeScript forces light). (commit: d4f750d)
+
+### forkai-code: zoom disabled globally + sub-AA contrast + invisible focus + phantom tab stops
+- **Symptom:** Pinch-zoom was blocked on every page (`user-scalable=no`); the landing tagline/footer used #999 (~2.85:1) text; the composer and auth inputs had no visible keyboard focus; closed NotesDrawer/HighlightMenu buttons stayed in the tab order.
+- **Cause:** Viewport export set `maximumScale:1, userScalable:false`; `--ink-3` token too light; `outline: none`/inline outline suppression without `:focus-visible` replacements; `aria-hidden` containers without `inert`.
+- **Fix:** Zoom unlocked (WCAG 1.4.4); `--ink-3` #999999→#767674 (≥4.5:1, light theme); `.twk-status-off` drops the opacity fade; global `:focus-visible` outline + explicit rules for the composer textarea and auth input; `inert` on closed drawer/highlight menu. (commit: d4f750d)
+
+### forkai-code: primary CTAs looked permanently disabled; wordmark overlapped the breadcrumb; Account menu ignored Escape
+- **Symptom:** "Begin"/"Create" rendered near-identical grey whether actionable or not; the fixed "forkai code" wordmark overlapped the first crumb on desktop (topbar and History topbar); the Account menu didn't close on Escape or outside click and its lingering state swallowed clicks.
+- **Cause:** `:disabled` was only an opacity fade; `.topbar` reserved 140px for a ~185px-wide brand; AccountButton had no dismissal listeners.
+- **Fix:** Distinct muted disabled fill (`var(--line)` bg); topbar/history-topbar left padding 140→190px; Escape + outside-pointerdown dismissal on the account popover. (commit: d4f750d)
+
+### forkai-code: page refresh during an agent run lost all run awareness — static "Starting…" forever
+- **Symptom:** Reloading the tab while a CODE run was in progress landed the pane on an unrelated node; the running commit sat on the map with sha "–" and no status. Even when the run completed server-side, the UI never found out (AgentLogPane showed the "Starting…" shimmer indefinitely for a node restored with `agentStatus: 'running'`).
+- **Cause:** AgentLogPane only fetched the persisted AgentRun for `done|error` nodes — nothing polled a `running` one. And `loadSession` kept the cache-painted active node (the root) over the running node, so the running node's pane (the only place polling could live) never even mounted.
+- **Fix:** AgentLogPane polls `getAgentRun` every 2.5s while `kind==='CODE' && agentStatus==='running' && !hasLiveLog`, streaming persisted events into the log and calling `onRunResolved` when the run lands (App patches sha/branch/message/diffSummary/title). `loadSession` prefers a node with `agentStatus==='running'` as the active target — including over the cache-kept previous node, which loadSession itself had just set. Gate is strictly `=== 'running'` (merge commits omit `agentStatus` by design). (commit: 8fd2f9e)
+
+### forkai-code: failed CODE runs showed an empty grey log with no message; Retry no-oped for commit-anchored asks
+- **Symptom:** When a code-run stream failed, the pane showed "● Error" and an empty AGENT LOG box — no reason, no recovery. Separately, asking about a commit that failed server-side showed the error banner but its Retry button silently did nothing.
+- **Cause:** CODE nodes are excluded from the generic `ws-error` banner and AgentLogPane had no error rendering; `askAboutCommit`'s catch never registered a `retryInfoRef` entry (no `RetryInfo` variant existed for commit-anchored ASKs), so `retryNode` returned early.
+- **Fix:** AgentLogPane renders `node.error` + Retry for `agentStatus==='error'` (retry re-runs the code stream in place via `submitCodeNode`'s new `reuseNodeId`); new `RetryInfo` variant `ASK_COMMIT` registered in `askAboutCommit`'s catch and dispatched in `retryNode`. The "Ask about this commit" row is also gated off while a run is in progress. (commit: 8fd2f9e)
+
+### forkai-code: stream error payloads leaked raw into the UI — "Sorry — data: {json}"
+- **Symptom:** A failed streaming request showed the serialized SSE frame (`Sorry — data: {"type":"error","message":...,"status":400}`) instead of the message.
+- **Cause:** `extractError` (lib/api.ts) only tried bare-JSON parsing; an SSE-framed error body (`data: {...}` lines) fell through to the raw-text branch.
+- **Fix:** `extractError` now extracts and parses the last `data: {...}` line first, returning its `message`/`code`; falls through unchanged otherwise. (commit: 8fd2f9e)
+
+### forkai-code: agent runs were silent for ~18s — a frozen "Starting…" until the first real event
+- **Symptom:** After submitting an instruction, the agent log showed a static "Starting…" for the entire LLM transcript-generation latency (~18s of a ~42s run) — indistinguishable from a hang, inviting refreshes/resubmits.
+- **Cause:** `createCodeNodeStreaming` emitted nothing between `init` and the first `agent-event`; the default MockAgentRunner awaits one non-streaming LLM call for the full transcript before yielding anything.
+- **Fix:** The service emits a synthetic heartbeat `agent-event` (kind `text`, rotating "Agent is working…" copy) every 3s between `init` and the first real yield. Heartbeats use negative `seq`s (can't collide with real events, which start at 0) and are SSE-only — never pushed into the persisted AgentRun events. Cleared on first real yield and in a `finally` backstop. (commit: 022c3a5)
+
+### forkai-code: deleting a project was instant — no confirmation, no undo, invisible on touch/keyboard
+- **Symptom:** One click on the hover-revealed trash icon permanently deleted an entire project. The icon was also unreachable on touch devices (no hover) and invisible to keyboard users.
+- **Cause:** `.session-card-delete` fired `onDeleteSession` directly; reveal was `:hover`-only.
+- **Fix:** Two-step inline confirm ("Delete?" ✓/✕; Escape/blur/✕ disarm), reveal on `:focus-within`, and always-visible at reduced opacity under `@media (hover: none)`. (commit: 8fd2f9e)
+
+### forkai-code: first question in every new-repo project failed with 400 "Cannot create a QUERY node under a BRANCH parent"
+- **Symptom:** Creating a from-scratch project and asking its opening question (via ProjectStart or after reopening) always returned HTTP 400 with the raw payload rendered in the error banner. The core ask→answer loop was dead for every new project.
+- **Cause:** The Dynamoose null-stripping quirk (see the null-handling entry in CLAUDE.md) on the **read** path: the seeded BRANCH root is written with `parentId: null`, which Dynamo stores as attribute-absence, so nodes read back with `parentId: undefined`. `createRootNodeStreaming`'s fill-root gate did a strict `find(n => n.parentId === null)`, missed the root, fell through to the seeded-question path, and `assertKindAllowed('BRANCH', 'QUERY')` threw. Regression tell: any strict `=== null` comparison against an optional Dynamo attribute.
+- **Fix:** `DynamoRepository` now normalizes `parentId: item.parentId ?? null` in the node read path (`toNode`/`toNodeArray` used by `getNode`/`queryNodes`), plus belt-and-suspenders `(n.parentId ?? null) === null` at the three strict finds (`sessions.service.ts` fill-root gate + anchor lookup, `nodes.service.ts` `findMainChainTip`). Regression specs: repository round-trip (missing `parentId` → `null`) and a fill-root test whose mocked root omits the `parentId` key. (commit: 549a379)
+
+### forkai-code: modal/landing project brief silently discarded — ProjectStart re-asked "What are we building?"
+- **Symptom:** Typing the project brief in the New-project modal (or submitting a query from the authed Landing) created the project but never streamed the answer; the user landed on ProjectStart with an empty "What are we building?" input — the brief they had just typed was gone.
+- **Cause:** `handleCreateProject` fired `void submitFillRoot(...)`, which read the root node id from `rootIdRef.current` — a ref that `openProject`→`loadSession` populates via React state settling. The `void` call raced that settle and silently early-returned on `!nodeId`. A second landmine sat behind it: once fill-root works, its stream events carry the EXISTING root's id, and ProjectStart's `submitProjectQuery` path would have had `consumeRootStream`'s done-swap overwrite that root with an optimistic QUERY child's fields (parentId = its own id), sending `buildChildMap` into infinite recursion.
+- **Fix:** `loadSession` returns the loaded root id, `openProject` forwards it, and `submitFillRoot(sid, query, rootNodeId)` takes it explicitly (ref is fallback only). ProjectStart's submit now routes to `submitFillRoot` when the root is an empty BRANCH (else `submitProjectQuery` as before), and `consumeRootStream`'s done handler merges streamed content into an already-existing node instead of overwriting it. (commit: e5ec074)
+
+### forkai-code: query typed on Landing while logged out was destroyed by the login gate
+- **Symptom:** A logged-out visitor typed a task on the Landing page and pressed Enter/Begin; they were sent to the login screen and their typed query no longer existed anywhere — after logging in they landed on an empty Landing.
+- **Cause:** The Landing submit path called `submitRootQuery`, whose first line is `if (!idToken) { setForceLogin(true); return; }` — nothing stashed the typed text.
+- **Fix:** The unauthenticated Landing submit now stashes `{query, plugins}` to `localStorage['forkai-code.pendingQuery']` before forcing login; a StrictMode-guarded effect replays it via `submitLandingProject` once `status === 'authenticated' && idToken` settles (placed after `submitLandingProject`'s declaration per the hook-ordering caveat). Mirrors the sibling app's `fork.ai.pending` pattern. (commit: e5ec074)
+
 ### forkai-code: buildspec.yml and Dockerfile would have deployed apps/api into forkai-api's production environment
 - **Symptom:** Discovered while wiring up production infra for `code.forkai.in`/`code-api.forkai.in` — no user-visible symptom yet, since no CodeBuild project had ever pointed at `apps/code-api/buildspec.yml`.
 - **Cause:** Both files were unedited copies from the `apps/api` scaffold. `buildspec.yml` still set `IMAGE_REPO_NAME`/`EB_APP_NAME`/`EB_ENV_NAME` to `forkai-api`/`forkai-api-prod` and built `apps/api/Dockerfile`; the Dockerfile itself still `COPY`'d and compiled `apps/api/`. Had a CodeBuild project been created pointing at this buildspec before the fix, its first build would have pushed the wrong image straight into the main app's production Elastic Beanstalk environment.

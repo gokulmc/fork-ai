@@ -156,7 +156,7 @@ describe('MockAgentService', () => {
     expect(prompt).toContain('Add retry logic to the fetch client');
     expect(prompt).toContain('Ship retries');
     expect(prompt).toContain('Initial commit');
-    expect(prompt).toContain('graphify');
+    expect(prompt).toContain('Graphify');
     expect(model).toBe('claude-haiku-4-5-20251001');
   });
 

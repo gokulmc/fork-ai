@@ -6,7 +6,8 @@ import { LlmService } from '@/llm/llm.service';
 import { BRANCH_DEFAULT_MODEL } from '@/llm/models';
 import { SessionsService } from '@/sessions/sessions.service';
 import { UsersService } from '@/users/users.service';
-import { MockAgentService } from '@/agent/mock-agent.service';
+import { AGENT_RUNNER, AgentRunFinal } from '@/agent/agent-runner';
+import { AgentEvent } from '@/agent/agent-run.util';
 
 const mockDb = {
   putNode: jest.fn(),
@@ -43,9 +44,31 @@ const mockUsers = {
   getPersona: jest.fn(),
 };
 
-const mockAgent = {
-  generate: jest.fn(),
+const agentRunner = {
+  run: jest.fn(),
 };
+
+// Drives the AGENT_RUNNER seam the way MockAgentRunner does: an async
+// generator yielding {type:'event'} items then a single {type:'result'} —
+// or throwing mid-stream when `result` is an Error, to exercise the error path.
+function runnerYields(events: Partial<AgentEvent>[], result: Partial<AgentRunFinal> | Error) {
+  agentRunner.run.mockImplementation(async function* () {
+    for (const e of events) yield { type: 'event', event: { seq: 0, ts: 't', kind: 'text', payload: '', ...e } };
+    if (result instanceof Error) throw result;
+    yield {
+      type: 'result',
+      result: {
+        commitMessage: 'msg',
+        commitSha: null,
+        diffSummary: { filesChanged: 1, additions: 1, deletions: 0, files: [] },
+        inputTokens: 1,
+        outputTokens: 1,
+        model: 'm',
+        ...result,
+      },
+    };
+  });
+}
 
 const SUB = 'user-sub-123';
 const SESSION_ID = '01HZSESS';
@@ -95,7 +118,7 @@ describe('NodesService', () => {
         { provide: LlmService, useValue: mockLlm },
         { provide: SessionsService, useValue: mockSessions },
         { provide: UsersService, useValue: mockUsers },
-        { provide: MockAgentService, useValue: mockAgent },
+        { provide: AGENT_RUNNER, useValue: agentRunner },
       ],
     }).compile();
     service = module.get<NodesService>(NodesService);
@@ -880,17 +903,17 @@ describe('NodesService', () => {
       sections: [{ id: 's1', heading: 'Goal', body: 'Do the thing' }],
     };
     const dto = { parentNodeId: 'plan-1', instruction: 'Implement retry logic' };
-    const agentResult = {
+    const agentEvents = [
+      { kind: 'text' as const, payload: 'Reading files' },
+      { kind: 'terminal' as const, payload: 'tests passed' },
+      { kind: 'file_edit' as const, payload: 'src/fetch.ts' },
+    ];
+    const agentFinal = {
       commitMessage: 'Add retry logic to fetch client',
       diffSummary: {
         filesChanged: 1, additions: 10, deletions: 2,
         files: [{ path: 'src/fetch.ts', status: 'modified', additions: 10, deletions: 2 }],
       },
-      events: [
-        { seq: 0, ts: '2026-01-01T00:00:00.000Z', kind: 'text' as const, payload: 'Reading files' },
-        { seq: 1, ts: '2026-01-01T00:00:00.000Z', kind: 'terminal' as const, payload: 'tests passed' },
-        { seq: 2, ts: '2026-01-01T00:00:00.000Z', kind: 'file_edit' as const, payload: 'src/fetch.ts' },
-      ],
       inputTokens: 500,
       outputTokens: 300,
       model: BRANCH_DEFAULT_MODEL,
@@ -907,7 +930,7 @@ describe('NodesService', () => {
       mockDb.getProject.mockResolvedValue(null);
       mockSessions.touchUpdatedAt.mockResolvedValue(undefined);
       mockSessions.incrementNodeCount.mockResolvedValue(undefined);
-      mockAgent.generate.mockResolvedValue(agentResult);
+      runnerYields(agentEvents, agentFinal);
     });
 
     it('persists the loading node + AgentRun BEFORE any SSE event, then streams init → agent-event* → commit → done in order', async () => {
@@ -933,9 +956,72 @@ describe('NodesService', () => {
       expect(types[5]).toBe('done');
     });
 
+    it('trims trailing punctuation the 5-word title cut leaves behind', async () => {
+      runnerYields(agentEvents, { ...agentFinal, commitMessage: 'feat: Scaffold CLI with Commander, config loader, and S3 client' });
+      const send = () => {};
+
+      await service.createCodeNodeStreaming(SUB, SESSION_ID, dto, send);
+
+      expect(mockDb.updateNode).toHaveBeenCalledWith(
+        SESSION_ID,
+        expect.any(String),
+        expect.objectContaining({ title: 'feat: Scaffold CLI with Commander' }),
+      );
+    });
+
+    it('emits a heartbeat agent-event between init and the first real one when the runner is slow, and never persists heartbeats', async () => {
+      jest.useFakeTimers();
+      try {
+        let releaseFirstYield: () => void = () => {};
+        const firstYieldGate = new Promise<void>((resolve) => { releaseFirstYield = resolve; });
+        // Simulates MockAgentRunner: nothing yielded until the full (mocked)
+        // LLM transcript resolves.
+        agentRunner.run.mockImplementation(async function* () {
+          await firstYieldGate;
+          yield { type: 'event', event: { seq: 0, ts: 't', kind: 'text', payload: 'Reading files' } };
+          yield {
+            type: 'result',
+            result: {
+              commitMessage: 'msg', commitSha: null,
+              diffSummary: { filesChanged: 0, additions: 0, deletions: 0, files: [] },
+              inputTokens: 1, outputTokens: 1, model: 'm',
+            },
+          };
+        });
+
+        const received: Array<{ type: string; event?: AgentEvent }> = [];
+        const send = (d: object) => received.push(d as { type: string; event?: AgentEvent });
+
+        const runPromise = service.createCodeNodeStreaming(SUB, SESSION_ID, dto, send);
+
+        // Flush the promise chain (checkCredit → getSession → putNode/putAgentRun
+        // → init → heartbeat timer created) — all real awaits, no timers, ahead
+        // of this point — before advancing fake time.
+        for (let i = 0; i < 20; i++) await Promise.resolve();
+
+        jest.advanceTimersByTime(3100); // one heartbeat tick before the runner has yielded anything
+        releaseFirstYield();
+        await runPromise;
+
+        const initIdx = received.findIndex((e) => e.type === 'init');
+        const heartbeatIdx = received.findIndex((e) => e.type === 'agent-event' && (e.event?.seq ?? 0) < 0);
+        const realIdx = received.findIndex((e) => e.type === 'agent-event' && (e.event?.seq ?? 0) >= 0);
+
+        expect(heartbeatIdx).toBeGreaterThan(-1);
+        expect(heartbeatIdx).toBeGreaterThan(initIdx);
+        expect(heartbeatIdx).toBeLessThan(realIdx);
+
+        const doneCall = mockDb.updateAgentRun.mock.calls.find((c) => (c[2] as { status?: string }).status === 'done');
+        const persisted = JSON.parse((doneCall![2] as { events: string }).events) as AgentEvent[];
+        expect(persisted.every((e) => e.seq >= 0)).toBe(true);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
     it('resolves branchName from the nearest BRANCH ancestor, falling back through repoRef.defaultBranch to main', async () => {
       await service.createCodeNodeStreaming(SUB, SESSION_ID, dto, jest.fn());
-      const ctxArg = mockAgent.generate.mock.calls[0][0];
+      const ctxArg = agentRunner.run.mock.calls[0][0];
       expect(ctxArg.branchName).toBe('main'); // no BRANCH ancestor, no project
       expect(ctxArg.planDoc).toContain('Do the thing');
     });
@@ -944,7 +1030,7 @@ describe('NodesService', () => {
       const planWithBranch = { ...planNode, branchName: 'fork/add-retry-logic', commitSha: 'plan-base-sha' };
       mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [planWithBranch] });
       await service.createCodeNodeStreaming(SUB, SESSION_ID, dto, jest.fn());
-      const ctxArg = mockAgent.generate.mock.calls[0][0];
+      const ctxArg = agentRunner.run.mock.calls[0][0];
       expect(ctxArg.branchName).toBe('fork/add-retry-logic');
     });
 
@@ -956,17 +1042,27 @@ describe('NodesService', () => {
       const planWithBranch = { ...planNode, branchName: 'fork/should-not-win', commitSha: 'plan-base-sha' };
       mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [planWithBranch, branchNode] });
       await service.createCodeNodeStreaming(SUB, SESSION_ID, { ...dto, parentNodeId: 'branch-1' }, jest.fn());
-      const ctxArg = mockAgent.generate.mock.calls[0][0];
+      const ctxArg = agentRunner.run.mock.calls[0][0];
       expect(ctxArg.branchName).toBe('feature/manual');
     });
 
-    it('bills usage with the mock agent result token counts and CODE kind', async () => {
+    it('bills usage with the runner result token counts and CODE kind', async () => {
       await service.createCodeNodeStreaming(SUB, SESSION_ID, dto, jest.fn());
       expect(mockUsers.billUsage).toHaveBeenCalledWith(SUB, 500, 300, 'CODE', SESSION_ID, expect.any(String), BRANCH_DEFAULT_MODEL);
     });
 
-    it('marks the node and AgentRun as error and emits an error event when the mock agent fails, without throwing', async () => {
-      mockAgent.generate.mockRejectedValue(new Error('boom'));
+    it('assigns commitSha only at done — the initial node/init event carries none', async () => {
+      const received: Array<{ type: string; node?: { commitSha?: string } }> = [];
+      await service.createCodeNodeStreaming(SUB, SESSION_ID, dto, (d) => received.push(d as typeof received[number]));
+      const init = received.find((e) => e.type === 'init')!;
+      const done = received.find((e) => e.type === 'done')!;
+      expect(init.node!.commitSha).toBeUndefined();
+      expect(done.node!.commitSha).toBeDefined();
+      expect(mockDb.updateNode).toHaveBeenCalledWith(SESSION_ID, expect.any(String), expect.objectContaining({ commitSha: expect.any(String) }));
+    });
+
+    it('marks the node and AgentRun as error and emits an error event when the agent runner fails mid-stream, without throwing', async () => {
+      runnerYields(agentEvents, new Error('boom'));
       const received: Array<{ type: string }> = [];
 
       await expect(
@@ -977,6 +1073,20 @@ describe('NodesService', () => {
       expect(mockDb.updateAgentRun).toHaveBeenCalledWith(SESSION_ID, expect.any(String), expect.objectContaining({ status: 'error' }));
       expect(received.some((e) => e.type === 'error')).toBe(true);
       expect(mockUsers.billUsage).not.toHaveBeenCalled();
+    });
+
+    it('marks the node and AgentRun as error when the runner ends without yielding a result', async () => {
+      agentRunner.run.mockImplementation(async function* () {
+        yield { type: 'event', event: { seq: 0, ts: 't', kind: 'text', payload: 'hi' } };
+      });
+      const received: Array<{ type: string }> = [];
+
+      await expect(
+        service.createCodeNodeStreaming(SUB, SESSION_ID, dto, (d) => received.push(d as { type: string })),
+      ).resolves.toBeUndefined();
+
+      expect(mockDb.updateNode).toHaveBeenCalledWith(SESSION_ID, expect.any(String), expect.objectContaining({ agentStatus: 'error' }));
+      expect(received.some((e) => e.type === 'error')).toBe(true);
     });
 
     it('rejects a parent kind that cannot host a CODE child', async () => {
@@ -991,16 +1101,16 @@ describe('NodesService', () => {
       await expect(service.createCodeNodeStreaming(SUB, SESSION_ID, dto, jest.fn())).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it('threads attachments into the mock agent prompt context', async () => {
+    it('threads attachments into the agent run context', async () => {
       const attachments = [{ name: 'notes.md', content: '# context' }];
       await service.createCodeNodeStreaming(SUB, SESSION_ID, { ...dto, attachments }, jest.fn());
-      const ctxArg = mockAgent.generate.mock.calls[0][0];
+      const ctxArg = agentRunner.run.mock.calls[0][0];
       expect(ctxArg.attachments).toEqual(attachments);
     });
 
     it('leaves attachments undefined when none are sent', async () => {
       await service.createCodeNodeStreaming(SUB, SESSION_ID, dto, jest.fn());
-      const ctxArg = mockAgent.generate.mock.calls[0][0];
+      const ctxArg = agentRunner.run.mock.calls[0][0];
       expect(ctxArg.attachments).toBeUndefined();
     });
 

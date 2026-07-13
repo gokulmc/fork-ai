@@ -2,7 +2,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CreateProjectPayload, GithubRepo, GithubStatus, RepoRef } from '@/lib/api';
 import { getGithubStatus, getGithubAuthUrl, listGithubRepos, ApiError } from '@/lib/api';
-import { MOCK_REPOS, PLUGINS } from '@/lib/mockGithub';
+import { MOCK_REPOS, SKILL_PLUGINS, HARNESS_PLUGINS } from '@/lib/mockGithub';
 import { X as XIcon, Github } from './Icons';
 
 interface NewProjectModalProps {
@@ -204,20 +204,25 @@ export function NewProjectModal({ idToken, onClose, onCreate }: NewProjectModalP
 
           <div>
             <div className="proj-field-label">Plugins</div>
-            {PLUGINS.map(p => (
-              <div className="proj-plugin-row" key={p.id}>
-                <div>
-                  <div className="proj-plugin-name">{p.name}</div>
-                  <div className="proj-plugin-desc">{p.desc}</div>
-                </div>
-                <button
-                  type="button"
-                  className={`proj-switch${plugins.has(p.id) ? ' on' : ''}`}
-                  role="switch"
-                  aria-checked={plugins.has(p.id)}
-                  aria-label={p.name}
-                  onClick={() => togglePlugin(p.id)}
-                />
+            {[{ label: 'Skills', items: SKILL_PLUGINS }, { label: 'Harnesses', items: HARNESS_PLUGINS }].map(g => (
+              <div key={g.label}>
+                <div className="proj-plugin-group-label">{g.label}</div>
+                {g.items.map(p => (
+                  <div className="proj-plugin-row" key={p.id}>
+                    <div>
+                      <div className="proj-plugin-name">{p.icon} {p.name}</div>
+                      <div className="proj-plugin-desc">{p.desc}</div>
+                    </div>
+                    <button
+                      type="button"
+                      className={`proj-switch${plugins.has(p.id) ? ' on' : ''}`}
+                      role="switch"
+                      aria-checked={plugins.has(p.id)}
+                      aria-label={p.name}
+                      onClick={() => togglePlugin(p.id)}
+                    />
+                  </div>
+                ))}
               </div>
             ))}
           </div>

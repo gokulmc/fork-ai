@@ -42,7 +42,7 @@ export function brandCard({
           <div style={{ display: 'flex', alignItems: 'center', padding: '40px 56px', borderBottom: `1px solid ${DIVIDER}` }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={logo()} width={56} height={56} style={{ borderRadius: 12 }} alt="" />
-            <div style={{ marginLeft: 18, fontSize: 34, fontWeight: 700, color: INK, letterSpacing: -1 }}>fork ai</div>
+            <div style={{ marginLeft: 18, fontSize: 34, fontWeight: 700, color: INK, letterSpacing: -1 }}>forkai code</div>
           </div>
 
           {/* Body */}
@@ -62,7 +62,7 @@ export function brandCard({
 
           {/* Footer */}
           <div style={{ display: 'flex', alignItems: 'center', padding: '26px 56px', background: PANEL, borderTop: `1px solid ${DIVIDER}`, fontSize: 22, color: MUTED }}>
-            forkai.in
+            code.forkai.in
           </div>
         </div>
       </div>

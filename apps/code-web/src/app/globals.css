@@ -8,7 +8,7 @@
   --sidebar: #fafafa;
   --ink: #2d2d2d;
   --ink-2: #595959;
-  --ink-3: #999999;
+  --ink-3: #767674; /* WCAG 1.4.4/1.4.3 — 4.5:1 on white (#999999 was ~2.85:1) */
   --ink-faint: rgba(0, 0, 0, 0.45);
   --line: rgba(0, 0, 0, 0.08);
   --line-2: rgba(0, 0, 0, 0.04);
@@ -156,6 +156,19 @@ body {
 button { font: inherit; color: inherit; }
 ::selection { background: var(--highlight-strong); color: var(--ink); }
 
+/* Global keyboard-focus ring (WCAG 2.4.7). Most controls have no explicit
+   outline suppression, so this alone covers them. Two elements override it
+   with their own `outline: none`/`outline: 0` (one in a CSS rule, one inline
+   in JSX) and need an explicit re-add below. */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* .code-composer-textarea sets outline:none via its own (lower-specificity)
+   CSS rule — this wins on specificity alone, no !important needed. */
+textarea.code-composer-textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* .auth-input (LoginPage.tsx) sets outline:0 as an inline style, which beats
+   any stylesheet rule regardless of specificity — !important is required to
+   win, same as the mobile font-size override further down this file. */
+input.auth-input:focus-visible { outline: 2px solid var(--accent) !important; outline-offset: 2px !important; }
+
 /* Mobile: suppress the OS long-press callout (Copy / Look Up / Share) over
    selectable content — the in-app HighlightMenu replaces it. Text inputs keep
    the native callout so long-press-to-paste still works in the query/login
@@ -290,6 +303,7 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 }
 
 .query-box {
+  position: relative;
   display: flex;
   align-items: center;
   background: var(--paper);
@@ -337,7 +351,16 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
   transition: transform .15s, opacity .15s;
 }
 .query-box .submit:hover { transform: translateY(-1px); }
-.query-box .submit:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+/* A plain opacity fade still reads as "clickable, just faded" at a glance —
+   swap to a muted flat fill so enabled vs. disabled is legible immediately. */
+.query-box .submit:disabled {
+  background: var(--line);
+  color: var(--ink-3);
+  opacity: 1;
+  box-shadow: none;
+  cursor: not-allowed;
+  transform: none;
+}
 .query-box .qb-file {
   background: transparent;
   border: 0;
@@ -419,6 +442,49 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
   text-overflow: ellipsis;
 }
 .examples .chip:hover { background: var(--panel); border-color: var(--ink-3); color: var(--ink); }
+
+.plugin-drop {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  right: 0;
+  z-index: 40;
+  background: var(--paper);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-2);
+  padding: 12px 14px;
+  text-align: left;
+  animation: pluginDropIn .14s ease-out both;
+}
+@keyframes pluginDropIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+.plugin-drop-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
+.plugin-drop-title { font-family: var(--sans); font-size: 12px; font-weight: 600; color: var(--ink); }
+.plugin-drop-count { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); }
+.plugin-drop-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 18px; }
+.plugin-drop-kicker { font-family: var(--sans); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 6px; }
+.plugin-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 0;
+  background: transparent;
+  border-radius: var(--radius);
+  font-family: var(--sans);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink-2);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+.plugin-row:hover { background: var(--hover); color: var(--ink); }
+.plugin-row-icon { font-size: 13px; line-height: 1; font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", system-ui, sans-serif; }
+.plugin-row-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plugin-row-check { font-size: 11px; color: var(--ink-3); opacity: 0; }
+.plugin-row.on { background: var(--accent-soft); color: var(--ink); }
+.plugin-row.on .plugin-row-check { opacity: 1; }
 
 /* Sessions dashboard within landing */
 .past-sessions {
@@ -508,6 +574,7 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
   background: color-mix(in oklab, var(--accent) 14%, transparent);
   color: var(--accent);
 }
+.session-card-time { margin-left: auto; font-variant-numeric: tabular-nums; }
 .session-card-delete {
   position: absolute;
   top: 8px;
@@ -527,9 +594,48 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
   transition: opacity .15s, visibility .15s, background .12s, color .12s;
   padding: 0;
 }
-.session-card:hover .session-card-delete { opacity: 1; visibility: visible; }
+.session-card:hover .session-card-delete,
+.session-card:focus-within .session-card-delete { opacity: 1; visibility: visible; }
 .session-card-delete:hover { background: color-mix(in oklab, #c4452e 12%, transparent); color: #c4452e; }
 .session-card-delete:disabled { pointer-events: none; opacity: 0.5; }
+/* Hover-hover-affordance devices (touch) never trigger :hover, so the delete
+   button would otherwise be permanently invisible — show it faintly instead. */
+@media (hover: none) {
+  .session-card-delete { opacity: 0.5; visibility: visible; }
+}
+.session-card-confirm {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px 3px 8px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.session-card-confirm-label {
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.session-card-confirm-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  border-radius: 5px;
+  color: var(--ink-3);
+  cursor: pointer;
+  padding: 0;
+}
+.session-card-confirm-yes:hover { background: color-mix(in oklab, #c4452e 12%, transparent); color: #c4452e; }
+.session-card-confirm-no:hover { background: var(--hover); color: var(--ink); }
 .history-groups {
   display: flex;
   flex-direction: column;
@@ -780,9 +886,9 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
      72→60 at 2x); moderate downscales stay crisp, only huge ones blurred. */
   /* Transparent glyph (white chip knocked out) so it sits cleanly on any
      surface; dark mode just inverts the black glyph to white below. */
-  background-image: url('/mark-t-48.png'); /* fallback for engines without image-set */
-  background-image: -webkit-image-set(url('/mark-t-48.png') 1x, url('/mark-t-72.png') 2x);
-  background-image: image-set(url('/mark-t-48.png') 1x, url('/mark-t-72.png') 2x);
+  background-image: url('/mark-t-48.png?v=2'); /* fallback for engines without image-set */
+  background-image: -webkit-image-set(url('/mark-t-48.png?v=2') 1x, url('/mark-t-72.png?v=2') 2x);
+  background-image: image-set(url('/mark-t-48.png?v=2') 1x, url('/mark-t-72.png?v=2') 2x);
 }
 /* Match the in-app theme toggle (data-theme), not the OS colour scheme. */
 [data-theme="dark"] .app-brand .brand-logo {
@@ -808,7 +914,7 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 20px 0 140px;
+  padding: 0 20px 0 190px; /* matches .topbar — clears the fixed .app-brand wordmark */
   height: 52px;
   border-bottom: 1px solid var(--line);
   flex-shrink: 0;
@@ -918,7 +1024,10 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 20px 0 140px;
+  /* Left padding must clear the fixed .app-brand (left:24px + 30px logo + 8px
+     gap + ~19px-bold "forkai code" text ≈ 186px wide) — 140px let the brand
+     overlap the first crumb. Desktop only: .app-brand is hidden ≤768px. */
+  padding: 0 20px 0 190px;
   border-bottom: 1px solid var(--line);
   background: var(--paper);
   z-index: 4;
@@ -1399,6 +1508,7 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 .ws-rule { border: 0; border-top: 1px solid var(--line); margin: 0 0 24px; }
 
 .section { position: relative; margin: 0 0 28px; padding-left: 2px; }
+.ws-highlight-hint { font-family: var(--sans); font-size: 11.5px; color: var(--ink-3); margin: -16px 0 28px; padding-left: 2px; }
 .section-head { position: relative; display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; padding: 2px 0; border-radius: 4px; }
 .section-num { font-family: var(--sans); font-size: 12px; color: var(--ink-3); font-weight: 500; margin-top: 4px; min-width: 22px; }
 .section h2 { font-family: var(--sans); font-weight: 600; font-size: clamp(20px, 2.1vw, 24px); line-height: 1.25; letter-spacing: -0.015em; margin: 0; flex: 1; text-wrap: balance; color: var(--ink); }
@@ -1777,7 +1887,9 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
   letter-spacing: .01em; white-space: nowrap;
 }
 .twk-status-on { color: var(--accent); border-color: var(--accent); }
-.twk-status-off { opacity: .6; }
+/* Was `opacity: .6` — washed the pill's text below WCAG contrast. Rely on
+   color alone (var(--ink-3) is already a muted, compliant grey). */
+.twk-status-off { color: var(--ink-3); }
 /* Status chips are workspace context — noise on the landing page. */
 body:has(.landing) .twk-status { display: none; }
 /* The account button has no role while composing a mix (all viewports). */
@@ -1859,9 +1971,15 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
 .twk-seg-disabled { opacity: .45; pointer-events: none; }
 
 /* Dark theme: the select field and segmented thumb default to white, which hides
-   the (light) text. Give them dark surfaces and a light dropdown arrow. */
-[data-theme="dark"] .twk-field { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.14); }
-[data-theme="dark"] .twk-field:focus { background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.3); }
+   the (light) text. Give them dark surfaces and a light dropdown arrow.
+   background-color (not the `background` shorthand) is deliberate: the shorthand
+   resets background-repeat/-position to their initial values, which outranks
+   (higher specificity) select.twk-field's no-repeat/right-8px-center rule below —
+   the dropdown arrow then tiled across the whole control instead of sitting
+   in the corner. background-color only touches the color, leaving the select's
+   own repeat/position/image rules in control. */
+[data-theme="dark"] .twk-field { background-color: rgba(255,255,255,.06); border-color: rgba(255,255,255,.14); }
+[data-theme="dark"] .twk-field:focus { background-color: rgba(255,255,255,.1); border-color: rgba(255,255,255,.3); }
 [data-theme="dark"] .twk-field option { background: #1f1f1f; color: #e6e6e3; }
 [data-theme="dark"] select.twk-field { background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='rgba(255,255,255,.55)' d='M0 0h10L5 6z'/></svg>"); }
 [data-theme="dark"] .twk-seg { background: rgba(255,255,255,.06); }
@@ -2036,7 +2154,11 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
      translucent, heavy backdrop blur + saturation, with a top sheen highlight. */
   .mm-pill {
     position: fixed; left: 50%; transform: translateX(-50%);
-    bottom: calc(env(safe-area-inset-bottom) + 16px);
+    /* Must clear .code-composer's visible card, which sits (20px + safe-area)
+       above the viewport bottom and is itself ~52px tall (8px+8px padding +
+       ~34px row: 30px buttons vs a 16px-font single-line textarea) — so its
+       top edge is ~72px + safe-area above the bottom. 90px leaves an ~18px gap. */
+    bottom: calc(env(safe-area-inset-bottom) + 106px);
     z-index: 2147483646;
     display: inline-flex; align-items: center; gap: 8px;
     height: 44px; padding: 0 22px;
@@ -2050,6 +2172,13 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
     cursor: pointer;
   }
   .mm-pill:active { transform: translateX(-50%) scale(0.97); }
+
+  /* Tweaks gear + status chips also sit on the composer's right edge at this
+     width (no mobile reposition otherwise) — same clearance as .mm-pill above,
+     tucked further right; status keeps the desktop 44px stack gap (36px
+     trigger + 8px) above the trigger. */
+  .twk-trigger { right: 16px; bottom: calc(env(safe-area-inset-bottom) + 106px); }
+  .twk-status { right: 16px; bottom: calc(env(safe-area-inset-bottom) + 150px); }
 
   /* Mixer on phones: the overlay owns the bottom strip — hide the floating
      chrome that collides with it (Read pill, tweaks chips + gear, account)
@@ -2147,6 +2276,8 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
   .query-box input { padding: 5px 3px; font-size: 14px; }
   .query-box .submit { height: 30px; }
   .examples .chip { padding: 6px 10px; font-size: 11px; }
+  .plugin-drop-cols { grid-template-columns: 1fr; }
+  .plugin-drop { max-height: 46vh; overflow-y: auto; }
 }
 
 /* ============================================================
@@ -2431,7 +2562,16 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
   transition: opacity .15s;
 }
 .proj-btn-primary:hover:not(:disabled) { opacity: .85; }
-.proj-btn-primary:disabled { opacity: .45; cursor: not-allowed; }
+/* Same reasoning as .query-box .submit:disabled — a flat muted fill instead of
+   an opacity fade reads as "not actionable" rather than "actionable, but faint". */
+.proj-btn-primary:disabled {
+  background: var(--line);
+  color: var(--ink-3);
+  border-color: var(--line);
+  opacity: 1;
+  box-shadow: none;
+  cursor: not-allowed;
+}
 
 .proj-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
 .proj-card {
@@ -2496,6 +2636,8 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
 .proj-repo-name { font-family: var(--mono); font-size: 12.5px; color: var(--ink); flex: 1; }
 .mock-tag { font-family: var(--sans); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); border: 1px solid var(--line-strong); border-radius: 999px; padding: 2px 7px; flex-shrink: 0; }
 
+.proj-plugin-group-label { font-family: var(--sans); font-size: 10px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); margin-top: 12px; }
+.proj-plugin-group-label:first-child { margin-top: 0; }
 .proj-plugin-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .proj-plugin-row:last-child { border-bottom: 0; padding-bottom: 0; }
 .proj-plugin-name { font-family: var(--sans); font-size: 13px; font-weight: 600; color: var(--ink); }
@@ -2544,6 +2686,9 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
 .log-line { font-family: var(--mono); font-size: 12.5px; line-height: 1.55; color: var(--term-ink); }
 .log-line--text { font-family: var(--sans); font-size: 13px; }
 .log-line--tool_call { color: var(--term-ink-dim); }
+.log-line-raw { margin-top: 2px; }
+.log-line-raw summary { font-size: 10.5px; color: var(--ink-3); cursor: pointer; }
+.log-line-raw pre { margin: 4px 0 0; font-size: 11px; color: var(--term-ink-dim); white-space: pre-wrap; word-break: break-all; }
 .log-line--tool_result { color: var(--term-ink-dim); padding-left: 18px; opacity: .9; }
 .log-line--terminal { background: rgba(0,0,0,.055); border: 1px solid var(--term-line); border-radius: 4px; padding: 8px 10px; white-space: pre-wrap; }
 [data-theme="dark"] .log-line--terminal { background: rgba(255,255,255,.045); }

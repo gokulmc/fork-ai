@@ -1,0 +1,16 @@
+{
+  "name": "cloud-sandbox-spike",
+  "version": "0.0.0",
+  "private": true,
+  "description": "THROWAWAY feasibility spike — Fly Machines cloud sandbox for the CODE agent. Not part of the npm workspace (apps/*); run standalone from this directory.",
+  "type": "module",
+  "scripts": {
+    "run-spike": "tsx src/run-spike.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "@types/node": "^22.10.2"
+  }
+}

@@ -871,7 +871,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
           readOnly
           tabIndex={-1}
           aria-hidden="true"
-          style={{ position: 'absolute', opacity: 0, height: 0, width: 0, pointerEvents: 'none' }}
+          style={{ position: 'absolute', opacity: 0, height: 0, width: 0, border: 0, padding: 0, pointerEvents: 'none' }}
         />
 
         {barRows.map((r, i) => (
@@ -980,7 +980,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
           <img
             // mark-dark-* is the light variant for dark backgrounds (same convention
             // as the dark favicons); the default mark is dark-on-transparent.
-            src={pal.dark ? '/mark-dark-72.png' : '/mark-168.png'} alt="Fork"
+            src={pal.dark ? '/mark-dark-72.png?v=2' : '/mark-168.png?v=2'} alt="Fork"
             style={{ width: 56, height: 56, animation: 'lp-rise 1.4s 0.3s cubic-bezier(.2,.8,.2,1) both' }}
           />
           <div style={{

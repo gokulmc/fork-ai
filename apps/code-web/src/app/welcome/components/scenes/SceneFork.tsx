@@ -12,8 +12,8 @@ const MAX_VISITOR_HIGHLIGHTS = 3;
 const AUTO_DEMO_DELAY_MS = 6000;
 const perQueryCost = estimateQueryCostUsd('haiku');
 
-// Beat: Alex highlights the exact sentence she'll need to defend later and
-// branches "Ask AI" from it, or takes the whole passage deeper. Visitor
+// Beat: Alex highlights the exact line her fix depends on and branches
+// "Ask AI" from it, or takes the whole passage deeper. Visitor
 // selections add real nodes to the persistent constellation. If the visitor
 // does nothing, the scene auto-plays Go Deeper so the story never stalls.
 export function SceneFork() {
@@ -49,7 +49,7 @@ export function SceneFork() {
       setDeeperRevealed(true);
       if (!deeperFired) {
         setDeeperFired(true);
-        addNode({ id: 'moderating-factors', parentId: 'root', label: 'Moderating factors', kind: 'story' });
+        addNode({ id: 'moderating-factors', parentId: 'root', label: 'Sliding window, in production', kind: 'story' });
       }
       if (visitorInitiated && autoTimerRef.current != null) {
         window.clearTimeout(autoTimerRef.current);
@@ -144,7 +144,7 @@ export function SceneFork() {
         </div>
         <h2 className="wp-h2 wp-reveal">The fork</h2>
         <p className={`wp-sub wp-reveal ${inView ? 'wp-in-view' : ''}`}>
-          Section two holds the claim her whole argument leans on. Do what Alex did — select the
+          Section two holds the claim her fix depends on. Do what Alex did — select the
           sentence.
         </p>
 
@@ -195,11 +195,11 @@ export function SceneFork() {
               </div>
               <div>
                 <div className={`wp-branch-card ${deeperRevealed ? 'wp-branch-card-show' : ''}`}>
-                  <span className="wp-branch-kicker">GO DEEPER · MODERATING FACTORS</span>
+                  <span className="wp-branch-kicker">GO DEEPER · SLIDING WINDOW</span>
                   <p className="wp-branch-body">{GO_DEEPER_ANSWER}</p>
                 </div>
                 {deeperRevealed && (
-                  <p className="wp-why">№2 — Each branch carries only its own thread. Cleaner context in, sharper answers out.</p>
+                  <p className="wp-why">№2 — Each branch carries only its own thread. Cleaner context in, sharper commits out.</p>
                 )}
               </div>
             </div>
