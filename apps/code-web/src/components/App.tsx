@@ -232,6 +232,8 @@ const TWEAK_DEFAULTS = {
   maxSections: 6,
   webSearch: false,
   branchModel: 'gemini-flash-lite' as const,
+  // Flip to 'cloud' once cloud execution is enabled in prod (deploy checklist A5).
+  environment: 'demo' as const,
 };
 
 const FONT_PAIRS: Record<string, { serif: string; sans: string; label: string }> = {
@@ -1769,7 +1771,13 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       await createCodeNodeStream(
         idToken,
         sid,
-        { parentNodeId, instruction, model: tweaksRef.current.branchModel, attachments: attachments.length ? attachments : undefined },
+        {
+          parentNodeId,
+          instruction,
+          model: tweaksRef.current.branchModel,
+          attachments: attachments.length ? attachments : undefined,
+          environment: tweaksRef.current.environment === 'demo' ? 'mock' : 'cloud',
+        },
         (event) => {
           if (event.type === 'branch-init') {
             // A parallel instruction auto-forked a BRANCH node ahead of the CODE

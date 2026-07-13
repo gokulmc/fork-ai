@@ -44,4 +44,11 @@ export class CreateCodeNodeDto {
   @ValidateNested({ each: true })
   @Type(() => AttachmentDto)
   attachments?: AttachmentDto[];
+
+  // 'local' is deliberately excluded — desktop local runs go through the
+  // (future) ingestion API, never this route.
+  @ApiPropertyOptional({ enum: ['cloud', 'mock'], description: 'Execution environment for this run (default: server-configured AGENT_RUNNER)' })
+  @IsOptional()
+  @IsIn(['cloud', 'mock'])
+  environment?: 'cloud' | 'mock';
 }

@@ -6,7 +6,8 @@ import { LlmService } from '@/llm/llm.service';
 import { BRANCH_DEFAULT_MODEL } from '@/llm/models';
 import { SessionsService } from '@/sessions/sessions.service';
 import { UsersService } from '@/users/users.service';
-import { AGENT_RUNNER, AgentRunFinal } from '@/agent/agent-runner';
+import { AgentRunFinal } from '@/agent/agent-runner';
+import { AGENT_RUNNER_REGISTRY } from '@/agent/runner-registry';
 import { AgentEvent } from '@/agent/agent-run.util';
 
 const mockDb = {
@@ -46,6 +47,13 @@ const mockUsers = {
 
 const agentRunner = {
   run: jest.fn(),
+};
+
+// Stands in for the AGENT_RUNNER_REGISTRY seam — resolves to `agentRunner`
+// by default so every existing createCodeNodeStreaming test keeps working
+// unchanged; tests that care about environment routing override resolve().
+const mockRunners = {
+  resolve: jest.fn(() => agentRunner),
 };
 
 // Drives the AGENT_RUNNER seam the way MockAgentRunner does: an async
@@ -118,7 +126,7 @@ describe('NodesService', () => {
         { provide: LlmService, useValue: mockLlm },
         { provide: SessionsService, useValue: mockSessions },
         { provide: UsersService, useValue: mockUsers },
-        { provide: AGENT_RUNNER, useValue: agentRunner },
+        { provide: AGENT_RUNNER_REGISTRY, useValue: mockRunners },
       ],
     }).compile();
     service = module.get<NodesService>(NodesService);
@@ -1099,6 +1107,22 @@ describe('NodesService', () => {
     it('throws NotFoundException when the parent node does not exist', async () => {
       mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [] });
       await expect(service.createCodeNodeStreaming(SUB, SESSION_ID, dto, jest.fn())).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('passes dto.environment through to runners.resolve()', async () => {
+      await service.createCodeNodeStreaming(SUB, SESSION_ID, { ...dto, environment: 'cloud' }, jest.fn());
+      expect(mockRunners.resolve).toHaveBeenCalledWith('cloud');
+    });
+
+    it('propagates a BadRequestException from runners.resolve() before any persistence', async () => {
+      mockRunners.resolve.mockImplementationOnce(() => { throw new BadRequestException("Execution environment 'cloud' is not available on this server"); });
+
+      await expect(
+        service.createCodeNodeStreaming(SUB, SESSION_ID, { ...dto, environment: 'cloud' }, jest.fn()),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mockDb.putNode).not.toHaveBeenCalled();
+      expect(mockDb.putAgentRun).not.toHaveBeenCalled();
     });
 
     it('threads attachments into the agent run context', async () => {

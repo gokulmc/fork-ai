@@ -85,6 +85,7 @@ export interface Tweaks {
   maxSections: number;
   webSearch: boolean;
   branchModel: 'haiku' | 'sonnet' | 'opus' | 'gemini-pro' | 'gemini-flash' | 'gemini-flash-lite' | 'deepseek-pro' | 'deepseek-flash' | 'glm' | 'glm-air';
+  environment: 'cloud' | 'demo';
 }
 
 export interface HlMenuState {

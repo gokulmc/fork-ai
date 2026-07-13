@@ -8,7 +8,8 @@ import { resolveBranchModel } from '@/llm/models';
 import { NodeKind } from '@/llm/llm.types';
 import { SessionsService } from '@/sessions/sessions.service';
 import { UsersService } from '@/users/users.service';
-import { AGENT_RUNNER, AgentRunner, AgentRunFinal, AgentRunContext } from '@/agent/agent-runner';
+import { AgentRunFinal, AgentRunContext } from '@/agent/agent-runner';
+import { AGENT_RUNNER_REGISTRY, AgentRunnerRegistry } from '@/agent/runner-registry';
 import { AgentEvent, serializeEventsCapped } from '@/agent/agent-run.util';
 import { CreateNodeDto } from './dto/create-node.dto';
 import { CreateMixNodeDto } from './dto/create-mix-node.dto';
@@ -26,7 +27,7 @@ export class NodesService {
     private readonly llm: LlmService,
     private readonly sessions: SessionsService,
     private readonly users: UsersService,
-    @Inject(AGENT_RUNNER) private readonly agentRunner: AgentRunner,
+    @Inject(AGENT_RUNNER_REGISTRY) private readonly runners: AgentRunnerRegistry,
   ) {}
 
   async createNode(sub: string, sessionId: string, dto: CreateNodeDto): Promise<NodeItem> {
@@ -607,6 +608,11 @@ export class NodesService {
     }
     assertKindAllowed(parentNode.kind as NodeKind, 'CODE');
 
+    // Resolve BEFORE any write below (auto-branch or the CODE node itself) —
+    // an invalid/unavailable environment must 400 cleanly, never leave an
+    // orphaned 'running' node (or a stray auto-branch fork) behind it.
+    const runner = this.runners.resolve(dto.environment);
+
     const emit = (data: object) => { try { send(data); } catch { /* client gone */ } };
 
     // Auto-branch on a parallel instruction: submitting a NEW instruction while
@@ -759,7 +765,7 @@ export class NodesService {
     let lastPersistAt = Date.now();
     let seq = 0;
     try {
-      for await (const item of this.agentRunner.run(ctx)) {
+      for await (const item of runner.run(ctx)) {
         clearInterval(heartbeatTimer); // first real yield ends the heartbeat window
         if (item.type === 'result') { final = item.result; continue; }
         const event: AgentEvent = { ...item.event, seq: seq++ }; // server owns seq numbering

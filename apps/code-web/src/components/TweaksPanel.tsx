@@ -406,6 +406,14 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, 
                 ? 'DeepSeek models don’t support web search.'
                 : 'Web search queries are costlier than normal LLM calls. Keep them off at most times.'}
             </p>
+            <TweakSection label="Coding agent" />
+            <TweakRadio
+              label="Environment"
+              value={tweaks.environment}
+              options={[{ value: 'cloud', label: 'Cloud sandbox' }, { value: 'demo', label: 'Demo' }]}
+              onChange={v => setTweak('environment', v as Tweaks['environment'])}
+            />
+            <p className="twk-note">Where CODE runs execute. Cloud runs in an isolated sandbox VM.</p>
             <TweakSection label="Ask AI shortcuts" />
             <div className="twk-shortcuts">
               {([['?', 'what'], ['!?', 'how'], ['/?', 'why'], ['>?', 'explain']] as const).map(([sym, word]) => (

@@ -782,6 +782,7 @@ export interface CreateCodeNodePayload {
   instruction: string;
   model?: 'haiku' | 'sonnet' | 'opus' | 'gemini-pro' | 'gemini-flash' | 'gemini-flash-lite' | 'deepseek-pro' | 'deepseek-flash' | 'glm' | 'glm-air';
   attachments?: Array<{ name: string; content: string }>;
+  environment?: 'cloud' | 'mock';
 }
 
 export type CodeStreamEvent =
