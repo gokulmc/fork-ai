@@ -7,6 +7,7 @@ const RUNNER_ENVIRONMENTS: RunnerEnvironment[] = ['mock', 'cloud', 'local'];
 
 export interface AgentRunnerRegistry {
   resolve(environment?: string): AgentRunner;
+  isCloud(environment?: string): boolean;
 }
 
 export const AGENT_RUNNER_REGISTRY = Symbol('AGENT_RUNNER_REGISTRY');
@@ -32,5 +33,13 @@ export class RunnerRegistry implements AgentRunnerRegistry {
       throw new BadRequestException(`Execution environment '${environment}' is not available on this server`);
     }
     return this.runners[environment as RunnerEnvironment]!;
+  }
+
+  // Lets nodes.service.ts branch hold-vs-billUsage (ADR-0004) without
+  // string-sniffing 'cloud' itself — mirrors resolve()'s own
+  // explicit-or-default fallback so the two never disagree on which runner a
+  // given request would actually get.
+  isCloud(environment?: string): boolean {
+    return (environment ?? this.defaultEnv) === 'cloud';
   }
 }

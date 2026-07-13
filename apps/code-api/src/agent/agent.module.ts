@@ -1,19 +1,24 @@
 import { Module, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { LlmModule } from '@/llm/llm.module';
+import { UsersModule } from '@/users/users.module';
+import { UsersService } from '@/users/users.service';
 import { MockAgentService } from './mock-agent.service';
 import { MockAgentRunner } from './mock-agent-runner';
 import type { AgentRunner } from './agent-runner';
 import { AGENT_RUNNER_REGISTRY, RunnerRegistry, RunnerEnvironment } from './runner-registry';
 
 @Module({
-  imports: [LlmModule],
+  // UsersModule only imports DynamoModule + ConfigModule — no cycle back to
+  // AgentModule, so this is a plain import (no forwardRef needed). Pulled in
+  // for UsersService.billMachineUsage/reconcileStaleHolds (ADR-0004).
+  imports: [LlmModule, UsersModule],
   providers: [
     MockAgentService,
     {
       provide: AGENT_RUNNER_REGISTRY,
-      inject: [MockAgentService, ConfigService],
-      useFactory: async (mock: MockAgentService, config: ConfigService) => {
+      inject: [MockAgentService, ConfigService, UsersService],
+      useFactory: async (mock: MockAgentService, config: ConfigService, users: UsersService) => {
         const runners: Partial<Record<RunnerEnvironment, AgentRunner>> = {
           mock: new MockAgentRunner(mock), // always available — the safe fallback
         };
@@ -61,11 +66,15 @@ import { AGENT_RUNNER_REGISTRY, RunnerRegistry, RunnerEnvironment } from './runn
             regions,
             anthropicApiKey: config.get<string>('anthropic.apiKey')!,
             ttlMinutes: Number(process.env.SANDBOX_TTL_MINUTES ?? 20),
+            // Error/no-result path only — this runner is the one destroying
+            // the sandbox in that case, so it bills it (see ADR-0004). The
+            // success path bills nothing here; the sweep below does.
+            onMachineDestroyBill: (a) => users.billMachineUsage(a.sub, a.sandboxId, a.sessionId, a.nodeId, a.createdAt, a.destroyAtMs),
           });
           // Own FlyProvider instance (stateless — just wraps fetch with the
           // same token/org) rather than reaching into CloudAgentRunner's
           // private one, so the sweep and the runner stay decoupled.
-          startSandboxSweep(new FlyProvider({ apiToken, orgSlug }), new Logger('CloudSandboxSweep'));
+          startSandboxSweep(new FlyProvider({ apiToken, orgSlug }), new Logger('CloudSandboxSweep'), users);
         }
 
         // Fail fast at bootstrap if the server's own default names a runner it

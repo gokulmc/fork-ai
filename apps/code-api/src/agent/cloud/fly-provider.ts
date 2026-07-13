@@ -29,6 +29,16 @@ const BASE_IMAGE_APP = 'forkai-sbx-base';
 // sandbox-sweep.ts reconciles against this (via listMachines' config.metadata)
 // instead of name-prefix+age alone. Exported so both sides use the same key.
 export const SANDBOX_EXPIRES_AT_METADATA_KEY = 'forkai_expires_at';
+// Identity metadata keys — set atomically WITH machine create (see
+// createMachineWithRegionFallback), not via a post-create setMetadata call
+// like the expiry key above. Billing must be able to find "who owns this
+// machine" from the moment it exists: a crash between create and a post-hoc
+// setMetadata would otherwise orphan an unbillable machine. sandbox-sweep.ts
+// reads these back via listMachines' config.metadata to bill full-lifetime
+// usage at true-destroy time (see UsersService.billMachineUsage).
+export const SANDBOX_SUB_METADATA_KEY = 'forkai_sub';
+export const SANDBOX_SESSION_METADATA_KEY = 'forkai_session_id';
+export const SANDBOX_NODE_METADATA_KEY = 'forkai_node_id';
 
 export interface SandboxCreateOpts {
   runId: string;
@@ -39,12 +49,19 @@ export interface SandboxCreateOpts {
   // when FLY_REGIONS is unset.
   regions: string[];
   env: Record<string, string>;
+  // Billing identity (ADR-0004) — optional only so existing/other callers
+  // (e.g. tests) that don't care about billing keep compiling; the cloud run
+  // path always supplies all three. Baked into config.metadata at create.
+  sub?: string;
+  sessionId?: string;
+  nodeId?: string;
 }
 
 export interface SandboxHandle {
   sandboxId: string; // "<appName>:<machineId>"
   baseUrl: string; // https origin serving the runner's /__forkai/* control API (port 8080)
   vscodeUrl: string; // baseUrl, proxied to openvscode-server by the runner — includes ?tkn=
+  createdAt: string; // ISO — Fly machine-create response's created_at; billMachineUsage's lifetime start
 }
 
 interface FlyMachineConfig {
@@ -58,6 +75,7 @@ interface FlyMachineConfig {
     autostart?: boolean;
     autostop?: boolean;
   }>;
+  metadata?: Record<string, string>;
 }
 
 interface FlyMachine {
@@ -73,6 +91,12 @@ export interface SandboxMachineInfo {
   // Present only once CloudAgentRunner has tagged a successful run's machine —
   // absent for a crashed run or a machine created before this feature shipped.
   expiresAt?: string;
+  // Billing identity (ADR-0004) — present for any machine created after this
+  // feature shipped (set at birth, see SANDBOX_*_METADATA_KEY); absent for a
+  // pre-existing machine, which the sweep destroys but does not bill.
+  sub?: string;
+  sessionId?: string;
+  nodeId?: string;
 }
 
 export class FlyProvider {
@@ -161,6 +185,15 @@ export class FlyProvider {
     const cpus = Number(process.env.FLY_GUEST_CPUS ?? 2);
     const memoryMb = Number(process.env.FLY_GUEST_MEMORY_MB ?? 4096);
 
+    // Billing identity (ADR-0004), baked into the machine's own metadata at
+    // create — atomic with the machine's existence, unlike the expiry key
+    // (set post-hoc by CloudAgentRunner) which can tolerate a crash between
+    // create and tag. Omitted keys just come back undefined on listMachines.
+    const metadata: Record<string, string> = {};
+    if (opts.sub) metadata[SANDBOX_SUB_METADATA_KEY] = opts.sub;
+    if (opts.sessionId) metadata[SANDBOX_SESSION_METADATA_KEY] = opts.sessionId;
+    if (opts.nodeId) metadata[SANDBOX_NODE_METADATA_KEY] = opts.nodeId;
+
     // The ONE public service on the machine — runner.mjs reverse-proxies
     // openvscode (127.0.0.1:3000) through this same port, so there is no
     // second service to publish (see infra/sandbox-image/README.md).
@@ -180,6 +213,7 @@ export class FlyProvider {
           autostop: false,
         },
       ],
+      ...(Object.keys(metadata).length ? { metadata } : {}),
     };
 
     const machine = await this.createMachineWithRegionFallback(appName, opts.regions, config);
@@ -205,7 +239,14 @@ export class FlyProvider {
     // actually works, not just that the machine process is up.
     await this.pollHealthz(baseUrl);
 
-    return { sandboxId: `${appName}:${machine.id}`, baseUrl, vscodeUrl };
+    return {
+      sandboxId: `${appName}:${machine.id}`,
+      baseUrl,
+      vscodeUrl,
+      // Fall back only if Fly's create response ever omits created_at — keeps
+      // billMachineUsage's lifetime math sane instead of NaN/Invalid Date.
+      createdAt: machine.created_at ?? new Date().toISOString(),
+    };
   }
 
   // Tries opts.regions in order, advancing only on insufficient_capacity (the
@@ -358,8 +399,15 @@ export class FlyProvider {
     const machines = (await res.json()) as FlyMachine[];
     return machines.map((m) => ({
       id: m.id,
-      createdAt: m.created_at ?? new Date(0).toISOString(),
+      // Money-correctness fix I3: falling back to the epoch (1970) here made
+      // billMachineUsage compute ~1.7 BILLION seconds of runtime for a
+      // missing created_at — now() matches the create-path fallback above
+      // (SandboxHandle.createdAt) and yields ~0 billable seconds instead.
+      createdAt: m.created_at ?? new Date().toISOString(),
       expiresAt: m.config?.metadata?.[SANDBOX_EXPIRES_AT_METADATA_KEY],
+      sub: m.config?.metadata?.[SANDBOX_SUB_METADATA_KEY],
+      sessionId: m.config?.metadata?.[SANDBOX_SESSION_METADATA_KEY],
+      nodeId: m.config?.metadata?.[SANDBOX_NODE_METADATA_KEY],
     }));
   }
 }

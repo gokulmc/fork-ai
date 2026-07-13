@@ -24,6 +24,18 @@ export interface CloudAgentRunnerConfig {
   // Minutes a successful run's sandbox survives past done, so the user can
   // open the workspace afterward — see SANDBOX_TTL_MINUTES / sandbox-sweep.ts.
   ttlMinutes: number;
+  // ADR-0004 machine billing — invoked only on the error/no-result path,
+  // where THIS runner is the one actually destroying the sandbox (the
+  // success path leaves it alive; sandbox-sweep.ts bills it later at true
+  // destroy). agent.module.ts wires this to UsersService.billMachineUsage.
+  onMachineDestroyBill?: (args: {
+    sub: string;
+    sandboxId: string;
+    sessionId: string;
+    nodeId: string;
+    createdAt: string;
+    destroyAtMs: number;
+  }) => Promise<void>;
 }
 
 // Shapes emitted by the in-machine runner's SSE stream — kept in sync by hand
@@ -35,7 +47,24 @@ type RunnerEvent =
   | { type: 'claude'; line: unknown }
   | { type: 'claude-raw'; text: string }
   | { type: 'error'; message: string }
-  | { type: 'result'; sha: string; baseSha: string; diffSummary: DiffSummary; exitCode: number; pushed: boolean; pushError?: string };
+  | {
+      type: 'result';
+      sha: string;
+      baseSha: string;
+      diffSummary: DiffSummary;
+      exitCode: number;
+      pushed: boolean;
+      pushError?: string;
+      // ADR-0004 — set by runner.mjs when claude's own `--max-budget-usd`
+      // stopped the run (stream result line subtype `error_max_budget_usd`).
+      budgetExceeded?: boolean;
+      // ADR-0004 — claude's own reported `total_cost_usd` for the run,
+      // forwarded verbatim off the sandbox's `result` frame. This is the
+      // authoritative cost basis nodes.service.ts bills from (see
+      // AgentRunFinal.claudeCostUsd) — undefined only for the rare case
+      // claude never emitted its own stream-json result line at all.
+      claudeCostUsd?: number;
+    };
 
 function isRecord(x: unknown): x is Record<string, unknown> {
   return typeof x === 'object' && x !== null;
@@ -98,6 +127,11 @@ export class CloudAgentRunner implements AgentRunner {
         runId,
         image: this.cfg.image,
         regions: this.cfg.regions,
+        // Billing identity (ADR-0004) — baked into the machine's metadata at
+        // birth, see fly-provider.ts's SANDBOX_*_METADATA_KEY comment.
+        sub: ctx.sub,
+        sessionId: ctx.sessionId,
+        nodeId: runId,
         // The platform ANTHROPIC_API_KEY is deliberately NOT in the machine env:
         // the sandbox's openvscode terminal runs as root, so anything in the
         // machine env is readable by the user mid-run (`cat /proc/1/environ`).
@@ -117,6 +151,13 @@ export class CloudAgentRunner implements AgentRunner {
           baseRef: ctx.baseCommitSha ?? undefined,
           instruction: this.buildInstruction(ctx),
           anthropicApiKey: this.cfg.anthropicApiKey,
+          // ADR-0004 redesign — claude's own native flags. `model` is the CLI
+          // model string (alias or full id); `maxBudgetUsd` is claude's own
+          // dollar cost cap, both passed straight through to `claude --model
+          // ... --max-budget-usd ...` by runner.mjs. Field names match what
+          // runner.mjs destructures.
+          model: ctx.model,
+          maxBudgetUsd: ctx.maxBudgetUsd,
         }),
       });
       if (!res.ok || !res.body) {
@@ -199,6 +240,8 @@ export class CloudAgentRunner implements AgentRunner {
           // no extra logging is needed here.
           pushed: runnerResult.pushed,
           ...(runnerResult.pushError ? { pushError: runnerResult.pushError } : {}),
+          ...(runnerResult.budgetExceeded ? { budgetExceeded: true } : {}),
+          claudeCostUsd: runnerResult.claudeCostUsd,
         };
         succeeded = true;
         yield { type: 'result', result: final };
@@ -219,13 +262,38 @@ export class CloudAgentRunner implements AgentRunner {
             );
           }
         } else {
+          let destroyed = false;
           try {
             await this.provider.destroy(sandbox.sandboxId);
+            destroyed = true;
           } catch (err) {
             const [appName] = sandbox.sandboxId.split(':');
             this.logger.error(
               `failed to destroy sandbox ${sandbox.sandboxId} — ORPHANED and billing until swept (fly apps destroy ${appName} --yes): ${String(err)}`,
             );
+          }
+          // Bill machine lifetime here ONLY on this (error/no-result) path,
+          // and only once destroy actually succeeded — a failed destroy
+          // leaves the machine alive for the sweep to bill later instead. The
+          // success branch above bills nothing (see class doc comment).
+          // ctx.sub absent (shouldn't happen for cloud) skips billing rather
+          // than writing a bad record. A billing failure is swallowed — it
+          // must never mask the run's own error already propagating out of
+          // this generator — and just means the sweep never gets a shot at
+          // this sandboxId either, since it's already destroyed; logged loud.
+          if (destroyed && ctx.sub) {
+            try {
+              await this.cfg.onMachineDestroyBill?.({
+                sub: ctx.sub,
+                sandboxId: sandbox.sandboxId,
+                sessionId: ctx.sessionId ?? '',
+                nodeId: runId,
+                createdAt: sandbox.createdAt,
+                destroyAtMs: Date.now(),
+              });
+            } catch (err) {
+              this.logger.error(`onMachineDestroyBill failed for destroyed sandbox ${sandbox.sandboxId} — machine cost went unbilled: ${String(err)}`);
+            }
           }
         }
       }

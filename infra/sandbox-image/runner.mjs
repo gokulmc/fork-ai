@@ -238,7 +238,7 @@ async function handleRun(req, res) {
     sseSend(res, { type: 'error', message: 'invalid JSON body' });
     return res.end();
   }
-  const { repoUrl, init, branch, baseRef, instruction, anthropicApiKey } = body;
+  const { repoUrl, init, branch, baseRef, instruction, anthropicApiKey, model, maxBudgetUsd } = body;
   if ((!repoUrl && !init) || !branch || !instruction) {
     sseSend(res, { type: 'error', message: '(repoUrl or init), branch, and instruction are required' });
     return res.end();
@@ -301,13 +301,25 @@ async function handleRun(req, res) {
   const { stdout: baseShaOut } = await run('git', ['rev-parse', 'HEAD'], { cwd: WORKDIR });
   const baseSha = baseShaOut.trim();
 
-  const child = spawn(
-    'claude',
-    ['-p', instruction, '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions', '--max-turns', '40'],
-    { cwd: WORKDIR, env: { ...sanitizedEnv(), ANTHROPIC_API_KEY: claudeKey } },
-  );
+  const claudeArgs = ['-p', instruction, '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions', '--max-turns', '40'];
+  if (model) claudeArgs.push('--model', model);
+  if (maxBudgetUsd && maxBudgetUsd > 0) claudeArgs.push('--max-budget-usd', String(maxBudgetUsd));
+
+  const child = spawn('claude', claudeArgs, { cwd: WORKDIR, env: { ...sanitizedEnv(), ANTHROPIC_API_KEY: claudeKey } });
 
   let resultText = '';
+  let budgetExceeded = false;
+  // Authoritative cost basis (ADR-0004 redesign): claude's own `total_cost_usd`
+  // on the stream's `result` line — accurate incl. cache, present on both a
+  // normal finish AND a `--max-budget-usd` stop. Per-message output_tokens in
+  // this stream are placeholder values (verified live: 1-3 regardless of real
+  // output), so no token accumulation can ever be trusted here — only claude's
+  // own budget enforcement and its own reported cost are.
+  let claudeCostUsd;
+  // A budget stop finishes claude's in-flight turn cleanly (exit code 1, this
+  // `result` line still arrives) — it is not a crash, so no SIGKILL is needed
+  // here. CLAUDE_TIMEOUT_MS below remains the only forced kill (a rare
+  // wall-clock guard under which claude never gets to emit this line at all).
   const killTimer = setTimeout(() => child.kill('SIGKILL'), CLAUDE_TIMEOUT_MS);
 
   let buf = '';
@@ -320,7 +332,11 @@ async function handleRun(req, res) {
       if (!line.trim()) continue;
       try {
         const parsed = JSON.parse(line);
-        if (parsed.type === 'result' && typeof parsed.result === 'string') resultText = parsed.result;
+        if (parsed.type === 'result') {
+          if (typeof parsed.result === 'string') resultText = parsed.result;
+          if (typeof parsed.total_cost_usd === 'number') claudeCostUsd = parsed.total_cost_usd;
+          if (parsed.subtype === 'error_max_budget_usd') budgetExceeded = true;
+        }
         sseSend(res, { type: 'claude', line: parsed });
       } catch {
         sseSend(res, { type: 'claude-raw', text: line });
@@ -358,7 +374,17 @@ async function handleRun(req, res) {
         ({ pushed, pushError } = await pushToOrigin(res, branch));
       }
 
-      sseSend(res, { type: 'result', sha, baseSha, diffSummary, exitCode: exitCode ?? -1, pushed, ...(pushError ? { pushError } : {}) });
+      sseSend(res, {
+        type: 'result',
+        sha,
+        baseSha,
+        diffSummary,
+        exitCode: exitCode ?? -1,
+        pushed,
+        budgetExceeded,
+        claudeCostUsd,
+        ...(pushError ? { pushError } : {}),
+      });
     } catch (err) {
       sseSend(res, { type: 'error', message: err.message });
     }

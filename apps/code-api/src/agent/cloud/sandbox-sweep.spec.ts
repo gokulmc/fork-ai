@@ -1,4 +1,4 @@
-import { sweepSandboxes, startSandboxSweep } from './sandbox-sweep';
+import { sweepSandboxes, startSandboxSweep, type MachineBiller } from './sandbox-sweep';
 import type { SandboxMachineInfo } from './fly-provider';
 
 // The sweep's two boundaries are mocked exactly like cloud-agent-runner.spec's
@@ -10,6 +10,13 @@ function mkLog() {
 
 function machine(overrides: Partial<SandboxMachineInfo> = {}): SandboxMachineInfo {
   return { id: 'machine1', createdAt: new Date().toISOString(), ...overrides };
+}
+
+function mkBiller(): { billMachineUsage: jest.Mock; reconcileStaleHolds: jest.Mock } & MachineBiller {
+  return {
+    billMachineUsage: jest.fn().mockResolvedValue(undefined),
+    reconcileStaleHolds: jest.fn().mockResolvedValue(undefined),
+  };
 }
 
 describe('sweepSandboxes', () => {
@@ -103,6 +110,102 @@ describe('sweepSandboxes', () => {
 
     expect(result.failed).toEqual(['forkai-sbx-broken']);
     expect(provider.destroyApp).not.toHaveBeenCalled();
+  });
+
+  // ── ADR-0004 billing ────────────────────────────────────────────────────
+
+  it('bills each identity-bearing machine before destroying its app, using the "<appName>:<machineId>" sandboxId', async () => {
+    const createdAt = new Date(Date.now() - 20 * 60_000).toISOString();
+    const provider = {
+      listSandboxApps: jest.fn().mockResolvedValue(['forkai-sbx-expired']),
+      listMachines: jest.fn().mockResolvedValue([
+        machine({ id: 'machine1', createdAt, expiresAt: new Date(Date.now() - 1000).toISOString(), sub: 'user-1', sessionId: 'sess-1', nodeId: 'node-1' }),
+      ]),
+      destroyApp: jest.fn().mockResolvedValue(undefined),
+    };
+    const biller = mkBiller();
+    const callOrder: string[] = [];
+    biller.billMachineUsage.mockImplementation(async () => {
+      callOrder.push('bill');
+    });
+    provider.destroyApp.mockImplementation(async () => {
+      callOrder.push('destroy');
+    });
+
+    await sweepSandboxes(provider, mkLog(), biller);
+
+    expect(biller.billMachineUsage).toHaveBeenCalledWith('user-1', 'forkai-sbx-expired:machine1', 'sess-1', 'node-1', createdAt, expect.any(Number));
+    expect(callOrder).toEqual(['bill', 'destroy']); // billed BEFORE destroy
+  });
+
+  it('destroys but does not bill a machine with no identity metadata (pre-feature or crashed before tagging)', async () => {
+    const provider = {
+      listSandboxApps: jest.fn().mockResolvedValue(['forkai-sbx-expired']),
+      listMachines: jest.fn().mockResolvedValue([machine({ expiresAt: new Date(Date.now() - 1000).toISOString() })]),
+      destroyApp: jest.fn().mockResolvedValue(undefined),
+    };
+    const biller = mkBiller();
+
+    const result = await sweepSandboxes(provider, mkLog(), biller);
+
+    expect(biller.billMachineUsage).not.toHaveBeenCalled();
+    expect(result.destroyed).toEqual(['forkai-sbx-expired']);
+  });
+
+  it('continues to destroy when billMachineUsage rejects (bill failure never blocks the destroy)', async () => {
+    const provider = {
+      listSandboxApps: jest.fn().mockResolvedValue(['forkai-sbx-expired']),
+      listMachines: jest.fn().mockResolvedValue([
+        machine({ expiresAt: new Date(Date.now() - 1000).toISOString(), sub: 'user-1', sessionId: 'sess-1', nodeId: 'node-1' }),
+      ]),
+      destroyApp: jest.fn().mockResolvedValue(undefined),
+    };
+    const biller = mkBiller();
+    biller.billMachineUsage.mockRejectedValue(new Error('ledger down'));
+
+    const result = await sweepSandboxes(provider, mkLog(), biller);
+
+    expect(result.destroyed).toEqual(['forkai-sbx-expired']);
+    expect(provider.destroyApp).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls reconcileStaleHolds once per sweep tick regardless of what was swept', async () => {
+    const provider = {
+      listSandboxApps: jest.fn().mockResolvedValue([]),
+      listMachines: jest.fn(),
+      destroyApp: jest.fn(),
+    };
+    const biller = mkBiller();
+
+    await sweepSandboxes(provider, mkLog(), biller);
+
+    expect(biller.reconcileStaleHolds).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failing reconcileStaleHolds does not fail the sweep or throw', async () => {
+    const provider = {
+      listSandboxApps: jest.fn().mockResolvedValue([]),
+      listMachines: jest.fn(),
+      destroyApp: jest.fn(),
+    };
+    const biller = mkBiller();
+    biller.reconcileStaleHolds.mockRejectedValue(new Error('down'));
+
+    await expect(sweepSandboxes(provider, mkLog(), biller)).resolves.toEqual({ destroyed: [], kept: [], failed: [] });
+  });
+
+  it('skips billing and reconciliation entirely when no biller is wired', async () => {
+    const provider = {
+      listSandboxApps: jest.fn().mockResolvedValue(['forkai-sbx-expired']),
+      listMachines: jest.fn().mockResolvedValue([
+        machine({ expiresAt: new Date(Date.now() - 1000).toISOString(), sub: 'user-1', sessionId: 'sess-1', nodeId: 'node-1' }),
+      ]),
+      destroyApp: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const result = await sweepSandboxes(provider, mkLog()); // no biller arg
+
+    expect(result.destroyed).toEqual(['forkai-sbx-expired']);
   });
 });
 

@@ -43,10 +43,46 @@ export interface UsageEventItem {
   inputTokens: number;
   outputTokens: number;
   costUsd: number;
-  kind: 'QUERY' | 'DEEPER' | 'ASK' | 'MIX' | 'PLAN' | 'CODE';
+  kind: 'QUERY' | 'DEEPER' | 'ASK' | 'MIX' | 'PLAN' | 'CODE' | 'MACHINE';
   model: string;
   sessionId: string;
   nodeId: string;
+  createdAt: string;
+  // Cloud-run settlement fields (ADR-0004) — runId links a CODE token-usage row
+  // and a MACHINE infra row to the same run (both keyed by nodeId). machineSeconds
+  // is set only on kind 'MACHINE' rows.
+  runId?: string;
+  machineSeconds?: number;
+}
+
+// Pre-auth reserve for a cloud CODE run (ADR-0004). PK USER#{sub} / SK HOLD#{nodeId}.
+// Lifecycle: 'held' at placeHold → 'reconciled' via the conditional flip in
+// reconcileHoldStatus, which is the exactly-once guard for release+charge.
+export interface HoldItem {
+  PK: string;
+  SK: string;
+  sub: string;
+  nodeId: string;
+  sessionId: string;
+  holdUsd: number;
+  status: 'held' | 'reconciled';
+  model: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// One Fly machine's full-lifetime bill (ADR-0004). PK USER#{sub} / SK
+// MACHINEBILL#{sandboxId} — the conditional-create guard so a sweep tick and a
+// concurrent runner `finally` can't both bill the same machine.
+export interface MachineBillItem {
+  PK: string;
+  SK: string;
+  sub: string;
+  sandboxId: string;
+  sessionId: string;
+  nodeId: string;
+  machineSeconds: number;
+  costUsd: number;
   createdAt: string;
 }
 
@@ -118,6 +154,10 @@ export interface NodeItem {
   // and "push was attempted and failed" are different states.
   pushed?: boolean;
   pushError?: string;
+  // Cloud-only (ADR-0004) — set when the sandbox's runner.mjs SIGKILLed the
+  // claude child for exceeding the run's token budget mid-run. Partial work
+  // was still committed/pushed as normal; this only flags the ceiling was hit.
+  budgetExceeded?: boolean;
   // MERGE node fields — second parent, render-only (ADR-0005).
   mergeFromNodeId?: string;
   prStatus?: 'open' | 'merged';

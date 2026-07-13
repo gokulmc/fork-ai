@@ -1,4 +1,4 @@
-import { resolveBranchModel, priceFor, providerNameFor, supportsWebSearch } from './models';
+import { resolveBranchModel, priceFor, providerNameFor, supportsWebSearch, machineSecondsCostUsd } from './models';
 
 describe('models', () => {
   describe('resolveBranchModel', () => {
@@ -93,6 +93,29 @@ describe('models', () => {
       expect(supportsWebSearch('claude-sonnet-4-6')).toBe(true);
       expect(supportsWebSearch('gemini-2.5-flash')).toBe(true);
       expect(supportsWebSearch('glm-5.2')).toBe(true);
+    });
+  });
+
+  describe('machineSecondsCostUsd', () => {
+    it('converts seconds to minutes, applies rate and multiplier, rounds to 6dp', () => {
+      // 600s = 10min * $0.0009/min * 1.5 = $0.0135
+      expect(machineSecondsCostUsd(600, 0.0009, 1.5)).toBe(0.0135);
+    });
+
+    it('clamps negative seconds to zero', () => {
+      expect(machineSecondsCostUsd(-100, 0.0009, 1.5)).toBe(0);
+    });
+
+    it('returns zero for zero seconds', () => {
+      expect(machineSecondsCostUsd(0, 0.0009, 1.5)).toBe(0);
+    });
+
+    it('rounds to 6 decimal places', () => {
+      // 1s → (1/60)*0.0009*1.5 ≈ 0.0000225 → rounds to 6dp (float noise lands
+      // this a hair under the .5 boundary, rounding down to 0.000022).
+      expect(machineSecondsCostUsd(1, 0.0009, 1.5)).toBe(0.000022);
+      // 90s = 1.5min * $0.001/min * 1 = 0.0015
+      expect(machineSecondsCostUsd(90, 0.001, 1)).toBe(0.0015);
     });
   });
 });

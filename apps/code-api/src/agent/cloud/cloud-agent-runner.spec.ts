@@ -20,6 +20,7 @@ const HANDLE: SandboxHandle = {
   sandboxId: 'forkai-sbx-run01:machine1',
   baseUrl: 'https://forkai-sbx-run01.fly.dev',
   vscodeUrl: 'https://forkai-sbx-run01.fly.dev/?tkn=vstok',
+  createdAt: '2026-07-13T10:00:00.000Z',
 };
 
 const RESULT_FRAME = {
@@ -60,6 +61,7 @@ describe('CloudAgentRunner', () => {
   const realFetch = global.fetch;
   let fetchMock: jest.Mock;
   let provider: { create: jest.Mock; destroy: jest.Mock; setMetadata: jest.Mock };
+  let onMachineDestroyBill: jest.Mock;
   let runner: CloudAgentRunner;
 
   beforeEach(() => {
@@ -70,7 +72,8 @@ describe('CloudAgentRunner', () => {
       destroy: jest.fn().mockResolvedValue(undefined),
       setMetadata: jest.fn().mockResolvedValue(undefined),
     };
-    runner = new CloudAgentRunner(CFG, provider);
+    onMachineDestroyBill = jest.fn().mockResolvedValue(undefined);
+    runner = new CloudAgentRunner({ ...CFG, onMachineDestroyBill }, provider);
   });
 
   afterAll(() => {
@@ -143,10 +146,30 @@ describe('CloudAgentRunner', () => {
     expect(new Date(final!.workspaceExpiresAt!).getTime()).toBeGreaterThan(Date.now());
 
     // Success path: the sandbox survives past done, tagged with its expiry —
-    // never destroyed in finally.
+    // never destroyed in finally, and never billed here either — the sweep
+    // bills it later at its true destroy (ADR-0004).
     expect(provider.destroy).not.toHaveBeenCalled();
     expect(provider.setMetadata).toHaveBeenCalledTimes(1);
     expect(provider.setMetadata).toHaveBeenCalledWith(HANDLE.sandboxId, 'forkai_expires_at', final!.workspaceExpiresAt);
+    expect(onMachineDestroyBill).not.toHaveBeenCalled();
+  });
+
+  it('carries budgetExceeded through to AgentRunFinal when the sandbox runner reports it', async () => {
+    fetchMock.mockResolvedValue(new Response(sse([{ ...RESULT_FRAME, budgetExceeded: true }]), { status: 200 }));
+
+    const items = await drain(runner.run(mkCtx()));
+
+    const final = items.find((i) => i.type === 'result')?.result;
+    expect(final?.budgetExceeded).toBe(true);
+  });
+
+  it('omits budgetExceeded from AgentRunFinal when the sandbox runner does not report it', async () => {
+    fetchMock.mockResolvedValue(new Response(sse([RESULT_FRAME]), { status: 200 }));
+
+    const items = await drain(runner.run(mkCtx()));
+
+    const final = items.find((i) => i.type === 'result')?.result;
+    expect(final?.budgetExceeded).toBeUndefined();
   });
 
   it('sends the key in the /run body (never machine env) and appends the no-git-commit rule', async () => {
@@ -170,7 +193,21 @@ describe('CloudAgentRunner', () => {
     expect(body.instruction).toMatch(/Do NOT run `git commit`/);
   });
 
-  it('destroys the sandbox when the stream carries a runner error frame', async () => {
+  it('passes billing identity (sub/sessionId/nodeId) to provider.create and model/maxBudgetUsd in the /run body', async () => {
+    fetchMock.mockResolvedValue(new Response(sse([RESULT_FRAME]), { status: 200 }));
+
+    await drain(runner.run(mkCtx({ sub: 'user-1', sessionId: 'sess-1', runId: 'node-1', model: 'claude-sonnet-4-6', maxBudgetUsd: 0.5 })));
+
+    expect(provider.create).toHaveBeenCalledWith(
+      expect.objectContaining({ sub: 'user-1', sessionId: 'sess-1', nodeId: 'node-1' }),
+    );
+    const [, init] = fetchMock.mock.calls[0] as [string, { body: string }];
+    const body = JSON.parse(init.body) as Record<string, unknown>;
+    expect(body.model).toBe('claude-sonnet-4-6');
+    expect(body.maxBudgetUsd).toBe(0.5);
+  });
+
+  it('destroys the sandbox when the stream carries a runner error frame, and does NOT bill without ctx.sub', async () => {
     fetchMock.mockResolvedValue(
       new Response(sse([{ type: 'claude', line: { type: 'system', subtype: 'init', model: 'm' } }, { type: 'error', message: 'clone failed: boom' }]), {
         status: 200,
@@ -181,6 +218,50 @@ describe('CloudAgentRunner', () => {
     expect(provider.destroy).toHaveBeenCalledTimes(1);
     expect(provider.destroy).toHaveBeenCalledWith(HANDLE.sandboxId);
     expect(provider.setMetadata).not.toHaveBeenCalled();
+    // mkCtx() carries no sub — the defensive skip (shouldn't happen for a
+    // real cloud run) must never write a bad billing record.
+    expect(onMachineDestroyBill).not.toHaveBeenCalled();
+  });
+
+  it('bills the destroyed sandbox on the error path when ctx.sub is present', async () => {
+    fetchMock.mockResolvedValue(
+      new Response(sse([{ type: 'claude', line: { type: 'system', subtype: 'init', model: 'm' } }, { type: 'error', message: 'clone failed: boom' }]), {
+        status: 200,
+      }),
+    );
+
+    await expect(drain(runner.run(mkCtx({ sub: 'user-1', sessionId: 'sess-1', runId: 'node-1' })))).rejects.toThrow('clone failed: boom');
+
+    expect(onMachineDestroyBill).toHaveBeenCalledTimes(1);
+    expect(onMachineDestroyBill).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sub: 'user-1',
+        sandboxId: HANDLE.sandboxId, // "<appName>:<machineId>" — must match the sweep's own format exactly (shared MACHINEBILL# idempotency key)
+        sessionId: 'sess-1',
+        nodeId: 'node-1',
+        createdAt: HANDLE.createdAt,
+      }),
+    );
+  });
+
+  it('does not let onMachineDestroyBill throwing mask the original run error', async () => {
+    onMachineDestroyBill.mockRejectedValue(new Error('billing backend down'));
+    fetchMock.mockResolvedValue(
+      new Response(sse([{ type: 'error', message: 'clone failed: boom' }]), { status: 200 }),
+    );
+
+    await expect(drain(runner.run(mkCtx({ sub: 'user-1', sessionId: 'sess-1' })))).rejects.toThrow('clone failed: boom');
+    expect(onMachineDestroyBill).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not bill when the sandbox destroy itself fails (machine stays alive for the sweep to bill instead)', async () => {
+    provider.destroy.mockRejectedValue(new Error('Fly API DELETE → 500: boom'));
+    fetchMock.mockResolvedValue(
+      new Response(sse([{ type: 'error', message: 'clone failed: boom' }]), { status: 200 }),
+    );
+
+    await expect(drain(runner.run(mkCtx({ sub: 'user-1', sessionId: 'sess-1' })))).rejects.toThrow('clone failed: boom');
+    expect(onMachineDestroyBill).not.toHaveBeenCalled();
   });
 
   it('destroys the sandbox when the stream ends without a result frame (no commit worth keeping a workspace for)', async () => {
@@ -188,12 +269,69 @@ describe('CloudAgentRunner', () => {
       new Response(sse([{ type: 'claude', line: { type: 'system', subtype: 'init', model: 'm' } }]), { status: 200 }),
     );
 
-    const items = await drain(runner.run(mkCtx()));
+    const items = await drain(runner.run(mkCtx({ sub: 'user-1', sessionId: 'sess-1', runId: 'node-1' })));
 
     expect(items.filter((i) => i.type === 'result')).toHaveLength(0);
     expect(provider.destroy).toHaveBeenCalledTimes(1);
     expect(provider.destroy).toHaveBeenCalledWith(HANDLE.sandboxId);
+    expect(onMachineDestroyBill).toHaveBeenCalledTimes(1);
     expect(provider.setMetadata).not.toHaveBeenCalled();
+  });
+
+  // ADR-0004 redesign: a budget stop means claude's stream-json `result` line
+  // never carries real usage (it's zeroed per the CLI's own behavior), so
+  // inputTokens/outputTokens legitimately stay 0 for a budget-stopped run —
+  // there is no metered fallback any more. The authoritative cost basis is
+  // claudeCostUsd (runnerResult.claudeCostUsd), forwarded through untouched.
+  it('carries claudeCostUsd through to AgentRunFinal, with zeroed tokens, on a budget-stopped run', async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        sse([
+          { type: 'claude', line: { type: 'system', subtype: 'init', model: 'claude-sonnet-4-6' } },
+          // No 'result'-type claude line with real usage — a budget stop's
+          // result line reports zeroed usage, so extractResult contributes 0.
+          { ...RESULT_FRAME, budgetExceeded: true, claudeCostUsd: 0.0258 },
+        ]),
+        { status: 200 },
+      ),
+    );
+
+    const items = await drain(runner.run(mkCtx()));
+
+    const final = items.find((i) => i.type === 'result')?.result;
+    expect(final?.inputTokens).toBe(0);
+    expect(final?.outputTokens).toBe(0);
+    expect(final?.budgetExceeded).toBe(true);
+    expect(final?.claudeCostUsd).toBe(0.0258);
+  });
+
+  it('carries claudeCostUsd alongside the SDK result-line token totals on a normal run', async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        sse([
+          { type: 'claude', line: { type: 'system', subtype: 'init', model: 'claude-sonnet-4-6' } },
+          { type: 'claude', line: { type: 'result', result: 'Done', usage: { input_tokens: 100, output_tokens: 50 } } },
+          { ...RESULT_FRAME, claudeCostUsd: 0.0645 },
+        ]),
+        { status: 200 },
+      ),
+    );
+
+    const items = await drain(runner.run(mkCtx()));
+
+    const final = items.find((i) => i.type === 'result')?.result;
+    expect(final?.inputTokens).toBe(100);
+    expect(final?.outputTokens).toBe(50);
+    expect(final?.claudeCostUsd).toBe(0.0645);
+  });
+
+  it('leaves claudeCostUsd undefined when the sandbox result frame does not report it (e.g. a CLAUDE_TIMEOUT_MS kill)', async () => {
+    fetchMock.mockResolvedValue(new Response(sse([RESULT_FRAME]), { status: 200 }));
+
+    const items = await drain(runner.run(mkCtx()));
+
+    const final = items.find((i) => i.type === 'result')?.result;
+    expect(final?.claudeCostUsd).toBeUndefined();
   });
 
   it('leaves the sandbox running on error setting metadata (best-effort — never destroys a successful run over it)', async () => {

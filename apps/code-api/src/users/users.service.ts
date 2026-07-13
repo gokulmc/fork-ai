@@ -2,9 +2,9 @@ import { Injectable, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ulid } from 'ulid';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
-import type { UserMetaItem, UsageEventItem, CreditEventItem } from '@/dynamo/dynamo.interfaces';
+import type { UserMetaItem, UsageEventItem, CreditEventItem, HoldItem, MachineBillItem } from '@/dynamo/dynamo.interfaces';
 import { CognitoUser } from '@/auth/jwt.strategy';
-import { priceFor } from '@/llm/models';
+import { priceFor, machineSecondsCostUsd } from '@/llm/models';
 
 @Injectable()
 export class UsersService {
@@ -119,6 +119,201 @@ export class UsersService {
       this.db.deductCredit(sub, costUsd),
       this.db.putUsageEvent(event),
     ]);
+  }
+
+  // ── Cloud-run billing (ADR-0004) ────────────────────────────────────────────
+  // See root CLAUDE.md's ADR-0004 note for the design: a strict pre-auth hold
+  // at run start, settled exactly once at run end via the conditional flip in
+  // DynamoRepository.reconcileHoldStatus, plus full-machine-lifetime billing
+  // guarded by DynamoRepository.putMachineBill. Non-cloud paths keep using
+  // checkCredit/billUsage above, untouched.
+
+  // Money-correctness fix I1/M1: the strict pre-auth gate and the deduction
+  // are now ONE atomic conditional op (deductCreditIfSufficient), not a
+  // read-then-check-then-write — closing the TOCTOU window where two
+  // concurrent cloud runs could each pass a stale balance check and overdraw
+  // past $0. Deduct-FIRST ordering also means putHold can never leave an
+  // orphan 'held' record with no matching deduction behind it (the old bug:
+  // deductCredit throwing after putHold succeeded left free, un-taken money
+  // "reserved" that reconcileStaleHolds would later release back — net zero
+  // charge for a run that actually happened). If putHold itself throws AFTER
+  // the deduct succeeds, compensate with addCredit before rethrowing so the
+  // reserve isn't stranded either way.
+  async placeHold(sub: string, sessionId: string, nodeId: string, model: string): Promise<{ holdUsd: number; ceilingUsd: number }> {
+    const holdUsd = this.cfg.get<number>('billing.sandboxHoldUsd') ?? 1.00;
+    const maxRunCostUsd = this.cfg.get<number>('billing.maxRunCostUsd') ?? 1.00;
+
+    // Only used for the ceiling's min(cap, balance) — the actual strict gate
+    // is the atomic conditional deduct below, so a slightly-stale read here
+    // (a concurrent spend landing between this read and the deduct) is
+    // harmless: it can only make the ceiling a little more generous, never
+    // let an insufficient-balance run through.
+    const user = await this.db.getUserMeta(sub);
+    const ceilingUsd = Math.min(maxRunCostUsd, user?.creditUsd ?? 0);
+
+    const ok = await this.db.deductCreditIfSufficient(sub, holdUsd);
+    if (!ok) {
+      throw new HttpException('Payment Required — insufficient credit for a cloud run', HttpStatus.PAYMENT_REQUIRED);
+    }
+
+    const now = new Date().toISOString();
+    const hold: HoldItem = {
+      PK: `USER#${sub}`,
+      SK: `HOLD#${nodeId}`,
+      sub,
+      nodeId,
+      sessionId,
+      holdUsd,
+      status: 'held',
+      model,
+      createdAt: now,
+      updatedAt: now,
+    };
+    try {
+      await this.db.putHold(hold);
+    } catch (err) {
+      await this.db.addCredit(sub, holdUsd); // undo the deduct — never strand the reserve
+      throw err;
+    }
+    return { holdUsd, ceilingUsd };
+  }
+
+  // ADR-0004 redesign: the caller supplies the already-computed cost
+  // (runCostUsd — claude's own reported total_cost_usd × creditMultiplier,
+  // or a token-based fallback for the rare run with no reported cost — see
+  // nodes.service.ts). Per-message token counts from the sandbox stream are
+  // placeholder values and were never a valid billing basis, so this method
+  // no longer computes cost itself; inputTokens/outputTokens are recorded on
+  // the usage event purely as audit/analytics fields.
+  async reconcileHold(
+    sub: string,
+    sessionId: string,
+    nodeId: string,
+    runCostUsd: number,
+    inputTokens: number,
+    outputTokens: number,
+    model: string,
+    kind: 'QUERY' | 'DEEPER' | 'ASK' | 'MIX' | 'PLAN' | 'CODE' = 'CODE',
+  ): Promise<void> {
+    // The flip precedes release/charge and is the exactly-once guard: a run's
+    // own done/error path and a concurrent reconcileStaleHolds sweep tick can
+    // both reach this for the same nodeId, and only the winner may settle.
+    const won = await this.db.reconcileHoldStatus(sub, nodeId);
+    if (!won) return;
+
+    const hold = await this.db.getHold(sub, nodeId);
+    if (!hold) {
+      // Shouldn't happen — a winning flip implies the HoldItem existed (an
+      // update's ConditionExpression can't match a nonexistent attribute).
+      // Defensive only: never charge blind.
+      this.logger.warn(`reconcileHold: winning flip but no HoldItem for sub=${sub} nodeId=${nodeId}`);
+      return;
+    }
+
+    const usageId = ulid();
+    const event: UsageEventItem = {
+      PK: `USER#${sub}`,
+      SK: `USAGE#${usageId}`,
+      usageId,
+      sub,
+      inputTokens,
+      outputTokens,
+      costUsd: runCostUsd,
+      kind,
+      model,
+      sessionId,
+      nodeId,
+      createdAt: new Date().toISOString(),
+      runId: nodeId,
+    };
+
+    // Money-correctness fix I2: release(+holdUsd) and charge(-costUsd) used to
+    // be two independent $ADD calls — if one succeeded and the other threw,
+    // the mis-bill was permanent (the flip guard above is already spent, so
+    // no retry can re-settle it). A single net atomic $ADD can't partially
+    // apply: net = holdUsd - runCostUsd is identical to the old two-op result
+    // when both succeeded, but now it's all-or-nothing.
+    await this.db.deductCredit(sub, runCostUsd - hold.holdUsd);
+    // Best-effort audit row — losing it loses only the audit trail, not
+    // money (the settlement above already landed), so a write failure here
+    // must not throw past a successful settlement.
+    await this.db.putUsageEvent(event).catch((err) => {
+      this.logger.warn(`reconcileHold: putUsageEvent failed after settlement sub=${sub} nodeId=${nodeId}: ${String(err)}`);
+    });
+  }
+
+  async billMachineUsage(
+    sub: string,
+    sandboxId: string,
+    sessionId: string,
+    nodeId: string,
+    createdAtIso: string,
+    destroyAtMs: number,
+  ): Promise<void> {
+    const seconds = Math.max(0, (destroyAtMs - Date.parse(createdAtIso)) / 1000);
+    const rate = this.cfg.get<number>('billing.flyMinuteRateUsd') ?? 0.0009;
+    const multiplier = this.cfg.get<number>('billing.creditMultiplier') ?? 1.5;
+    const costUsd = machineSecondsCostUsd(seconds, rate, multiplier);
+
+    const now = new Date().toISOString();
+    const bill: MachineBillItem = {
+      PK: `USER#${sub}`,
+      SK: `MACHINEBILL#${sandboxId}`,
+      sub,
+      sandboxId,
+      sessionId,
+      nodeId,
+      machineSeconds: seconds,
+      costUsd,
+      createdAt: now,
+    };
+    // Guard-before-charge: this conditional create MUST precede deductCredit
+    // so a sweep tick racing the runner's own error-path `finally` bills the
+    // machine exactly once.
+    const won = await this.db.putMachineBill(bill);
+    if (!won) return;
+
+    const usageId = ulid();
+    const event: UsageEventItem = {
+      PK: `USER#${sub}`,
+      SK: `USAGE#${usageId}`,
+      usageId,
+      sub,
+      inputTokens: 0,
+      outputTokens: 0,
+      costUsd,
+      kind: 'MACHINE',
+      model: 'fly:machine',
+      sessionId,
+      nodeId,
+      createdAt: now,
+      runId: nodeId,
+      machineSeconds: seconds,
+    };
+
+    await this.db.deductCredit(sub, costUsd);
+    // Best-effort audit row, same reasoning as reconcileHold's — the charge
+    // above already landed, so a putUsageEvent failure here must only lose
+    // the audit trail, never mask/undo the settled charge.
+    await this.db.putUsageEvent(event).catch((err) => {
+      this.logger.warn(`billMachineUsage: putUsageEvent failed after settlement sub=${sub} sandboxId=${sandboxId}: ${String(err)}`);
+    });
+  }
+
+  // Crash net, called each sweep tick: releases the reserve for holds whose
+  // run process died before a done/error event ever reconciled them. Tokens
+  // were never observed for these, so only the flat holdUsd reserve is
+  // returned — a bounded, intentional under-charge (see root CLAUDE.md's
+  // ADR-0004 tolerated-gaps note; the machine itself is still billed
+  // separately at sweep age-cap destroy).
+  async reconcileStaleHolds(cutoffMinutes = 30): Promise<void> {
+    const cutoffIso = new Date(Date.now() - cutoffMinutes * 60_000).toISOString();
+    const stale = await this.db.scanHeldHolds(cutoffIso);
+    for (const h of stale) {
+      if (await this.db.reconcileHoldStatus(h.sub, h.nodeId)) {
+        await this.db.addCredit(h.sub, h.holdUsd);
+      }
+    }
   }
 
   async getUsageEvents(sub: string): Promise<UsageEventItem[]> {

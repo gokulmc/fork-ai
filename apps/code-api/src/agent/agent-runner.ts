@@ -28,6 +28,18 @@ export interface AgentRunFinal {
   // persisted to NodeItem/Dynamo (see docs/forkai-code/adr/0002).
   pushed?: boolean;
   pushError?: string;
+  // Cloud-only (ADR-0004) — set when claude's own `--max-budget-usd` stopped
+  // the run after finishing its in-flight turn (runner.mjs reads this off the
+  // stream's `result` line, subtype `error_max_budget_usd`). Not a run
+  // failure: partial work is still committed/pushed as normal, this only
+  // flags that the ceiling was hit.
+  budgetExceeded?: boolean;
+  // Cloud-only (ADR-0004) — claude's own reported `total_cost_usd` for the
+  // run (cache-accurate; present on both a normal finish and a budget stop).
+  // This, not token×priceFor, is the authoritative cost basis — see
+  // nodes.service.ts. Undefined only for the rare case claude never emitted
+  // a result line at all (a CLAUDE_TIMEOUT_MS kill).
+  claudeCostUsd?: number;
 }
 
 // A discriminated union rather than a generator return value: `for await`

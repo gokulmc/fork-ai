@@ -1,4 +1,5 @@
 import { Injectable, Inject } from '@nestjs/common';
+import * as dynamoose from 'dynamoose';
 import {
   USER_META_MODEL,
   SESSION_META_MODEL,
@@ -11,6 +12,8 @@ import {
   PROJECT_MODEL,
   AGENT_RUN_MODEL,
   GITHUB_INSTALLATION_MODEL,
+  HOLD_MODEL,
+  MACHINE_BILL_MODEL,
   DYNAMO_TABLE,
 } from './dynamo.constants';
 import type {
@@ -25,6 +28,8 @@ import type {
   ProjectItem,
   AgentRunItem,
   GithubInstallationItem,
+  HoldItem,
+  MachineBillItem,
 } from './dynamo.interfaces';
 
 @Injectable()
@@ -42,6 +47,8 @@ export class DynamoRepository {
     @Inject(PROJECT_MODEL) private readonly projectModel: any,
     @Inject(AGENT_RUN_MODEL) private readonly agentRunModel: any,
     @Inject(GITHUB_INSTALLATION_MODEL) private readonly githubInstallationModel: any,
+    @Inject(HOLD_MODEL) private readonly holdModel: any,
+    @Inject(MACHINE_BILL_MODEL) private readonly machineBillModel: any,
   ) {}
 
   // ── Key helpers ─────────────────────────────────────────────────────────────
@@ -54,6 +61,8 @@ export class DynamoRepository {
   private hlSk(hlId: string) { return `HL#${hlId}`; }
   private projectSk(projectId: string) { return `PROJECT#${projectId}`; }
   private agentRunSk(nodeId: string) { return `AGENTRUN#${nodeId}`; }
+  private holdSk(nodeId: string) { return `HOLD#${nodeId}`; }
+  private machineBillSk(sandboxId: string) { return `MACHINEBILL#${sandboxId}`; }
 
   private toPlain<T>(item: any): T {
     return (item?.toJSON ? item.toJSON() : item) as T;
@@ -115,6 +124,34 @@ export class DynamoRepository {
       { PK: this.userPk(sub), SK: 'METADATA' },
       { '$ADD': { creditUsd: -amount } },
     );
+  }
+
+  // Money-correctness guard #3 (ADR-0004, fix I1/M1): atomic check-and-deduct
+  // for placeHold's "strict pre-auth" gate — a conditional $ADD with a
+  // ConditionExpression requiring creditUsd to both EXIST and be >= amount,
+  // so the check and the deduction can never race (no separate read-then-act
+  // window a concurrent run could land in). `.exists()` is required in
+  // addition to `.ge()`: DynamoDB's numeric comparators error out (not just
+  // fail) against a totally absent attribute in some code paths, and more
+  // importantly this repo's own null-stripping (`clean`, see below) means a
+  // user who has never had creditUsd set at all must be treated as
+  // insufficient, not let a comparison against `undefined` throw an
+  // unhandled error instead of the intended false. Returns false (not throw)
+  // on ConditionalCheckFailedException — both "insufficient" and "attribute
+  // absent" collapse to the same false result, exactly what placeHold's 402
+  // gate wants.
+  async deductCreditIfSufficient(sub: string, amount: number): Promise<boolean> {
+    try {
+      await this.userMetaModel.update(
+        { PK: this.userPk(sub), SK: 'METADATA' },
+        { '$ADD': { creditUsd: -amount } },
+        { condition: new dynamoose.Condition().where('creditUsd').exists().and().where('creditUsd').ge(amount) },
+      );
+      return true;
+    } catch (err: any) {
+      if (err?.name === 'ConditionalCheckFailedException') return false;
+      throw err;
+    }
   }
 
   async putUsageEvent(data: UsageEventItem): Promise<void> {
@@ -237,7 +274,7 @@ export class DynamoRepository {
   async updateNode(
     sessionId: string,
     nodeId: string,
-    updates: Partial<Pick<NodeItem, 'title' | 'lede' | 'starred' | 'commitSha' | 'branchName' | 'commitMessage' | 'diffSummary' | 'agentStatus' | 'imported' | 'prStatus' | 'workspace' | 'workspaceExpiresAt' | 'pushed' | 'pushError'>>,
+    updates: Partial<Pick<NodeItem, 'title' | 'lede' | 'starred' | 'commitSha' | 'branchName' | 'commitMessage' | 'diffSummary' | 'agentStatus' | 'imported' | 'prStatus' | 'workspace' | 'workspaceExpiresAt' | 'pushed' | 'pushError' | 'budgetExceeded'>>,
   ): Promise<void> {
     await this.nodeModel.update(
       { PK: this.sessionPk(sessionId), SK: this.nodeSk(nodeId) },
@@ -469,6 +506,70 @@ export class DynamoRepository {
       .all()
       .exec();
     return this.toPlainArray<GithubInstallationItem>(items);
+  }
+
+  // ── Billing: holds + machine bills (ADR-0004) ───────────────────────────────
+
+  async putHold(data: HoldItem): Promise<void> {
+    await this.holdModel.create(this.clean(data), { overwrite: true });
+  }
+
+  async getHold(sub: string, nodeId: string): Promise<HoldItem | null> {
+    const item = await this.holdModel.get({ PK: this.userPk(sub), SK: this.holdSk(nodeId) });
+    return item ? this.toPlain<HoldItem>(item) : null;
+  }
+
+  // Money-correctness guard #1: conditional update held→reconciled. Returns
+  // true iff THIS caller won the flip — a run's own done/error path and a
+  // concurrent sweep-driven reconcileStaleHolds tick can both race here, and
+  // exactly one must be allowed to release/charge. Dynamoose surfaces a failed
+  // ConditionExpression as the AWS SDK's ConditionalCheckFailedException.
+  async reconcileHoldStatus(sub: string, nodeId: string): Promise<boolean> {
+    try {
+      await this.holdModel.update(
+        { PK: this.userPk(sub), SK: this.holdSk(nodeId) },
+        { status: 'reconciled', updatedAt: new Date().toISOString() },
+        { condition: new dynamoose.Condition().where('status').eq('held') },
+      );
+      return true;
+    } catch (err: any) {
+      if (err?.name === 'ConditionalCheckFailedException') return false;
+      throw err;
+    }
+  }
+
+  // Money-correctness guard #2: `create` with `overwrite: false` fails
+  // (ConditionalCheckFailedException) if a MachineBillItem for this sandboxId
+  // already exists — guards a sweep tick racing the runner's own error-path
+  // `finally` from billing the same machine twice. MUST be called before any
+  // deductCredit (guard-before-charge ordering).
+  async putMachineBill(data: MachineBillItem): Promise<boolean> {
+    try {
+      await this.machineBillModel.create(this.clean(data), { overwrite: false });
+      return true;
+    } catch (err: any) {
+      if (err?.name === 'ConditionalCheckFailedException') return false;
+      throw err;
+    }
+  }
+
+  // Crash-recovery scan for reconcileStaleHolds: holds still 'held' past the
+  // cutoff never saw a done/error event (the run's process died mid-flight).
+  // Full-table scan — no GSI on status/updatedAt — mirrors apps/api's
+  // scanUsers/scanPayments admin pattern (SK-prefix filter + .and().where()).
+  async scanHeldHolds(cutoffIso: string): Promise<HoldItem[]> {
+    const items = await this.holdModel
+      .scan('SK')
+      .beginsWith('HOLD#')
+      .and()
+      .where('status')
+      .eq('held')
+      .and()
+      .where('updatedAt')
+      .lt(cutoffIso)
+      .all()
+      .exec();
+    return this.toPlainArray<HoldItem>(items);
   }
 }
 

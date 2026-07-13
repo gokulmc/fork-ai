@@ -64,6 +64,33 @@ export const UsageEventSchema = new dynamoose.Schema({
   // Without this, Dynamoose (saveUnknown:false) silently drops `model` on write,
   // so every usage event lands model-less and gets attributed to the default provider.
   model: { type: String, required: false },
+  runId: { type: String, required: false },
+  machineSeconds: { type: Number, required: false },
+});
+
+export const HoldSchema = new dynamoose.Schema({
+  PK: { type: String, hashKey: true },
+  SK: { type: String, rangeKey: true },
+  sub: String,
+  nodeId: String,
+  sessionId: String,
+  holdUsd: Number,
+  status: String,
+  model: String,
+  createdAt: String,
+  updatedAt: String,
+});
+
+export const MachineBillSchema = new dynamoose.Schema({
+  PK: { type: String, hashKey: true },
+  SK: { type: String, rangeKey: true },
+  sub: String,
+  sandboxId: String,
+  sessionId: String,
+  nodeId: String,
+  machineSeconds: Number,
+  costUsd: Number,
+  createdAt: String,
 });
 
 export const PaymentSchema = new dynamoose.Schema({
@@ -163,6 +190,7 @@ export const NodeSchema = new dynamoose.Schema({
   workspaceExpiresAt: { type: String, required: false },
   pushed: { type: Boolean, required: false },
   pushError: { type: String, required: false },
+  budgetExceeded: { type: Boolean, required: false },
 });
 
 export const AnnotationSchema = new dynamoose.Schema({

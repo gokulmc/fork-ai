@@ -77,6 +77,61 @@ describe('FlyProvider.create', () => {
     ]);
   });
 
+  // ── ADR-0004 billing identity ───────────────────────────────────────────
+
+  it('bakes sub/sessionId/nodeId into the machine config.metadata AT CREATE (atomic, no extra POST)', async () => {
+    mockRoutes();
+
+    await provider.create({ runId: 'run08', image: 'img', regions: ['sin'], env: {}, sub: 'user-1', sessionId: 'sess-1', nodeId: 'node-1' });
+
+    const [, machineInit] = fetchMock.mock.calls.find(
+      ([url, init]) => /\/machines$/.test(String(url)) && (init as RequestInit)?.method === 'POST',
+    )!;
+    const body = JSON.parse((machineInit as RequestInit).body as string) as { config: { metadata?: Record<string, string> } };
+    expect(body.config.metadata).toEqual({ forkai_sub: 'user-1', forkai_session_id: 'sess-1', forkai_node_id: 'node-1' });
+    // No separate metadata-setting call — identity travels in the create body itself.
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/metadata/'))).toBe(false);
+  });
+
+  it('omits config.metadata entirely when no billing identity is supplied', async () => {
+    mockRoutes();
+
+    await provider.create({ runId: 'run09', image: 'img', regions: ['sin'], env: {} });
+
+    const [, machineInit] = fetchMock.mock.calls.find(
+      ([url, init]) => /\/machines$/.test(String(url)) && (init as RequestInit)?.method === 'POST',
+    )!;
+    const body = JSON.parse((machineInit as RequestInit).body as string) as { config: { metadata?: Record<string, string> } };
+    expect(body.config.metadata).toBeUndefined();
+  });
+
+  it("returns the Fly machine-create response's created_at on the handle", async () => {
+    const createdAt = '2026-07-13T09:00:00.000Z';
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      const method = init?.method ?? 'GET';
+      if (url === 'https://api.machines.dev/v1/apps' && method === 'POST') return jsonResponse(200, {});
+      if (url === 'https://api.fly.io/graphql') return jsonResponse(200, { data: { allocateIpAddress: {} } });
+      if (/\/v1\/apps\/[^/]+\/machines$/.test(url) && method === 'POST') return jsonResponse(200, { id: 'machine1', state: 'created', created_at: createdAt });
+      if (url.includes('/wait?state=started')) return jsonResponse(200, { ok: true });
+      if (url.endsWith('/__forkai/healthz')) return jsonResponse(200, { ok: true });
+      if (method === 'DELETE') return jsonResponse(200, {});
+      throw new Error(`unexpected fetch in test: ${method} ${url}`);
+    });
+
+    const handle = await provider.create({ runId: 'run10', image: 'img', regions: ['sin'], env: {} });
+
+    expect(handle.createdAt).toBe(createdAt);
+  });
+
+  it('falls back to the current time when the machine-create response omits created_at', async () => {
+    mockRoutes(); // the shared route's machine response has no created_at
+    const before = Date.now();
+
+    const handle = await provider.create({ runId: 'run11', image: 'img', regions: ['sin'], env: {} });
+
+    expect(new Date(handle.createdAt).getTime()).toBeGreaterThanOrEqual(before);
+  });
+
   it('falls back to the next region on insufficient_capacity, without re-allocating IPs', async () => {
     mockRoutes(['sin']);
 
@@ -150,5 +205,62 @@ describe('FlyProvider.create', () => {
 
     const machineCalls = fetchMock.mock.calls.filter(([url, init]) => /\/machines$/.test(String(url)) && (init as RequestInit)?.method === 'POST');
     expect(machineCalls).toHaveLength(1); // fetch resolved (422), so fetchWithRetry's catch never fires
+  });
+});
+
+describe('FlyProvider.listMachines', () => {
+  const realFetch = global.fetch;
+  let fetchMock: jest.Mock;
+  let provider: FlyProvider;
+
+  beforeEach(() => {
+    fetchMock = jest.fn();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    provider = new FlyProvider({ apiToken: 'fly-token', orgSlug: 'personal' });
+  });
+
+  afterAll(() => {
+    global.fetch = realFetch;
+  });
+
+  it('maps expiry AND billing identity out of config.metadata', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, [
+        {
+          id: 'machine1',
+          state: 'started',
+          created_at: '2026-07-13T09:00:00.000Z',
+          config: { metadata: { forkai_expires_at: '2026-07-13T09:30:00.000Z', forkai_sub: 'user-1', forkai_session_id: 'sess-1', forkai_node_id: 'node-1' } },
+        },
+        // A pre-feature / crashed-before-tag machine — no identity metadata at all.
+        { id: 'machine2', state: 'started', created_at: '2026-07-13T09:05:00.000Z', config: { metadata: {} } },
+      ]),
+    );
+
+    const machines = await provider.listMachines('forkai-sbx-run01');
+
+    expect(machines).toEqual([
+      { id: 'machine1', createdAt: '2026-07-13T09:00:00.000Z', expiresAt: '2026-07-13T09:30:00.000Z', sub: 'user-1', sessionId: 'sess-1', nodeId: 'node-1' },
+      { id: 'machine2', createdAt: '2026-07-13T09:05:00.000Z', expiresAt: undefined, sub: undefined, sessionId: undefined, nodeId: undefined },
+    ]);
+  });
+
+  // Money-correctness fix I3: a missing created_at previously fell back to
+  // the epoch (1970), which billMachineUsage would turn into ~1.7 BILLION
+  // seconds of machine time. Falling back to "now" instead yields ~0
+  // billable seconds — matching the FlyProvider.create fallback's intent.
+  it('falls back to ~now (not the epoch) when a listed machine has no created_at', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, [{ id: 'machine1', state: 'started', config: { metadata: {} } }]),
+    );
+    const before = Date.now();
+
+    const machines = await provider.listMachines('forkai-sbx-broken');
+
+    expect(machines).toHaveLength(1);
+    const createdAtMs = new Date(machines[0].createdAt).getTime();
+    expect(createdAtMs).toBeGreaterThanOrEqual(before);
+    // Sanity check against the actual regression: epoch-0 would be ~1.7e12 ms behind "now".
+    expect(Date.now() - createdAtMs).toBeLessThan(5000);
   });
 });

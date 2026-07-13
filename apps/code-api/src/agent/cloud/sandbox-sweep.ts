@@ -18,6 +18,17 @@ export interface SandboxSweepResult {
 type SweepProvider = Pick<FlyProvider, 'listSandboxApps' | 'listMachines' | 'destroyApp'>;
 type SweepLog = Pick<Logger, 'log' | 'warn' | 'error'>;
 
+// Narrow interface (not the concrete UsersService import — this module lives
+// under agent/, UsersService under users/) satisfied by
+// UsersService.billMachineUsage/reconcileStaleHolds — see root CLAUDE.md's
+// ADR-0004 note. Optional on both call sites below so a server with no
+// billing wired (shouldn't happen once agent.module.ts wires it, but keeps
+// this module's own tests billing-agnostic) just skips billing/reconciling.
+export interface MachineBiller {
+  billMachineUsage(sub: string, sandboxId: string, sessionId: string, nodeId: string, createdAtIso: string, destroyAtMs: number): Promise<void>;
+  reconcileStaleHolds(cutoffMinutes?: number): Promise<void>;
+}
+
 // One reconciliation pass: for every forkai-sbx-* app (listSandboxApps already
 // excludes the base image), destroy it once ALL of its machines are past
 // their forkai_expires_at metadata, or — absent that metadata — older than
@@ -28,7 +39,7 @@ type SweepLog = Pick<Logger, 'log' | 'warn' | 'error'>;
 // so two sweepers racing the same expired app both report success — no
 // coordination/locking needed, same "rely on idempotency" pattern as the
 // Dynamoose null-handling elsewhere in this codebase.
-export async function sweepSandboxes(provider: SweepProvider, log: SweepLog): Promise<SandboxSweepResult> {
+export async function sweepSandboxes(provider: SweepProvider, log: SweepLog, biller?: MachineBiller): Promise<SandboxSweepResult> {
   const result: SandboxSweepResult = { destroyed: [], kept: [], failed: [] };
   const now = Date.now();
 
@@ -55,6 +66,31 @@ export async function sweepSandboxes(provider: SweepProvider, log: SweepLog): Pr
       continue;
     }
 
+    // Bill BEFORE destroy — full lifetime (create → now, incl. the idle TTL
+    // window, per the locked decision) for every machine that carries
+    // identity metadata (set at birth by FlyProvider, see
+    // SANDBOX_*_METADATA_KEY). A bill failure never blocks the destroy below
+    // (log + continue) — billMachineUsage's putMachineBill guard makes a
+    // retry safe if this app's destroy is itself deferred (e.g. another
+    // machine in it isn't expired yet, or destroyApp below fails), but if
+    // destroy succeeds anyway this tick, this specific machine's cost is
+    // lost — same bounded, tolerated gap as CloudAgentRunner's error-path
+    // billing. sandboxId is built as "<appName>:<machineId>", matching
+    // FlyProvider.create's SandboxHandle format exactly — this MUST agree
+    // with CloudAgentRunner's own billing call, since it's the MACHINEBILL#
+    // idempotency key; a mismatch would let the same machine be billed twice
+    // under two different keys.
+    if (biller) {
+      for (const m of machines) {
+        if (!m.sub || !m.sessionId || !m.nodeId) continue; // pre-feature or crashed-before-tag machine — destroyed, not billed
+        try {
+          await biller.billMachineUsage(m.sub, `${appName}:${m.id}`, m.sessionId, m.nodeId, m.createdAt, now);
+        } catch (err) {
+          log.error(`sweep: billMachineUsage failed for ${appName}:${m.id}: ${String(err)}`);
+        }
+      }
+    }
+
     try {
       await provider.destroyApp(appName);
       result.destroyed.push(appName);
@@ -65,6 +101,14 @@ export async function sweepSandboxes(provider: SweepProvider, log: SweepLog): Pr
     }
   }
 
+  if (biller) {
+    try {
+      await biller.reconcileStaleHolds();
+    } catch (err) {
+      log.error(`sweep: reconcileStaleHolds failed: ${String(err)}`);
+    }
+  }
+
   return result;
 }
 
@@ -72,9 +116,9 @@ export async function sweepSandboxes(provider: SweepProvider, log: SweepLog): Pr
 // with no sandboxes has nothing to sweep. Runs immediately (catches anything
 // left over from before this server started) then every SWEEP_INTERVAL_MS;
 // unref'd so the interval never keeps the process alive on shutdown.
-export function startSandboxSweep(provider: SweepProvider, log: SweepLog): void {
+export function startSandboxSweep(provider: SweepProvider, log: SweepLog, biller?: MachineBiller): void {
   const tick = () => {
-    void sweepSandboxes(provider, log).catch((err) => log.error(`sweep tick failed: ${String(err)}`));
+    void sweepSandboxes(provider, log, biller).catch((err) => log.error(`sweep tick failed: ${String(err)}`));
   };
   tick();
   const timer = setInterval(tick, SWEEP_INTERVAL_MS);

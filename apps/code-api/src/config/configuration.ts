@@ -30,6 +30,9 @@ export const validationSchema = Joi.object({
   FRONTEND_URL: Joi.string().optional().default('http://localhost:3001'),
   SIGNUP_CREDIT_USD: Joi.number().default(5.00),
   CREDIT_MULTIPLIER: Joi.number().default(1.5),
+  FLY_MINUTE_RATE_USD: Joi.number().default(0.0009),
+  MAX_RUN_COST_USD: Joi.number().default(1.00),
+  SANDBOX_HOLD_USD: Joi.number().default(1.00),
   RAZORPAY_KEY_ID: Joi.string().allow('').optional(),
   RAZORPAY_KEY_SECRET: Joi.string().allow('').optional(),
   RAZORPAY_WEBHOOK_SECRET: Joi.string().allow('').optional(),
@@ -77,6 +80,9 @@ export const configuration = () => ({
   billing: {
     signupCreditUsd: parseFloat(process.env.SIGNUP_CREDIT_USD ?? '5.00'),
     creditMultiplier: parseFloat(process.env.CREDIT_MULTIPLIER ?? '1.5'),
+    flyMinuteRateUsd: parseFloat(process.env.FLY_MINUTE_RATE_USD ?? '0.0009'),
+    maxRunCostUsd: parseFloat(process.env.MAX_RUN_COST_USD ?? '1.00'),
+    sandboxHoldUsd: parseFloat(process.env.SANDBOX_HOLD_USD ?? '1.00'),
   },
   razorpay: {
     keyId: process.env.RAZORPAY_KEY_ID ?? '',

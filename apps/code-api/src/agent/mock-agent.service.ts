@@ -19,6 +19,17 @@ export interface AgentRunContext {
   model?: string;
   attachments?: Array<{ name: string; content: string }>;
   runId?: string; // the CODE nodeId — workspace naming / log correlation
+  // Cloud-only billing plumbing (ADR-0004) — mock/local ignore all three.
+  // `sub` identifies who to bill for machine lifetime; `sessionId` (alongside
+  // `runId` as the nodeId) completes the identity tagged onto the sandbox's
+  // metadata at create, so a later sweep/error-path destroy can bill the
+  // right user/session/node; `maxBudgetUsd` is the pre-computed ceiling
+  // (min(maxRunCostUsd, balance) mapped from BILLED dollars to claude's own
+  // raw budget — see nodes.service.ts) passed straight to the sandbox's
+  // `claude --max-budget-usd` flag (see runner.mjs).
+  sub?: string;
+  sessionId?: string;
+  maxBudgetUsd?: number;
   // Where a real (local/cloud) runner finds or creates its working copy — the
   // mock ignores all of it. cloneUrl/localPath are set from a real project's
   // repoRef (nodes.service.ts's resolveRunRepo) or, dev-only, straight from
