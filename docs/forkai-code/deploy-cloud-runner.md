@@ -50,6 +50,53 @@ constant to `'cloud'` (a `code-web` change, separate deploy) is what actually
 turns cloud runs on for users. Until then, cloud is reachable only by a
 client that explicitly requests it.
 
+## 4. GitHub App (private repos — Contents:Read v1)
+
+**Manual, one-time GitHub-side registration — no API for this step.** Without
+it, `GithubAppService.isConfigured()` is false, `GET /github/app/install`
+503s, and `resolveRunRepo` 400s any cloud run against a private repo with a
+friendly "install the App" message (public repos and mock/local runs are
+unaffected — see ADR-0002's amendment).
+
+1. **Create the GitHub App** at <https://github.com/settings/apps/new> (or the
+   org equivalent):
+   - Name: `forkai code` (or any available name — the App's `slug`, read from
+     the created App's settings page, is what `GITHUB_APP_SLUG` below needs).
+   - Homepage URL: `https://code.forkai.in`
+   - **Setup URL**: `https://code.forkai.in/github/setup`, with **"Redirect on
+     update"** checked — this is the page that receives `?installation_id=`
+     and links it to the signed-in user (`apps/code-web/src/app/github/setup/page.tsx`).
+   - **Permissions**: Repository → Contents: **Read-only**, Metadata: **Read-only**.
+     No other permissions, no account permissions.
+   - **Webhooks**: none for v1 — uncheck "Active".
+   - **Where can this GitHub App be installed?**: "Any account" (so any user
+     can install it on their own personal account or org).
+2. **Generate a private key** (App settings → "Generate a private key" —
+   downloads a `.pem`), then base64-encode it for the env var:
+   ```bash
+   base64 -i forkai-code.YYYY-MM-DD.private-key.pem | tr -d '\n' > /tmp/gh-app-key-b64.txt
+   ```
+3. **Set three env vars** — `GITHUB_APP_ID` (the App's numeric id, shown on
+   its settings page), `GITHUB_APP_PRIVATE_KEY_B64` (contents of the file from
+   step 2), `GITHUB_APP_SLUG` (the App's URL slug, e.g. `forkai-code` — used
+   to build the `/apps/<slug>/installations/new` install link). All three are
+   **optional** Joi keys (`config/configuration.ts`) — omitting any of them
+   leaves `isConfigured()` false and the feature inert, same lazy-validation
+   pattern as `GEMINI_API_KEY`/`DEEPSEEK_API_KEY`/`GLM_API_KEY`. Needed in
+   **both** places:
+   - Local dev: `apps/code-api/.env` (gitignored).
+   - `forkai-code-api-prod` EB env, once a `code-prod` deploy is authorized —
+     not a Secrets Manager entry like the LLM keys (the private key isn't a
+     single short secret string in the same category, and this doc is a
+     manual-step checklist, not a buildspec change; wiring it through
+     `secrets-manager:` the same way the LLM keys are is the natural v1.1 step
+     if this needs to survive an EB env rebuild without re-pasting).
+4. **Activate it for a user**: sign in to forkai code, navigate to
+   `{NEXT_PUBLIC_API_BASE_URL}/github/app/install` (no in-app button yet — see
+   ADR-0002's amendment), install the App on the account/org that owns the
+   private repo, and GitHub redirects back to `/github/setup?installation_id=…`,
+   which POSTs it to `POST /github/app/installations`.
+
 ## What the buildspec now provisions
 
 | EB env var | Value | Purpose |
