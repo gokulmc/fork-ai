@@ -35,7 +35,7 @@ type RunnerEvent =
   | { type: 'claude'; line: unknown }
   | { type: 'claude-raw'; text: string }
   | { type: 'error'; message: string }
-  | { type: 'result'; sha: string; baseSha: string; diffSummary: DiffSummary; exitCode: number };
+  | { type: 'result'; sha: string; baseSha: string; diffSummary: DiffSummary; exitCode: number; pushed: boolean; pushError?: string };
 
 function isRecord(x: unknown): x is Record<string, unknown> {
   return typeof x === 'object' && x !== null;
@@ -193,6 +193,12 @@ export class CloudAgentRunner implements AgentRunner {
           model: sdkModel ?? ctx.model ?? 'unknown',
           workspace: { kind: 'cloud', sandboxId: sandbox.sandboxId, vscodeUrl: sandbox.vscodeUrl },
           workspaceExpiresAt,
+          // v1.1 push-back (ADR-0002 amendment) — pushError, when present, is
+          // already redact()-ed by runner.mjs and also surfaced separately as
+          // a 'warn' SSE frame (handled by the generic warn branch above), so
+          // no extra logging is needed here.
+          pushed: runnerResult.pushed,
+          ...(runnerResult.pushError ? { pushError: runnerResult.pushError } : {}),
         };
         succeeded = true;
         yield { type: 'result', result: final };

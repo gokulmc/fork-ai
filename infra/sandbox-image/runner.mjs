@@ -25,6 +25,7 @@ const RUN_TOKEN = process.env.RUN_TOKEN;
 const VSCODE_TOKEN = process.env.VSCODE_TOKEN;
 const WORKDIR = '/workspace/repo';
 const CLAUDE_TIMEOUT_MS = 10 * 60 * 1000;
+const PUSH_TIMEOUT_MS = 30 * 1000;
 const VSCODE_PORT = 3000;
 
 let vscodeStarted = false;
@@ -50,15 +51,31 @@ function sseSend(res, obj) {
   res.write(`data: ${JSON.stringify(obj)}\n\n`);
 }
 
+// `timeoutMs` (optional, not a real spawn option — stripped before passing
+// through) kills the child and rejects rather than hanging forever; used by
+// the push step so a stalled network call can't hang the whole run.
 function run(cmd, args, opts = {}) {
+  const { timeoutMs, ...spawnOpts } = opts;
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, opts);
+    const child = spawn(cmd, args, spawnOpts);
     let stdout = '';
     let stderr = '';
+    let timedOut = false;
+    const timer = timeoutMs
+      ? setTimeout(() => {
+          timedOut = true;
+          child.kill('SIGKILL');
+        }, timeoutMs)
+      : null;
     child.stdout?.on('data', (d) => (stdout += d));
     child.stderr?.on('data', (d) => (stderr += d));
-    child.on('error', reject);
+    child.on('error', (err) => {
+      if (timer) clearTimeout(timer);
+      reject(err);
+    });
     child.on('close', (code) => {
+      if (timer) clearTimeout(timer);
+      if (timedOut) return reject(new Error(redact(`${cmd} ${args.join(' ')} timed out after ${timeoutMs}ms`)));
       if (code === 0) resolve({ stdout, stderr });
       else reject(new Error(redact(`${cmd} ${args.join(' ')} exited ${code}: ${stderr || stdout}`)));
     });
@@ -167,6 +184,28 @@ async function diffSummaryBetween(baseSha, headSha) {
     run('git', ['diff', '--name-status', baseSha, headSha], { cwd: WORKDIR }),
   ]);
   return assembleDiffSummary(parseNumstat(numstatOut), parseNameStatus(nameStatusOut));
+}
+
+// v1.1 push-back (ADR-0002 amendment): reuse the "origin" remote git itself
+// configured at clone time (the embedded x-access-token@ credential for
+// private repos) — never build a new URL, never touch a new secret. A
+// 'new'-project run (git init, no clone) never gets an origin remote, so this
+// is a no-op for that case rather than an error. Never force-pushes: a
+// non-fast-forward rejection is treated like any other push failure (warn +
+// continue), not force-resolved.
+async function pushToOrigin(res, branch) {
+  const hasOrigin = await run('git', ['remote', 'get-url', 'origin'], { cwd: WORKDIR })
+    .then(() => true)
+    .catch(() => false);
+  if (!hasOrigin) return { pushed: false };
+  try {
+    await run('git', ['push', 'origin', branch], { cwd: WORKDIR, timeoutMs: PUSH_TIMEOUT_MS });
+    return { pushed: true };
+  } catch (err) {
+    // err.message is already redact()-ed by run() above.
+    sseSend(res, { type: 'warn', message: `push to origin failed: ${err.message}` });
+    return { pushed: false, pushError: err.message };
+  }
 }
 
 // --- /run handler ---
@@ -310,7 +349,16 @@ async function handleRun(req, res) {
       }
       const diffSummary =
         sha === baseSha ? { filesChanged: 0, additions: 0, deletions: 0, files: [] } : await diffSummaryBetween(baseSha, sha);
-      sseSend(res, { type: 'result', sha, baseSha, diffSummary, exitCode: exitCode ?? -1 });
+
+      // Only attempt a push when the agent actually produced a new commit —
+      // never block/fail the run on the push itself (see pushToOrigin).
+      let pushed = false;
+      let pushError;
+      if (sha !== baseSha) {
+        ({ pushed, pushError } = await pushToOrigin(res, branch));
+      }
+
+      sseSend(res, { type: 'result', sha, baseSha, diffSummary, exitCode: exitCode ?? -1, pushed, ...(pushError ? { pushError } : {}) });
     } catch (err) {
       sseSend(res, { type: 'error', message: err.message });
     }

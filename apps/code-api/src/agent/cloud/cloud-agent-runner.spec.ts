@@ -28,6 +28,7 @@ const RESULT_FRAME = {
   baseSha: '7fd1a60b01f91b314f59955a4e4d4e80d8edf11d',
   diffSummary: { filesChanged: 1, additions: 2, deletions: 0, files: [{ path: 'VERSION', status: 'added', additions: 2, deletions: 0 }] },
   exitCode: 0,
+  pushed: true,
 };
 
 function sse(frames: unknown[]): string {
@@ -135,7 +136,9 @@ describe('CloudAgentRunner', () => {
       outputTokens: 50,
       model: 'claude-sonnet-4-5',
       workspace: { kind: 'cloud', sandboxId: HANDLE.sandboxId, vscodeUrl: HANDLE.vscodeUrl },
+      pushed: true,
     });
+    expect(final?.pushError).toBeUndefined();
     expect(typeof final?.workspaceExpiresAt).toBe('string');
     expect(new Date(final!.workspaceExpiresAt!).getTime()).toBeGreaterThan(Date.now());
 
@@ -201,6 +204,62 @@ describe('CloudAgentRunner', () => {
 
     expect(items.filter((i) => i.type === 'result')).toHaveLength(1);
     expect(provider.setMetadata).toHaveBeenCalledTimes(1);
+    expect(provider.destroy).not.toHaveBeenCalled();
+  });
+
+  // v1.1 push-back (ADR-0002 amendment) — the sandbox's own runner.mjs owns
+  // the actual `git push`; these three cases only verify CloudAgentRunner
+  // faithfully carries the sandbox's pushed/pushError report through to
+  // AgentRunFinal without altering it, and that a push failure never fails
+  // the run itself (the sandbox is still kept, not destroyed).
+  it('reports pushed: true on AgentRunFinal when the sandbox pushed the commit', async () => {
+    fetchMock.mockResolvedValue(new Response(sse([{ ...RESULT_FRAME, pushed: true }]), { status: 200 }));
+
+    const items = await drain(runner.run(mkCtx()));
+
+    const final = items.find((i) => i.type === 'result')?.result;
+    expect(final?.pushed).toBe(true);
+    expect(final?.pushError).toBeUndefined();
+    // A push outcome (success or failure) is not a run failure — the sandbox
+    // is preserved exactly like any other successful run.
+    expect(provider.destroy).not.toHaveBeenCalled();
+    expect(provider.setMetadata).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports pushed: false (no error surfaced) when the sandbox had no origin remote to push to', async () => {
+    fetchMock.mockResolvedValue(new Response(sse([{ ...RESULT_FRAME, pushed: false }]), { status: 200 }));
+
+    const items = await drain(runner.run(mkCtx({ repo: { init: { defaultBranch: 'main' } } })));
+
+    const final = items.find((i) => i.type === 'result')?.result;
+    expect(final?.pushed).toBe(false);
+    expect(final?.pushError).toBeUndefined();
+    expect(provider.destroy).not.toHaveBeenCalled();
+  });
+
+  it('carries a redacted pushError through to AgentRunFinal and still completes the run successfully', async () => {
+    const redactedError = 'git push origin main exited 128: fatal: unable to access https://***@github.com/octocat/Hello-World.git/: 403';
+    fetchMock.mockResolvedValue(
+      new Response(
+        sse([
+          { type: 'warn', message: `push to origin failed: ${redactedError}` },
+          { ...RESULT_FRAME, pushed: false, pushError: redactedError },
+        ]),
+        { status: 200 },
+      ),
+    );
+
+    const items = await drain(runner.run(mkCtx()));
+
+    const final = items.find((i) => i.type === 'result')?.result;
+    expect(final?.pushed).toBe(false);
+    expect(final?.pushError).toBe(redactedError);
+    // Never leaks a credential — the sandbox is responsible for redaction,
+    // but assert the runner never reconstructs/appends anything un-redacted.
+    expect(final?.pushError).not.toMatch(/x-access-token/);
+    expect(final?.pushError).not.toMatch(/github_pat_|ghs_/);
+    // The run still completes successfully — a push failure is not a run error.
+    expect(items.filter((i) => i.type === 'result')).toHaveLength(1);
     expect(provider.destroy).not.toHaveBeenCalled();
   });
 });

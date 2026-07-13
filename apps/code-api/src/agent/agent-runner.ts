@@ -19,6 +19,15 @@ export interface AgentRunFinal {
   // ISO timestamp — cloud only (local workspaces don't expire). Set alongside
   // `workspace` on a successful cloud run; see CloudAgentRunner.
   workspaceExpiresAt?: string;
+  // GitHub push-back (ADR-0002 amendment, v1.1) — cloud-only. Set from the
+  // sandbox runner's `result` frame: `git push origin <branch>` is attempted
+  // after a successful commit, reusing the same installation-token remote
+  // the repo was cloned from. `false` is not itself an error — it also
+  // covers the expected no-op case of a 'new'-project run with no origin
+  // remote. Read-only plumbing for now: not yet surfaced in product UI or
+  // persisted to NodeItem/Dynamo (see docs/forkai-code/adr/0002).
+  pushed?: boolean;
+  pushError?: string;
 }
 
 // A discriminated union rather than a generator return value: `for await`
