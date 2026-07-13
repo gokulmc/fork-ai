@@ -180,6 +180,17 @@ export class ApiError extends Error {
 // never leak into the UI banner.
 function extractError(text: string, fallback: string): { message: string; code?: string } {
   if (!text) return { message: fallback };
+  // A non-ok streaming response's body is SSE-framed (`data: {...}\n\n`), not bare
+  // JSON, so the JSON.parse below fails and the raw `data: {...}` text used to leak
+  // into the UI banner. Pull the LAST data frame (the final error state) and parse
+  // that instead — status still comes from the HTTP response, never from the body.
+  const sseFrames = [...text.matchAll(/^data:\s*(\{.*\})\s*$/gm)];
+  if (sseFrames.length) {
+    try {
+      const frame = JSON.parse(sseFrames[sseFrames.length - 1][1]) as { message?: string; code?: string };
+      if (frame.message) return { message: frame.message, code: frame.code };
+    } catch { /* not JSON, fall through to the checks below */ }
+  }
   try {
     const body = JSON.parse(text) as { message?: string | string[]; code?: string };
     if (body.message) {

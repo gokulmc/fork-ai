@@ -101,7 +101,8 @@ type RetryInfo =
   | { kind: 'ROOT'; query: string }
   | { kind: 'ROOT_IN_SESSION'; sessionId: string; query: string }
   | { kind: 'DEEPER'; parentNodeId: string; section: { id: string; heading: string; body: string }; boost?: boolean }
-  | { kind: 'ASK'; question: string; source: FollowUpState; boost?: boolean };
+  | { kind: 'ASK'; question: string; source: FollowUpState; boost?: boolean }
+  | { kind: 'ASK_COMMIT'; parentNodeId: string; question: string };
 import { useTweaks } from '@/hooks/useTweaks';
 import { initAnalytics, track, identifyUser } from '@/lib/analytics';
 import { getCachedSession, putCachedSession, deleteCachedSession } from '@/lib/sessionCache';
@@ -142,6 +143,7 @@ import {
   type Project,
   type CreateProjectPayload,
   type AgentEvent,
+  type AgentRun,
 } from '@/lib/api';
 import { canSpawn } from '@/lib/nodeGrammar';
 import { SkeletonSections } from './SkeletonSections';
@@ -669,13 +671,22 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       const nodeMap: Record<string, ForkNode> = {};
       for (const n of forkNodes) nodeMap[n.id] = n;
       const root = forkNodes.find(n => n.parentId === null);
-      const activeTarget = (targetNodeId && nodeMap[targetNodeId]) ? targetNodeId : (root?.id ?? null);
+      // No explicit target (fresh load, not a deep-link) — land on an in-progress
+      // CODE run rather than the root, so a mid-run refresh resumes where it left
+      // off instead of stranding the user on a finished ancestor.
+      const runningNode = targetNodeId ? undefined : forkNodes.find(n => n.agentStatus === 'running');
+      const activeTarget = (targetNodeId && nodeMap[targetNodeId]) ? targetNodeId : (runningNode?.id ?? root?.id ?? null);
       setSessionId(session.sessionId);
       setNodes(nodeMap);
       setRootId(root?.id ?? null);
       // Don't yank the user off a node they navigated to while the cache copy
       // was showing — keep the current node if it still exists server-side.
-      setActiveId(prev => (prev && nodeMap[prev]) ? prev : activeTarget);
+      // Exception: an in-progress CODE run always wins. The cache-paint block
+      // above already set activeId (usually to the root) before this network
+      // apply runs, so "prev exists in nodeMap" can't distinguish user
+      // navigation from our own cache paint — and the running node's pane is
+      // what re-attaches polling after a mid-run reload.
+      setActiveId(prev => runningNode ? runningNode.id : ((prev && nodeMap[prev]) ? prev : activeTarget));
       setAnnotations(session.annotations.map(toAnnotation));
       setPersistentHl(toHlMap(session.highlights));
       setHighlightsList(toHighlightRecords(session.highlights, nodeMap));
@@ -1672,14 +1683,17 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
 
   // ── CODE node: "Implement"/"Continue" — runs the mocked coding agent ─────
 
-  const submitCodeNode = useCallback(async (instruction: string, attachments: ComposerAttachment[]) => {
+  const submitCodeNode = useCallback(async (instruction: string, attachments: ComposerAttachment[], reuseNodeId?: string) => {
     const sid = sessionIdRef.current;
-    if (!sid || !idToken || !activeId) return;
-    const parentNodeId = activeId;
+    // Retry re-runs against the failed node's own parent — activeId at that
+    // point is the failed CODE node itself (AgentLogPane renders for `active`).
+    const parentNodeId = reuseNodeId ? (nodes[reuseNodeId]?.parentId ?? null) : activeId;
+    if (!sid || !idToken || !parentNodeId) return;
     const parent = nodes[parentNodeId];
     if (!parent) return;
 
-    const tempId = uid();
+    // Retry reuses the failed node's id so the card flips back to loading in place.
+    const tempId = reuseNodeId ?? uid();
     setNodes(prev => ({
       ...prev,
       [tempId]: {
@@ -1756,17 +1770,49 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     }
   }, [nodes, idToken, activeId, scrollWsTop, refreshCredit]);
 
+  // AgentLogPane's own Retry (for a failed run) — separate from the generic
+  // retryInfoRef/ws-error banner mechanism, since CODE nodes never render into
+  // that banner (they render via AgentLogPane, which has its own error strip).
+  const onRetryRun = useCallback((nodeId: string) => {
+    const node = nodes[nodeId];
+    if (!node) return;
+    void submitCodeNode(node.query, [], nodeId);
+  }, [nodes, submitCodeNode]);
+
+  // AgentLogPane polls the persisted AgentRun on a mid-run refresh (no SSE to
+  // resume into) and calls this once it resolves — patch in what the 'done'/
+  // 'error' SSE event would have applied, since that event never reached this tab.
+  const handleRunResolved = useCallback((nodeId: string, run: AgentRun) => {
+    setNodes(prev => {
+      const node = prev[nodeId];
+      if (!node) return prev;
+      const patch: Partial<ForkNode> = { agentStatus: run.status, loading: false };
+      if (run.commitSha !== undefined) patch.commitSha = run.commitSha;
+      if (run.branchName !== undefined) patch.branchName = run.branchName;
+      if (run.commitMessage !== undefined) patch.commitMessage = run.commitMessage;
+      if (run.diffSummary !== undefined) patch.diffSummary = run.diffSummary;
+      // The persist-first placeholder title (query.slice(0,60)) never got replaced
+      // because the `done` SSE event never reached this tab — derive it from the
+      // commit message the same way nodes.service.ts does server-side (nodes.service.ts:766).
+      if (run.commitMessage && node.title === node.query.slice(0, 60)) {
+        patch.title = run.commitMessage.split(/\s+/).filter(Boolean).slice(0, 5).join(' ') || node.title;
+      }
+      return { ...prev, [nodeId]: { ...node, ...patch } };
+    });
+  }, []);
+
   // "Ask about this commit" on a CODE node's AgentLogPane — spawns an ASK node
   // with no highlight selection, so the commit message stands in as the anchor
   // text (the ASK route requires non-empty highlightText).
-  const askAboutCommit = useCallback(async (nodeId: string, question: string) => {
+  const askAboutCommit = useCallback(async (nodeId: string, question: string, reuseNodeId?: string) => {
     const sid = sessionIdRef.current;
     if (!sid || !idToken) return;
     const parent = nodes[nodeId];
     if (!parent) return;
     const anchorText = parent.commitMessage || parent.title;
 
-    const tempId = uid();
+    // Retry reuses the failed node's id so the card flips back to loading in place.
+    const tempId = reuseNodeId ?? uid();
     setAskCommitLoading(true);
     setLoadingNodes(prev => new Set(prev).add(tempId));
     setNodes(prev => ({
@@ -1812,6 +1858,9 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     } catch (err) {
       const { msg, status, code } = nodeErrorDisplay(err);
       track('node_error', { kind: 'ASK', status, message: msg });
+      if (status !== 402) {
+        retryInfoRef.current[tempId] = { kind: 'ASK_COMMIT', parentNodeId: nodeId, question };
+      }
       setNodes(prev => ({ ...prev, [tempId]: { ...prev[tempId], loading: false, error: msg, errorStatus: status, errorCode: code } }));
     } finally {
       setAskCommitLoading(false);
@@ -1829,8 +1878,9 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     if (info.kind === 'ROOT') void submitRootQuery(info.query);
     else if (info.kind === 'ROOT_IN_SESSION') void submitProjectQuery(info.sessionId, info.query, failedId);
     else if (info.kind === 'DEEPER') void expandSectionAsChild(info.parentNodeId, info.section, failedId, info.boost);
+    else if (info.kind === 'ASK_COMMIT') void askAboutCommit(info.parentNodeId, info.question, failedId);
     else void askFromHighlight(info.question, info.source, failedId, info.boost);
-  }, [submitRootQuery, submitProjectQuery, expandSectionAsChild, askFromHighlight]);
+  }, [submitRootQuery, submitProjectQuery, expandSectionAsChild, askFromHighlight, askAboutCommit]);
 
   // ── Text selection → highlight menu ──────────────────────────────────────
 
@@ -2702,6 +2752,8 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
               onImplement={() => composerRef.current?.focus()}
               onAskAboutCommit={q => askAboutCommit(active.id, q)}
               askLoading={askCommitLoading}
+              onRunResolved={handleRunResolved}
+              onRetryRun={onRetryRun}
             />
           )}
           {active && active.kind === 'MERGE' && (

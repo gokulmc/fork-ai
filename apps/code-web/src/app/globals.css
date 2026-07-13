@@ -571,9 +571,48 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
   transition: opacity .15s, visibility .15s, background .12s, color .12s;
   padding: 0;
 }
-.session-card:hover .session-card-delete { opacity: 1; visibility: visible; }
+.session-card:hover .session-card-delete,
+.session-card:focus-within .session-card-delete { opacity: 1; visibility: visible; }
 .session-card-delete:hover { background: color-mix(in oklab, #c4452e 12%, transparent); color: #c4452e; }
 .session-card-delete:disabled { pointer-events: none; opacity: 0.5; }
+/* Hover-hover-affordance devices (touch) never trigger :hover, so the delete
+   button would otherwise be permanently invisible — show it faintly instead. */
+@media (hover: none) {
+  .session-card-delete { opacity: 0.5; visibility: visible; }
+}
+.session-card-confirm {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px 3px 8px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.session-card-confirm-label {
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.session-card-confirm-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  border-radius: 5px;
+  color: var(--ink-3);
+  cursor: pointer;
+  padding: 0;
+}
+.session-card-confirm-yes:hover { background: color-mix(in oklab, #c4452e 12%, transparent); color: #c4452e; }
+.session-card-confirm-no:hover { background: var(--hover); color: var(--ink); }
 .history-groups {
   display: flex;
   flex-direction: column;

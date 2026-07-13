@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { Highlighter, GitBranch, Plus, Trash } from './Icons';
+import { Highlighter, GitBranch, Plus, Trash, Check, X } from './Icons';
 import { HistoryBubbles } from './HistoryBubbles';
 import { NewProjectModal } from './NewProjectModal';
 import type { CreateProjectPayload, SessionSummary } from '@/lib/api';
@@ -37,6 +37,9 @@ function dividerLabel(dayIso: string): string {
 export function HistoryPage({ sessions, loading, onLoadSession, onDeleteSession, idToken, onCreateProject }: HistoryPageProps) {
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
   const [showModal, setShowModal] = useState(false);
+  // Arms a card for delete confirmation; reset on rerender (e.g. list refresh) is fine
+  // since it's a transient UI state, not something that needs to survive a re-fetch.
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
   const groups: Array<{ day: string; items: SessionSummary[] }> = [];
   for (const s of sessions) {
@@ -95,21 +98,64 @@ export function HistoryPage({ sessions, loading, onLoadSession, onDeleteSession,
                           onClick={() => onLoadSession(s.sessionId)}
                           onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') onLoadSession(s.sessionId); }}
                         >
-                          <button
-                            className="session-card-delete"
-                            aria-label="Delete session"
-                            title="Delete session"
-                            disabled={isDeleting}
-                            onClick={e => {
-                              e.stopPropagation();
-                              setDeletingIds(prev => new Set(prev).add(s.sessionId));
-                              onDeleteSession(s.sessionId);
-                            }}
-                          >
-                            {isDeleting
-                              ? <span className="spinner" style={{ width: 12, height: 12 }} />
-                              : <Trash size={13} />}
-                          </button>
+                          {confirmingId === s.sessionId ? (
+                            <div
+                              className="session-card-confirm"
+                              // Disarm when focus leaves the whole confirm group (click elsewhere,
+                              // tab away) — relatedTarget is null for a mouse click outside any
+                              // focusable element, which also correctly disarms.
+                              onBlur={e => {
+                                if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                                  setConfirmingId(null);
+                                }
+                              }}
+                              onKeyDown={e => {
+                                if (e.key === 'Escape') { e.stopPropagation(); setConfirmingId(null); }
+                              }}
+                            >
+                              <span className="session-card-confirm-label">Delete?</span>
+                              <button
+                                className="session-card-confirm-btn session-card-confirm-yes"
+                                aria-label="Confirm delete"
+                                title="Confirm delete"
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  setConfirmingId(null);
+                                  setDeletingIds(prev => new Set(prev).add(s.sessionId));
+                                  onDeleteSession(s.sessionId);
+                                }}
+                              >
+                                <Check size={13} />
+                              </button>
+                              <button
+                                className="session-card-confirm-btn session-card-confirm-no"
+                                aria-label="Cancel delete"
+                                title="Cancel"
+                                // Autofocus the safe (cancel) action: gives the group focus so the
+                                // onBlur-outside-click handler above can fire, and means a stray
+                                // Enter keypress cancels rather than deletes.
+                                autoFocus
+                                onClick={e => { e.stopPropagation(); setConfirmingId(null); }}
+                              >
+                                <X size={13} />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              className="session-card-delete"
+                              aria-label="Delete session"
+                              title="Delete session"
+                              disabled={isDeleting}
+                              onClick={e => {
+                                e.stopPropagation();
+                                setConfirmingId(s.sessionId);
+                              }}
+                            >
+                              {isDeleting
+                                ? <span className="spinner" style={{ width: 12, height: 12 }} />
+                                : <Trash size={13} />}
+                            </button>
+                          )}
                           <span className="session-card-emoji">{s.emoji}</span>
                           <div className="session-card-body">
                             <div className="session-card-title">{s.title}</div>
