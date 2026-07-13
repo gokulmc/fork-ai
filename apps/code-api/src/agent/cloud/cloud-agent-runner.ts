@@ -16,7 +16,10 @@ export interface CloudAgentRunnerConfig {
   apiToken: string;
   orgSlug: string;
   image: string;
-  region: string;
+  // Tried in order by FlyProvider.create on insufficient_capacity — see
+  // SandboxCreateOpts.regions. agent.module.ts resolves this from
+  // FLY_REGIONS, falling back to [FLY_REGION] when unset.
+  regions: string[];
   anthropicApiKey: string;
   // Minutes a successful run's sandbox survives past done, so the user can
   // open the workspace afterward — see SANDBOX_TTL_MINUTES / sandbox-sweep.ts.
@@ -93,7 +96,7 @@ export class CloudAgentRunner implements AgentRunner {
       sandbox = await this.provider.create({
         runId,
         image: this.cfg.image,
-        region: this.cfg.region,
+        regions: this.cfg.regions,
         // The platform ANTHROPIC_API_KEY is deliberately NOT in the machine env:
         // the sandbox's openvscode terminal runs as root, so anything in the
         // machine env is readable by the user mid-run (`cat /proc/1/environ`).
@@ -103,7 +106,7 @@ export class CloudAgentRunner implements AgentRunner {
         env: { RUN_TOKEN: runToken, VSCODE_TOKEN: vscodeToken, IS_SANDBOX: '1' },
       });
 
-      const res = await fetch(`${sandbox.baseUrl}/run`, {
+      const res = await fetch(`${sandbox.baseUrl}/__forkai/run`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${runToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -14,15 +14,11 @@ import { Logger } from '@nestjs/common';
 // the same org's 6PN network, so this provider always uses the public host.
 const FLY_API_HOSTNAME = 'https://api.machines.dev';
 
-// The runner's HTTP/SSE server (see tools/spikes/cloud-sandbox/image/runner.mjs).
+// The runner's HTTP/SSE server (see infra/sandbox-image/runner.mjs) — the
+// ONLY public service on the machine. runner.mjs reverse-proxies openvscode
+// (127.0.0.1:3000, not published here) through this same port, so a shared
+// IPv4 suffices — see allocateSandboxIps.
 const RUNNER_PORT = 8080;
-// openvscode-server.
-const VSCODE_PORT = 3000;
-// External port the vscode service is published on. Fly's shared IPv4 only
-// routes ports 80/443 to a single service — an app with a SECOND public
-// service needs a dedicated IPv4 (confirmed live in the spike), so this
-// provider always allocates a dedicated v4 — see allocateDedicatedIpv4.
-const VSCODE_EXTERNAL_PORT = 10300;
 
 export const SANDBOX_APP_PREFIX = 'forkai-sbx-';
 // The shared base image's registry app — a permanent fixture, never a sandbox
@@ -37,14 +33,18 @@ export const SANDBOX_EXPIRES_AT_METADATA_KEY = 'forkai_expires_at';
 export interface SandboxCreateOpts {
   runId: string;
   image: string;
-  region: string;
+  // Tried in order; provisionInApp only advances to the next one on an
+  // insufficient_capacity error (any other failure fails fast). At least one
+  // entry required — the caller (agent.module.ts) falls back to [FLY_REGION]
+  // when FLY_REGIONS is unset.
+  regions: string[];
   env: Record<string, string>;
 }
 
 export interface SandboxHandle {
   sandboxId: string; // "<appName>:<machineId>"
-  baseUrl: string; // https origin serving the runner's /healthz and /run (port 8080)
-  vscodeUrl: string; // https origin serving openvscode-server (external 10300), includes ?tkn=
+  baseUrl: string; // https origin serving the runner's /__forkai/* control API (port 8080)
+  vscodeUrl: string; // baseUrl, proxied to openvscode-server by the runner — includes ?tkn=
 }
 
 interface FlyMachineConfig {
@@ -112,10 +112,11 @@ export class FlyProvider {
       body: JSON.stringify({ app_name: appName, org_slug: this.opts.orgSlug }),
     });
 
-    // Anything after app-create that throws would otherwise leak the app AND
-    // its dedicated IPv4 (which bills prorated) — observed live when machine
-    // create 422'd with insufficient_capacity in bom. Best-effort delete the
-    // app on the way out; app deletion releases its IPs.
+    // Anything after app-create that throws would otherwise leak the app —
+    // observed live when machine create 422'd with insufficient_capacity in
+    // bom. Best-effort delete the app on the way out; app deletion releases
+    // its IPs (shared v4 costs nothing, but the IPv6 allocation and the
+    // machine itself still would).
     try {
       return await this.provisionInApp(appName, opts);
     } catch (err) {
@@ -128,15 +129,16 @@ export class FlyProvider {
   }
 
   private async provisionInApp(appName: string, opts: SandboxCreateOpts): Promise<SandboxHandle> {
-    await this.allocateDedicatedIpv4(appName);
+    await this.allocateSandboxIps(appName);
 
     // Sized down-overridable because bom had no shared-2x/4096 capacity on the
     // first live attempt (422 insufficient_capacity, 2026-07-13).
     const cpus = Number(process.env.FLY_GUEST_CPUS ?? 2);
     const memoryMb = Number(process.env.FLY_GUEST_MEMORY_MB ?? 4096);
 
-    // Both public services live on the one machine; 8080 is the runner's
-    // SSE/health API, 3000 is openvscode-server.
+    // The ONE public service on the machine — runner.mjs reverse-proxies
+    // openvscode (127.0.0.1:3000) through this same port, so there is no
+    // second service to publish (see infra/sandbox-image/README.md).
     const config: FlyMachineConfig = {
       image: opts.image,
       env: opts.env,
@@ -152,21 +154,10 @@ export class FlyProvider {
           autostart: true,
           autostop: false,
         },
-        {
-          protocol: 'tcp',
-          internal_port: VSCODE_PORT,
-          ports: [{ port: VSCODE_EXTERNAL_PORT, handlers: ['tls', 'http'] }],
-          autostart: true,
-          autostop: false,
-        },
       ],
     };
 
-    const createRes = await this.flyFetch(`/v1/apps/${appName}/machines`, {
-      method: 'POST',
-      body: JSON.stringify({ region: opts.region, config }),
-    });
-    const machine = (await createRes.json()) as FlyMachine;
+    const machine = await this.createMachineWithRegionFallback(appName, opts.regions, config);
 
     // Machine create auto-launches; /wait is the documented way to block until
     // it's actually up. The image is ~900MB, so a cold pull can exceed one 60s
@@ -182,14 +173,41 @@ export class FlyProvider {
     }
 
     const baseUrl = `https://${appName}.fly.dev`;
-    const vscodeUrl = `https://${appName}.fly.dev:${VSCODE_EXTERNAL_PORT}/?tkn=${opts.env.VSCODE_TOKEN}`;
+    const vscodeUrl = `${baseUrl}/?tkn=${opts.env.VSCODE_TOKEN}`;
 
-    // Poll /healthz through the public edge — this is also the proof that edge
-    // routing (app → dedicated IPv4 → service → machine) actually works, not
-    // just that the machine process is up.
+    // Poll the runner's own healthz through the public edge — this is also
+    // the proof that edge routing (app → shared IPv4 → service → machine)
+    // actually works, not just that the machine process is up.
     await this.pollHealthz(baseUrl);
 
     return { sandboxId: `${appName}:${machine.id}`, baseUrl, vscodeUrl };
+  }
+
+  // Tries opts.regions in order, advancing only on insufficient_capacity (the
+  // 422 the spike hit live in bom for shared-cpu-2x) — any other error fails
+  // fast rather than burning through the whole list. IP allocation happens
+  // once in the caller, before this loop, since it's app-scoped, not
+  // region-scoped.
+  private async createMachineWithRegionFallback(appName: string, regions: string[], config: FlyMachineConfig): Promise<FlyMachine> {
+    for (let i = 0; i < regions.length; i++) {
+      const region = regions[i];
+      try {
+        const createRes = await this.flyFetch(`/v1/apps/${appName}/machines`, {
+          method: 'POST',
+          body: JSON.stringify({ region, config }),
+        });
+        return (await createRes.json()) as FlyMachine;
+      } catch (err) {
+        const isLastRegion = i === regions.length - 1;
+        if (!this.isInsufficientCapacity(err) || isLastRegion) throw err;
+        this.logger.warn(`region ${region} insufficient_capacity — falling back to ${regions[i + 1]}`);
+      }
+    }
+    throw new Error('createMachineWithRegionFallback called with an empty regions list');
+  }
+
+  private isInsufficientCapacity(err: unknown): boolean {
+    return err instanceof Error && /→ 422:/.test(err.message) && /insufficient_capacity/i.test(err.message);
   }
 
   private async pollHealthz(baseUrl: string, timeoutMs = 60_000): Promise<void> {
@@ -197,7 +215,7 @@ export class FlyProvider {
     let lastErr: unknown;
     while (Date.now() < deadline) {
       try {
-        const res = await fetch(`${baseUrl}/healthz`, { signal: AbortSignal.timeout(5000) });
+        const res = await fetch(`${baseUrl}/__forkai/healthz`, { signal: AbortSignal.timeout(5000) });
         if (res.ok) return;
         lastErr = new Error(`healthz → ${res.status}`);
       } catch (err) {
@@ -205,29 +223,40 @@ export class FlyProvider {
       }
       await new Promise((r) => setTimeout(r, 2000));
     }
-    throw new Error(`/healthz never became reachable at ${baseUrl}: ${String(lastErr)}`);
+    throw new Error(`/__forkai/healthz never became reachable at ${baseUrl}: ${String(lastErr)}`);
   }
 
   // The Machines REST API has NO IP-allocation endpoint (its resource list is
   // exactly Apps/Machines/Volumes/Secrets/TLS Certificates/Tokens). Allocation
-  // lives on Fly's undocumented GraphQL API (api.fly.io/graphql,
-  // `allocateIpAddress` mutation — same bearer token; verified WORKING live in
-  // the spike on 2026-07-13). No flyctl fallback here — see the header comment.
-  private async allocateDedicatedIpv4(appName: string): Promise<void> {
-    const query = `mutation($input: AllocateIPAddressInput!) {
-      allocateIpAddress(input: $input) {
-        ipAddress { id address type }
-      }
-    }`;
+  // lives on Fly's undocumented GraphQL API (api.fly.io/graphql, same
+  // `allocateIpAddress` mutation used for both — verified against flyctl's own
+  // source, since the shared-v4 shape isn't in the public docs). A shared IPv4
+  // now suffices because the machine publishes exactly one service (see
+  // provisionInApp) — no flyctl fallback here, see the header comment. IPv6 is
+  // allocated alongside it (standard practice, free) so IPv6-only networks can
+  // still resolve the app.
+  private async allocateSandboxIps(appName: string): Promise<void> {
+    await this.allocateIp(appName, 'shared_v4', `allocateIpAddress(input: $input) { app { sharedIpAddress } }`);
+    await this.allocateIp(appName, 'v6', `allocateIpAddress(input: $input) { ipAddress { id address type } }`);
+  }
+
+  // `type` changes both the GraphQL variable AND which sub-selection is valid
+  // on the response (a shared v4 has no per-address IpAddress record — it's
+  // exposed as App.sharedIpAddress instead — while v4/v6/private_v6 do), so
+  // the response shape is passed in per call rather than shared.
+  private async allocateIp(appName: string, type: 'shared_v4' | 'v6', selection: string): Promise<void> {
     const res = await fetch('https://api.fly.io/graphql', {
       method: 'POST',
       headers: this.headers(),
-      body: JSON.stringify({ query, variables: { input: { appId: appName, type: 'v4' } } }),
+      body: JSON.stringify({
+        query: `mutation($input: AllocateIPAddressInput!) { ${selection} }`,
+        variables: { input: { appId: appName, type } },
+      }),
     });
     const json = (await res.json()) as { errors?: Array<{ message: string }> };
     if (!res.ok || json.errors?.length) {
       throw new Error(
-        `GraphQL allocateIpAddress failed for ${appName}: ${json.errors?.map((e) => e.message).join('; ') ?? `HTTP ${res.status}`}`,
+        `GraphQL allocateIpAddress(${type}) failed for ${appName}: ${json.errors?.map((e) => e.message).join('; ') ?? `HTTP ${res.status}`}`,
       );
     }
   }
@@ -242,7 +271,7 @@ export class FlyProvider {
       this.logger.error(`machine destroy failed (continuing to app delete): ${String(err)}`);
     }
 
-    // App delete releases the dedicated IPv4 — never skip it.
+    // App delete releases its IPs — never skip it.
     await this.flyFetch(`/v1/apps/${appName}?force=true`, { method: 'DELETE' });
     this.logger.log(`destroyed sandbox ${sandboxId}`);
   }

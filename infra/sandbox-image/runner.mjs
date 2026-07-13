@@ -1,7 +1,16 @@
 // In-machine HTTP server. Deliberately plain Node ESM, zero npm deps — this
-// runs inside the Fly Machine image (image/Dockerfile), so keeping it
+// runs inside the Fly Machine image (Dockerfile, same dir), so keeping it
 // dependency-free means the image only needs `npm i -g @anthropic-ai/claude-code`
 // plus openvscode-server, no `npm install` step of its own.
+//
+// This is the ONLY public service on the sandbox app (see fly-provider.ts's
+// single-service machine config): everything under /__forkai/* is this
+// process's own control-plane API (bearer-authed on /__forkai/run); every
+// other request — and every WebSocket upgrade — is reverse-proxied to
+// openvscode-server on 127.0.0.1:3000, which is why openvscode is bound to
+// loopback only (see ensureVscode) instead of 0.0.0.0. This collapses what
+// used to be two public Fly services (which required a dedicated IPv4) into
+// one, so the app only needs a shared IPv4 — see README.md.
 //
 // git-diff logic below is a minimal reimplementation of
 // apps/code-api/src/agent/local/git-diff.ts's parseNumstat/parseNameStatus/
@@ -16,6 +25,7 @@ const RUN_TOKEN = process.env.RUN_TOKEN;
 const VSCODE_TOKEN = process.env.VSCODE_TOKEN;
 const WORKDIR = '/workspace/repo';
 const CLAUDE_TIMEOUT_MS = 10 * 60 * 1000;
+const VSCODE_PORT = 3000;
 
 let vscodeStarted = false;
 
@@ -83,16 +93,18 @@ function waitForPort(port, timeoutMs) {
 }
 
 // Started lazily on the first /run call (not at boot) so a machine that only
-// ever gets healthz-polled never pays the openvscode startup cost.
+// ever gets healthz-polled never pays the openvscode startup cost. Bound to
+// 127.0.0.1: it is no longer a direct public Fly service, only reachable
+// through this process's own reverse proxy (see the header comment).
 async function ensureVscode(res) {
   if (vscodeStarted) return;
   vscodeStarted = true;
   spawn(
     '/opt/openvscode/bin/openvscode-server',
-    ['--host', '0.0.0.0', '--port', '3000', '--connection-token', VSCODE_TOKEN, '--default-folder', WORKDIR],
+    ['--host', '127.0.0.1', '--port', String(VSCODE_PORT), '--connection-token', VSCODE_TOKEN, '--default-folder', WORKDIR],
     { stdio: 'ignore', detached: true, env: sanitizedEnv() },
   ).unref();
-  const up = await waitForPort(3000, 30_000);
+  const up = await waitForPort(VSCODE_PORT, 30_000);
   sseSend(res, up ? { type: 'vscode-ready' } : { type: 'warn', message: 'openvscode-server did not come up within 30s' });
 }
 
@@ -287,30 +299,105 @@ async function handleRun(req, res) {
   });
 }
 
+// --- reverse proxy to openvscode (plain http.request, no deps) ---
+
+// End-to-end headers (Host, Cookie, Authorization, ...) pass through
+// unmodified — only the hop-by-hop set (RFC 7230 §6.1) is stripped, since
+// forwarding those verbatim would fight Node's own connection handling on
+// the proxy leg.
+const HOP_BY_HOP_HEADERS = new Set([
+  'connection',
+  'keep-alive',
+  'proxy-authenticate',
+  'proxy-authorization',
+  'te',
+  'trailers',
+  'transfer-encoding',
+  'upgrade',
+]);
+
+function stripHopByHop(headers) {
+  const out = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (!HOP_BY_HOP_HEADERS.has(key.toLowerCase())) out[key] = value;
+  }
+  return out;
+}
+
+// openvscode gates itself via its own ?tkn=/cookie auth, which the browser
+// CAN attach on a plain navigation — unlike RUN_TOKEN (a bearer header the
+// browser has no way to send), so this proxy leg deliberately does not
+// re-check RUN_TOKEN. It's reachable only because openvscode is bound to
+// 127.0.0.1, not because this path is otherwise protected.
+function proxyToVscode(req, res) {
+  const proxyReq = http.request(
+    { host: '127.0.0.1', port: VSCODE_PORT, method: req.method, path: req.url, headers: stripHopByHop(req.headers) },
+    (proxyRes) => {
+      res.writeHead(proxyRes.statusCode ?? 502, stripHopByHop(proxyRes.headers));
+      proxyRes.pipe(res);
+    },
+  );
+  proxyReq.on('error', (err) => {
+    // Reachable if openvscode hasn't started yet (ensureVscode only fires on
+    // the first /__forkai/run) or has crashed — surface as a clean 502
+    // instead of letting the client hang.
+    if (res.headersSent) return res.destroy();
+    res.writeHead(502, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: `vscode proxy error: ${err.message}` }));
+  });
+  req.pipe(proxyReq);
+}
+
 const server = http.createServer((req, res) => {
-  if (req.url === '/healthz') {
+  if (req.url === '/__forkai/healthz') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ ok: true }));
   }
 
-  const auth = req.headers['authorization'];
-  if (auth !== `Bearer ${RUN_TOKEN}`) {
-    res.writeHead(401, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'unauthorized' }));
+  if (req.url?.startsWith('/__forkai/')) {
+    const auth = req.headers['authorization'];
+    if (auth !== `Bearer ${RUN_TOKEN}`) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'unauthorized' }));
+    }
+    if (req.method === 'POST' && req.url === '/__forkai/run') {
+      handleRun(req, res).catch((err) => {
+        // Only reachable if something threw before writeHead — the /run body
+        // itself catches its own errors and always ends the SSE stream cleanly.
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      });
+      return;
+    }
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ error: 'not found' }));
   }
 
-  if (req.method === 'POST' && req.url === '/run') {
-    handleRun(req, res).catch((err) => {
-      // Only reachable if something threw before writeHead — the /run body
-      // itself catches its own errors and always ends the SSE stream cleanly.
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: err.message }));
-    });
+  proxyToVscode(req, res);
+});
+
+// vscode's own terminals/live-edit protocol runs over WebSocket — without
+// forwarding the upgrade, the proxy would leave openvscode functionally
+// read-only (no terminal, no live typing). Spliced as raw sockets rather than
+// through http.request, which has no upgrade support.
+server.on('upgrade', (req, socket, head) => {
+  if (req.url?.startsWith('/__forkai/')) {
+    socket.destroy();
     return;
   }
-
-  res.writeHead(404, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ error: 'not found' }));
+  const proxySocket = net.connect(VSCODE_PORT, '127.0.0.1', () => {
+    const requestLines = [`${req.method} ${req.url} HTTP/1.1`];
+    for (const [key, value] of Object.entries(req.headers)) {
+      const values = Array.isArray(value) ? value : [value];
+      for (const v of values) if (v !== undefined) requestLines.push(`${key}: ${v}`);
+    }
+    proxySocket.write(requestLines.join('\r\n') + '\r\n\r\n');
+    if (head?.length) proxySocket.write(head);
+    proxySocket.pipe(socket);
+    socket.pipe(proxySocket);
+  });
+  proxySocket.on('error', () => socket.destroy());
+  socket.on('error', () => proxySocket.destroy());
 });
 
 server.listen(8080, () => {

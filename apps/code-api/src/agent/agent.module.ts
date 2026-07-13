@@ -45,13 +45,20 @@ import { AGENT_RUNNER_REGISTRY, RunnerRegistry, RunnerEnvironment } from './runn
           const { FlyProvider } = await import('./cloud/fly-provider');
           const { startSandboxSweep } = await import('./cloud/sandbox-sweep');
           const orgSlug = process.env.FLY_ORG ?? 'personal';
+          // FLY_REGIONS (comma-separated, tried in order on
+          // insufficient_capacity — see FlyProvider.createMachineWithRegionFallback)
+          // takes priority; falls back to the single FLY_REGION. sin, not bom
+          // as the ultimate default: bom returned insufficient_capacity for
+          // shared-cpu-2x on 2026-07-13; sin passed the live spike.
+          const regionsList = process.env.FLY_REGIONS?.split(',')
+            .map((r) => r.trim())
+            .filter(Boolean);
+          const regions = regionsList?.length ? regionsList : [process.env.FLY_REGION ?? 'sin'];
           runners.cloud = new CloudAgentRunner({
             apiToken,
             orgSlug,
             image,
-            // sin, not bom: bom returned insufficient_capacity for
-            // shared-cpu-2x on 2026-07-13; sin passed the live spike.
-            region: process.env.FLY_REGION ?? 'sin',
+            regions,
             anthropicApiKey: config.get<string>('anthropic.apiKey')!,
             ttlMinutes: Number(process.env.SANDBOX_TTL_MINUTES ?? 20),
           });

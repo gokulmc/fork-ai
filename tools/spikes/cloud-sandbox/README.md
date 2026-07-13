@@ -1,10 +1,13 @@
 # cloud-sandbox spike (Fly Machines, region `sin` — `bom` had no capacity)
 
 > **THROWAWAY feasibility spike — PASSED live on 2026-07-13.** Not wired into
-> `apps/` as a dependency, but **`image/` (Dockerfile + runner.mjs) is now the
-> production sandbox image source** used by `CloudAgentRunner`
-> (`apps/code-api/src/agent/cloud/`), pending promotion out of `tools/spikes/`
-> (roadmap Phase A5). Don't delete this directory until the image moves.
+> `apps/` as a dependency. The sandbox image (Dockerfile + runner.mjs) has
+> since been promoted to **`infra/sandbox-image/`** (Phase A5) — that's the
+> canonical source used by `CloudAgentRunner`
+> (`apps/code-api/src/agent/cloud/`) now, including a single-service reverse
+> proxy + shared-IPv4 redesign this spike's `image/` never had. This
+> directory (and `src/fly-provider.ts`'s two-public-service client below) is
+> kept as the historical record of the original feasibility run.
 
 ## What this proves
 

@@ -11,7 +11,7 @@ const CFG: CloudAgentRunnerConfig = {
   apiToken: 'fly-token',
   orgSlug: 'personal',
   image: 'registry.fly.io/forkai-sbx-base:latest',
-  region: 'sin',
+  regions: ['sin'],
   anthropicApiKey: 'sk-ant-test',
   ttlMinutes: 20,
 };
@@ -19,7 +19,7 @@ const CFG: CloudAgentRunnerConfig = {
 const HANDLE: SandboxHandle = {
   sandboxId: 'forkai-sbx-run01:machine1',
   baseUrl: 'https://forkai-sbx-run01.fly.dev',
-  vscodeUrl: 'https://forkai-sbx-run01.fly.dev:10300/?tkn=vstok',
+  vscodeUrl: 'https://forkai-sbx-run01.fly.dev/?tkn=vstok',
 };
 
 const RESULT_FRAME = {
@@ -145,7 +145,7 @@ describe('CloudAgentRunner', () => {
     expect(Object.keys(machineEnv).sort()).toEqual(['IS_SANDBOX', 'RUN_TOKEN', 'VSCODE_TOKEN']);
 
     const [url, init] = fetchMock.mock.calls[0] as [string, { body: string }];
-    expect(url).toBe(`${HANDLE.baseUrl}/run`);
+    expect(url).toBe(`${HANDLE.baseUrl}/__forkai/run`);
     const body = JSON.parse(init.body) as Record<string, unknown>;
     expect(body.anthropicApiKey).toBe(CFG.anthropicApiKey);
     expect(body.repoUrl).toBe('https://github.com/octocat/Hello-World.git');

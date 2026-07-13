@@ -1,10 +1,12 @@
-# THROWAWAY spike image — see ../README.md for the feasibility question this
-# proves. node:22-slim (Debian, not Alpine): openvscode-server ships glibc
-# binaries with native modules (ripgrep, etc.); Alpine's musl libc needs a
-# separate "-musl" build that gitpod-io only publishes unofficially
-# (gitpodify/openvscode-releases-musl, not the upstream release feed this
-# Dockerfile pins against). -slim keeps the apt footprint small while staying
-# glibc-based, which matters for Fly Machine cold-start / image pull time.
+# The forkai-code cloud sandbox image (see README.md) — pushed as
+# registry.fly.io/forkai-sbx-base:latest, one per-run Fly Machine per
+# CloudAgentRunner run. node:22-slim (Debian, not Alpine): openvscode-server
+# ships glibc binaries with native modules (ripgrep, etc.); Alpine's musl
+# libc needs a separate "-musl" build that gitpod-io only publishes
+# unofficially (gitpodify/openvscode-releases-musl, not the upstream release
+# feed this Dockerfile pins against). -slim keeps the apt footprint small
+# while staying glibc-based, which matters for Fly Machine cold-start / image
+# pull time.
 FROM node:22-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -26,5 +28,7 @@ RUN curl -fsSL -o /tmp/openvscode.tar.gz \
 
 COPY runner.mjs /runner.mjs
 
-EXPOSE 8080 3000
+# 3000 (openvscode) is loopback-only now — runner.mjs reverse-proxies it, so
+# it's never a second public Fly service. Only 8080 is EXPOSEd.
+EXPOSE 8080
 CMD ["node", "/runner.mjs"]
