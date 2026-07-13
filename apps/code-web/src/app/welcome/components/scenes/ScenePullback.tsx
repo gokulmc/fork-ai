@@ -5,7 +5,7 @@ import { useStory, type StoryNode } from '../StoryContext';
 import { computeLayout, centerLayoutX } from '../mapLayout';
 import { BigMap, BIG_MAP_VIEW_W, BIG_MAP_VIEW_H } from '../BigMap';
 
-const ROOT: StoryNode = { id: 'root', parentId: null, label: 'Alex’s question', kind: 'story' };
+const ROOT: StoryNode = { id: 'root', parentId: null, label: 'Alex’s task', kind: 'story' };
 
 // Beat: the climax. Two hours become a map, not a transcript — including
 // whatever the visitor branched themselves. Scroll-driven scale/opacity via
@@ -59,6 +59,7 @@ export function ScenePullback() {
           <span className="wp-stamp-rule" />
         </div>
         <h2 className="wp-h2 wp-reveal">Two hours. Not a transcript — a map.</h2>
+        <p className="wp-sub wp-reveal">Every step reviewable. No mega-diff.</p>
         {visitorActions.branches > 0 && (
           <p className="wp-sub wp-reveal">Including the branches YOU just made.</p>
         )}

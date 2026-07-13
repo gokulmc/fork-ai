@@ -19,23 +19,23 @@ const TIERS: PricingTier[] = ['haiku', 'sonnet', 'opus'];
 const FAQ_ITEMS = [
   {
     q: 'Do I need to sign up?',
-    a: 'No — your first session is free, up to 5 nodes, no account needed. Sign up later and any guest branches you made are automatically yours.',
+    a: 'Yes — forkai code needs a free account to start a project. Your first $5 of usage is on us, no card required.',
   },
   {
     q: 'Is the pricing calculator exact?',
-    a: 'No — it’s an estimate based on a typical multi-section answer. Actual cost depends on question complexity and which model you pick per branch.',
+    a: 'No — it’s an estimate based on a typical multi-section answer. Actual cost depends on task complexity and which model you pick per branch.',
   },
   {
     q: 'What happens when my credit runs out?',
-    a: 'You can top up any time. Nothing is lost — your session stays saved, you just can’t create new branches until you add credit.',
+    a: 'You can top up any time. Nothing is lost — your project stays saved, you just can’t create new branches or commits until you add credit.',
   },
   {
-    q: 'Can I export to Notion?',
-    a: 'Yes — a whole session pushes as a real Notion page, with a mind-map diagram at the top and every branch as a collapsible section underneath.',
+    q: 'Is this connected to a real GitHub repo?',
+    a: 'Right now, projects are a realistic simulated repo — commits, branches, and PRs behave like the real thing, so you can see exactly how the agent works before wiring up your own code.',
   },
   {
     q: 'Which AI models does forkai code use?',
-    a: 'Claude, Gemini, DeepSeek, and GLM — you pick the model for each branch. The first question always uses a fast default.',
+    a: 'Claude, Gemini, DeepSeek, and GLM — you pick the model for each branch. The opening task always uses a fast default.',
   },
 ];
 
@@ -80,7 +80,7 @@ export function Epilogue() {
         <div className="wp-receipt-outer">
           <div ref={receiptRef} className={`wp-receipt ${receiptInView ? 'wp-receipt-play' : ''}`}>
             <div className="wp-perf wp-perf-top" />
-            <div className="wp-r-title">FORK AI — SESSION RECEIPT</div>
+            <div className="wp-r-title">FORKAI CODE — PROJECT RECEIPT</div>
             <div className="wp-r-sub">SUN 9:14 PM – 11:47 PM</div>
 
             {RECEIPT_ITEMS.map(([label, amount], i) => (
@@ -100,7 +100,7 @@ export function Epilogue() {
 
             <p className="wp-r-note" style={{ animationDelay: '1.5s' }}>&ldquo;No subscription was harmed.&rdquo;</p>
             <p className="wp-r-footnote" style={{ animationDelay: '1.68s' }}>
-              Illustrative estimate — actual cost varies with models and question complexity.
+              Illustrative estimate — actual cost varies with models and task complexity.
             </p>
             <div className="wp-perf wp-perf-bottom" />
           </div>
@@ -108,9 +108,9 @@ export function Epilogue() {
           {visitorActions.branches > 0 && (
             <div className={`wp-receipt wp-receipt-mini ${receiptInView ? 'wp-receipt-play' : ''}`}>
               <div className="wp-perf wp-perf-top" />
-              <div className="wp-r-title">YOUR SESSION — WHILE READING THIS PAGE</div>
+              <div className="wp-r-title">YOUR VISIT — WHILE READING THIS PAGE</div>
               <div className="wp-r-line" style={{ animationDelay: '1.9s' }}>
-                <span>{visitorActions.branches}× branches (Haiku)</span>
+                <span>{visitorActions.branches}× follow-ups (Haiku)</span>
                 <span className="wp-r-dots" />
                 <span>{formatEstCost(visitorActions.estCostUsd)}</span>
               </div>
@@ -125,7 +125,7 @@ export function Epilogue() {
           <div className="wp-calc">
             <div className="wp-calc-row">
               <label className="wp-calc-label" htmlFor="wp-calc-queries">
-                Questions per month <span className="wp-calc-value">{queriesPerMonth}</span>
+                Coding tasks per month <span className="wp-calc-value">{queriesPerMonth}</span>
               </label>
               <input
                 id="wp-calc-queries"
@@ -182,7 +182,7 @@ export function Epilogue() {
             <div className="wp-calc-result">
               <div className="wp-calc-result-main">
                 About <strong>${money(monthly)}/month</strong> with forkai code&rsquo;s pay-as-you-go
-                credit, at {queriesPerMonth} questions/month on the {TIER_LABELS[tier].label.toLowerCase()} tier.
+                credit, at {queriesPerMonth} tasks/month on the {TIER_LABELS[tier].label.toLowerCase()} tier.
               </div>
               {savings > 0 ? (
                 <div className="wp-calc-result-savings wp-calc-win">
@@ -197,7 +197,7 @@ export function Epilogue() {
               )}
               <div className="wp-calc-result-aside">
                 Your free ${money(SIGNUP_CREDIT_USD)} signup credit covers about{' '}
-                <strong>{freeCovers} question{freeCovers === 1 ? '' : 's'}</strong> at this tier
+                <strong>{freeCovers} task{freeCovers === 1 ? '' : 's'}</strong> at this tier
                 before you&rsquo;d need to add credit.
               </div>
             </div>
@@ -205,14 +205,14 @@ export function Epilogue() {
             <p className="wp-calc-disclaimer">
               Estimate based on a typical multi-section answer (~{ASSUMED_INPUT_TOKENS_PER_QUERY.toLocaleString()}{' '}
               input / ~{ASSUMED_OUTPUT_TOKENS_PER_QUERY.toLocaleString()} output tokens) — your
-              mileage will vary with question complexity and model choice. Not a guarantee.
+              mileage will vary with task complexity and model choice. Not a guarantee.
             </p>
           </div>
 
           <div className="wp-vignettes">
-            <div className="wp-vignette-row">11:59 PM — problem set due, three branches, $0.06</div>
-            <div className="wp-vignette-row">A Tuesday — literature review, forty branches across a week, $1.80</div>
-            <div className="wp-vignette-row">Always — research that lands in Notion, not in a transcript you&rsquo;ll never reopen.</div>
+            <div className="wp-vignette-row">11:59 PM — a flaky test, two follow-ups, $0.04</div>
+            <div className="wp-vignette-row">A sprint week — five PRs merged, forty agent commits, $1.80</div>
+            <div className="wp-vignette-row">Always — commits that land on main, not in a chat you&rsquo;ll never reopen.</div>
           </div>
         </div>
 
@@ -240,18 +240,18 @@ export function Epilogue() {
 
         <div className="wp-proved">
           <div className="wp-proved-title">WHAT THE NIGHT PROVED</div>
-          <div className="wp-proved-row">№1 — A research flow you can&rsquo;t get lost in. Sections, not scroll.</div>
-          <div className="wp-proved-row">№2 — Each branch carries only its own thread. Cleaner context in, sharper answers out.</div>
+          <div className="wp-proved-row">№1 — A coding flow you can&rsquo;t lose your place in. Concepts, not forty tabs.</div>
+          <div className="wp-proved-row">№2 — Each branch carries only its own thread. Cleaner context in, sharper commits out.</div>
           <div className="wp-proved-row">№3 — The structure is the interaction: highlight → branch → node.</div>
-          <div className="wp-proved-row">№4 — It ends as notes in Notion, not a transcript you&rsquo;ll never reopen.</div>
-          <div className="wp-proved-row">№5 — The Mixer: combine ideas → arrive at the answer.</div>
+          <div className="wp-proved-row">№4 — It ends as a reviewable PR, not a transcript you&rsquo;ll never reopen.</div>
+          <div className="wp-proved-row">№5 — PR &amp; merge: land only the branch that survived review.</div>
         </div>
 
         <div className="wp-cta-block">
           <div className="wp-cta-serif wp-reveal">It&rsquo;s 9 PM somewhere.</div>
           <a className="wp-cta-pill" href="/">Try forkai code free</a>
           <div className="wp-cta-tagline">Ask once. Branch forever.</div>
-          <div className="wp-cta-mono">No signup needed for a first session</div>
+          <div className="wp-cta-mono">Free $5 credit when you sign up</div>
           {SHARE_URL && (
             <div className="wp-cta-secondary">
               <a href={SHARE_URL} className="wp-cta-secondary-link">
@@ -260,8 +260,6 @@ export function Epilogue() {
             </div>
           )}
           <div className="wp-footer-links">
-            <a href="/blog">Blog</a>
-            <span className="wp-footer-sep">·</span>
             <a href="/privacy-policy">Privacy</a>
             <span className="wp-footer-sep">·</span>
             <a href="/terms">Terms</a>

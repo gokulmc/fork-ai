@@ -1,9 +1,10 @@
-// Capture-swap module: chunk 3 replaces these constants with content
-// transcribed verbatim from a real shared fork ai session (see
-// /welcome capture — "Green Space & Mental Health", session
-// 01KWGVTYFRZ8502R7PTM52PTMP). Keep shapes stable.
+// Illustrative story content for the /welcome onboarding page — a fictional
+// but realistic "add rate limiting" coding session. Grounded in real product
+// vocabulary (node kind labels, model pricing) pulled from apps/code-web's
+// TweaksPanel.tsx MODEL_OPTIONS and apps/code-api/src/llm/models.ts. Keep
+// shapes stable (consumed by StoryContext/BigMap/Constellation).
 
-export const ROOT_QUERY = 'How does access to urban green space affect mental health outcomes?';
+export const ROOT_QUERY = 'Add rate limiting to my Express API — per-user quotas';
 
 export interface StorySection {
   num: string;
@@ -14,110 +15,114 @@ export interface StorySection {
 export const SECTIONS: StorySection[] = [
   {
     num: '1',
-    heading: 'Stress Reduction & Restoration',
-    body: 'Urban green spaces play a crucial role in stress reduction, acting as restorative environments. Exposure to natural settings, even within cities, can lower physiological markers of stress such as cortisol levels and heart rate. This restorative effect is often attributed to the ‘Attention Restoration Theory’ (ART)…',
+    heading: 'Fixed Window Counters',
+    body: 'The simplest approach counts requests in fixed-size buckets — a Redis key like ratelimit:user:42:2026-07-13T21 that increments on each request and expires after 60 seconds. It’s cheap: one INCR, one EXPIRE, O(1) per request. The cost shows up at the edge of the window, where two full bursts can land back-to-back with nothing in between to catch them…',
   },
   {
     num: '2',
-    heading: 'Mood Improvement & Reduced Depression',
-    body: 'Access to urban green space is consistently associated with improved mood and a decreased risk of depression. Studies frequently show that individuals with greater proximity to or more frequent use of green areas report lower rates of depressive symptoms and higher levels of self-reported happiness…',
+    heading: 'Sliding Window & the Boundary Burst',
+    body: 'A sliding window log recomputes the count from precise timestamps instead of a fixed bucket, which actually fixes the edge case — but storing a timestamp per request gets expensive at scale. The cheaper middle ground, a sliding window counter, weights the previous window’s count by how much of it still overlaps the current one. Either way: fixed windows let a client send double its limit in the two seconds either side of the reset…',
   },
   {
     num: '3',
-    heading: 'Cognitive Benefits & Attention Restoration',
-    body: 'Beyond emotional benefits, urban green spaces contribute significantly to cognitive health, particularly in attention restoration. The concept of ‘soft fascination’ in natural environments helps to restore depleted directed attention, which is often overtaxed by demanding urban stimuli…',
+    heading: 'Token Bucket',
+    body: 'A token bucket takes a different approach: fill a bucket with tokens at a steady refill rate (say, 10/second) up to some burst capacity (say, 20), and each request spends one token. It tolerates a legitimate burst — a user who’s been idle can spend a backlog of saved-up tokens all at once — while still holding the same average rate over time. The cost is a second knob, refill rate, that has to be tuned rather than read off the requirement…',
   },
   {
     num: '4',
-    heading: 'Social Cohesion & Community Well-being',
-    body: 'Urban green spaces serve as vital hubs for social interaction, fostering community cohesion and reducing feelings of loneliness and isolation. Parks, community gardens, and plazas provide neutral, accessible settings where people can gather, engage in shared activities, and build social networks…',
+    heading: 'Per-User Keys & Storage',
+    body: 'Whichever algorithm wins, the counter has to be keyed per user, not per route — ratelimit:{userId}:{window} in Redis, falling back to a hashed IP where there’s no user id yet. Redis is the default store because the counter has to be shared across every API replica behind the load balancer; an in-process counter would hand each replica its own separate quota. TTL matches the window size, so stale keys expire on their own instead of needing a cleanup job…',
   },
   {
     num: '5',
-    heading: 'Mitigation of Urban Stressors',
-    body: 'Green spaces act as buffers against several urban stressors that negatively impact mental health. They help mitigate noise pollution, a known irritant that can increase stress and anxiety. Trees and vegetation absorb sound, creating quieter environments conducive to relaxation…',
+    heading: '429s, Headers & Backoff',
+    body: 'Over quota, the API returns 429 Too Many Requests with a Retry-After header and, ideally, X-RateLimit-Remaining / X-RateLimit-Reset, so a well-behaved client backs off instead of hammering the endpoint again immediately. Skipping these headers is the single most common review comment on rate-limiter PRs — without them every client has to guess its own backoff, usually either too aggressive or too conservative…',
   },
 ];
 
-// The real highlighted sentence from the "Mood Improvement & Reduced
-// Depression" section — this is what Alex selects and branches "Ask AI" on.
+// The sentence Alex selects in the "Sliding Window" section and branches
+// "Ask AI" on — the exact claim her fix depends on.
 export const FORK_PASSAGE =
-  'Studies frequently show that individuals with greater proximity to or more frequent use of green areas report lower rates of depressive symptoms and higher levels of self-reported happiness.';
+  'Fixed windows let a client send double its limit in the two seconds either side of the reset.';
 
-// Condensed from the real ASK branch "Strongest Green Space Depression
-// Citation" (nodeId 01KWGVYPRMXG31ZB1B80DZQYHX) — names White et al. 2013.
+// Ask AI · answers "what actually breaks at the window boundary?"
 export const ASK_AI_ANSWER =
-  'The strongest citation is White, Alcock, Wheeler & Depledge (2013, Psychological Science) — a fixed-effects analysis of the British Household Panel Survey, tracking ~10,000 households over time. Because it follows the same people as they move to greener or less-green neighborhoods, its panel design controls for the obvious confounder — that happier people simply choose greener neighborhoods — far better than a cross-sectional study could.';
+  'At a 100 requests/minute limit, a client can send 100 requests at 11:59:59 — the tail of one window — and another 100 at 12:00:01, the head of the next: 200 requests in two seconds against a stated 100/minute cap. The fix in this branch is a Redis-backed sliding window counter — it keeps the current bucket’s count plus a weighted fraction of the previous bucket’s, so the effective limit degrades smoothly across the boundary instead of resetting to zero. Cost: one extra GET per request, still O(1).';
 
-// Condensed from the real DEEPER branch "Green Space & Depression Relief"
-// (nodeId 01KWGVXS1XMB1S1PS7V77GPMWC) — keeps the equity/socioeconomic material.
+// Go Deeper · production-hardening detail on the sliding window counter.
 export const GO_DEEPER_ANSWER =
-  'A landmark 2019 meta-analysis of 1.2 million participants found that living within 300 meters of green space cut depression incidence by 12–16%, an effect that held even after controlling for income, physical health, and baseline mental health status. Green environments reduce cortisol and raise BDNF, promoting the hippocampal neuroplasticity that’s consistently reduced in clinical depression. But the benefit is not evenly distributed: lower-income and minority communities face a "green gap" — fewer parks, lower-quality vegetation, less perceived safety — so the antidepressant potential of green space is often least accessible to the populations at highest depression risk. Urban planners increasingly treat green infrastructure as a public health intervention, not just an aesthetic one.';
-
-// Condensed from the real webSearch=true ASK branch "Green Space Stress
-// Biomarkers: Meta-Evidence" (nodeId 01KWGW05YFF08X490BFVV8ES01).
-export const WEB_ANSWER =
-  'A January 2025 meta-analysis of 78 studies found nature exposure cut salivary cortisol by 21%, with the largest effect at 20–30 minutes of exposure. Heart-rate and autonomic findings are even more consistent — pooled RCT evidence shows an effect size of −0.60 on heart rate, and a 2025 review of children and youth reinforces the same shift toward parasympathetic dominance. But a July 2024 evidence-grading overview found no pooled association with cortisol specifically — a reminder that "confirmed" findings can still be contested at the effect-size level, even as mood and heart-rate effects hold up.';
+  'In production the sliding-window counter has to be atomic across replicas — a naive GET-then-INCR from two API instances can race, and both can pass a check that should have failed one of them. The fix is a single Redis Lua script (EVAL) that reads the previous bucket, computes the weighted count, and increments the current bucket in one round trip, so the check-and-increment can’t interleave. Clock skew between app servers is the usual failure mode in review: if two instances disagree on which 60-second bucket a request falls into by even a second, users near the boundary get double- or under-counted. Redis’s own TIME command sidesteps this by using the server’s clock instead of each app instance’s.';
 
 export const MIX_QUESTION =
-  "Pull this together — what's the defensible argument, and what's missing?";
+  "Open the PR — what's going in, and what's staying on the branch?";
 
-// Rewritten grounded in the real content: claim + equity moderator +
-// strongest evidence (longitudinal cohort work, White et al.) + what's open.
+// The agent's own narration of the commit — split sentence-by-sentence in
+// SceneSources so each step can cite the file it touched (receipts = diffs
+// and test runs, not citations). Keep free of stray "." characters (no
+// decimals, no dotted filenames) — the split is a naive `.split('.')`.
+export const WEB_ANSWER =
+  'It adds a Redis-backed sliding-window counter in a new rate limiter module. It writes a matching test file covering the boundary case where fixed windows used to double-count. It wires the middleware into the Express app ahead of the existing routes. The first run fails on a TTL type mismatch — FAIL — the fix casts the argument to a number, and the suite goes green: PASS.';
+
+// The PR's own synthesis — what's shipping vs. what's staying on the branch.
 export const MIX_ANSWER =
-  'The defensible claim: proximity to green space measurably improves mood and lowers depression risk, and the physiological pathway (lower cortisol, better heart-rate variability) is broadly consistent across recent meta-analyses. The strongest single-study support is White et al. (2013, Psychological Science) — its fixed-effects panel design tracks the same ~10,000 households over time, which rules out the obvious "happier people just move to greener areas" objection better than any cross-sectional study could. At population scale, a 2019 meta-analysis of 1.2 million participants found a 12–16% reduction in depression incidence within 300 meters of green space. The open gap is equity: lower-income and minority neighborhoods face a persistent "green gap" in access, so the benefit is least available exactly where depression risk runs highest. And even the physiology is still contested — 2024–2025 meta-analyses disagree on whether cortisol itself moves at the pooled level, even as heart-rate and mood effects hold up. That is the line to open the chapter with: causal design first, equity gap flagged as unresolved.';
+  "The PR ships the Redis-backed sliding-window counter — src/rateLimiter.ts, keyed per user id with an IP fallback, TTL matched to the window, guarded by a single Lua script so concurrent replicas can't race the check-and-increment. Token bucket was considered for burst tolerance, but it adds a second tunable (refill rate) with no measured benefit at current traffic, so it's cut from this round — the branch stays open for later. 429 responses carry Retry-After and X-RateLimit-Remaining so clients back off correctly. The new test file covers the boundary case directly: exactly the limit, then one more request a second later, expecting exactly one rejection.";
 
 export interface StorySource {
   n: number;
-  title: string;
-  year: string;
+  path: string;
+  diffStat: string;
   url: string;
 }
 
-// Top 3 real sources from the web branch's `sources` array (verbatim URLs).
+// The three files touched by the commit — real diff-summary shape (path +
+// +/− counts), linked to an illustrative (not live) GitHub blob URL.
 export const SOURCES: StorySource[] = [
   {
     n: 1,
-    title: 'Nature exposure dose & mental illness outcomes — systematic review & meta-analysis',
-    year: '2025',
-    url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC11851813/',
+    path: 'src/rateLimiter.ts',
+    diffStat: '+58 −0',
+    url: 'https://github.com/acme-labs/billing-service/blob/7c3a9f1/src/rateLimiter.ts',
   },
   {
     n: 2,
-    title: 'Restorative effects of green exposure — meta-analysis of randomized control trials',
-    year: '2022',
-    url: 'https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9658851/',
+    path: 'src/rateLimiter.test.ts',
+    diffStat: '+34 −0',
+    url: 'https://github.com/acme-labs/billing-service/blob/7c3a9f1/src/rateLimiter.test.ts',
   },
   {
     n: 3,
-    title: 'Nature exposure & the nervous system in children and youth — systematic review',
-    year: '2025',
-    url: 'https://www.sciencedirect.com/science/article/pii/S0272494425002713',
+    path: 'src/app.ts',
+    diffStat: '+6 −1',
+    url: 'https://github.com/acme-labs/billing-service/blob/7c3a9f1/src/app.ts',
   },
 ];
 
-// When non-null, the epilogue renders the live "open Alex's actual map ↗"
-// link; when null it's omitted (fallback CTA only).
-export const SHARE_URL: string | null = 'https://forkai.in/?sk=GfOPbyzL_s7Gr9sVqfUIYLOnno-gf4gzArRaFUIJGZg';
+// forkai code has no public share/guest links (guest & share mode were
+// stripped from this fork — see root CLAUDE.md) — always null, so the
+// epilogue's secondary CTA is omitted rather than pointing at a fake link.
+export const SHARE_URL: string | null = null;
 
 export const RECEIPT_ITEMS: [string, string][] = [
-  ['1× root question', '$0.02'],
-  ['2× branches (Sonnet)', '$0.14'],
-  ['1× branch + web search', '$0.07'],
-  ['1× advisor branch (guest)', '$0.02'],
-  ['1× synthesis (Mixer)', '$0.03'],
+  ['1× opening question', '$0.01'],
+  ['3× agent commits', '$0.21'],
+  ['2× follow-ups (Gemini Flash-Lite)', '$0.01'],
+  ['1× deep dive (Sonnet)', '$0.07'],
+  ['1× PR merge synthesis', '$0.03'],
 ];
 
-export const RECEIPT_TOTAL = '$0.34';
+export const RECEIPT_TOTAL = '$0.33';
 
 // Card metadata for the BigMap/Constellation mind-map renderers. Keyed by the
 // story node id (see StoryContext addNode call sites) — nodes not listed here
 // (visitor highlights, unknown ids) fall back to their own `label` at render
-// time in BigMap/Constellation.
+// time in BigMap/Constellation. Ids are kept stable across this file and the
+// scenes/*.tsx addNode() calls — StoryContext.tsx's ensureStoryNodes()
+// catch-up list hardcodes 'root'/'moderating-factors'/'web-branch', so this
+// map's entries must keep those exact keys even as their meaning changes.
 export const NODE_META: Record<string, { emoji?: string; title: string; kicker: string }> = {
-  root: { emoji: '🌳', title: 'Urban Green Space & Mental Health', kicker: 'ROOT' },
-  'moderating-factors': { title: 'Green Space & Depression Relief', kicker: 'GO DEEPER' },
-  'web-branch': { title: 'Meta-evidence · 2024–25', kicker: 'ASK AI · WEB' },
-  mix: { title: 'Synthesis', kicker: 'MIX' },
-  advisor: { title: 'Advisor · 8:32 AM', kicker: 'GUEST' },
+  root: { emoji: '🚦', title: 'Rate Limiting: Per-User Quotas', kicker: 'ROOT' },
+  'moderating-factors': { title: 'Sliding Window, in Production', kicker: 'DEEP DIVE' },
+  'web-branch': { title: 'Add per-user rate limiter', kicker: 'COMMIT' },
+  mix: { title: 'Rate limiter → main', kicker: 'PR' },
+  teammate: { title: 'Priya · code review', kicker: 'REVIEW' },
 };

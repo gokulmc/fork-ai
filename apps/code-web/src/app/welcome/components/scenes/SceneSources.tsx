@@ -4,10 +4,10 @@ import { useInView } from '../useInView';
 import { useStory } from '../StoryContext';
 import { WEB_ANSWER, SOURCES } from '../storyContent';
 
-// Beat: Alex needs a couple of recent meta-analyses, not just training-data
-// recall, so she flips on web search for this one branch. Citations bloom
-// in and a Sources list slides open; each citation is keyboard-focusable
-// and shows a hairline source card on hover/focus.
+// Beat: the agent's commit, reviewed like a real PR — a narrated log of what
+// it did, with each step tied to the file it touched. Citations bloom in and
+// a "Files changed" list slides open; receipts here are diffs and test runs,
+// not sources.
 export function SceneSources() {
   const { ref, inView } = useInView<HTMLDivElement>(0.3);
   const { addNode } = useStory();
@@ -21,12 +21,15 @@ export function SceneSources() {
       addNode({
         id: 'web-branch',
         parentId: 'root',
-        label: 'Stress biomarkers: meta-evidence',
+        label: 'Add per-user rate limiter',
         kind: 'story',
         satellites: SOURCES.length,
       });
     }
   };
+
+  const totalAdd = SOURCES.reduce((n, s) => n + Number(s.diffStat.match(/\+(\d+)/)?.[1] ?? 0), 0);
+  const totalDel = SOURCES.reduce((n, s) => n + Number(s.diffStat.match(/−(\d+)/)?.[1] ?? 0), 0);
 
   return (
     <section id="scene-sources" data-time="1360" className="wp-scene wp-scene-sources">
@@ -41,7 +44,7 @@ export function SceneSources() {
           <label className="wp-toggle">
             <input type="checkbox" checked={on} onChange={toggle} />
             <span className="wp-toggle-track"><span className="wp-toggle-thumb" /></span>
-            Web search {on ? 'on' : 'off'}
+            Diff view {on ? 'on' : 'off'}
           </label>
 
           <div className="wp-demo-card wp-demo-card-compact">
@@ -65,8 +68,8 @@ export function SceneSources() {
                       </a>
                       {activeSource === SOURCES[i].n && (
                         <span className="wp-source-card">
-                          <span className="wp-source-card-title">{SOURCES[i].title}</span>
-                          <span className="wp-source-card-year">{SOURCES[i].year}</span>
+                          <span className="wp-source-card-title">{SOURCES[i].path}</span>
+                          <span className="wp-source-card-year">{SOURCES[i].diffStat}</span>
                         </span>
                       )}
                     </sup>
@@ -77,11 +80,11 @@ export function SceneSources() {
 
             {on && (
               <div className="wp-sources-list wp-sources-list-in">
-                <div className="wp-sources-label">Sources</div>
+                <div className="wp-sources-label">Files changed · +{totalAdd} −{totalDel}</div>
                 <ol>
                   {SOURCES.map(s => (
                     <li key={s.n}>
-                      <a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}, {s.year}</a>
+                      <a href={s.url} target="_blank" rel="noopener noreferrer">{s.path} · {s.diffStat}</a>
                     </li>
                   ))}
                 </ol>

@@ -3,11 +3,11 @@ import { useRef } from 'react';
 import { useSceneProgress } from '../useScrollProgress';
 
 const BUBBLES: { role: 'user' | 'ai'; text: string }[] = [
-  { role: 'user', text: 'green space + mental health, moderating factors?' },
-  { role: 'ai', text: 'Socioeconomic status significantly moderates…' },
-  { role: 'user', text: 'wait, what about measurement methods?' },
-  { role: 'ai', text: 'Good question — most studies use self-report…' },
-  { role: 'user', text: 'going back to the moderators thing —' },
+  { role: 'user', text: 'rate limit my express api, per-user' },
+  { role: 'ai', text: 'You could use express-rate-limit with a fixed window…' },
+  { role: 'user', text: 'wait, what about multiple instances behind a load balancer' },
+  { role: 'ai', text: 'Good question — you’d want a shared store like Redis…' },
+  { role: 'user', text: 'going back to the sliding window thing —' },
 ];
 
 export function Prologue() {
@@ -27,10 +27,10 @@ export function Prologue() {
           <span className="wp-stamp-rule" />
         </div>
 
-        <h1 className="wp-h1 wp-reveal">It&rsquo;s 9 PM. The literature review is due Monday.</h1>
+        <h1 className="wp-h1 wp-reveal">It&rsquo;s 9 PM. The rate limiter ships tomorrow.</h1>
         <p className="wp-sub wp-reveal">
-          Alex has forty tabs, a chat that stopped making sense at message thirty, and six hours
-          of battery. The one answer that mattered is buried four tangents deep.
+          Alex has forty Stack Overflow tabs open, a chat that stopped making sense at message
+          thirty, and a demo in twelve hours. The one diff that mattered is buried six edits deep.
         </p>
 
         <div className="wp-chat">

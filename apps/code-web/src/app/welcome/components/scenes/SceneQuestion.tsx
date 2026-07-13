@@ -38,7 +38,7 @@ export function SceneQuestion() {
         setTypingDone(true);
         if (!rootAddedRef.current) {
           rootAddedRef.current = true;
-          addNode({ id: 'root', parentId: null, label: 'Root question', kind: 'story' });
+          addNode({ id: 'root', parentId: null, label: 'Root task', kind: 'story' });
         }
         streamSections();
         return;
@@ -75,7 +75,7 @@ export function SceneQuestion() {
           <span className="wp-stamp-label">9:14 PM</span>
           <span className="wp-stamp-rule" />
         </div>
-        <h2 className="wp-h2 wp-reveal">One question, asked differently.</h2>
+        <h2 className="wp-h2 wp-reveal">One task, explored differently.</h2>
 
         <div ref={ref} className={`wp-qbox-wrap ${inView ? 'wp-in-view' : ''}`}>
           <div className="wp-qbox">
@@ -110,7 +110,7 @@ export function SceneQuestion() {
           )}
 
           {streamDone && (
-            <p className="wp-why">№1 — A research flow you can&rsquo;t get lost in. Sections, not scroll.</p>
+            <p className="wp-why">№1 — A coding flow you can&rsquo;t lose your place in. Concepts, not forty tabs.</p>
           )}
         </div>
       </div>

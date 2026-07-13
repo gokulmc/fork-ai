@@ -14,11 +14,11 @@ const AUTO_SELECT_COUNT = 3;
 const TYPE_SPEED_MS = 28;
 const MIX_ANSWER_SENTENCES = MIX_ANSWER.split(/(?<=\. )/).filter(Boolean);
 
-const ROOT: StoryNode = { id: 'root', parentId: null, label: 'Alex’s question', kind: 'story' };
+const ROOT: StoryNode = { id: 'root', parentId: null, label: 'Alex’s task', kind: 'story' };
 
 // Beat: the climax after the climax. Alex stops branching outward and starts
-// combining — she picks the branches that matter and asks fork ai to argue
-// from all of them at once. This is value-prop №5: the Mixer.
+// merging — she picks the branches that are staying and opens the PR that
+// lands them on main. This is value-prop №5: PR & merge.
 export function SceneMix() {
   const { ref: sceneRef, inView } = useInView<HTMLDivElement>(0.2);
   const { nodes, addNode, ensureStoryNodes } = useStory();
@@ -108,7 +108,7 @@ export function SceneMix() {
   // sources, which would otherwise make its own edge collapse to zero length).
   const mixTargetPos = useMemo(() => {
     if (allNodes.some(n => n.id === MIX_ID)) return pos[MIX_ID];
-    const withMix = [...allNodes, { id: MIX_ID, parentId: 'root', label: 'Synthesis', kind: 'story' } as StoryNode];
+    const withMix = [...allNodes, { id: MIX_ID, parentId: 'root', label: 'Rate limiter → main', kind: 'story' } as StoryNode];
     const { pos: raw } = computeLayout(withMix, { xStep: 250, yStep: 84, baseX: 40, centerY: BIG_MAP_VIEW_H / 2 });
     return centerLayoutX(raw, BIG_MAP_VIEW_W)[MIX_ID];
   }, [allNodes, pos]);
@@ -140,7 +140,7 @@ export function SceneMix() {
       const settle = window.setTimeout(() => {
         setConverging(false);
         setMixed(true);
-        addNode({ id: MIX_ID, parentId: 'root', label: 'Synthesis', kind: 'story', mix: true });
+        addNode({ id: MIX_ID, parentId: 'root', label: 'Rate limiter → main', kind: 'story', mix: true });
       }, landingDelay + 360);
       return () => window.clearTimeout(settle);
     },
@@ -217,9 +217,9 @@ export function SceneMix() {
           <span className="wp-stamp-label">MON · 12:56 AM</span>
           <span className="wp-stamp-rule" />
         </div>
-        <h2 className="wp-h2 wp-reveal">The mix</h2>
+        <h2 className="wp-h2 wp-reveal">The merge</h2>
         <p className="wp-sub wp-reveal">
-          She stops branching and starts combining. Five branches, one question:
+          She stops branching and starts merging. Every thread that mattered, one PR:
         </p>
 
         <div className={`wp-qbox-wrap ${inView ? 'wp-in-view' : ''}`}>
@@ -230,7 +230,7 @@ export function SceneMix() {
         </div>
 
         <div className="wp-mix-instruction">
-          Select 2–6 nodes — including the ones you made.
+          Select 2–6 nodes to fold into the PR — including the ones you made.
         </div>
 
         <BigMap
@@ -239,7 +239,7 @@ export function SceneMix() {
           onNodeClick={mixed ? undefined : onNodeClick}
           selected={selected}
           selectableIds={selectableIds}
-          caption={mixed ? 'synthesis complete' : undefined}
+          caption={mixed ? 'merged into main' : undefined}
           streamingIds={streamingIds}
         />
 
@@ -255,7 +255,7 @@ export function SceneMix() {
             disabled={mixed || selected.size < MIN_SELECT}
             onClick={onMixClick}
           >
-            {mixed ? 'Mixed' : 'Mix ⏷'}
+            {mixed ? 'Merged' : 'Merge ⏷'}
           </button>
         </div>
 
@@ -268,7 +268,7 @@ export function SceneMix() {
         )}
 
         {mixed && (
-          <p className="wp-why">№5 — The Mixer: combine the branches that mattered into one answer.</p>
+          <p className="wp-why">№5 — PR &amp; merge: land only the branch that survived review.</p>
         )}
       </div>
     </section>
