@@ -119,4 +119,36 @@ describe('FlyProvider.create', () => {
 
     expect(fetchMock.mock.calls.some(([, init]) => (init as RequestInit)?.method === 'DELETE')).toBe(true);
   });
+
+  it('retries once on a transient network error (fetch rejection) and succeeds', async () => {
+    let appCreateCalls = 0;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      const method = init?.method ?? 'GET';
+      if (url === 'https://api.machines.dev/v1/apps' && method === 'POST') {
+        appCreateCalls++;
+        if (appCreateCalls === 1) throw new Error('fetch failed: ETIMEDOUT');
+        return jsonResponse(200, {});
+      }
+      if (url === 'https://api.fly.io/graphql') return jsonResponse(200, { data: { allocateIpAddress: {} } });
+      if (/\/v1\/apps\/[^/]+\/machines$/.test(url) && method === 'POST') return jsonResponse(200, { id: 'machine1', state: 'created' });
+      if (url.includes('/wait?state=started')) return jsonResponse(200, { ok: true });
+      if (url.endsWith('/__forkai/healthz')) return jsonResponse(200, { ok: true });
+      if (method === 'DELETE') return jsonResponse(200, {});
+      throw new Error(`unexpected fetch in test: ${method} ${url}`);
+    });
+
+    const handle = await provider.create({ runId: 'run06', image: 'img', regions: ['sin'], env: { VSCODE_TOKEN: 'vtok' } });
+
+    expect(handle.baseUrl).toBe('https://forkai-sbx-run06.fly.dev');
+    expect(appCreateCalls).toBe(2); // one transient rejection, one retry
+  });
+
+  it('does not retry an HTTP-status error (422 insufficient_capacity) via the network-retry path — only region fallback governs it', async () => {
+    mockRoutes(['sin']); // the only region, so no fallback is available either
+
+    await expect(provider.create({ runId: 'run07', image: 'img', regions: ['sin'], env: {} })).rejects.toThrow(/insufficient_capacity/);
+
+    const machineCalls = fetchMock.mock.calls.filter(([url, init]) => /\/machines$/.test(String(url)) && (init as RequestInit)?.method === 'POST');
+    expect(machineCalls).toHaveLength(1); // fetch resolved (422), so fetchWithRetry's catch never fires
+  });
 });

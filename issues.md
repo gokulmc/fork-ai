@@ -6,6 +6,11 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
+### forkai-code: a single transient Fly API network blip killed an entire cloud agent run
+- **Symptom:** Live testing of CloudAgentRunner twice saw a whole run fail with the generic "The AI provider took too long to respond" — even though an immediate retry of the same Fly API call succeeded.
+- **Cause:** `FlyProvider.flyFetch` called `fetch()` with no retry; a one-off `ETIMEDOUT`/socket-hang-up reaching `api.machines.dev` threw immediately and propagated out of the whole run via `friendlyLlmError`'s network-error regex, masking that nothing was actually wrong with the LLM call.
+- **Fix:** `fetchWithRetry` retries once, after a 500ms backoff, but only when `fetch()` itself rejects (DNS/connect/socket failure) — an HTTP-status error like 422 `insufficient_capacity` already has `fetch()` resolve, so it's thrown by `flyFetch`'s `!res.ok` check and never hits the retry path; region fallback (`createMachineWithRegionFallback`) is unaffected either way. (commit: 68f2ff4)
+
 ### forkai-code: History page and 404 still carried the research product's brand ("FORK AI · V0.1 · BRANCHING RESEARCH")
 - **Symptom:** Landing said "FORKAI CODE · V0.2 · PLAN-FIRST CODING" while the 404 page and both History footers claimed a different product and version.
 - **Cause:** Four hardcoded copies of the tagline drifted independently.

@@ -88,12 +88,37 @@ export class FlyProvider {
   }
 
   private async flyFetch(path: string, init?: RequestInit): Promise<Response> {
-    const res = await fetch(`${FLY_API_HOSTNAME}${path}`, { ...init, headers: this.headers() });
+    const res = await this.fetchWithRetry(`${FLY_API_HOSTNAME}${path}`, { ...init, headers: this.headers() });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       throw new Error(`Fly API ${init?.method ?? 'GET'} ${path} → ${res.status}: ${body}`);
     }
     return res;
+  }
+
+  // One retry for a transient network failure reaching api.machines.dev — a
+  // live ETIMEDOUT/fetch-failure blip has twice killed an entire agent run
+  // (surfaced to the user as friendlyLlmError's generic network message) when
+  // an immediate retry would have succeeded. Deliberately narrow: this only
+  // catches fetch() itself rejecting (DNS/connect/socket failure) — an
+  // HTTP-status error (422 insufficient_capacity, etc.) means fetch already
+  // resolved, so it's thrown by flyFetch's !res.ok check above and never
+  // reaches here. createMachineWithRegionFallback's region fallback is
+  // unaffected either way.
+  private async fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
+    try {
+      return await fetch(url, init);
+    } catch (err) {
+      if (!this.isTransientNetworkError(err)) throw err;
+      this.logger.warn(`transient network error calling ${url} — retrying once: ${String(err)}`);
+      await new Promise((r) => setTimeout(r, 500));
+      return fetch(url, init);
+    }
+  }
+
+  private isTransientNetworkError(err: unknown): boolean {
+    const msg = err instanceof Error ? err.message : String(err);
+    return /ECONNRESET|ETIMEDOUT|ECONNREFUSED|EAI_AGAIN|fetch failed|socket hang up|network/i.test(msg);
   }
 
   private isNotFound(err: unknown): boolean {
