@@ -6,6 +6,16 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
+### forkai-code: History page and 404 still carried the research product's brand ("FORK AI · V0.1 · BRANCHING RESEARCH")
+- **Symptom:** Landing said "FORKAI CODE · V0.2 · PLAN-FIRST CODING" while the 404 page and both History footers claimed a different product and version.
+- **Cause:** Four hardcoded copies of the tagline drifted independently.
+- **Fix:** Single `BRAND_TAGLINE` constant in `lib/brand.ts` consumed by Landing, LandingHero, not-found, and HistoryPage (LoginPage's "FORK · NODE NETWORK" ritual intentionally untouched). (commit: pending)
+
+### forkai-code: agent log rendered raw serialized tool JSON; diff summary buried below it
+- **Symptom:** The run log showed lines like `{"path":"src/cli.ts","content":"import …\n…"}` — escaped file bodies the user had to mentally deserialize — and the DIFF SUMMARY (the review artifact) rendered below the full log. Also: no timestamps on History cards, a single lonely topic bubble dominated History for new users, plain mouse-wheel over the map zoomed 80→38% in one gesture, and highlight→Ask AI had no discoverability hint.
+- **Cause:** tool_call/file_edit/terminal payloads rendered verbatim; pane order put the log first; wheel handler had no modifier gate; no hint existed.
+- **Fix:** Humanized tool lines ("→ Wrote src/routes/health.ts") with the raw JSON behind a `<details>` disclosure — covering live tool_call events AND persisted file_edit/terminal replays; DIFF SUMMARY moved above AGENT LOG; relative timestamps on session cards; Topics bubbles hidden under 2 real topics; plain wheel pans / ctrl-or-cmd+wheel (trackpad pinch) zooms; one muted "Select any passage to ask about it" hint under the first section; LoginPage decoy input's phantom 8×6px box zeroed. (commit: pending)
+
 ### forkai-code: reopening a project could hide all its work behind an empty "What are we building?" screen
 - **Symptom:** Opening a project from History sometimes landed on the ProjectStart interstitial with an empty prompt even though the project held a full map of commits — and sometimes went straight to the workspace. Which one you got depended on invisible timing.
 - **Cause:** The gate keyed on `LEARN_KINDS` membership plus the async `getProject` fetch settling, so sessions holding only CODE/BRANCH nodes always re-showed ProjectStart, and `projectStartDismissed` reset on every sessionId change.
@@ -29,22 +39,22 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 ### forkai-code: mobile bottom bar pile-up made the composer untappable
 - **Symptom:** At 390px the "Mindmap" pill sat on top of the composer input (clipping the placeholder and intercepting taps); the ⚙ trigger and status chips crowded the same band.
 - **Cause:** `.mm-pill` fixed at bottom+16px, `.twk-trigger` at bottom 24px with no mobile reposition, both inside the composer's band (composer top ≈ bottom+94px on mobile).
-- **Fix:** Mobile-only offsets: pill and trigger at `safe-area + 106px`, status chips at `+150px` — measured against the composer's real height with clearance. Mixer-mode hiding preserved. (commit: pending)
+- **Fix:** Mobile-only offsets: pill and trigger at `safe-area + 106px`, status chips at `+150px` — measured against the composer's real height with clearance. Mixer-mode hiding preserved. (commit: d4f750d)
 
 ### forkai-code: dark-mode selects rendered as garbled zigzag glyph rows
 - **Symptom:** With the Dark theme active, the Tweaks panel's Font-pairing and Model selects displayed as rows of repeated triangles — unreadable.
 - **Cause:** `[data-theme="dark"] .twk-field` used the `background:` shorthand (resets `background-repeat`/`position`, outranks `select.twk-field`'s no-repeat rule); the dark select rule then re-added only `background-image`, so the dropdown-arrow SVG tiled across the control.
-- **Fix:** Dark rules use `background-color` only, leaving image/repeat/position to the select-specific rules. The Theme toggle itself is removed until a full dark theme ships (`useTweaks` coerces stored dark→light; ThemeScript forces light). (commit: pending)
+- **Fix:** Dark rules use `background-color` only, leaving image/repeat/position to the select-specific rules. The Theme toggle itself is removed until a full dark theme ships (`useTweaks` coerces stored dark→light; ThemeScript forces light). (commit: d4f750d)
 
 ### forkai-code: zoom disabled globally + sub-AA contrast + invisible focus + phantom tab stops
 - **Symptom:** Pinch-zoom was blocked on every page (`user-scalable=no`); the landing tagline/footer used #999 (~2.85:1) text; the composer and auth inputs had no visible keyboard focus; closed NotesDrawer/HighlightMenu buttons stayed in the tab order.
 - **Cause:** Viewport export set `maximumScale:1, userScalable:false`; `--ink-3` token too light; `outline: none`/inline outline suppression without `:focus-visible` replacements; `aria-hidden` containers without `inert`.
-- **Fix:** Zoom unlocked (WCAG 1.4.4); `--ink-3` #999999→#767674 (≥4.5:1, light theme); `.twk-status-off` drops the opacity fade; global `:focus-visible` outline + explicit rules for the composer textarea and auth input; `inert` on closed drawer/highlight menu. (commit: pending)
+- **Fix:** Zoom unlocked (WCAG 1.4.4); `--ink-3` #999999→#767674 (≥4.5:1, light theme); `.twk-status-off` drops the opacity fade; global `:focus-visible` outline + explicit rules for the composer textarea and auth input; `inert` on closed drawer/highlight menu. (commit: d4f750d)
 
 ### forkai-code: primary CTAs looked permanently disabled; wordmark overlapped the breadcrumb; Account menu ignored Escape
 - **Symptom:** "Begin"/"Create" rendered near-identical grey whether actionable or not; the fixed "forkai code" wordmark overlapped the first crumb on desktop (topbar and History topbar); the Account menu didn't close on Escape or outside click and its lingering state swallowed clicks.
 - **Cause:** `:disabled` was only an opacity fade; `.topbar` reserved 140px for a ~185px-wide brand; AccountButton had no dismissal listeners.
-- **Fix:** Distinct muted disabled fill (`var(--line)` bg); topbar/history-topbar left padding 140→190px; Escape + outside-pointerdown dismissal on the account popover. (commit: pending)
+- **Fix:** Distinct muted disabled fill (`var(--line)` bg); topbar/history-topbar left padding 140→190px; Escape + outside-pointerdown dismissal on the account popover. (commit: d4f750d)
 
 ### forkai-code: page refresh during an agent run lost all run awareness — static "Starting…" forever
 - **Symptom:** Reloading the tab while a CODE run was in progress landed the pane on an unrelated node; the running commit sat on the map with sha "–" and no status. Even when the run completed server-side, the UI never found out (AgentLogPane showed the "Starting…" shimmer indefinitely for a node restored with `agentStatus: 'running'`).

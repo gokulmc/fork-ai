@@ -1,4 +1,5 @@
 import { Search } from './Icons';
+import { BRAND_TAGLINE } from '@/lib/brand';
 
 // Static, server-renderable hero. Shown as the logged-out loading state so the
 // landing value proposition is present in the initial HTML for crawlers (App is
@@ -22,7 +23,7 @@ export function LandingHero() {
         </div>
       </div>
       <div className="landing-foot">
-        FORKAI CODE · V0.2 · PLAN-FIRST CODING, BY YOU
+        {BRAND_TAGLINE}
         <span className="landing-foot-links">
           <a href="/privacy-policy">Privacy</a>
           <a href="/terms">Terms</a>

@@ -5,6 +5,7 @@ import { HistoryBubbles } from './HistoryBubbles';
 import { NewProjectModal } from './NewProjectModal';
 import type { CreateProjectPayload, SessionSummary } from '@/lib/api';
 import { stripCite } from '@/lib/utils';
+import { BRAND_TAGLINE } from '@/lib/brand';
 
 interface HistoryPageProps {
   sessions: SessionSummary[];
@@ -18,6 +19,18 @@ interface HistoryPageProps {
 function dayKey(iso: string): string {
   const d = new Date(iso);
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).toISOString();
+}
+
+function relativeTime(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diffMs / 60_000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
 function dividerLabel(dayIso: string): string {
@@ -63,7 +76,7 @@ export function HistoryPage({ sessions, loading, onLoadSession, onDeleteSession,
       {isEmpty ? (
         <div className="history-game-wrapper">
           <p className="history-game-tagline">Nothing here yet</p>
-          <p className="history-game-sub">FORK AI · V0.1 · BRANCHING RESEARCH, BY YOU</p>
+          <p className="history-game-sub">{BRAND_TAGLINE}</p>
         </div>
       ) : (
         <div className="history-body">
@@ -167,6 +180,7 @@ export function HistoryPage({ sessions, loading, onLoadSession, onDeleteSession,
                               <span className="meta-chip" title={`${s.highlightCount} highlight${s.highlightCount !== 1 ? 's' : ''}`}>
                                 <Highlighter size={11} /> {s.highlightCount}
                               </span>
+                              <span className="session-card-time" title={new Date(s.updatedAt).toLocaleString()}>{relativeTime(s.updatedAt)}</span>
                             </div>
                           </div>
                         </div>
@@ -181,7 +195,7 @@ export function HistoryPage({ sessions, loading, onLoadSession, onDeleteSession,
         </div>
       )}
 
-      {!isEmpty && <div className="landing-foot">FORK AI · V0.1 · BRANCHING RESEARCH, BY YOU</div>}
+      {!isEmpty && <div className="landing-foot">{BRAND_TAGLINE}</div>}
 
       {showModal && (
         <NewProjectModal

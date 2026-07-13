@@ -574,6 +574,7 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
   background: color-mix(in oklab, var(--accent) 14%, transparent);
   color: var(--accent);
 }
+.session-card-time { margin-left: auto; font-variant-numeric: tabular-nums; }
 .session-card-delete {
   position: absolute;
   top: 8px;
@@ -1507,6 +1508,7 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 .ws-rule { border: 0; border-top: 1px solid var(--line); margin: 0 0 24px; }
 
 .section { position: relative; margin: 0 0 28px; padding-left: 2px; }
+.ws-highlight-hint { font-family: var(--sans); font-size: 11.5px; color: var(--ink-3); margin: -16px 0 28px; padding-left: 2px; }
 .section-head { position: relative; display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; padding: 2px 0; border-radius: 4px; }
 .section-num { font-family: var(--sans); font-size: 12px; color: var(--ink-3); font-weight: 500; margin-top: 4px; min-width: 22px; }
 .section h2 { font-family: var(--sans); font-weight: 600; font-size: clamp(20px, 2.1vw, 24px); line-height: 1.25; letter-spacing: -0.015em; margin: 0; flex: 1; text-wrap: balance; color: var(--ink); }
@@ -2684,6 +2686,9 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
 .log-line { font-family: var(--mono); font-size: 12.5px; line-height: 1.55; color: var(--term-ink); }
 .log-line--text { font-family: var(--sans); font-size: 13px; }
 .log-line--tool_call { color: var(--term-ink-dim); }
+.log-line-raw { margin-top: 2px; }
+.log-line-raw summary { font-size: 10.5px; color: var(--ink-3); cursor: pointer; }
+.log-line-raw pre { margin: 4px 0 0; font-size: 11px; color: var(--term-ink-dim); white-space: pre-wrap; word-break: break-all; }
 .log-line--tool_result { color: var(--term-ink-dim); padding-left: 18px; opacity: .9; }
 .log-line--terminal { background: rgba(0,0,0,.055); border: 1px solid var(--term-line); border-radius: 4px; padding: 8px 10px; white-space: pre-wrap; }
 [data-theme="dark"] .log-line--terminal { background: rgba(255,255,255,.045); }

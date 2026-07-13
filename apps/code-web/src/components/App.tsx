@@ -2946,20 +2946,28 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
               )}
               {active.loading && !active.sections.length && <SkeletonSections />}
 
-              {active.sections.map((s, i) => (
-                <Section
-                  key={s.id}
-                  idx={i}
-                  section={s}
-                  node={active}
-                  onDeeper={sec => expandSectionAsChild(active.id, sec)}
-                  deeperLoading={sectionLoading === s.id}
-                  sectionChildren={childrenBySection[s.id] ?? []}
-                  onChildClick={cid => { setActiveId(cid); scrollWsTop(); }}
-                  calloutsForSection={annotations.filter(a => a.kind === 'callout' && a.nodeId === active.id && a.sectionId === s.id)}
-                  onRemoveCallout={removeAnnotation}
-                />
-              ))}
+              {active.sections.flatMap((s, i) => {
+                const els = [
+                  <Section
+                    key={s.id}
+                    idx={i}
+                    section={s}
+                    node={active}
+                    onDeeper={sec => expandSectionAsChild(active.id, sec)}
+                    deeperLoading={sectionLoading === s.id}
+                    sectionChildren={childrenBySection[s.id] ?? []}
+                    onChildClick={cid => { setActiveId(cid); scrollWsTop(); }}
+                    calloutsForSection={annotations.filter(a => a.kind === 'callout' && a.nodeId === active.id && a.sectionId === s.id)}
+                    onRemoveCallout={removeAnnotation}
+                  />,
+                ];
+                // Discoverability nudge for the highlight-to-Ask flow — shown once,
+                // right after the first section, only once real content has landed.
+                if (i === 0 && !active.loading) {
+                  els.push(<p key={`${s.id}-hint`} className="ws-highlight-hint">Select any passage to ask about it</p>);
+                }
+                return els;
+              })}
               {active.sources?.length ? (
                 <div className="ws-sources">
                   <div className="ws-sources-label">Sources</div>

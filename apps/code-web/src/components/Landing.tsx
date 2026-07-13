@@ -4,6 +4,7 @@ import { Search, ArrowRight, ArrowUpRight, Clock, FileText, Plus } from './Icons
 import { CookiePreferencesLink } from './CookiePreferencesLink';
 import { extractText } from '@/lib/extractDocument';
 import { SKILL_PLUGINS, HARNESS_PLUGINS } from '@/lib/mockGithub';
+import { BRAND_TAGLINE } from '@/lib/brand';
 
 interface LandingProps {
   onSubmit: (query: string, plugins: string[]) => void;
@@ -232,7 +233,7 @@ export function Landing({ onSubmit, onSubmitDocument, loading, onShowHistory, ou
         </div>
       </div>
       <div className="landing-foot">
-        FORKAI CODE · V0.2 · PLAN-FIRST CODING, BY YOU
+        {BRAND_TAGLINE}
         <span className="landing-foot-links">
           <a href="/privacy-policy">Privacy</a>
           <a href="/terms">Terms</a>

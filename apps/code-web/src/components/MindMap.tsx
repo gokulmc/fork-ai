@@ -254,9 +254,16 @@ export function MindMap({
 
   // Native, non-passive listener (attached below) so preventDefault is honoured —
   // React's onWheel is registered passive and would warn + still scroll the page.
+  // Plain wheel pans (matches trackpad two-finger scroll / mouse wheel expectations);
+  // zoom is reserved for ctrl/meta+wheel, since a trackpad pinch gesture arrives in
+  // the browser as a ctrl+wheel event — this keeps pinch-to-zoom working.
   const onWheel = useCallback((e: WheelEvent) => {
     e.preventDefault();
     cancelAnimationFrame(animFrame.current);
+    if (!e.ctrlKey && !e.metaKey) {
+      setView(v => ({ ...v, tx: v.tx - e.deltaX, ty: v.ty - e.deltaY }));
+      return;
+    }
     const rect = svgRef.current!.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;

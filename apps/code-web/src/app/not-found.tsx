@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { ThemeScript } from '@/components/ThemeScript';
+import { BRAND_TAGLINE } from '@/lib/brand';
 
 export default function NotFound() {
   return (
@@ -39,7 +40,7 @@ export default function NotFound() {
           <span style={{ color: 'var(--ink-3)' }}>404 — page not found</span>
         </div>
         <p className="history-game-tagline">Nothing here</p>
-        <p className="history-game-sub">FORK AI · V0.1 · BRANCHING RESEARCH, BY YOU</p>
+        <p className="history-game-sub">{BRAND_TAGLINE}</p>
       </div>
     </>
   );

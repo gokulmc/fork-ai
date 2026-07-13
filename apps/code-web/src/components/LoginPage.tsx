@@ -871,7 +871,7 @@ export function LoginPage({ onEnter }: LoginPageProps) {
           readOnly
           tabIndex={-1}
           aria-hidden="true"
-          style={{ position: 'absolute', opacity: 0, height: 0, width: 0, pointerEvents: 'none' }}
+          style={{ position: 'absolute', opacity: 0, height: 0, width: 0, border: 0, padding: 0, pointerEvents: 'none' }}
         />
 
         {barRows.map((r, i) => (
