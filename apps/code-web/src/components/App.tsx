@@ -36,6 +36,50 @@ function canBePlanBase(node: ForkNode | null | undefined): boolean {
   return node.kind === 'BRANCH' && node.sections.length > 0;
 }
 
+// ProjectStart gate persistence — dismissal must survive reopening the same
+// session (a plain boolean that reset on every sessionId change meant "Open
+// map" forgot itself on next visit). Keyed by sessionId, capped so the list
+// can't grow unbounded across a long-lived browser profile.
+const PROJECT_START_DISMISSED_KEY = 'forkai-code.projectStartDismissed';
+const PROJECT_START_DISMISSED_CAP = 50;
+
+function readDismissedProjectStarts(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(PROJECT_START_DISMISSED_KEY);
+    return raw ? (JSON.parse(raw) as string[]) : [];
+  } catch { return []; }
+}
+
+function isProjectStartDismissed(sessionId: string): boolean {
+  return readDismissedProjectStarts().includes(sessionId);
+}
+
+function markProjectStartDismissed(sessionId: string): void {
+  if (typeof window === 'undefined') return;
+  const ids = readDismissedProjectStarts();
+  if (ids.includes(sessionId)) return;
+  ids.push(sessionId);
+  if (ids.length > PROJECT_START_DISMISSED_CAP) ids.splice(0, ids.length - PROJECT_START_DISMISSED_CAP);
+  try { localStorage.setItem(PROJECT_START_DISMISSED_KEY, JSON.stringify(ids)); } catch { /* best-effort — worst case dismissal doesn't survive reload */ }
+}
+
+// A session is "effectively empty" (ProjectStart-eligible) only when it has no
+// nodes at all, or a single unfilled seeded root (parentless, no sections, not
+// mid-stream). Any other content — CODE commits, branches, a filled root, or a
+// learn node — means real work already exists, so the gate below skips
+// straight to the workspace instead of hiding it behind the interstitial.
+// Trade-off (recorded, not a bug): an imported-repo project whose commits
+// have no learn node yet now opens the workspace directly and never sees
+// ProjectStart.
+function isProjectSessionEmpty(nodes: Record<string, ForkNode>): boolean {
+  const all = Object.values(nodes);
+  if (all.length === 0) return true;
+  if (all.length > 1) return false;
+  const only = all[0];
+  return only.parentId === null && only.sections.length === 0 && !only.loading;
+}
+
 // Client-side mirror of the backend's findLaneBranchName (nodes.service.ts) —
 // walks parentId upward (inclusive) to the nearest ancestor carrying a
 // branchName. Used only for the PR overlay's confirm-text preview; the actual
@@ -146,6 +190,7 @@ import {
   type AgentRun,
 } from '@/lib/api';
 import { canSpawn } from '@/lib/nodeGrammar';
+import { kindLabel } from '@/lib/kindLabels';
 import { SkeletonSections } from './SkeletonSections';
 import { HighlightMenu } from './HighlightMenu';
 import { FollowUpPop, SHORTHANDS } from './FollowUpPop';
@@ -584,7 +629,9 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   // "Open map ↗" locally dismisses it so imported history stays browsable
   // without answering. Reset whenever the active session changes.
   const [projectStartDismissed, setProjectStartDismissed] = useState(false);
-  useEffect(() => { setProjectStartDismissed(false); }, [sessionId]);
+  // Re-check persisted dismissal on session change — do NOT reset to false
+  // unconditionally, or a project already dismissed forgets that on reopen.
+  useEffect(() => { setProjectStartDismissed(sessionId ? isProjectStartDismissed(sessionId) : false); }, [sessionId]);
 
   useEffect(() => {
     if (!idToken) return;
@@ -2529,13 +2576,16 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
 
   // A seeded project session loads straight into the Workspace below (rootId
   // is already the imported CODE root) — intercept here, before the commit map
-  // renders, when there's no learn-kind node yet asking what to build. A
-  // from-scratch project's root is a BRANCH the opening question already
-  // streams into (D3) — once it has content (or is mid-stream), skip this
-  // interstitial too, since the question was already asked in the New Project modal.
+  // renders, but ONLY when the session is effectively empty (see
+  // isProjectSessionEmpty above). The gate is computed purely from `nodes`,
+  // not from rootBranch.kind/sections or a LEARN_KINDS scan — a content-ful
+  // session (CODE commits, branches, a filled root, learn nodes) always skips
+  // straight to the workspace, so `activeProject` arriving a frame late via
+  // getProject on reopen can never flip an already-content-ful session into
+  // this interstitial (activeProject && sessionId stay prerequisites only
+  // because ProjectStart needs the project object to render).
   const rootBranch = rootId ? nodes[rootId] : null;
-  const rootIsFillingOrFilledBranch = !!rootBranch && rootBranch.kind === 'BRANCH' && (rootBranch.sections.length > 0 || !!rootBranch.loading);
-  if (activeProject && sessionId && !projectStartDismissed && !rootIsFillingOrFilledBranch && !Object.values(nodes).some(n => LEARN_KINDS.has(n.kind))) {
+  if (activeProject && sessionId && !projectStartDismissed && isProjectSessionEmpty(nodes)) {
     return (
       <>
         {persistentBrand}
@@ -2557,7 +2607,10 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
               void submitProjectQuery(sessionId, q);
             }
           }}
-          onOpenMap={() => setProjectStartDismissed(true)}
+          onOpenMap={() => {
+            if (sessionId) markProjectStartDismissed(sessionId);
+            setProjectStartDismissed(true);
+          }}
         />
         <AccountButton creditBalance={creditBalance} onCreditUpdated={setCreditBalance} />
         <TweaksPanel tweaks={tweaks} setTweak={setTweak} fontPairOptions={FONT_PAIR_OPTIONS} userEmail={authSession?.user?.email ?? ''} userName={authSession?.user?.name ?? ''} />
@@ -2779,16 +2832,16 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
                 >
                   {/* CODE, and an empty BRANCH, never reach this block — they render via AgentLogPane above. */}
                   {active.kind === 'ASK'
-                    ? <><Sparkles size={12} className="ic" /> Follow-up</>
+                    ? <><Sparkles size={12} className="ic" /> {kindLabel('ASK')}</>
                     : active.kind === 'DEEPER'
-                      ? <><CornerDownRight size={12} className="ic" /> Deep dive</>
+                      ? <><CornerDownRight size={12} className="ic" /> {kindLabel('DEEPER')}</>
                       : active.kind === 'MIX'
-                        ? <><Blend size={12} className="ic" /> Synthesis</>
+                        ? <><Blend size={12} className="ic" /> {kindLabel('MIX')}</>
                         : active.kind === 'PLAN'
-                          ? <><ClipboardList size={12} className="ic" /> Plan</>
+                          ? <><ClipboardList size={12} className="ic" /> {kindLabel('PLAN')}</>
                           : active.kind === 'BRANCH'
-                            ? <><GitBranch size={12} className="ic" /> Branch</>
-                            : <><Search size={12} className="ic" /> Query</>}
+                            ? <><GitBranch size={12} className="ic" /> {kindLabel('BRANCH')}</>
+                            : <><Search size={12} className="ic" /> {kindLabel('QUERY')}</>}
                 </button>
                 {active.kind === 'QUERY' && (
                   <span className="pill"><Hash size={12} className="ic" /> {active.sections.length || '—'} sections</span>

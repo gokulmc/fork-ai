@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ForkNode } from '@/lib/types';
 import { getAgentRun, ApiError, type AgentEvent, type AgentRun, type Project } from '@/lib/api';
 import { modelDisplayName } from '@/lib/utils';
+import { kindLabel } from '@/lib/kindLabels';
 import { Code, GitBranch, ArrowUpRight, Sparkles, AlertCircle } from './Icons';
 
 interface AgentLogPaneProps {
@@ -99,7 +100,7 @@ export function AgentLogPane({ node, events, project, idToken, sessionId, onImpl
     return (
       <div className="agent-pane agent-pane--reduced">
         <div className="ws-meta">
-          <span className="pill pill-kind pill-kind--branch"><GitBranch size={12} className="ic" /> Branch</span>
+          <span className="pill pill-kind pill-kind--branch"><GitBranch size={12} className="ic" /> {kindLabel('BRANCH')}</span>
           {node.branchName && <span className="commit-pill">⎇ {node.branchName}{shortSha ? ` · ${shortSha}` : ''}</span>}
         </div>
         <p className="ws-instruction">Forked from <code>{shortSha ?? '—'}</code></p>
@@ -113,7 +114,7 @@ export function AgentLogPane({ node, events, project, idToken, sessionId, onImpl
   return (
     <div className="agent-pane">
       <div className="ws-meta">
-        <span className="pill pill-kind pill-kind--code"><Code size={12} className="ic" /> Code</span>
+        <span className="pill pill-kind pill-kind--code"><Code size={12} className="ic" /> {kindLabel('CODE')}</span>
         {node.branchName && <span className="commit-pill">⎇ {node.branchName}{shortSha ? ` · ${shortSha}` : ''}</span>}
         {node.model && <span className="pill">✳ {modelDisplayName(node.model)}</span>}
         <span className="agent-status">

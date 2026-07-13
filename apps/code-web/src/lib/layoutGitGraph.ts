@@ -75,6 +75,33 @@ function computeBounds(pos: Record<string, { x: number; y: number }>): LayoutRes
   return { minX, minY, maxX, maxY };
 }
 
+// Nodes present in the input `nodes` map but never reached by the tree walk
+// from `rootId` — e.g. a parentId chain that doesn't lead back to the root —
+// get no `pos` from the main placement pass and would otherwise render
+// nowhere (MindMap silently skips any node without a `pos`). Give them a
+// last-resort position instead of dropping them: one horizontal row below the
+// rest of the graph, standard node spacing, ordered by creation so the row
+// doesn't reshuffle across renders. Sibling/parent structure WITHIN an
+// orphaned subtree is intentionally not reconstructed here — this is a
+// visibility net, not a second layout engine. Also stamps a non-zero depth so
+// MindMap's `depthMap[id] ?? 0` fallback can't misread an orphan as the root.
+function placeOrphans(
+  nodes: Record<string, ForkNode>,
+  pos: Record<string, { x: number; y: number }>,
+  depthMap: Record<string, number>,
+): void {
+  const orphanIds = Object.keys(nodes).filter(id => !pos[id]);
+  if (!orphanIds.length) return;
+  const { maxY } = computeBounds(pos);
+  const y = Number.isFinite(maxY) ? maxY + DEPTH_GAP + NODE_H : 0;
+  orphanIds
+    .sort((a, b) => (nodes[a]?.createdAt ?? 0) - (nodes[b]?.createdAt ?? 0))
+    .forEach((id, i) => {
+      pos[id] = { x: i * (NODE_W + SIBLING_GAP), y };
+      if (depthMap[id] === undefined) depthMap[id] = 1;
+    });
+}
+
 // Plain vertical mind-map layout: children spread horizontally below their parent,
 // row position weighted by subtree leaf count so lopsided subtrees don't overlap.
 // Used standalone for pure-learn sessions, and as the pre-rail tree inside
@@ -105,6 +132,7 @@ export function layoutTree(nodes: Record<string, ForkNode>, rootId: string): Lay
   }
   if (nodes[rootId]) place(rootId, 0, 0);
 
+  placeOrphans(nodes, pos, depthMap);
   return { pos, bounds: computeBounds(pos), childMap, depthMap };
 }
 
@@ -250,7 +278,16 @@ function buildLearnOnlyNodes(nodes: Record<string, ForkNode>, rootId: string): R
 // docs/forkai-code/adr/0005; the column allocator therefore never needs to join
 // two columns back together.
 export function layoutGitGraph(nodes: Record<string, ForkNode>, rootId: string): LayoutResult {
-  if (!nodes[rootId]) return { pos: {}, bounds: computeBounds({}), childMap: {}, depthMap: {} };
+  if (!nodes[rootId]) {
+    // Root itself is missing (e.g. a stale rootId) — every remaining node is
+    // an orphan by definition; still give them the fallback strip rather than
+    // returning an empty map.
+    const childMap = buildChildMap(nodes);
+    const pos: Record<string, { x: number; y: number }> = {};
+    const depthMap: Record<string, number> = {};
+    placeOrphans(nodes, pos, depthMap);
+    return { pos, bounds: computeBounds(pos), childMap, depthMap };
+  }
 
   const childMap = buildChildMap(nodes);
   const depthMap = computeDepthMap(childMap, rootId);
@@ -406,5 +443,6 @@ export function layoutGitGraph(nodes: Record<string, ForkNode>, rootId: string):
       y2: pos[ids[ids.length - 1]].y + NODE_H + 24,
     }));
 
+  placeOrphans(nodes, pos, depthMap);
   return { pos, bounds: computeBounds(pos), childMap, depthMap, laneRails, colOf };
 }

@@ -4,6 +4,7 @@ import type { ForkNode } from '@/lib/types';
 import { clamp } from '@/lib/utils';
 import { Hash, Search, Sparkles, CornerDownRight, GitBranch, GitMerge, Map, Minus, Plus, Maximize, Filter, Blend, X, ClipboardList, Code } from './Icons';
 import { NODE_W, NODE_H, layoutTree, layoutGitGraph, hasRailNode } from '@/lib/layoutGitGraph';
+import { kindLabel } from '@/lib/kindLabels';
 import { BranchPopup } from './BranchPopup';
 
 const PAD = 48;
@@ -462,23 +463,7 @@ export function MindMap({
             const isRead = readIds.has(n.id);
             const starred = !!n.starred;
             const NodeIcon = pickIcon(n.kind, isRoot);
-            const kicker = isRoot
-              ? 'Root'
-              : n.kind === 'ASK'
-                ? 'Branch'
-                : n.kind === 'DEEPER'
-                  ? 'Deeper'
-                  : n.kind === 'MIX'
-                    ? 'Synthesis'
-                    : n.kind === 'PLAN'
-                      ? 'Plan'
-                      : n.kind === 'CODE'
-                        ? 'Commit'
-                        : n.kind === 'BRANCH'
-                          ? 'Branch'
-                          : n.kind === 'MERGE'
-                            ? 'PR'
-                            : 'Branch';
+            const kicker = kindLabel(n.kind, { isRoot });
 
             // CODE/BRANCH cards grow upward to fit the commit pill above the title —
             // a PLAN card only does when it actually carries a branchName (plans

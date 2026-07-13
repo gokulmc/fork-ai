@@ -24,7 +24,7 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 ### forkai-code: derived commit titles kept trailing punctuation ("feat: Scaffold CLI with Commander,")
 - **Symptom:** Node cards, breadcrumbs, and the pane title showed the first-5-words commit-message cut with a dangling comma.
 - **Cause:** `commitMessage.split(/\s+/).slice(0, 5).join(' ')` cuts mid-clause.
-- **Fix:** Trim trailing `,;:.` after the cut (nodes.service.ts) + regression spec. (commit: pending)
+- **Fix:** Trim trailing `,;:.` after the cut (nodes.service.ts) + regression spec. (commit: 74bc714)
 
 ### forkai-code: mobile bottom bar pile-up made the composer untappable
 - **Symptom:** At 390px the "Mindmap" pill sat on top of the composer input (clipping the placeholder and intercepting taps); the ⚙ trigger and status chips crowded the same band.
