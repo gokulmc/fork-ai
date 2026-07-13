@@ -1,11 +1,15 @@
 import posthog from 'posthog-js';
 
-// PostHog product analytics. Everything is a no-op unless NEXT_PUBLIC_POSTHOG_KEY
-// is set at build time, so local dev and forks send nothing.
+// PostHog product analytics. No-op in dev builds and when NEXT_PUBLIC_POSTHOG_KEY
+// is unset, so local sessions and forks send nothing.
 
 let inited = false;
 
 export function initAnalytics(): void {
+  // `next dev` always runs as NODE_ENV=development, so local sessions can't pollute
+  // the production PostHog project even when .env.local carries the real key
+  // (dev errors from localhost were landing in prod error tracking).
+  if (process.env.NODE_ENV !== 'production') return;
   const key = process.env.NEXT_PUBLIC_POSTHOG_KEY;
   if (!key || inited || typeof window === 'undefined') return;
   posthog.init(key, {
