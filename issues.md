@@ -9,12 +9,12 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 ### forkai-code: History page and 404 still carried the research product's brand ("FORK AI · V0.1 · BRANCHING RESEARCH")
 - **Symptom:** Landing said "FORKAI CODE · V0.2 · PLAN-FIRST CODING" while the 404 page and both History footers claimed a different product and version.
 - **Cause:** Four hardcoded copies of the tagline drifted independently.
-- **Fix:** Single `BRAND_TAGLINE` constant in `lib/brand.ts` consumed by Landing, LandingHero, not-found, and HistoryPage (LoginPage's "FORK · NODE NETWORK" ritual intentionally untouched). (commit: pending)
+- **Fix:** Single `BRAND_TAGLINE` constant in `lib/brand.ts` consumed by Landing, LandingHero, not-found, and HistoryPage (LoginPage's "FORK · NODE NETWORK" ritual intentionally untouched). (commit: 44e8270)
 
 ### forkai-code: agent log rendered raw serialized tool JSON; diff summary buried below it
 - **Symptom:** The run log showed lines like `{"path":"src/cli.ts","content":"import …\n…"}` — escaped file bodies the user had to mentally deserialize — and the DIFF SUMMARY (the review artifact) rendered below the full log. Also: no timestamps on History cards, a single lonely topic bubble dominated History for new users, plain mouse-wheel over the map zoomed 80→38% in one gesture, and highlight→Ask AI had no discoverability hint.
 - **Cause:** tool_call/file_edit/terminal payloads rendered verbatim; pane order put the log first; wheel handler had no modifier gate; no hint existed.
-- **Fix:** Humanized tool lines ("→ Wrote src/routes/health.ts") with the raw JSON behind a `<details>` disclosure — covering live tool_call events AND persisted file_edit/terminal replays; DIFF SUMMARY moved above AGENT LOG; relative timestamps on session cards; Topics bubbles hidden under 2 real topics; plain wheel pans / ctrl-or-cmd+wheel (trackpad pinch) zooms; one muted "Select any passage to ask about it" hint under the first section; LoginPage decoy input's phantom 8×6px box zeroed. (commit: pending)
+- **Fix:** Humanized tool lines ("→ Wrote src/routes/health.ts") with the raw JSON behind a `<details>` disclosure — covering live tool_call events AND persisted file_edit/terminal replays; DIFF SUMMARY moved above AGENT LOG; relative timestamps on session cards; Topics bubbles hidden under 2 real topics; plain wheel pans / ctrl-or-cmd+wheel (trackpad pinch) zooms; one muted "Select any passage to ask about it" hint under the first section; LoginPage decoy input's phantom 8×6px box zeroed. (commit: 44e8270)
 
 ### forkai-code: reopening a project could hide all its work behind an empty "What are we building?" screen
 - **Symptom:** Opening a project from History sometimes landed on the ProjectStart interstitial with an empty prompt even though the project held a full map of commits — and sometimes went straight to the workspace. Which one you got depended on invisible timing.
