@@ -356,12 +356,8 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, 
           </div>
           <div className="twk-body">
             <TweakAccordion label="Appearance" open={appearanceOpen} onToggle={() => setAppearanceOpen(o => !o)}>
-              <TweakRadio
-                label="Theme"
-                value={tweaks.theme}
-                options={[{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }]}
-                onChange={v => setTweak('theme', v as Tweaks['theme'])}
-              />
+              {/* Dark theme is disabled for now (see useTweaks.ts / ThemeScript.tsx) —
+                  the `theme` tweak key is kept for a non-breaking return later. */}
               <TweakRadio
                 label="Density"
                 value={tweaks.density}
@@ -689,7 +685,6 @@ function HowToContent() {
       <div style={h2}>Tweaks Panel</div>
       <p style={p}>Click ⚙ (bottom-right, always visible) to open the Tweaks panel. You can drag it anywhere on screen. Options:</p>
       <ul style={{ paddingLeft: 16, margin: '0 0 10px' }}>
-        <li style={li}><strong>Theme</strong> — Light or Dark</li>
         <li style={li}><strong>Density</strong> — Cozy or Compact (affects spacing and font sizes)</li>
         <li style={li}><strong>Font pairing</strong> — change the heading and body typeface</li>
         <li style={li}><strong>Max sections</strong> — 4 to 8 sections per answer</li>

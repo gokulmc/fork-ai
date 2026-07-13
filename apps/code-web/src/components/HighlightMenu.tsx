@@ -70,6 +70,7 @@ export function HighlightMenu({ visible, rect, lastColors, onAction, onClose, as
       className={`hl-menu${visible ? ' hl-menu--visible' : ''}`}
       style={{ left: pos.left, top: pos.top, opacity: visible ? undefined : 0, pointerEvents: visible ? undefined : 'none' }}
       onMouseDown={e => e.preventDefault()}
+      inert={!visible}
     >
       <button className="primary" onClick={() => onAction('ask')} title="Ask a follow-up — creates a child node">
         <Sparkles size={14} />

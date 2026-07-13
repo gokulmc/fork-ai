@@ -9,17 +9,17 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 ### forkai-code: reopening a project could hide all its work behind an empty "What are we building?" screen
 - **Symptom:** Opening a project from History sometimes landed on the ProjectStart interstitial with an empty prompt even though the project held a full map of commits — and sometimes went straight to the workspace. Which one you got depended on invisible timing.
 - **Cause:** The gate keyed on `LEARN_KINDS` membership plus the async `getProject` fetch settling, so sessions holding only CODE/BRANCH nodes always re-showed ProjectStart, and `projectStartDismissed` reset on every sessionId change.
-- **Fix:** ProjectStart shows only for an *effectively empty* session (`isProjectSessionEmpty`: no nodes, or a single unfilled non-loading seeded root), computed purely from `nodes`; dismissal persists per-session in `localStorage['forkai-code.projectStartDismissed']`. Recorded trade-off: imported-repo projects open the workspace directly. (commit: pending)
+- **Fix:** ProjectStart shows only for an *effectively empty* session (`isProjectSessionEmpty`: no nodes, or a single unfilled non-loading seeded root), computed purely from `nodes`; dismissal persists per-session in `localStorage['forkai-code.projectStartDismissed']`. Recorded trade-off: imported-repo projects open the workspace directly. (commit: 97ef6ac)
 
 ### forkai-code: mind map silently dropped nodes whose parent chain didn't reach the root
 - **Symptom:** The reading pane could show a node (e.g. a branch created during an error flow) that didn't exist anywhere on the map — the map's count badge and canvas disagreed with the pane.
 - **Cause:** `layoutGitGraph`/`layoutTree` only positioned nodes reachable from `rootId` via `childMap`; MindMap skips nodes without positions.
-- **Fix:** `placeOrphans` lays out unplaced nodes in a fallback row below the graph bounds (and stamps their depth), on all three layout exit paths; edge drawing already guarded missing endpoints. (commit: pending)
+- **Fix:** `placeOrphans` lays out unplaced nodes in a fallback row below the graph bounds (and stamps their depth), on all three layout exit paths; edge drawing already guarded missing endpoints. (commit: 97ef6ac)
 
 ### forkai-code: node kinds had two vocabularies — map said COMMIT/BRANCH where the pane said Code/Follow-up
 - **Symptom:** The same node was labeled "BRANCH" on the map and "Follow-up" in the reading pane; code runs were "COMMIT" on the map and "Code" in the pane. "Branch" ambiguously covered git branches AND conversational follow-ups.
 - **Cause:** Three independent inline label ternaries (MindMap kicker, App pane pill, AgentLogPane pill).
-- **Fix:** Single `kindLabel()` map in `lib/kindLabels.ts` consumed by all three; ASK→Follow-up everywhere, CODE→Commit everywhere, Branch reserved for kind BRANCH. (commit: pending)
+- **Fix:** Single `kindLabel()` map in `lib/kindLabels.ts` consumed by all three; ASK→Follow-up everywhere, CODE→Commit everywhere, Branch reserved for kind BRANCH. (commit: 97ef6ac)
 
 ### forkai-code: derived commit titles kept trailing punctuation ("feat: Scaffold CLI with Commander,")
 - **Symptom:** Node cards, breadcrumbs, and the pane title showed the first-5-words commit-message cut with a dangling comma.

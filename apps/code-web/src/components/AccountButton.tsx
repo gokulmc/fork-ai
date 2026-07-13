@@ -77,6 +77,8 @@ interface AccountButtonProps {
 export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonProps) {
   const { data: session } = useSession();
   const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const [changePwOpen, setChangePwOpen] = useState(false);
   const [billingOpen, setBillingOpen] = useState(false);
   const [currentPw, setCurrentPw] = useState('');
@@ -100,6 +102,24 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
   // Balance shown in billing overlay — starts from prop, updates after recharge
   const [localBalance, setLocalBalance] = useState<number | null | undefined>(creditBalance);
   useEffect(() => { setLocalBalance(creditBalance); }, [creditBalance]);
+
+  // Escape + outside-click dismissal for the account menu — active only while
+  // it's open, cleaned up on close/unmount.
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as Node;
+      if (menuRef.current?.contains(target) || triggerRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
   // True only when we have no balance to show AND the last fetch failed — drives the
   // billing overlay's error+retry state so it never hangs on "Loading…" forever.
   const [balanceError, setBalanceError] = useState(false);
@@ -320,6 +340,7 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
     <>
       {/* Gear button */}
       <button
+        ref={triggerRef}
         onClick={() => setOpen(o => !o)}
         style={{
           position: 'fixed', bottom: 24, left: 24, zIndex: 60,
@@ -341,7 +362,7 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
 
       {/* Popover */}
       {open && (
-        <div style={{
+        <div ref={menuRef} style={{
           position: 'fixed', bottom: 68, left: 24, zIndex: 60,
           background: '#ffffff', border: '1px solid rgba(10,10,10,0.15)',
           borderRadius: 6, padding: '14px 16px',
