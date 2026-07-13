@@ -41,6 +41,17 @@ fly auth docker
 docker push registry.fly.io/forkai-sbx-base:latest
 ```
 
+**This step is easy to silently skip and the failure mode is invisible.** A
+`runner.mjs` change that isn't pushed passes every test/build/lint check —
+`AGENT_RUNNER=cloud` still works, runs still complete, `done` still fires —
+because the OLD sandbox code just runs instead, with no error anywhere. Live
+testing (ADR-0002's third amendment) hit exactly this: push-back code shipped
+and unit-tested, but the image push was deferred while no credentials existed
+yet to test against, and the gap wasn't visible until a real push to a real
+repo silently didn't happen. Verify with
+`docker run --rm registry.fly.io/forkai-sbx-base:latest grep -c '<new symbol>' /runner.mjs`
+before trusting a live test result after any `runner.mjs` change.
+
 ## 3. The launch switch
 
 Once 1–2 are done and `code-prod` has deployed, the API is *capable* of
