@@ -790,8 +790,9 @@ export class NodesService {
     const commitSha = final.commitSha ?? randomBytes(20).toString('hex');
 
     // No extra LLM call for title/lede — a simple truncation of the commit
-    // message is enough for the map card and breadcrumb.
-    const title = final.commitMessage.split(/\s+/).filter(Boolean).slice(0, 5).join(' ') || node.title;
+    // message is enough for the map card and breadcrumb. Trim trailing
+    // punctuation the word cut leaves behind ("feat: Scaffold CLI with Commander,").
+    const title = final.commitMessage.split(/\s+/).filter(Boolean).slice(0, 5).join(' ').replace(/[,;:.]+$/, '') || node.title;
     const lede = final.commitMessage.length > 140 ? `${final.commitMessage.slice(0, 140)}…` : final.commitMessage;
 
     await Promise.all([

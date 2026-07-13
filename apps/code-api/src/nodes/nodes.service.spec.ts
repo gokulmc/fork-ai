@@ -956,6 +956,19 @@ describe('NodesService', () => {
       expect(types[5]).toBe('done');
     });
 
+    it('trims trailing punctuation the 5-word title cut leaves behind', async () => {
+      runnerYields(agentEvents, { ...agentFinal, commitMessage: 'feat: Scaffold CLI with Commander, config loader, and S3 client' });
+      const send = () => {};
+
+      await service.createCodeNodeStreaming(SUB, SESSION_ID, dto, send);
+
+      expect(mockDb.updateNode).toHaveBeenCalledWith(
+        SESSION_ID,
+        expect.any(String),
+        expect.objectContaining({ title: 'feat: Scaffold CLI with Commander' }),
+      );
+    });
+
     it('emits a heartbeat agent-event between init and the first real one when the runner is slow, and never persists heartbeats', async () => {
       jest.useFakeTimers();
       try {

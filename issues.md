@@ -6,20 +6,60 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
+### forkai-code: reopening a project could hide all its work behind an empty "What are we building?" screen
+- **Symptom:** Opening a project from History sometimes landed on the ProjectStart interstitial with an empty prompt even though the project held a full map of commits — and sometimes went straight to the workspace. Which one you got depended on invisible timing.
+- **Cause:** The gate keyed on `LEARN_KINDS` membership plus the async `getProject` fetch settling, so sessions holding only CODE/BRANCH nodes always re-showed ProjectStart, and `projectStartDismissed` reset on every sessionId change.
+- **Fix:** ProjectStart shows only for an *effectively empty* session (`isProjectSessionEmpty`: no nodes, or a single unfilled non-loading seeded root), computed purely from `nodes`; dismissal persists per-session in `localStorage['forkai-code.projectStartDismissed']`. Recorded trade-off: imported-repo projects open the workspace directly. (commit: pending)
+
+### forkai-code: mind map silently dropped nodes whose parent chain didn't reach the root
+- **Symptom:** The reading pane could show a node (e.g. a branch created during an error flow) that didn't exist anywhere on the map — the map's count badge and canvas disagreed with the pane.
+- **Cause:** `layoutGitGraph`/`layoutTree` only positioned nodes reachable from `rootId` via `childMap`; MindMap skips nodes without positions.
+- **Fix:** `placeOrphans` lays out unplaced nodes in a fallback row below the graph bounds (and stamps their depth), on all three layout exit paths; edge drawing already guarded missing endpoints. (commit: pending)
+
+### forkai-code: node kinds had two vocabularies — map said COMMIT/BRANCH where the pane said Code/Follow-up
+- **Symptom:** The same node was labeled "BRANCH" on the map and "Follow-up" in the reading pane; code runs were "COMMIT" on the map and "Code" in the pane. "Branch" ambiguously covered git branches AND conversational follow-ups.
+- **Cause:** Three independent inline label ternaries (MindMap kicker, App pane pill, AgentLogPane pill).
+- **Fix:** Single `kindLabel()` map in `lib/kindLabels.ts` consumed by all three; ASK→Follow-up everywhere, CODE→Commit everywhere, Branch reserved for kind BRANCH. (commit: pending)
+
+### forkai-code: derived commit titles kept trailing punctuation ("feat: Scaffold CLI with Commander,")
+- **Symptom:** Node cards, breadcrumbs, and the pane title showed the first-5-words commit-message cut with a dangling comma.
+- **Cause:** `commitMessage.split(/\s+/).slice(0, 5).join(' ')` cuts mid-clause.
+- **Fix:** Trim trailing `,;:.` after the cut (nodes.service.ts) + regression spec. (commit: pending)
+
+### forkai-code: mobile bottom bar pile-up made the composer untappable
+- **Symptom:** At 390px the "Mindmap" pill sat on top of the composer input (clipping the placeholder and intercepting taps); the ⚙ trigger and status chips crowded the same band.
+- **Cause:** `.mm-pill` fixed at bottom+16px, `.twk-trigger` at bottom 24px with no mobile reposition, both inside the composer's band (composer top ≈ bottom+94px on mobile).
+- **Fix:** Mobile-only offsets: pill and trigger at `safe-area + 106px`, status chips at `+150px` — measured against the composer's real height with clearance. Mixer-mode hiding preserved. (commit: pending)
+
+### forkai-code: dark-mode selects rendered as garbled zigzag glyph rows
+- **Symptom:** With the Dark theme active, the Tweaks panel's Font-pairing and Model selects displayed as rows of repeated triangles — unreadable.
+- **Cause:** `[data-theme="dark"] .twk-field` used the `background:` shorthand (resets `background-repeat`/`position`, outranks `select.twk-field`'s no-repeat rule); the dark select rule then re-added only `background-image`, so the dropdown-arrow SVG tiled across the control.
+- **Fix:** Dark rules use `background-color` only, leaving image/repeat/position to the select-specific rules. The Theme toggle itself is removed until a full dark theme ships (`useTweaks` coerces stored dark→light; ThemeScript forces light). (commit: pending)
+
+### forkai-code: zoom disabled globally + sub-AA contrast + invisible focus + phantom tab stops
+- **Symptom:** Pinch-zoom was blocked on every page (`user-scalable=no`); the landing tagline/footer used #999 (~2.85:1) text; the composer and auth inputs had no visible keyboard focus; closed NotesDrawer/HighlightMenu buttons stayed in the tab order.
+- **Cause:** Viewport export set `maximumScale:1, userScalable:false`; `--ink-3` token too light; `outline: none`/inline outline suppression without `:focus-visible` replacements; `aria-hidden` containers without `inert`.
+- **Fix:** Zoom unlocked (WCAG 1.4.4); `--ink-3` #999999→#767674 (≥4.5:1, light theme); `.twk-status-off` drops the opacity fade; global `:focus-visible` outline + explicit rules for the composer textarea and auth input; `inert` on closed drawer/highlight menu. (commit: pending)
+
+### forkai-code: primary CTAs looked permanently disabled; wordmark overlapped the breadcrumb; Account menu ignored Escape
+- **Symptom:** "Begin"/"Create" rendered near-identical grey whether actionable or not; the fixed "forkai code" wordmark overlapped the first crumb on desktop (topbar and History topbar); the Account menu didn't close on Escape or outside click and its lingering state swallowed clicks.
+- **Cause:** `:disabled` was only an opacity fade; `.topbar` reserved 140px for a ~185px-wide brand; AccountButton had no dismissal listeners.
+- **Fix:** Distinct muted disabled fill (`var(--line)` bg); topbar/history-topbar left padding 140→190px; Escape + outside-pointerdown dismissal on the account popover. (commit: pending)
+
 ### forkai-code: page refresh during an agent run lost all run awareness — static "Starting…" forever
 - **Symptom:** Reloading the tab while a CODE run was in progress landed the pane on an unrelated node; the running commit sat on the map with sha "–" and no status. Even when the run completed server-side, the UI never found out (AgentLogPane showed the "Starting…" shimmer indefinitely for a node restored with `agentStatus: 'running'`).
 - **Cause:** AgentLogPane only fetched the persisted AgentRun for `done|error` nodes — nothing polled a `running` one. And `loadSession` kept the cache-painted active node (the root) over the running node, so the running node's pane (the only place polling could live) never even mounted.
-- **Fix:** AgentLogPane polls `getAgentRun` every 2.5s while `kind==='CODE' && agentStatus==='running' && !hasLiveLog`, streaming persisted events into the log and calling `onRunResolved` when the run lands (App patches sha/branch/message/diffSummary/title). `loadSession` prefers a node with `agentStatus==='running'` as the active target — including over the cache-kept previous node, which loadSession itself had just set. Gate is strictly `=== 'running'` (merge commits omit `agentStatus` by design). (commit: pending)
+- **Fix:** AgentLogPane polls `getAgentRun` every 2.5s while `kind==='CODE' && agentStatus==='running' && !hasLiveLog`, streaming persisted events into the log and calling `onRunResolved` when the run lands (App patches sha/branch/message/diffSummary/title). `loadSession` prefers a node with `agentStatus==='running'` as the active target — including over the cache-kept previous node, which loadSession itself had just set. Gate is strictly `=== 'running'` (merge commits omit `agentStatus` by design). (commit: 8fd2f9e)
 
 ### forkai-code: failed CODE runs showed an empty grey log with no message; Retry no-oped for commit-anchored asks
 - **Symptom:** When a code-run stream failed, the pane showed "● Error" and an empty AGENT LOG box — no reason, no recovery. Separately, asking about a commit that failed server-side showed the error banner but its Retry button silently did nothing.
 - **Cause:** CODE nodes are excluded from the generic `ws-error` banner and AgentLogPane had no error rendering; `askAboutCommit`'s catch never registered a `retryInfoRef` entry (no `RetryInfo` variant existed for commit-anchored ASKs), so `retryNode` returned early.
-- **Fix:** AgentLogPane renders `node.error` + Retry for `agentStatus==='error'` (retry re-runs the code stream in place via `submitCodeNode`'s new `reuseNodeId`); new `RetryInfo` variant `ASK_COMMIT` registered in `askAboutCommit`'s catch and dispatched in `retryNode`. The "Ask about this commit" row is also gated off while a run is in progress. (commit: pending)
+- **Fix:** AgentLogPane renders `node.error` + Retry for `agentStatus==='error'` (retry re-runs the code stream in place via `submitCodeNode`'s new `reuseNodeId`); new `RetryInfo` variant `ASK_COMMIT` registered in `askAboutCommit`'s catch and dispatched in `retryNode`. The "Ask about this commit" row is also gated off while a run is in progress. (commit: 8fd2f9e)
 
 ### forkai-code: stream error payloads leaked raw into the UI — "Sorry — data: {json}"
 - **Symptom:** A failed streaming request showed the serialized SSE frame (`Sorry — data: {"type":"error","message":...,"status":400}`) instead of the message.
 - **Cause:** `extractError` (lib/api.ts) only tried bare-JSON parsing; an SSE-framed error body (`data: {...}` lines) fell through to the raw-text branch.
-- **Fix:** `extractError` now extracts and parses the last `data: {...}` line first, returning its `message`/`code`; falls through unchanged otherwise. (commit: pending)
+- **Fix:** `extractError` now extracts and parses the last `data: {...}` line first, returning its `message`/`code`; falls through unchanged otherwise. (commit: 8fd2f9e)
 
 ### forkai-code: agent runs were silent for ~18s — a frozen "Starting…" until the first real event
 - **Symptom:** After submitting an instruction, the agent log showed a static "Starting…" for the entire LLM transcript-generation latency (~18s of a ~42s run) — indistinguishable from a hang, inviting refreshes/resubmits.
@@ -29,7 +69,7 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 ### forkai-code: deleting a project was instant — no confirmation, no undo, invisible on touch/keyboard
 - **Symptom:** One click on the hover-revealed trash icon permanently deleted an entire project. The icon was also unreachable on touch devices (no hover) and invisible to keyboard users.
 - **Cause:** `.session-card-delete` fired `onDeleteSession` directly; reveal was `:hover`-only.
-- **Fix:** Two-step inline confirm ("Delete?" ✓/✕; Escape/blur/✕ disarm), reveal on `:focus-within`, and always-visible at reduced opacity under `@media (hover: none)`. (commit: pending)
+- **Fix:** Two-step inline confirm ("Delete?" ✓/✕; Escape/blur/✕ disarm), reveal on `:focus-within`, and always-visible at reduced opacity under `@media (hover: none)`. (commit: 8fd2f9e)
 
 ### forkai-code: first question in every new-repo project failed with 400 "Cannot create a QUERY node under a BRANCH parent"
 - **Symptom:** Creating a from-scratch project and asking its opening question (via ProjectStart or after reopening) always returned HTTP 400 with the raw payload rendered in the error banner. The core ask→answer loop was dead for every new project.
