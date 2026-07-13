@@ -105,6 +105,13 @@ export interface NodeItem {
   diffSummary?: DiffSummary;
   agentStatus?: 'running' | 'done' | 'error';
   imported?: boolean;
+  // Where a CODE node's agent run actually happened — set at done. Absent on
+  // mock runs (no real workspace exists). workspaceExpiresAt is cloud-only;
+  // sandbox-sweep.ts destroys the sandbox once it passes.
+  workspace?:
+    | { kind: 'cloud'; sandboxId: string; vscodeUrl: string }
+    | { kind: 'local'; path: string };
+  workspaceExpiresAt?: string;
   // MERGE node fields — second parent, render-only (ADR-0005).
   mergeFromNodeId?: string;
   prStatus?: 'open' | 'merged';

@@ -42,6 +42,12 @@ export interface ForkNode {
   diffSummary?: DiffSummary;
   agentStatus?: 'running' | 'done' | 'error';
   imported?: boolean;
+  // Where the agent run actually happened — set at done, absent on mock runs.
+  // workspaceExpiresAt is cloud-only (the sandbox is swept once it passes).
+  workspace?:
+    | { kind: 'cloud'; sandboxId: string; vscodeUrl: string }
+    | { kind: 'local'; path: string };
+  workspaceExpiresAt?: string;
   // ── forkai-code: MERGE rail nodes — second parent, render-only (ADR-0005) ──
   mergeFromNodeId?: string;
   prStatus?: 'open' | 'merged';

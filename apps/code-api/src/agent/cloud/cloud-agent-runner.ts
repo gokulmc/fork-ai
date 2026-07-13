@@ -4,7 +4,7 @@ import type { DiffSummary } from '@/dynamo/dynamo.interfaces';
 import type { AgentRunner, AgentRunFinal, RunnerYield } from '../agent-runner';
 import type { AgentRunContext } from '../mock-agent.service';
 import { translateAgentMessage, extractResult } from '../local/claude-events';
-import { FlyProvider, type SandboxHandle } from './fly-provider';
+import { FlyProvider, SANDBOX_EXPIRES_AT_METADATA_KEY, type SandboxHandle } from './fly-provider';
 
 // NOTE: nothing here may import from ../local/local-agent-runner — its
 // top-level `@anthropic-ai/claude-agent-sdk` import is a devDependency absent
@@ -18,6 +18,9 @@ export interface CloudAgentRunnerConfig {
   image: string;
   region: string;
   anthropicApiKey: string;
+  // Minutes a successful run's sandbox survives past done, so the user can
+  // open the workspace afterward — see SANDBOX_TTL_MINUTES / sandbox-sweep.ts.
+  ttlMinutes: number;
 }
 
 // Shapes emitted by the in-machine runner's SSE stream — kept in sync by hand
@@ -53,16 +56,19 @@ function firstLine(text: string): string {
 
 // Runs one CODE-node agent run inside a fresh single-use Fly Machine sandbox:
 // provision app+machine, POST the instruction to the in-machine runner, relay
-// its claude stream-json lines as AgentEvents, and ALWAYS destroy the sandbox
-// in finally (success and error) — an orphaned machine bills until someone
-// notices (a client-crash orphan once ran ~22h; see the spike README).
+// its claude stream-json lines as AgentEvents. On success the sandbox is left
+// running — tagged with a TTL expiry so the user can open its VS Code
+// afterward — and sandbox-sweep.ts reaps it later. On error (or a stream that
+// never produced a result) it's destroyed immediately in finally, same as
+// before: an orphaned machine bills until someone notices (a client-crash
+// orphan once ran ~22h; see the spike README).
 export class CloudAgentRunner implements AgentRunner {
   private readonly logger = new Logger(CloudAgentRunner.name);
-  private readonly provider: Pick<FlyProvider, 'create' | 'destroy'>;
+  private readonly provider: Pick<FlyProvider, 'create' | 'destroy' | 'setMetadata'>;
 
   constructor(
     private readonly cfg: CloudAgentRunnerConfig,
-    provider?: Pick<FlyProvider, 'create' | 'destroy'>,
+    provider?: Pick<FlyProvider, 'create' | 'destroy' | 'setMetadata'>,
   ) {
     this.provider = provider ?? new FlyProvider({ apiToken: cfg.apiToken, orgSlug: cfg.orgSlug });
   }
@@ -79,6 +85,10 @@ export class CloudAgentRunner implements AgentRunner {
     const vscodeToken = randomBytes(24).toString('base64url');
 
     let sandbox: SandboxHandle | undefined;
+    // Set together, right before the 'result' yield, so finally knows whether
+    // to preserve+tag the sandbox (success) or destroy it (error / no result).
+    let succeeded = false;
+    let workspaceExpiresAt: string | undefined;
     try {
       sandbox = await this.provider.create({
         runId,
@@ -165,7 +175,10 @@ export class CloudAgentRunner implements AgentRunner {
 
       // A stream that ended without a result frame yields nothing further —
       // NodesService's "runner ended without a result" check handles that.
+      // No commit means no workspace worth keeping either, so this falls
+      // through to the finally's destroy branch (succeeded stays false).
       if (runnerResult) {
+        workspaceExpiresAt = new Date(Date.now() + this.cfg.ttlMinutes * 60_000).toISOString();
         const final: AgentRunFinal = {
           commitMessage: firstLine(resultText) || ctx.instruction.slice(0, 72),
           commitSha: runnerResult.sha,
@@ -174,18 +187,35 @@ export class CloudAgentRunner implements AgentRunner {
           outputTokens,
           model: sdkModel ?? ctx.model ?? 'unknown',
           workspace: { kind: 'cloud', sandboxId: sandbox.sandboxId, vscodeUrl: sandbox.vscodeUrl },
+          workspaceExpiresAt,
         };
+        succeeded = true;
         yield { type: 'result', result: final };
       }
     } finally {
       if (sandbox) {
-        try {
-          await this.provider.destroy(sandbox.sandboxId);
-        } catch (err) {
-          const [appName] = sandbox.sandboxId.split(':');
-          this.logger.error(
-            `failed to destroy sandbox ${sandbox.sandboxId} — ORPHANED and billing until swept (fly apps destroy ${appName} --yes): ${String(err)}`,
-          );
+        if (succeeded) {
+          // Leave the sandbox running past this run — tag it with its expiry
+          // instead of destroying, so sandbox-sweep.ts reaps it once it's
+          // actually past TTL. Best-effort: a failed metadata write doesn't
+          // fail the run — the sweep's age-based hard cap for metadata-less
+          // machines is the fallback (see sandbox-sweep.ts).
+          try {
+            await this.provider.setMetadata(sandbox.sandboxId, SANDBOX_EXPIRES_AT_METADATA_KEY, workspaceExpiresAt!);
+          } catch (err) {
+            this.logger.warn(
+              `failed to tag expiry on sandbox ${sandbox.sandboxId} — sweep will fall back to its age-based hard cap: ${String(err)}`,
+            );
+          }
+        } else {
+          try {
+            await this.provider.destroy(sandbox.sandboxId);
+          } catch (err) {
+            const [appName] = sandbox.sandboxId.split(':');
+            this.logger.error(
+              `failed to destroy sandbox ${sandbox.sandboxId} — ORPHANED and billing until swept (fly apps destroy ${appName} --yes): ${String(err)}`,
+            );
+          }
         }
       }
     }
@@ -199,28 +229,4 @@ export class CloudAgentRunner implements AgentRunner {
     const planSection = ctx.planDoc ? `\n\nPlan context:\n${ctx.planDoc}` : '';
     return `${ctx.instruction}${planSection}\n\nWork only inside this repository checkout. Do NOT run \`git commit\`, \`git push\`, or change git config — the harness commits your changes after you finish.`;
   }
-}
-
-const sweepLogger = new Logger('CloudSandboxSweep');
-
-// Destroys every leftover forkai-sbx-* app (except the base image). Exported
-// but deliberately NOT called anywhere — a scheduled orphan sweep is a
-// follow-up (see ADR-0001 amendment); wiring one blindly would reap sandboxes
-// another live process still owns. destroy-in-finally above is the primary
-// leak defence; this helper exists for manual/operator use.
-export async function sweepOrphanSandboxes(
-  provider: Pick<FlyProvider, 'listSandboxApps' | 'destroyApp'>,
-): Promise<{ swept: string[]; failed: string[] }> {
-  const swept: string[] = [];
-  const failed: string[] = [];
-  for (const name of await provider.listSandboxApps()) {
-    try {
-      await provider.destroyApp(name);
-      swept.push(name);
-    } catch (err) {
-      failed.push(name);
-      sweepLogger.error(`failed to destroy ${name}: ${String(err)}`);
-    }
-  }
-  return { swept, failed };
 }

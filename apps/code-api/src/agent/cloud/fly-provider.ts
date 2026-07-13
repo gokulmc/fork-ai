@@ -29,6 +29,11 @@ export const SANDBOX_APP_PREFIX = 'forkai-sbx-';
 // instance, so the sweep must never touch it.
 const BASE_IMAGE_APP = 'forkai-sbx-base';
 
+// Machine metadata key CloudAgentRunner tags a successful run's sandbox with —
+// sandbox-sweep.ts reconciles against this (via listMachines' config.metadata)
+// instead of name-prefix+age alone. Exported so both sides use the same key.
+export const SANDBOX_EXPIRES_AT_METADATA_KEY = 'forkai_expires_at';
+
 export interface SandboxCreateOpts {
   runId: string;
   image: string;
@@ -58,6 +63,16 @@ interface FlyMachineConfig {
 interface FlyMachine {
   id: string;
   state: string;
+  created_at?: string;
+  config?: { metadata?: Record<string, string> };
+}
+
+export interface SandboxMachineInfo {
+  id: string;
+  createdAt: string;
+  // Present only once CloudAgentRunner has tagged a successful run's machine —
+  // absent for a crashed run or a machine created before this feature shipped.
+  expiresAt?: string;
 }
 
 export class FlyProvider {
@@ -79,6 +94,10 @@ export class FlyProvider {
       throw new Error(`Fly API ${init?.method ?? 'GET'} ${path} → ${res.status}: ${body}`);
     }
     return res;
+  }
+
+  private isNotFound(err: unknown): boolean {
+    return err instanceof Error && /→ 404:/.test(err.message);
   }
 
   async create(opts: SandboxCreateOpts): Promise<SandboxHandle> {
@@ -228,8 +247,20 @@ export class FlyProvider {
     this.logger.log(`destroyed sandbox ${sandboxId}`);
   }
 
+  // Sets one machine-metadata key. Used by CloudAgentRunner to tag a
+  // successful run's sandbox with its TTL expiry (see
+  // SANDBOX_EXPIRES_AT_METADATA_KEY) instead of destroying it.
+  async setMetadata(sandboxId: string, key: string, value: string): Promise<void> {
+    const [appName, machineId] = sandboxId.split(':');
+    if (!appName || !machineId) throw new Error(`Malformed sandboxId: ${sandboxId}`);
+    await this.flyFetch(`/v1/apps/${appName}/machines/${machineId}/metadata/${key}`, {
+      method: 'POST',
+      body: JSON.stringify({ value }),
+    });
+  }
+
   // Sandbox app names in this org, excluding the base-image app. Used only by
-  // sweepOrphanSandboxes (cloud-agent-runner.ts) — never by the run path.
+  // sandbox-sweep.ts — never by the run path.
   async listSandboxApps(): Promise<string[]> {
     const res = await this.flyFetch(`/v1/apps?org_slug=${this.opts.orgSlug}`);
     const json = (await res.json()) as { apps?: Array<{ name: string }> };
@@ -240,8 +271,41 @@ export class FlyProvider {
 
   // App-level force delete (tears down any machines inside and releases IPs).
   // The sweep only knows app names, not machine ids, hence no per-machine step.
+  // Tolerates 404 (already gone) as success — the sweep may run on >1 EB
+  // instance, so a second sweeper racing the same expired app is expected,
+  // not an error.
   async destroyApp(appName: string): Promise<void> {
-    await this.flyFetch(`/v1/apps/${appName}?force=true`, { method: 'DELETE' });
-    this.logger.log(`destroyed app ${appName}`);
+    try {
+      await this.flyFetch(`/v1/apps/${appName}?force=true`, { method: 'DELETE' });
+      this.logger.log(`destroyed app ${appName}`);
+    } catch (err) {
+      if (this.isNotFound(err)) {
+        this.logger.log(`app ${appName} already gone (404) — treating as destroyed`);
+        return;
+      }
+      throw err;
+    }
+  }
+
+  // Per-app machine list, including each machine's TTL expiry metadata (if
+  // CloudAgentRunner tagged it) — sandbox-sweep.ts's sole read path. The
+  // Machines API embeds config.metadata directly in the list response, so no
+  // second per-machine metadata GET is needed. Tolerates 404 (app already
+  // destroyed by a racing sweep) by returning no machines, same idempotency
+  // reasoning as destroyApp.
+  async listMachines(appName: string): Promise<SandboxMachineInfo[]> {
+    let res: Response;
+    try {
+      res = await this.flyFetch(`/v1/apps/${appName}/machines`);
+    } catch (err) {
+      if (this.isNotFound(err)) return [];
+      throw err;
+    }
+    const machines = (await res.json()) as FlyMachine[];
+    return machines.map((m) => ({
+      id: m.id,
+      createdAt: m.created_at ?? new Date(0).toISOString(),
+      expiresAt: m.config?.metadata?.[SANDBOX_EXPIRES_AT_METADATA_KEY],
+    }));
   }
 }

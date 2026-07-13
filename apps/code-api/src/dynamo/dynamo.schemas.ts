@@ -147,6 +147,20 @@ export const NodeSchema = new dynamoose.Schema({
   // on write/read (see root CLAUDE.md "Dynamoose saveUnknown" gotcha).
   mergeFromNodeId: { type: String, required: false },
   prStatus: { type: String, required: false },
+  // Nested object covers both workspace kinds' fields (Dynamoose has no tagged
+  // union) — sandboxId/vscodeUrl for 'cloud', path for 'local', all optional
+  // besides kind so either shape round-trips.
+  workspace: {
+    type: Object,
+    required: false,
+    schema: {
+      kind: String,
+      sandboxId: { type: String, required: false },
+      vscodeUrl: { type: String, required: false },
+      path: { type: String, required: false },
+    },
+  },
+  workspaceExpiresAt: { type: String, required: false },
 });
 
 export const AnnotationSchema = new dynamoose.Schema({

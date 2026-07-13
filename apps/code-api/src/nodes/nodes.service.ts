@@ -809,6 +809,9 @@ export class NodesService {
         commitMessage: final.commitMessage,
         diffSummary: final.diffSummary,
         agentStatus: 'done',
+        ...(final.workspace
+          ? { workspace: final.workspace, ...(final.workspaceExpiresAt ? { workspaceExpiresAt: final.workspaceExpiresAt } : {}) }
+          : {}),
       }),
       this.db.updateAgentRun(sessionId, nodeId, {
         status: 'done',
@@ -837,7 +840,9 @@ export class NodesService {
         diffSummary: final.diffSummary,
         agentStatus: 'done',
         commitSha,
-        ...(final.workspace ? { workspace: final.workspace } : {}),
+        ...(final.workspace
+          ? { workspace: final.workspace, ...(final.workspaceExpiresAt ? { workspaceExpiresAt: final.workspaceExpiresAt } : {}) }
+          : {}),
       },
     });
   }

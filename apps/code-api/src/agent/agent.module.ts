@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { LlmModule } from '@/llm/llm.module';
 import { MockAgentService } from './mock-agent.service';
@@ -42,15 +42,23 @@ import { AGENT_RUNNER_REGISTRY, RunnerRegistry, RunnerEnvironment } from './runn
           // cloud path has none) but so the mock-only default path never loads
           // provider code it doesn't use.
           const { CloudAgentRunner } = await import('./cloud/cloud-agent-runner');
+          const { FlyProvider } = await import('./cloud/fly-provider');
+          const { startSandboxSweep } = await import('./cloud/sandbox-sweep');
+          const orgSlug = process.env.FLY_ORG ?? 'personal';
           runners.cloud = new CloudAgentRunner({
             apiToken,
-            orgSlug: process.env.FLY_ORG ?? 'personal',
+            orgSlug,
             image,
             // sin, not bom: bom returned insufficient_capacity for
             // shared-cpu-2x on 2026-07-13; sin passed the live spike.
             region: process.env.FLY_REGION ?? 'sin',
             anthropicApiKey: config.get<string>('anthropic.apiKey')!,
+            ttlMinutes: Number(process.env.SANDBOX_TTL_MINUTES ?? 20),
           });
+          // Own FlyProvider instance (stateless — just wraps fetch with the
+          // same token/org) rather than reaching into CloudAgentRunner's
+          // private one, so the sweep and the runner stay decoupled.
+          startSandboxSweep(new FlyProvider({ apiToken, orgSlug }), new Logger('CloudSandboxSweep'));
         }
 
         // Fail fast at bootstrap if the server's own default names a runner it

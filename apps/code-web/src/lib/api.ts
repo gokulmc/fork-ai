@@ -33,6 +33,10 @@ export interface ApiNode {
   diffSummary?: DiffSummary;
   agentStatus?: 'running' | 'done' | 'error';
   imported?: boolean;
+  workspace?:
+    | { kind: 'cloud'; sandboxId: string; vscodeUrl: string }
+    | { kind: 'local'; path: string };
+  workspaceExpiresAt?: string;
   mergeFromNodeId?: string;
   prStatus?: 'open' | 'merged';
 }
@@ -106,6 +110,8 @@ export function toForkNode(n: ApiNode): ForkNode {
     diffSummary: n.diffSummary,
     agentStatus: n.agentStatus,
     imported: n.imported,
+    workspace: n.workspace,
+    workspaceExpiresAt: n.workspaceExpiresAt,
     mergeFromNodeId: n.mergeFromNodeId,
     prStatus: n.prStatus,
   };

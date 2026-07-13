@@ -16,6 +16,9 @@ export interface AgentRunFinal {
   workspace?:
     | { kind: 'local'; path: string }
     | { kind: 'cloud'; sandboxId: string; vscodeUrl: string };
+  // ISO timestamp — cloud only (local workspaces don't expire). Set alongside
+  // `workspace` on a successful cloud run; see CloudAgentRunner.
+  workspaceExpiresAt?: string;
 }
 
 // A discriminated union rather than a generator return value: `for await`

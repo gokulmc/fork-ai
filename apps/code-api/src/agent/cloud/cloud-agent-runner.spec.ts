@@ -13,6 +13,7 @@ const CFG: CloudAgentRunnerConfig = {
   image: 'registry.fly.io/forkai-sbx-base:latest',
   region: 'sin',
   anthropicApiKey: 'sk-ant-test',
+  ttlMinutes: 20,
 };
 
 const HANDLE: SandboxHandle = {
@@ -57,13 +58,17 @@ async function drain(gen: AsyncIterable<RunnerYield>): Promise<RunnerYield[]> {
 describe('CloudAgentRunner', () => {
   const realFetch = global.fetch;
   let fetchMock: jest.Mock;
-  let provider: { create: jest.Mock; destroy: jest.Mock };
+  let provider: { create: jest.Mock; destroy: jest.Mock; setMetadata: jest.Mock };
   let runner: CloudAgentRunner;
 
   beforeEach(() => {
     fetchMock = jest.fn();
     global.fetch = fetchMock as unknown as typeof fetch;
-    provider = { create: jest.fn().mockResolvedValue(HANDLE), destroy: jest.fn().mockResolvedValue(undefined) };
+    provider = {
+      create: jest.fn().mockResolvedValue(HANDLE),
+      destroy: jest.fn().mockResolvedValue(undefined),
+      setMetadata: jest.fn().mockResolvedValue(undefined),
+    };
     runner = new CloudAgentRunner(CFG, provider);
   });
 
@@ -77,7 +82,7 @@ describe('CloudAgentRunner', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('translates claude lines, yields a final result with the real sha + cloud workspace, and destroys the sandbox', async () => {
+  it('translates claude lines, yields a final result with the real sha + cloud workspace, and leaves the sandbox running with a tagged expiry', async () => {
     fetchMock.mockResolvedValue(
       new Response(
         sse([
@@ -119,9 +124,14 @@ describe('CloudAgentRunner', () => {
       model: 'claude-sonnet-4-5',
       workspace: { kind: 'cloud', sandboxId: HANDLE.sandboxId, vscodeUrl: HANDLE.vscodeUrl },
     });
+    expect(typeof final?.workspaceExpiresAt).toBe('string');
+    expect(new Date(final!.workspaceExpiresAt!).getTime()).toBeGreaterThan(Date.now());
 
-    expect(provider.destroy).toHaveBeenCalledTimes(1);
-    expect(provider.destroy).toHaveBeenCalledWith(HANDLE.sandboxId);
+    // Success path: the sandbox survives past done, tagged with its expiry —
+    // never destroyed in finally.
+    expect(provider.destroy).not.toHaveBeenCalled();
+    expect(provider.setMetadata).toHaveBeenCalledTimes(1);
+    expect(provider.setMetadata).toHaveBeenCalledWith(HANDLE.sandboxId, 'forkai_expires_at', final!.workspaceExpiresAt);
   });
 
   it('sends the key in the /run body (never machine env) and appends the no-git-commit rule', async () => {
@@ -155,5 +165,30 @@ describe('CloudAgentRunner', () => {
     await expect(drain(runner.run(mkCtx()))).rejects.toThrow('clone failed: boom');
     expect(provider.destroy).toHaveBeenCalledTimes(1);
     expect(provider.destroy).toHaveBeenCalledWith(HANDLE.sandboxId);
+    expect(provider.setMetadata).not.toHaveBeenCalled();
+  });
+
+  it('destroys the sandbox when the stream ends without a result frame (no commit worth keeping a workspace for)', async () => {
+    fetchMock.mockResolvedValue(
+      new Response(sse([{ type: 'claude', line: { type: 'system', subtype: 'init', model: 'm' } }]), { status: 200 }),
+    );
+
+    const items = await drain(runner.run(mkCtx()));
+
+    expect(items.filter((i) => i.type === 'result')).toHaveLength(0);
+    expect(provider.destroy).toHaveBeenCalledTimes(1);
+    expect(provider.destroy).toHaveBeenCalledWith(HANDLE.sandboxId);
+    expect(provider.setMetadata).not.toHaveBeenCalled();
+  });
+
+  it('leaves the sandbox running on error setting metadata (best-effort — never destroys a successful run over it)', async () => {
+    fetchMock.mockResolvedValue(new Response(sse([RESULT_FRAME]), { status: 200 }));
+    provider.setMetadata.mockRejectedValue(new Error('Fly API POST /metadata → 500: boom'));
+
+    const items = await drain(runner.run(mkCtx()));
+
+    expect(items.filter((i) => i.type === 'result')).toHaveLength(1);
+    expect(provider.setMetadata).toHaveBeenCalledTimes(1);
+    expect(provider.destroy).not.toHaveBeenCalled();
   });
 });

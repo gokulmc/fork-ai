@@ -21,6 +21,7 @@ export const validationSchema = Joi.object({
   FLY_ORG: Joi.string().allow('').optional(),
   FLY_SANDBOX_IMAGE: Joi.string().allow('').optional(),
   FLY_REGION: Joi.string().allow('').optional(),
+  SANDBOX_TTL_MINUTES: Joi.number().optional(),
   PORT: Joi.number().default(3000),
   FRONTEND_URL: Joi.string().optional().default('http://localhost:3001'),
   SIGNUP_CREDIT_USD: Joi.number().default(5.00),

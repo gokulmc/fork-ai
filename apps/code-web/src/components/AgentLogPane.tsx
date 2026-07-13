@@ -269,6 +269,21 @@ export function AgentLogPane({ node, events, project, idToken, sessionId, onImpl
             {project.repoRef.provider !== 'github' && <span className="mock-tag">mock</span>}
           </>
         )}
+        {/* Evaluated at render, not on a re-render tick — a link that's just
+            past its expiry when clicked simply 404s on the sandbox (harmless,
+            already-torn-down machine), so staleness between renders is fine. */}
+        {node.workspace?.kind === 'cloud' && (
+          node.workspaceExpiresAt && Date.now() < new Date(node.workspaceExpiresAt).getTime() ? (
+            <a className="gh-btn" href={node.workspace.vscodeUrl} target="_blank" rel="noopener noreferrer">
+              Open workspace <ArrowUpRight size={12} />
+            </a>
+          ) : (
+            <span className="mock-tag">workspace expired</span>
+          )
+        )}
+        {/* Electron wiring (openInEditor) is Phase B — for now the local path
+            is informational only. */}
+        {node.workspace?.kind === 'local' && <span className="ws-footer-note">{node.workspace.path}</span>}
       </div>
 
       {node.agentStatus !== 'running' && (
