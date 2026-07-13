@@ -6,6 +6,31 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
+### forkai-code: page refresh during an agent run lost all run awareness — static "Starting…" forever
+- **Symptom:** Reloading the tab while a CODE run was in progress landed the pane on an unrelated node; the running commit sat on the map with sha "–" and no status. Even when the run completed server-side, the UI never found out (AgentLogPane showed the "Starting…" shimmer indefinitely for a node restored with `agentStatus: 'running'`).
+- **Cause:** AgentLogPane only fetched the persisted AgentRun for `done|error` nodes — nothing polled a `running` one. And `loadSession` kept the cache-painted active node (the root) over the running node, so the running node's pane (the only place polling could live) never even mounted.
+- **Fix:** AgentLogPane polls `getAgentRun` every 2.5s while `kind==='CODE' && agentStatus==='running' && !hasLiveLog`, streaming persisted events into the log and calling `onRunResolved` when the run lands (App patches sha/branch/message/diffSummary/title). `loadSession` prefers a node with `agentStatus==='running'` as the active target — including over the cache-kept previous node, which loadSession itself had just set. Gate is strictly `=== 'running'` (merge commits omit `agentStatus` by design). (commit: pending)
+
+### forkai-code: failed CODE runs showed an empty grey log with no message; Retry no-oped for commit-anchored asks
+- **Symptom:** When a code-run stream failed, the pane showed "● Error" and an empty AGENT LOG box — no reason, no recovery. Separately, asking about a commit that failed server-side showed the error banner but its Retry button silently did nothing.
+- **Cause:** CODE nodes are excluded from the generic `ws-error` banner and AgentLogPane had no error rendering; `askAboutCommit`'s catch never registered a `retryInfoRef` entry (no `RetryInfo` variant existed for commit-anchored ASKs), so `retryNode` returned early.
+- **Fix:** AgentLogPane renders `node.error` + Retry for `agentStatus==='error'` (retry re-runs the code stream in place via `submitCodeNode`'s new `reuseNodeId`); new `RetryInfo` variant `ASK_COMMIT` registered in `askAboutCommit`'s catch and dispatched in `retryNode`. The "Ask about this commit" row is also gated off while a run is in progress. (commit: pending)
+
+### forkai-code: stream error payloads leaked raw into the UI — "Sorry — data: {json}"
+- **Symptom:** A failed streaming request showed the serialized SSE frame (`Sorry — data: {"type":"error","message":...,"status":400}`) instead of the message.
+- **Cause:** `extractError` (lib/api.ts) only tried bare-JSON parsing; an SSE-framed error body (`data: {...}` lines) fell through to the raw-text branch.
+- **Fix:** `extractError` now extracts and parses the last `data: {...}` line first, returning its `message`/`code`; falls through unchanged otherwise. (commit: pending)
+
+### forkai-code: agent runs were silent for ~18s — a frozen "Starting…" until the first real event
+- **Symptom:** After submitting an instruction, the agent log showed a static "Starting…" for the entire LLM transcript-generation latency (~18s of a ~42s run) — indistinguishable from a hang, inviting refreshes/resubmits.
+- **Cause:** `createCodeNodeStreaming` emitted nothing between `init` and the first `agent-event`; the default MockAgentRunner awaits one non-streaming LLM call for the full transcript before yielding anything.
+- **Fix:** The service emits a synthetic heartbeat `agent-event` (kind `text`, rotating "Agent is working…" copy) every 3s between `init` and the first real yield. Heartbeats use negative `seq`s (can't collide with real events, which start at 0) and are SSE-only — never pushed into the persisted AgentRun events. Cleared on first real yield and in a `finally` backstop. (commit: pending)
+
+### forkai-code: deleting a project was instant — no confirmation, no undo, invisible on touch/keyboard
+- **Symptom:** One click on the hover-revealed trash icon permanently deleted an entire project. The icon was also unreachable on touch devices (no hover) and invisible to keyboard users.
+- **Cause:** `.session-card-delete` fired `onDeleteSession` directly; reveal was `:hover`-only.
+- **Fix:** Two-step inline confirm ("Delete?" ✓/✕; Escape/blur/✕ disarm), reveal on `:focus-within`, and always-visible at reduced opacity under `@media (hover: none)`. (commit: pending)
+
 ### forkai-code: first question in every new-repo project failed with 400 "Cannot create a QUERY node under a BRANCH parent"
 - **Symptom:** Creating a from-scratch project and asking its opening question (via ProjectStart or after reopening) always returned HTTP 400 with the raw payload rendered in the error banner. The core ask→answer loop was dead for every new project.
 - **Cause:** The Dynamoose null-stripping quirk (see the null-handling entry in CLAUDE.md) on the **read** path: the seeded BRANCH root is written with `parentId: null`, which Dynamo stores as attribute-absence, so nodes read back with `parentId: undefined`. `createRootNodeStreaming`'s fill-root gate did a strict `find(n => n.parentId === null)`, missed the root, fell through to the seeded-question path, and `assertKindAllowed('BRANCH', 'QUERY')` threw. Regression tell: any strict `=== null` comparison against an optional Dynamo attribute.
@@ -19,7 +44,7 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 ### forkai-code: query typed on Landing while logged out was destroyed by the login gate
 - **Symptom:** A logged-out visitor typed a task on the Landing page and pressed Enter/Begin; they were sent to the login screen and their typed query no longer existed anywhere — after logging in they landed on an empty Landing.
 - **Cause:** The Landing submit path called `submitRootQuery`, whose first line is `if (!idToken) { setForceLogin(true); return; }` — nothing stashed the typed text.
-- **Fix:** The unauthenticated Landing submit now stashes `{query, plugins}` to `localStorage['forkai-code.pendingQuery']` before forcing login; a StrictMode-guarded effect replays it via `submitLandingProject` once `status === 'authenticated' && idToken` settles (placed after `submitLandingProject`'s declaration per the hook-ordering caveat). Mirrors the sibling app's `fork.ai.pending` pattern. (commit: pending)
+- **Fix:** The unauthenticated Landing submit now stashes `{query, plugins}` to `localStorage['forkai-code.pendingQuery']` before forcing login; a StrictMode-guarded effect replays it via `submitLandingProject` once `status === 'authenticated' && idToken` settles (placed after `submitLandingProject`'s declaration per the hook-ordering caveat). Mirrors the sibling app's `fork.ai.pending` pattern. (commit: e5ec074)
 
 ### forkai-code: buildspec.yml and Dockerfile would have deployed apps/api into forkai-api's production environment
 - **Symptom:** Discovered while wiring up production infra for `code.forkai.in`/`code-api.forkai.in` — no user-visible symptom yet, since no CodeBuild project had ever pointed at `apps/code-api/buildspec.yml`.

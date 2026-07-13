@@ -956,6 +956,56 @@ describe('NodesService', () => {
       expect(types[5]).toBe('done');
     });
 
+    it('emits a heartbeat agent-event between init and the first real one when the runner is slow, and never persists heartbeats', async () => {
+      jest.useFakeTimers();
+      try {
+        let releaseFirstYield: () => void = () => {};
+        const firstYieldGate = new Promise<void>((resolve) => { releaseFirstYield = resolve; });
+        // Simulates MockAgentRunner: nothing yielded until the full (mocked)
+        // LLM transcript resolves.
+        agentRunner.run.mockImplementation(async function* () {
+          await firstYieldGate;
+          yield { type: 'event', event: { seq: 0, ts: 't', kind: 'text', payload: 'Reading files' } };
+          yield {
+            type: 'result',
+            result: {
+              commitMessage: 'msg', commitSha: null,
+              diffSummary: { filesChanged: 0, additions: 0, deletions: 0, files: [] },
+              inputTokens: 1, outputTokens: 1, model: 'm',
+            },
+          };
+        });
+
+        const received: Array<{ type: string; event?: AgentEvent }> = [];
+        const send = (d: object) => received.push(d as { type: string; event?: AgentEvent });
+
+        const runPromise = service.createCodeNodeStreaming(SUB, SESSION_ID, dto, send);
+
+        // Flush the promise chain (checkCredit → getSession → putNode/putAgentRun
+        // → init → heartbeat timer created) — all real awaits, no timers, ahead
+        // of this point — before advancing fake time.
+        for (let i = 0; i < 20; i++) await Promise.resolve();
+
+        jest.advanceTimersByTime(3100); // one heartbeat tick before the runner has yielded anything
+        releaseFirstYield();
+        await runPromise;
+
+        const initIdx = received.findIndex((e) => e.type === 'init');
+        const heartbeatIdx = received.findIndex((e) => e.type === 'agent-event' && (e.event?.seq ?? 0) < 0);
+        const realIdx = received.findIndex((e) => e.type === 'agent-event' && (e.event?.seq ?? 0) >= 0);
+
+        expect(heartbeatIdx).toBeGreaterThan(-1);
+        expect(heartbeatIdx).toBeGreaterThan(initIdx);
+        expect(heartbeatIdx).toBeLessThan(realIdx);
+
+        const doneCall = mockDb.updateAgentRun.mock.calls.find((c) => (c[2] as { status?: string }).status === 'done');
+        const persisted = JSON.parse((doneCall![2] as { events: string }).events) as AgentEvent[];
+        expect(persisted.every((e) => e.seq >= 0)).toBe(true);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
     it('resolves branchName from the nearest BRANCH ancestor, falling back through repoRef.defaultBranch to main', async () => {
       await service.createCodeNodeStreaming(SUB, SESSION_ID, dto, jest.fn());
       const ctxArg = agentRunner.run.mock.calls[0][0];

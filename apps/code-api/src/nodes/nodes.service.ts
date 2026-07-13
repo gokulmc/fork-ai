@@ -729,12 +729,38 @@ export class NodesService {
     await Promise.all([this.db.putNode(node), this.db.putAgentRun(agentRun)]);
     emit({ type: 'init', node });
 
+    // MockAgentRunner (and any future non-streaming runner) awaits a full LLM
+    // transcript before yielding its first event — without this, the client
+    // sees a frozen "Starting…" for the entire LLM latency (~18s on the mock).
+    // These synthetic events go over SSE only (never pushed to `events` below,
+    // so they're never persisted to the AgentRun row). Negative, descending
+    // seqs can never collide with the runner's own server-assigned seqs
+    // (0, 1, 2, ... below), so the frontend can always tell a heartbeat apart
+    // from a real event. Cleared on the first real yield (in the loop) and
+    // again in `finally` as a leak-proof backstop for a runner that throws
+    // before ever yielding.
+    const heartbeatMessages = ['Agent is working…', 'Reading the repository…', 'Planning the change…'];
+    let heartbeatSeq = -1;
+    let heartbeatIdx = 0;
+    const heartbeatTimer = setInterval(() => {
+      emit({
+        type: 'agent-event',
+        event: {
+          seq: heartbeatSeq--,
+          ts: new Date().toISOString(),
+          kind: 'text',
+          payload: heartbeatMessages[heartbeatIdx++ % heartbeatMessages.length],
+        },
+      });
+    }, 3000);
+
     const events: AgentEvent[] = [];
     let final: AgentRunFinal | null = null;
     let lastPersistAt = Date.now();
     let seq = 0;
     try {
       for await (const item of this.agentRunner.run(ctx)) {
+        clearInterval(heartbeatTimer); // first real yield ends the heartbeat window
         if (item.type === 'result') { final = item.result; continue; }
         const event: AgentEvent = { ...item.event, seq: seq++ }; // server owns seq numbering
         events.push(event);
@@ -754,6 +780,8 @@ export class NodesService {
       ]);
       emit({ type: 'error', message: friendlyLlmError(err as Error) });
       return;
+    } finally {
+      clearInterval(heartbeatTimer);
     }
 
     // No real git backend exists yet (mock-first per ADR-0001) — a random
