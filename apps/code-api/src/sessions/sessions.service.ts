@@ -208,7 +208,7 @@ export class SessionsService {
     // same event vocabulary), rather than spawning a QUERY child, so the root
     // ends up looking exactly like a normal root query once it's filled in.
     // Only allowed once — a filled root can't be re-filled.
-    const rootNodeExisting = existing.find((n) => n.parentId === null);
+    const rootNodeExisting = existing.find((n) => (n.parentId ?? null) === null);
     if (rootNodeExisting?.kind === 'BRANCH') {
       if (rootNodeExisting.sections.length > 0) {
         throw new BadRequestException('Root BRANCH node already has content — the fill-root route can only run once');
@@ -235,7 +235,7 @@ export class SessionsService {
       throw new BadRequestException('Session already has a learn node — the first-question route can only run once');
     }
 
-    const parentId = meta.rootNodeId || existing.find((n) => n.parentId === null)?.nodeId;
+    const parentId = meta.rootNodeId || existing.find((n) => (n.parentId ?? null) === null)?.nodeId;
     const parentNode = parentId ? existing.find((n) => n.nodeId === parentId) : undefined;
     if (!parentNode) throw new NotFoundException(`Session ${sessionId} has no root node to anchor the first question`);
     assertKindAllowed(parentNode.kind as NodeKind, 'QUERY');

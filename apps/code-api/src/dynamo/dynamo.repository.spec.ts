@@ -174,6 +174,16 @@ describe('DynamoRepository', () => {
       const result = await repo.getNode(SESSION_ID, NODE_ID);
       expect(result?.nodeId).toBe(NODE_ID);
     });
+
+    // REGRESSION: Dynamoose strips a null parentId on write, so a root node
+    // round-trips with no parentId property at all — callers that do a strict
+    // `=== null` check (SessionsService's fill-root gate) must see null, not
+    // undefined, or they misidentify the session as having no root node.
+    it('normalizes a missing parentId to null (Dynamoose null-stripping)', async () => {
+      node.mock.get.mockResolvedValue({ nodeId: NODE_ID }); // no parentId key at all
+      const result = await repo.getNode(SESSION_ID, NODE_ID);
+      expect(result?.parentId).toBeNull();
+    });
   });
 
   describe('queryNodes', () => {
@@ -191,6 +201,13 @@ describe('DynamoRepository', () => {
     it('paginates with .all() so large sessions are fully loaded', async () => {
       await repo.queryNodes(SESSION_ID);
       expect(node.queryChain.all).toHaveBeenCalled();
+    });
+
+    // REGRESSION: same null-stripping gotcha as getNode, but for the list path.
+    it('normalizes a missing parentId to null on every returned node', async () => {
+      node.queryChain.exec.mockResolvedValue([{ nodeId: NODE_ID }]); // no parentId key
+      const result = await repo.queryNodes(SESSION_ID);
+      expect(result[0].parentId).toBeNull();
     });
   });
 

@@ -317,7 +317,7 @@ export class NodesService {
   // at all (a legacy learn-only session), so the caller can omit
   // branchName/commitSha entirely.
   private findMainChainTip(nodes: NodeItem[]): { branchName: string; commitSha: string } | null {
-    const root = nodes.find((n) => n.kind === 'CODE' && n.parentId === null);
+    const root = nodes.find((n) => n.kind === 'CODE' && (n.parentId ?? null) === null);
     if (!root || !root.branchName || !root.commitSha) return null;
     return this.walkLaneTip(nodes, root);
   }

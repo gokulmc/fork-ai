@@ -369,6 +369,26 @@ describe('SessionsService', () => {
       await service.createRootNodeStreaming(SUB, SESSION_ID, { query: 'Q' }, (d) => events.push(d as never));
       expect(mockUsers.billUsage).toHaveBeenCalledWith(SUB, 100, 50, 'QUERY', SESSION_ID, 'branch-root-1', expect.any(String));
     });
+
+    // REGRESSION: Dynamoose strips a null parentId on write, so the real
+    // DynamoRepository.queryNodes round-trip omits the key entirely rather than
+    // returning parentId: null. The fill-root gate (`existing.find(n => n.parentId
+    // === null)`) must still recognize this node as the root — a strict miss here
+    // used to fall through to the seeded-question path and throw
+    // "Cannot create a QUERY node under a BRANCH parent".
+    it('recognizes the root when parentId is entirely absent (simulated Dynamo round-trip), instead of throwing', async () => {
+      const { parentId: _parentId, ...rootWithoutParentId } = branchRootNode;
+      mockDb.queryNodes.mockResolvedValue([rootWithoutParentId]);
+      const events: Array<{ type: string; nodeId?: string }> = [];
+
+      await expect(
+        service.createRootNodeStreaming(SUB, SESSION_ID, { query: 'A billing dashboard with Stripe.' }, (d) => events.push(d as never)),
+      ).resolves.toBeUndefined();
+
+      expect(events[0]).toEqual({ type: 'init', sessionId: SESSION_ID, nodeId: 'branch-root-1' });
+      expect(events.map((e) => e.type)).toEqual(['init', 'meta', 'section', 'section', 'done']);
+      for (const [node] of mockDb.putNode.mock.calls) expect(node.nodeId).toBe('branch-root-1');
+    });
   });
 
   describe('createRootNodeStreaming — fill-root, deterministic init.md seed', () => {
