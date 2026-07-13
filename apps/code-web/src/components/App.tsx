@@ -636,12 +636,16 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     }).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps — intentionally once on mount
 
-  const loadSession = useCallback(async (sid: string, targetNodeId?: string) => {
+  // Returns the loaded root node id (or null) so callers that need it before the
+  // next node create — e.g. handleCreateProject's fill-root kickoff — don't have
+  // to race rootIdRef against this function's own state updates settling.
+  const loadSession = useCallback(async (sid: string, targetNodeId?: string): Promise<string | null> => {
     // Skip the loading overlay if the early-paint already showed the workspace.
     if (!hasCachePaintedRef.current) setLoadingRoot(true);
     // Cache-first: paint the last local snapshot instantly (IndexedDB), then let
     // the network result below — always authoritative — replace it when it lands.
     let paintedFromCache = false;
+    let cachedRootId: string | null = null;
     try {
       const cached = await getCachedSession(sid);
       if (cached && Object.keys(cached.nodes).length) {
@@ -656,6 +660,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         setHighlightsList(cached.highlightsList);
         setLoadingRoot(false);
         paintedFromCache = true;
+        cachedRootId = cached.rootId;
       }
     } catch { /* cache is best-effort — fall through to the network */ }
     try {
@@ -684,6 +689,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       } else {
         setActiveProject(null);
       }
+      return root?.id ?? null;
     } catch (err) {
       console.error('Failed to load session', err);
       // A stale stored session id that no longer loads (deleted / not ours) would
@@ -697,7 +703,11 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         if (paintedFromCache) {
           setSessionId(null); setNodes({}); setRootId(null); setActiveId(null);
         }
+        return null;
       }
+      // Network blip, cache already painted a root — fall back to that rather
+      // than reporting no root at all.
+      return cachedRootId;
     } finally {
       setLoadingRoot(false);
     }
@@ -706,8 +716,9 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   // Opening a project = load its (possibly empty) session + remember the
   // Project itself. Sets it synchronously (loadSession's own projectId-based
   // refetch would otherwise land a frame later) and returns loadSession's
-  // promise so callers that need the session in state before proceeding
-  // (handleCreateProject's fill-root kickoff) can await it.
+  // promise — resolving to the loaded root node id — so callers that need it
+  // before proceeding (handleCreateProject's fill-root kickoff) can await it
+  // instead of racing rootIdRef against loadSession's state updates settling.
   const openProject = useCallback((project: Project) => {
     setActiveProject(project);
     return loadSession(project.sessionId);
@@ -988,6 +999,28 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
           setNodes(prev => {
             const node = prev[tempId];
             if (!node) return prev;
+            // Defensive: the fill-root match (an empty BRANCH project root) makes
+            // the backend resolve the query onto an id that ALREADY exists in
+            // `nodes` (the root itself), distinct from tempId. Merging the
+            // optimistic temp node's fields over that entry would overwrite its
+            // real parentId/kind with the temp node's (parentId: rootId itself,
+            // kind: QUERY) — a root whose parent is its own id infinite-loops
+            // buildChildMap. Merge the streamed content onto the EXISTING node
+            // instead and drop the temp entry. Ordinary (non-collision) callers
+            // are unaffected — this only fires when the two ids actually collide.
+            const existing = realNodeId !== tempId ? prev[realNodeId] : undefined;
+            if (existing) {
+              const merged: ForkNode = {
+                ...existing,
+                loading: false,
+                ...(doneModel ? { model: doneModel } : {}),
+                ...(doneSections ? { sections: doneSections } : {}),
+                ...(doneSources?.length ? { sources: doneSources } : {}),
+              };
+              const next = { ...prev, [realNodeId]: merged };
+              delete next[tempId];
+              return next;
+            }
             const realNode: ForkNode = {
               ...node,
               id: realNodeId,
@@ -1146,9 +1179,13 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   // node: the root node already exists (seeded by ProjectsService.create,
   // already in `nodes` via the loadSession that ran right before this is
   // called) and keeps the same id throughout — events just patch it in place.
-  const submitFillRoot = useCallback(async (sid: string, query: string) => {
+  // `rootNodeId` is the source of truth (callers get it from openProject's/
+  // loadSession's return value); rootIdRef is only a fallback for the rare
+  // caller that hasn't threaded the id through yet — reading the ref alone
+  // races loadSession's state settling and silently drops the query.
+  const submitFillRoot = useCallback(async (sid: string, query: string, rootNodeId?: string | null) => {
     if (!idToken) return;
-    const nodeId = rootIdRef.current;
+    const nodeId = rootNodeId ?? rootIdRef.current;
     if (!nodeId) return;
 
     setNodes(prev => prev[nodeId] ? { ...prev, [nodeId]: { ...prev[nodeId], loading: true } } : prev);
@@ -1206,11 +1243,11 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   const handleCreateProject = useCallback(async (payload: CreateProjectPayload): Promise<void> => {
     const project = await createProject(idToken, payload);
     setProjects(prev => [project, ...prev]);
-    await openProject(project);
+    const loadedRootId = await openProject(project);
     // No ProjectStart interstitial for a from-scratch project — the opening
     // question was already asked in the modal, so stream straight into the map.
     if (project.repoRef.provider === 'new' && payload.rootQuery) {
-      void submitFillRoot(project.sessionId, payload.rootQuery);
+      void submitFillRoot(project.sessionId, payload.rootQuery, loadedRootId);
     }
   }, [idToken, openProject, submitFillRoot]);
 
@@ -1229,6 +1266,25 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       setLoadingRoot(false);
     }
   }, [handleCreateProject]);
+
+  // Restores a query typed on Landing while logged out. The onSubmit wiring
+  // below stashes it here before forcing the login screen — submitRootQuery's
+  // own `!idToken` bail would otherwise just drop it — and this effect replays
+  // it as a from-scratch project once auth settles. Must be declared after
+  // submitLandingProject (see root CLAUDE.md's hook-ordering caveat: an effect
+  // closing over a useCallback declared later throws in the temporal dead zone).
+  const pendingQueryFiredRef = useRef(false);
+  useEffect(() => {
+    if (status !== 'authenticated' || !idToken || pendingQueryFiredRef.current) return;
+    const raw = localStorage.getItem('forkai-code.pendingQuery');
+    if (!raw) return;
+    pendingQueryFiredRef.current = true; // guard against StrictMode's double-invoke
+    localStorage.removeItem('forkai-code.pendingQuery');
+    try {
+      const { query, plugins } = JSON.parse(raw) as { query: string; plugins: string[] };
+      void submitLandingProject(query, plugins);
+    } catch { /* malformed stash — nothing to replay */ }
+  }, [status, idToken, submitLandingProject]);
 
   // ── Document upload: build a whole mind-map in one stream ──────────────────
   // Authed-only (Landing routes guests to login). Mirrors submitRootQuery's
@@ -2383,9 +2439,16 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         onSubmit={(q, plugins) => {
           setRootQueryOutOfCredit(false);
           // Authed: the query becomes a from-scratch project's opening question.
-          // Logged-out: unchanged plain research session.
-          if (status === 'authenticated') void submitLandingProject(q, plugins);
-          else submitRootQuery(q);
+          // Logged-out: stash it and force the login screen directly — routing
+          // through submitRootQuery would hit its own `!idToken` bail and just
+          // discard the query. The stash is replayed by the pendingQuery effect
+          // once auth settles (see submitLandingProject).
+          if (status === 'authenticated') {
+            void submitLandingProject(q, plugins);
+          } else {
+            localStorage.setItem('forkai-code.pendingQuery', JSON.stringify({ query: q, plugins }));
+            setForceLogin(true);
+          }
         }}
         onSubmitDocument={(text, fileName) => { setRootQueryOutOfCredit(false); submitDocument(text, fileName); }}
         loading={loadingRoot}
@@ -2429,7 +2492,21 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         <ProjectStart
           project={activeProject}
           loading={loadingRoot}
-          onSubmit={q => { setRootQueryOutOfCredit(false); void submitProjectQuery(sessionId, q); }}
+          onSubmit={q => {
+            setRootQueryOutOfCredit(false);
+            // An empty BRANCH root (from-scratch project whose opening question
+            // wasn't asked yet — reached via History rather than the New Project
+            // modal) must fill the EXISTING root via the backend's fill-root match,
+            // not spawn a new optimistic QUERY child: the stream's init/done events
+            // then carry the root's own id, and consumeRootStream's temp-id swap
+            // would otherwise clobber the root's parentId/kind with the temp
+            // node's, making the root its own parent (see consumeRootStream).
+            if (rootBranch && rootBranch.kind === 'BRANCH' && rootBranch.sections.length === 0) {
+              void submitFillRoot(sessionId, q, rootId);
+            } else {
+              void submitProjectQuery(sessionId, q);
+            }
+          }}
           onOpenMap={() => setProjectStartDismissed(true)}
         />
         <AccountButton creditBalance={creditBalance} onCreditUpdated={setCreditBalance} />
