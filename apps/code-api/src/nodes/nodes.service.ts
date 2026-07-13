@@ -855,6 +855,9 @@ export class NodesService {
         ...(final.workspace
           ? { workspace: final.workspace, ...(final.workspaceExpiresAt ? { workspaceExpiresAt: final.workspaceExpiresAt } : {}) }
           : {}),
+        ...(final.pushed !== undefined
+          ? { pushed: final.pushed, ...(final.pushError ? { pushError: final.pushError } : {}) }
+          : {}),
       }),
       this.db.updateAgentRun(sessionId, nodeId, {
         status: 'done',
@@ -885,6 +888,9 @@ export class NodesService {
         commitSha,
         ...(final.workspace
           ? { workspace: final.workspace, ...(final.workspaceExpiresAt ? { workspaceExpiresAt: final.workspaceExpiresAt } : {}) }
+          : {}),
+        ...(final.pushed !== undefined
+          ? { pushed: final.pushed, ...(final.pushError ? { pushError: final.pushError } : {}) }
           : {}),
       },
     });

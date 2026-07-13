@@ -118,4 +118,4 @@ unaffected — see ADR-0002's amendment).
 | `FLY_SANDBOX_IMAGE` | `registry.fly.io/forkai-sbx-base:latest` | image `FlyProvider.create` boots |
 | `FLY_REGION` | `sin` | single-region fallback when `FLY_REGIONS` is unset |
 | `FLY_REGIONS` | `sin,bom` | ordered region list — `bom` is only tried if `sin` 422s with `insufficient_capacity` (it has historically had none for `shared-cpu-2x`, see ADR-0001's amendment) |
-| `SANDBOX_TTL_MINUTES` | `20` | minutes a successful run's sandbox survives past `done`, so the user can open the workspace (≈$0.01/run infra) |
+| `SANDBOX_TTL_MINUTES` | `10` | minutes a successful run's sandbox survives past `done`, so the user can open the workspace (≈$0.005/run infra — cost is negligible at any reasonable value; 10 balances enough time to react against fewer standing sandboxes / faster sweep convergence) |

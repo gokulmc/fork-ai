@@ -161,6 +161,8 @@ export const NodeSchema = new dynamoose.Schema({
     },
   },
   workspaceExpiresAt: { type: String, required: false },
+  pushed: { type: Boolean, required: false },
+  pushError: { type: String, required: false },
 });
 
 export const AnnotationSchema = new dynamoose.Schema({

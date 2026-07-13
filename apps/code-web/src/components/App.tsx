@@ -232,8 +232,7 @@ const TWEAK_DEFAULTS = {
   maxSections: 6,
   webSearch: false,
   branchModel: 'gemini-flash-lite' as const,
-  // Flip to 'cloud' once cloud execution is enabled in prod (deploy checklist A5).
-  environment: 'demo' as const,
+  environment: 'cloud' as const,
 };
 
 const FONT_PAIRS: Record<string, { serif: string; sans: string; label: string }> = {

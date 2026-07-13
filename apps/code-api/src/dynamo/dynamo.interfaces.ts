@@ -112,6 +112,12 @@ export interface NodeItem {
     | { kind: 'cloud'; sandboxId: string; vscodeUrl: string }
     | { kind: 'local'; path: string };
   workspaceExpiresAt?: string;
+  // Whether the run's commit was pushed to the real GitHub remote (cloud
+  // private-repo runs only — see ADR-0002's push-back amendment). Absent on
+  // mock/local/no-remote runs, not just false, since "no push was attempted"
+  // and "push was attempted and failed" are different states.
+  pushed?: boolean;
+  pushError?: string;
   // MERGE node fields — second parent, render-only (ADR-0005).
   mergeFromNodeId?: string;
   prStatus?: 'open' | 'merged';
