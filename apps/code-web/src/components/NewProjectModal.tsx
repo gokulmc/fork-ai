@@ -13,10 +13,10 @@ interface NewProjectModalProps {
 
 // Real repos (once GitHub is connected) and mock fixtures share this shape for
 // the picker; a real repo's description falls back to its full name.
-type RepoOption = Pick<RepoRef, 'provider' | 'owner' | 'repo' | 'defaultBranch' | 'url'> & { description: string };
+type RepoOption = Pick<RepoRef, 'provider' | 'owner' | 'repo' | 'defaultBranch' | 'url' | 'private'> & { description: string };
 
 function toRepoOption(r: GithubRepo): RepoOption {
-  return { provider: 'github', owner: r.owner, repo: r.repo, defaultBranch: r.defaultBranch, url: r.url, description: r.description || r.fullName };
+  return { provider: 'github', owner: r.owner, repo: r.repo, defaultBranch: r.defaultBranch, url: r.url, private: r.private, description: r.description || r.fullName };
 }
 
 // Slugifies a project name into the synthesized owner/repo shown for a
@@ -115,8 +115,8 @@ export function NewProjectModal({ idToken, onClose, onCreate }: NewProjectModalP
           rootQuery: rootQuery.trim(),
         });
       } else {
-        const { provider, owner, repo, defaultBranch, url } = selectedRepo;
-        await onCreate({ name: name.trim(), repoRef: { provider, owner, repo, defaultBranch, url }, plugins: [...plugins] });
+        const { provider, owner, repo, defaultBranch, url, private: isPrivate } = selectedRepo;
+        await onCreate({ name: name.trim(), repoRef: { provider, owner, repo, defaultBranch, url, private: isPrivate }, plugins: [...plugins] });
       }
     } catch {
       setError('Failed to create project — please try again.');

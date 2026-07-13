@@ -1,6 +1,6 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsIn, IsOptional, IsString, MaxLength, MinLength, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsOptional, IsString, MaxLength, MinLength, ValidateNested } from 'class-validator';
 import { ALLOWED_PLUGINS } from '../plugin-catalog';
 
 // Re-exported so existing importers of the allowlist from this DTO module keep
@@ -31,6 +31,15 @@ class RepoRefDto {
   @IsString()
   @MinLength(1)
   url!: string;
+
+  // Only meaningful for provider 'github' — read client-side off the GitHub
+  // API's own `private` field (see GithubService.listRepos) at repo-pick time
+  // rather than re-fetched server-side; the frontend already has it in hand
+  // from the same /github/repos call that populated the picker.
+  @ApiPropertyOptional({ description: 'Whether this GitHub repo is private — gates whether a cloud run needs a GitHub App installation token to clone it' })
+  @IsOptional()
+  @IsBoolean()
+  private?: boolean;
 }
 
 export class CreateProjectDto {

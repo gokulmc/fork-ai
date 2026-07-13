@@ -160,6 +160,11 @@ export interface RepoRef {
   repo: string;
   defaultBranch: string;
   url: string;
+  // Only meaningful for provider 'github' — set at project create from the
+  // GitHub API's own `private` field (see github.service.ts's listRepos).
+  // Gates whether createCodeNodeStreaming needs an installation token to
+  // clone (see NodesService.resolveRunRepo / GithubAppService).
+  private?: boolean;
 }
 
 // A Project owns a repo ref + plugin list and points at the one Session that is
@@ -175,6 +180,20 @@ export interface ProjectItem {
   sessionId: string;
   createdAt: string;
   updatedAt: string;
+}
+
+// A GitHub App installation (Contents:Read v1) the user has granted forkai
+// code access to — distinct from UserMetaItem.githubAccessToken above, which
+// is a classic OAuth token used only for read-only browsing/import
+// (github.service.ts). This is what GithubAppService.mintInstallationToken
+// uses to clone PRIVATE repos into a cloud sandbox run. A user can have more
+// than one (one per GitHub org/account they installed the App on).
+export interface GithubInstallationItem {
+  PK: string;
+  SK: string;
+  installationId: string;
+  accountLogin: string;
+  createdAt: string;
 }
 
 // One CODE node's agent run: the full event stream plus the resulting commit.

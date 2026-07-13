@@ -13,6 +13,7 @@ import {
   CREDIT_EVENT_MODEL,
   PROJECT_MODEL,
   AGENT_RUN_MODEL,
+  GITHUB_INSTALLATION_MODEL,
   DYNAMO_TABLE,
 } from './dynamo.constants';
 import {
@@ -26,6 +27,7 @@ import {
   CreditEventSchema,
   ProjectSchema,
   AgentRunSchema,
+  GithubInstallationSchema,
 } from './dynamo.schemas';
 import { DynamoRepository } from './dynamo.repository';
 
@@ -92,6 +94,11 @@ const DYNAMO_CONFIGURED = 'DYNAMO_CONFIGURED';
       useFactory: () => dynamoose.model('AgentRun', AgentRunSchema),
     },
     {
+      provide: GITHUB_INSTALLATION_MODEL,
+      inject: [DYNAMO_CONFIGURED],
+      useFactory: () => dynamoose.model('GithubInstallation', GithubInstallationSchema),
+    },
+    {
       // Binds all models to the physical DynamoDB table.
       // DynamoRepository injects this to guarantee the Table is set up first.
       provide: DYNAMO_TABLE,
@@ -107,6 +114,7 @@ const DYNAMO_CONFIGURED = 'DYNAMO_CONFIGURED';
         CREDIT_EVENT_MODEL,
         PROJECT_MODEL,
         AGENT_RUN_MODEL,
+        GITHUB_INSTALLATION_MODEL,
         ConfigService,
       ],
       useFactory: (
@@ -121,11 +129,12 @@ const DYNAMO_CONFIGURED = 'DYNAMO_CONFIGURED';
         creditEvent: any,
         project: any,
         agentRun: any,
+        githubInstallation: any,
         cfg: ConfigService,
       ) =>
         new dynamoose.Table(
           cfg.get<string>('dynamo.tableName')!,
-          [userMeta, sessionMeta, node, annotation, highlight, usageEvent, payment, creditEvent, project, agentRun],
+          [userMeta, sessionMeta, node, annotation, highlight, usageEvent, payment, creditEvent, project, agentRun, githubInstallation],
           { create: false, waitForActive: false },
         ),
     },

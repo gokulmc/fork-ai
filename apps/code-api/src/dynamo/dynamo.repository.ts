@@ -10,6 +10,7 @@ import {
   CREDIT_EVENT_MODEL,
   PROJECT_MODEL,
   AGENT_RUN_MODEL,
+  GITHUB_INSTALLATION_MODEL,
   DYNAMO_TABLE,
 } from './dynamo.constants';
 import type {
@@ -23,6 +24,7 @@ import type {
   CreditEventItem,
   ProjectItem,
   AgentRunItem,
+  GithubInstallationItem,
 } from './dynamo.interfaces';
 
 @Injectable()
@@ -39,6 +41,7 @@ export class DynamoRepository {
     @Inject(CREDIT_EVENT_MODEL) private readonly creditEventModel: any,
     @Inject(PROJECT_MODEL) private readonly projectModel: any,
     @Inject(AGENT_RUN_MODEL) private readonly agentRunModel: any,
+    @Inject(GITHUB_INSTALLATION_MODEL) private readonly githubInstallationModel: any,
   ) {}
 
   // ── Key helpers ─────────────────────────────────────────────────────────────
@@ -449,6 +452,23 @@ export class DynamoRepository {
       { PK: this.sessionPk(sessionId), SK: this.agentRunSk(nodeId) },
       updates,
     );
+  }
+
+  // ── GitHub App installations ────────────────────────────────────────────────
+
+  async putGithubInstallation(data: GithubInstallationItem): Promise<void> {
+    await this.githubInstallationModel.create(this.clean(data), { overwrite: true });
+  }
+
+  async listGithubInstallations(sub: string): Promise<GithubInstallationItem[]> {
+    const items = await this.githubInstallationModel
+      .query('PK')
+      .eq(this.userPk(sub))
+      .where('SK')
+      .beginsWith('GHINST#')
+      .all()
+      .exec();
+    return this.toPlainArray<GithubInstallationItem>(items);
   }
 }
 

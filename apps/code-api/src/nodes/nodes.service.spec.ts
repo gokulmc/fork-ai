@@ -6,6 +6,7 @@ import { LlmService } from '@/llm/llm.service';
 import { BRANCH_DEFAULT_MODEL } from '@/llm/models';
 import { SessionsService } from '@/sessions/sessions.service';
 import { UsersService } from '@/users/users.service';
+import { GithubAppService } from '@/github/github-app.service';
 import { AgentRunFinal } from '@/agent/agent-runner';
 import { AGENT_RUNNER_REGISTRY } from '@/agent/runner-registry';
 import { AgentEvent } from '@/agent/agent-run.util';
@@ -43,6 +44,10 @@ const mockUsers = {
   checkCredit: jest.fn(),
   billUsage: jest.fn(),
   getPersona: jest.fn(),
+};
+
+const mockGithubApp = {
+  mintInstallationToken: jest.fn(),
 };
 
 const agentRunner = {
@@ -126,6 +131,7 @@ describe('NodesService', () => {
         { provide: LlmService, useValue: mockLlm },
         { provide: SessionsService, useValue: mockSessions },
         { provide: UsersService, useValue: mockUsers },
+        { provide: GithubAppService, useValue: mockGithubApp },
         { provide: AGENT_RUNNER_REGISTRY, useValue: mockRunners },
       ],
     }).compile();
@@ -1136,6 +1142,86 @@ describe('NodesService', () => {
       await service.createCodeNodeStreaming(SUB, SESSION_ID, dto, jest.fn());
       const ctxArg = agentRunner.run.mock.calls[0][0];
       expect(ctxArg.attachments).toBeUndefined();
+    });
+
+    describe('repo resolution (project repoRef → ctx.repo)', () => {
+      const githubProject = (overrides: Partial<{ private: boolean }> = {}) => ({
+        projectId: 'proj-1',
+        repoRef: { provider: 'github', owner: 'acme', repo: 'widgets', defaultBranch: 'main', url: 'https://github.com/acme/widgets', ...overrides },
+        plugins: [],
+      });
+
+      beforeEach(() => {
+        mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [planNode], projectId: 'proj-1' });
+      });
+
+      it("provider 'new' passes ctx.repo.init through — no clone, no LOCAL_AGENT_REPO_* fallback", async () => {
+        mockDb.getProject.mockResolvedValue({
+          projectId: 'proj-1',
+          repoRef: { provider: 'new', owner: 'you', repo: 'widgets', defaultBranch: 'main', url: 'mock://new/widgets' },
+          plugins: [],
+        });
+
+        await service.createCodeNodeStreaming(SUB, SESSION_ID, dto, jest.fn());
+
+        const ctxArg = agentRunner.run.mock.calls[0][0];
+        expect(ctxArg.repo).toEqual({ init: { defaultBranch: 'main' } });
+      });
+
+      it("provider 'github-mock' + explicit cloud environment 400s before any persistence", async () => {
+        mockDb.getProject.mockResolvedValue({
+          projectId: 'proj-1',
+          repoRef: { provider: 'github-mock', owner: 'acme', repo: 'widgets', defaultBranch: 'main', url: 'mock://acme/widgets' },
+          plugins: [],
+        });
+
+        await expect(
+          service.createCodeNodeStreaming(SUB, SESSION_ID, { ...dto, environment: 'cloud' }, jest.fn()),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(mockDb.putNode).not.toHaveBeenCalled();
+      });
+
+      it("provider 'github-mock' without an explicit cloud request runs fine (mock never reads ctx.repo)", async () => {
+        mockDb.getProject.mockResolvedValue({
+          projectId: 'proj-1',
+          repoRef: { provider: 'github-mock', owner: 'acme', repo: 'widgets', defaultBranch: 'main', url: 'mock://acme/widgets' },
+          plugins: [],
+        });
+
+        await service.createCodeNodeStreaming(SUB, SESSION_ID, dto, jest.fn());
+
+        const ctxArg = agentRunner.run.mock.calls[0][0];
+        expect(ctxArg.repo).toBeUndefined();
+      });
+
+      it('private github repo with no covering installation 400s before any persistence', async () => {
+        mockDb.getProject.mockResolvedValue(githubProject({ private: true }));
+        mockGithubApp.mintInstallationToken.mockResolvedValue(null);
+
+        await expect(service.createCodeNodeStreaming(SUB, SESSION_ID, dto, jest.fn())).rejects.toBeInstanceOf(BadRequestException);
+        expect(mockDb.putNode).not.toHaveBeenCalled();
+        expect(mockGithubApp.mintInstallationToken).toHaveBeenCalledWith(SUB, 'acme', 'widgets');
+      });
+
+      it('private github repo with a covering installation clones via an x-access-token URL', async () => {
+        mockDb.getProject.mockResolvedValue(githubProject({ private: true }));
+        mockGithubApp.mintInstallationToken.mockResolvedValue('ghs_installtoken');
+
+        await service.createCodeNodeStreaming(SUB, SESSION_ID, dto, jest.fn());
+
+        const ctxArg = agentRunner.run.mock.calls[0][0];
+        expect(ctxArg.repo).toEqual({ cloneUrl: 'https://x-access-token:ghs_installtoken@github.com/acme/widgets.git' });
+      });
+
+      it('public github repo clones the plain repo URL — no installation lookup', async () => {
+        mockDb.getProject.mockResolvedValue(githubProject());
+
+        await service.createCodeNodeStreaming(SUB, SESSION_ID, dto, jest.fn());
+
+        const ctxArg = agentRunner.run.mock.calls[0][0];
+        expect(ctxArg.repo).toEqual({ cloneUrl: 'https://github.com/acme/widgets.git' });
+        expect(mockGithubApp.mintInstallationToken).not.toHaveBeenCalled();
+      });
     });
 
     describe('auto-branch on a parallel instruction', () => {

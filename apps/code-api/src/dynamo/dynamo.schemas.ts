@@ -202,12 +202,21 @@ export const ProjectSchema = new dynamoose.Schema({
       repo: String,
       defaultBranch: String,
       url: String,
+      private: { type: Boolean, required: false },
     },
   },
   plugins: { type: Array, schema: [String] },
   sessionId: String,
   createdAt: String,
   updatedAt: String,
+});
+
+export const GithubInstallationSchema = new dynamoose.Schema({
+  PK: { type: String, hashKey: true },
+  SK: { type: String, rangeKey: true },
+  installationId: String,
+  accountLogin: String,
+  createdAt: String,
 });
 
 export const AgentRunSchema = new dynamoose.Schema({

@@ -199,9 +199,9 @@ async function handleRun(req, res) {
     sseSend(res, { type: 'error', message: 'invalid JSON body' });
     return res.end();
   }
-  const { repoUrl, branch, baseRef, instruction, anthropicApiKey } = body;
-  if (!repoUrl || !branch || !instruction) {
-    sseSend(res, { type: 'error', message: 'repoUrl, branch, and instruction are required' });
+  const { repoUrl, init, branch, baseRef, instruction, anthropicApiKey } = body;
+  if ((!repoUrl && !init) || !branch || !instruction) {
+    sseSend(res, { type: 'error', message: '(repoUrl or init), branch, and instruction are required' });
     return res.end();
   }
   // Body key preferred (see sanitizedEnv above); the machine-env fallback keeps
@@ -213,11 +213,30 @@ async function handleRun(req, res) {
     return res.end();
   }
 
-  try {
-    await run('git', ['clone', repoUrl, WORKDIR]);
-  } catch (err) {
-    sseSend(res, { type: 'error', message: `clone failed: ${err.message}` });
-    return res.end();
+  if (repoUrl) {
+    try {
+      await run('git', ['clone', repoUrl, WORKDIR]);
+    } catch (err) {
+      sseSend(res, { type: 'error', message: `clone failed: ${err.message}` });
+      return res.end();
+    }
+  } else {
+    // 'new'-project mode: no real repo exists anywhere yet (see
+    // nodes.service.ts's resolveRunRepo) — git-init one and make an empty
+    // initial commit, so there's a real baseSha to diff the agent's work
+    // against, same as a freshly-cloned repo would have.
+    try {
+      await run('mkdir', ['-p', WORKDIR]);
+      await run('git', ['init', '-b', init.defaultBranch], { cwd: WORKDIR });
+      await run(
+        'git',
+        ['-c', 'user.name=forkai agent', '-c', 'user.email=agent@forkai.dev', 'commit', '--allow-empty', '-m', 'Initial commit'],
+        { cwd: WORKDIR },
+      );
+    } catch (err) {
+      sseSend(res, { type: 'error', message: `repo init failed: ${err.message}` });
+      return res.end();
+    }
   }
 
   // Fire-and-forget — emits its own vscode-ready/warn event whenever it settles.
@@ -227,10 +246,10 @@ async function handleRun(req, res) {
     try {
       await run('git', ['checkout', baseRef], { cwd: WORKDIR });
     } catch (err) {
-      sseSend(res, { type: 'warn', message: `baseRef checkout failed (${err.message}), staying on clone HEAD` });
+      sseSend(res, { type: 'warn', message: `baseRef checkout failed (${err.message}), staying on repo HEAD` });
     }
   } else {
-    sseSend(res, { type: 'warn', message: 'no baseRef given, using clone HEAD' });
+    sseSend(res, { type: 'warn', message: 'no baseRef given, using repo HEAD' });
   }
 
   try {

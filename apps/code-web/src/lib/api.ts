@@ -667,6 +667,10 @@ export interface RepoRef {
   repo: string;
   defaultBranch: string;
   url: string;
+  // Only meaningful for provider 'github' — carried over from GithubRepo's own
+  // `private` field at repo-pick time (see NewProjectModal's toRepoOption).
+  // Gates whether a cloud run needs a GitHub App installation token to clone.
+  private?: boolean;
 }
 
 export interface Project {
@@ -733,6 +737,16 @@ export function getGithubAuthUrl(idToken: string): Promise<{ url: string }> {
 
 export function listGithubRepos(idToken: string): Promise<GithubRepo[]> {
   return apiFetch<GithubRepo[]>('/github/repos', idToken);
+}
+
+// GitHub App (Contents:Read v1 — private-repo sandbox clones). The install
+// entry point (`GET /github/app/install`) is a plain browser navigation, not
+// an apiFetch call — see `/github/setup`'s "Install" link.
+export function linkGithubInstallation(idToken: string, installationId: string): Promise<{ linked: boolean }> {
+  return apiFetch<{ linked: boolean }>('/github/app/installations', idToken, {
+    method: 'POST',
+    body: JSON.stringify({ installationId }),
+  });
 }
 
 // ── Root query into an existing (empty) project session ────────────────────

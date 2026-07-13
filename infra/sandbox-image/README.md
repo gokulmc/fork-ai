@@ -33,7 +33,7 @@ architecture — Fly Machines default to x86_64 hosts.
 | Route | Auth | Purpose |
 |---|---|---|
 | `GET /__forkai/healthz` | none | liveness probe — polled by `FlyProvider.create` through the public edge |
-| `POST /__forkai/run` | `Authorization: Bearer <RUN_TOKEN>` | SSE stream: clones `repoUrl`, runs `claude -p <instruction>`, commits only if the tree is dirty post-run, emits translated agent events + a final `result` frame (`sha`/`baseSha`/`diffSummary`) |
+| `POST /__forkai/run` | `Authorization: Bearer <RUN_TOKEN>` | SSE stream: clones `repoUrl` — or, for a from-scratch ('new') project, `git init -b <init.defaultBranch>`s an empty repo with one empty initial commit instead — then runs `claude -p <instruction>`, commits only if the tree is dirty post-run, emits translated agent events + a final `result` frame (`sha`/`baseSha`/`diffSummary`) |
 | everything else, incl. WebSocket upgrades | openvscode-server's own `?tkn=`/cookie auth | reverse-proxied to `127.0.0.1:3000` — this is how the browser reaches the VS Code UI, its file tree, and its terminals |
 
 `RUN_TOKEN` gates `/__forkai/*` only. The proxy never checks it on vscode

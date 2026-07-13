@@ -77,12 +77,13 @@ export class CloudAgentRunner implements AgentRunner {
   }
 
   async *run(ctx: AgentRunContext): AsyncIterable<RunnerYield> {
-    if (!ctx.repo?.cloneUrl) {
+    const cloneUrl = ctx.repo?.cloneUrl;
+    const init = ctx.repo?.init;
+    if (!cloneUrl && !init) {
       throw new Error(
-        'AGENT_RUNNER=cloud requires a repo cloneUrl (LOCAL_AGENT_REPO_URL or a project repo URL) — a localPath cannot be cloned from inside a Fly Machine',
+        'AGENT_RUNNER=cloud requires a repo cloneUrl or init (LOCAL_AGENT_REPO_URL or a project repo URL/new-project init) — a localPath cannot be cloned from inside a Fly Machine',
       );
     }
-    const cloneUrl = ctx.repo.cloneUrl;
     const runId = ctx.runId ?? `no-id-${Date.now()}`;
     const runToken = randomBytes(24).toString('base64url');
     const vscodeToken = randomBytes(24).toString('base64url');
@@ -111,6 +112,7 @@ export class CloudAgentRunner implements AgentRunner {
         headers: { Authorization: `Bearer ${runToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           repoUrl: cloneUrl,
+          init,
           branch: ctx.branchName,
           baseRef: ctx.baseCommitSha ?? undefined,
           instruction: this.buildInstruction(ctx),

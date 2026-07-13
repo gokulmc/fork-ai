@@ -76,10 +76,22 @@ describe('CloudAgentRunner', () => {
     global.fetch = realFetch;
   });
 
-  it('throws before provisioning anything when ctx has no cloneUrl', async () => {
-    await expect(drain(runner.run(mkCtx({ repo: { localPath: '/some/local/repo' } })))).rejects.toThrow(/cloneUrl/);
+  it('throws before provisioning anything when ctx has neither cloneUrl nor init', async () => {
+    await expect(drain(runner.run(mkCtx({ repo: { localPath: '/some/local/repo' } })))).rejects.toThrow(/cloneUrl or init/);
     expect(provider.create).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("passes ctx.repo.init through to the sandbox body when it's a 'new' project (no cloneUrl)", async () => {
+    fetchMock.mockResolvedValue(new Response(sse([RESULT_FRAME]), { status: 200 }));
+
+    await drain(runner.run(mkCtx({ repo: { init: { defaultBranch: 'main' } } })));
+
+    expect(provider.create).toHaveBeenCalled();
+    const [, init] = fetchMock.mock.calls[0] as [string, { body: string }];
+    const body = JSON.parse(init.body) as Record<string, unknown>;
+    expect(body.repoUrl).toBeUndefined();
+    expect(body.init).toEqual({ defaultBranch: 'main' });
   });
 
   it('translates claude lines, yields a final result with the real sha + cloud workspace, and leaves the sandbox running with a tagged expiry', async () => {

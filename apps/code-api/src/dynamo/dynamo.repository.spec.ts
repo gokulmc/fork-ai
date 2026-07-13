@@ -12,6 +12,7 @@ import {
   CREDIT_EVENT_MODEL,
   PROJECT_MODEL,
   AGENT_RUN_MODEL,
+  GITHUB_INSTALLATION_MODEL,
 } from './dynamo.constants';
 
 // Factory for a Dynamoose-model-shaped mock with chainable query builder
@@ -55,6 +56,7 @@ describe('DynamoRepository', () => {
   let creditEvent: ReturnType<typeof makeModelMock>;
   let project: ReturnType<typeof makeModelMock>;
   let agentRun: ReturnType<typeof makeModelMock>;
+  let githubInstallation: ReturnType<typeof makeModelMock>;
 
   beforeEach(async () => {
     userMeta = makeModelMock();
@@ -67,6 +69,7 @@ describe('DynamoRepository', () => {
     creditEvent = makeModelMock();
     project = makeModelMock();
     agentRun = makeModelMock();
+    githubInstallation = makeModelMock();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -82,6 +85,7 @@ describe('DynamoRepository', () => {
         { provide: CREDIT_EVENT_MODEL, useValue: creditEvent.mock },
         { provide: PROJECT_MODEL, useValue: project.mock },
         { provide: AGENT_RUN_MODEL, useValue: agentRun.mock },
+        { provide: GITHUB_INSTALLATION_MODEL, useValue: githubInstallation.mock },
       ],
     }).compile();
     repo = module.get<DynamoRepository>(DynamoRepository);
@@ -291,6 +295,28 @@ describe('DynamoRepository', () => {
         { PK: `SESSION#${SESSION_ID}`, SK: `AGENTRUN#${NODE_ID}` },
         { status: 'done', events: '[]' },
       );
+    });
+  });
+
+  describe('putGithubInstallation / listGithubInstallations', () => {
+    it('puts an installation with overwrite', async () => {
+      githubInstallation.mock.create.mockResolvedValue({});
+      await repo.putGithubInstallation({
+        PK: `USER#${SUB}`, SK: 'GHINST#12345', installationId: '12345', accountLogin: 'acme', createdAt: 'now',
+      });
+      expect(githubInstallation.mock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ installationId: '12345', accountLogin: 'acme' }),
+        { overwrite: true },
+      );
+    });
+
+    it('lists installations for the user', async () => {
+      githubInstallation.queryChain.exec.mockResolvedValue([{ installationId: '12345', accountLogin: 'acme' }]);
+      const result = await repo.listGithubInstallations(SUB);
+      expect(githubInstallation.mock.query).toHaveBeenCalledWith('PK');
+      expect(githubInstallation.queryChain.eq).toHaveBeenCalledWith(`USER#${SUB}`);
+      expect(githubInstallation.queryChain.beginsWith).toHaveBeenCalledWith('GHINST#');
+      expect(result).toHaveLength(1);
     });
   });
 });

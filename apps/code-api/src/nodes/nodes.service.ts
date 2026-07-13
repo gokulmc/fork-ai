@@ -2,12 +2,13 @@ import { randomBytes } from 'crypto';
 import { Inject, Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { ulid } from 'ulid';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
-import type { NodeItem, AgentRunItem } from '@/dynamo/dynamo.interfaces';
+import type { NodeItem, AgentRunItem, RepoRef } from '@/dynamo/dynamo.interfaces';
 import { LlmService, friendlyLlmError } from '@/llm/llm.service';
 import { resolveBranchModel } from '@/llm/models';
 import { NodeKind } from '@/llm/llm.types';
 import { SessionsService } from '@/sessions/sessions.service';
 import { UsersService } from '@/users/users.service';
+import { GithubAppService } from '@/github/github-app.service';
 import { AgentRunFinal, AgentRunContext } from '@/agent/agent-runner';
 import { AGENT_RUNNER_REGISTRY, AgentRunnerRegistry } from '@/agent/runner-registry';
 import { AgentEvent, serializeEventsCapped } from '@/agent/agent-run.util';
@@ -27,6 +28,7 @@ export class NodesService {
     private readonly llm: LlmService,
     private readonly sessions: SessionsService,
     private readonly users: UsersService,
+    private readonly githubApp: GithubAppService,
     @Inject(AGENT_RUNNER_REGISTRY) private readonly runners: AgentRunnerRegistry,
   ) {}
 
@@ -583,6 +585,50 @@ export class NodesService {
     return { mergeNode: { ...mergeNode, prStatus: 'merged' }, commitNode };
   }
 
+  // Resolves what a real runner works against, from the project's repoRef —
+  // or the LOCAL_AGENT_REPO_* env fallback when there's no project (dev/mock
+  // convenience, unchanged from before the GitHub App slice). 'new' has no
+  // repo yet, so the runner git-inits one instead of cloning. 'github-mock'
+  // has no real repo either, but that's fine for mock/local runs — only an
+  // explicit cloud request needs to 400, since MockAgentRunner never reads
+  // ctx.repo. A private 'github' repo needs an installation token; no
+  // installation covering the owner is a friendly 400, not a 500.
+  private async resolveRunRepo(
+    sub: string,
+    repoRef: RepoRef | null,
+    environment: 'cloud' | 'mock' | undefined,
+  ): Promise<NonNullable<AgentRunContext['repo']> | undefined> {
+    if (!repoRef) {
+      return process.env.LOCAL_AGENT_REPO_PATH
+        ? { localPath: process.env.LOCAL_AGENT_REPO_PATH }
+        : process.env.LOCAL_AGENT_REPO_URL
+          ? { cloneUrl: process.env.LOCAL_AGENT_REPO_URL }
+          : undefined;
+    }
+    if (repoRef.provider === 'new') {
+      return { init: { defaultBranch: repoRef.defaultBranch } };
+    }
+    if (repoRef.provider === 'github-mock') {
+      if (environment === 'cloud') {
+        throw new BadRequestException(
+          'This project uses a mock repo — attach a real GitHub repo (or run on Demo) to use the Cloud environment.',
+        );
+      }
+      return undefined;
+    }
+    // provider === 'github'
+    if (!repoRef.private) {
+      return { cloneUrl: `${repoRef.url}.git` };
+    }
+    const token = await this.githubApp.mintInstallationToken(sub, repoRef.owner, repoRef.repo);
+    if (!token) {
+      throw new BadRequestException(
+        `${repoRef.owner}/${repoRef.repo} is private — install the forkai code GitHub App (Connect GitHub → Install App) to run the coding agent on it.`,
+      );
+    }
+    return { cloneUrl: `https://x-access-token:${token}@github.com/${repoRef.owner}/${repoRef.repo}.git` };
+  }
+
   // Streaming CODE-node creation: persist-first (loading node + running AgentRun,
   // `init` emitted before any agent-event — see root CLAUDE.md's root-query
   // streaming contract, followed here for the same refresh-survives-mid-run
@@ -610,8 +656,13 @@ export class NodesService {
 
     // Resolve BEFORE any write below (auto-branch or the CODE node itself) —
     // an invalid/unavailable environment must 400 cleanly, never leave an
-    // orphaned 'running' node (or a stray auto-branch fork) behind it.
+    // orphaned 'running' node (or a stray auto-branch fork) behind it. The
+    // project/repo lookup is a pure read, so it's hoisted up here too (used
+    // again for branchName below) — an unreachable-private-repo or a
+    // github-mock+explicit-cloud combination must 400 the same way.
     const runner = this.runners.resolve(dto.environment);
+    const project = session.projectId ? await this.db.getProject(sub, session.projectId) : null;
+    const repo = await this.resolveRunRepo(sub, project?.repoRef ?? null, dto.environment);
 
     const emit = (data: object) => { try { send(data); } catch { /* client gone */ } };
 
@@ -670,7 +721,6 @@ export class NodesService {
     // PLAN's own forked branchName (F1); otherwise the project's default
     // branch; otherwise a bare 'main' (no project at all).
     const chain = findRailChain(nodeById, codeParentId);
-    const project = session.projectId ? await this.db.getProject(sub, session.projectId) : null;
     const branchName = chain.branchNode?.branchName ?? chain.planNode?.branchName ?? project?.repoRef.defaultBranch ?? 'main';
     const baseCommitSha = parentNode.commitSha ?? null;
 
@@ -690,14 +740,7 @@ export class NodesService {
       // but the node schema doesn't declare the field at all; see root CLAUDE.md).
       attachments: dto.attachments?.map((a) => ({ name: a.name, content: a.content })),
       runId: nodeId,
-      // Prototype-only: a local runner needs a working copy of the repo, and
-      // there's no GitHub clone/checkout wired up yet, so it's env-plumbed
-      // straight from the box running this process.
-      repo: process.env.LOCAL_AGENT_REPO_PATH
-        ? { localPath: process.env.LOCAL_AGENT_REPO_PATH }
-        : process.env.LOCAL_AGENT_REPO_URL
-          ? { cloneUrl: process.env.LOCAL_AGENT_REPO_URL }
-          : undefined,
+      repo,
     };
 
     const now = new Date().toISOString();
