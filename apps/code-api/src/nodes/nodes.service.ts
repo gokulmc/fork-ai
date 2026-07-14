@@ -447,6 +447,9 @@ export class NodesService {
     await Promise.all([
       this.sessions.touchUpdatedAt(sub, sessionId),
       this.sessions.incrementNodeCount(sub, sessionId, 1),
+      // Only when the map belongs to a Project — a bare session has no
+      // ProjectItem to bump (see root CLAUDE.md's §2b note).
+      session.projectId ? this.db.incrementProjectBranchCount(sub, session.projectId, 1) : Promise.resolve(),
     ]);
 
     return node;
@@ -910,6 +913,12 @@ export class NodesService {
       const title = final.commitMessage.split(/\s+/).filter(Boolean).slice(0, 5).join(' ').replace(/[,;:.]+$/, '') || node.title;
       const lede = final.commitMessage.length > 140 ? `${final.commitMessage.slice(0, 140)}…` : final.commitMessage;
 
+      // Hoisted above the billing ternary so BOTH the cloud (reconcileHold) and
+      // mock (billUsage) paths get a persisted per-commit cost on the node —
+      // previously this was computed only inside the cloud arm, for billing
+      // only, so a mock run's node never carried a cost at all.
+      const runCost = this.runCostUsd(final, creditMultiplier);
+
       await Promise.all([
         this.db.updateNode(sessionId, nodeId, {
           title,
@@ -918,6 +927,7 @@ export class NodesService {
           commitMessage: final.commitMessage,
           diffSummary: final.diffSummary,
           agentStatus: 'done',
+          runCostUsd: runCost,
           ...(final.workspace
             ? { workspace: final.workspace, ...(final.workspaceExpiresAt ? { workspaceExpiresAt: final.workspaceExpiresAt } : {}) }
             : {}),
@@ -942,7 +952,7 @@ export class NodesService {
         isCloud
           ? this.users.reconcileHold(
               sub, sessionId, nodeId,
-              this.runCostUsd(final, creditMultiplier),
+              runCost,
               final.inputTokens, final.outputTokens, final.model, 'CODE',
             )
           : this.users.billUsage(sub, final.inputTokens, final.outputTokens, 'CODE', sessionId, nodeId, final.model),
@@ -959,6 +969,7 @@ export class NodesService {
           diffSummary: final.diffSummary,
           agentStatus: 'done',
           commitSha,
+          runCostUsd: runCost,
           ...(final.workspace
             ? { workspace: final.workspace, ...(final.workspaceExpiresAt ? { workspaceExpiresAt: final.workspaceExpiresAt } : {}) }
             : {}),

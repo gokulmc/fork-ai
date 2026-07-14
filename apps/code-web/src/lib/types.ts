@@ -51,6 +51,16 @@ export interface ForkNode {
   // ── forkai-code: MERGE rail nodes — second parent, render-only (ADR-0005) ──
   mergeFromNodeId?: string;
   prStatus?: 'open' | 'merged';
+  // Cloud push state — set at done for a cloud run; absent (not false) for a
+  // mock run or a node whose push hasn't been attempted.
+  pushed?: boolean;
+  pushError?: string;
+  // The run hit the token/compute budget ceiling and was stopped early —
+  // partial work was still committed.
+  budgetExceeded?: boolean;
+  // Token/compute cost at done, ≈ (approximate) — machine/infra cost is
+  // billed separately later at sweep and is not included here.
+  runCostUsd?: number;
 }
 
 export type NodeKind = ForkNode['kind'];

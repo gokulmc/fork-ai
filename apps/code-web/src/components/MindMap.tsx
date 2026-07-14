@@ -583,6 +583,7 @@ export function MindMap({
                             <div className="mm-label" title={n.title || 'Untitled'}>{n.title || 'Untitled'}</div>
                           </div>
                           {n.sources?.length ? <span className="mm-search-badge">🔍</span> : null}
+                          {n.kind === 'CODE' && n.imported ? <span className="mm-imported-badge">imported</span> : null}
                           {n.kind === 'MIX' ? <span className="mm-mix-badge"><Filter size={11} /></span> : null}
                         </div>
                       </div>

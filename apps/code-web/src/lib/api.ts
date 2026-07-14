@@ -39,6 +39,10 @@ export interface ApiNode {
   workspaceExpiresAt?: string;
   mergeFromNodeId?: string;
   prStatus?: 'open' | 'merged';
+  pushed?: boolean;
+  pushError?: string;
+  budgetExceeded?: boolean;
+  runCostUsd?: number;
 }
 
 export interface ApiAnnotation {
@@ -74,6 +78,10 @@ export interface SessionSummary {
   // Set when this session is a Project's map (see ProjectsService.create) — used
   // to re-fetch and set activeProject when a session is opened from History.
   projectId?: string;
+  // Resolved server-side from the Project's own ProjectItem — absent for a
+  // bare (non-project) session.
+  repoRef?: { owner: string; repo: string; url: string; provider: string };
+  branchCount?: number;
 }
 
 export interface FullSession extends SessionSummary {
@@ -114,6 +122,10 @@ export function toForkNode(n: ApiNode): ForkNode {
     workspaceExpiresAt: n.workspaceExpiresAt,
     mergeFromNodeId: n.mergeFromNodeId,
     prStatus: n.prStatus,
+    pushed: n.pushed,
+    pushError: n.pushError,
+    budgetExceeded: n.budgetExceeded,
+    runCostUsd: n.runCostUsd,
   };
 }
 

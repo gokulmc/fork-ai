@@ -4,6 +4,7 @@ import type { ForkNode } from '@/lib/types';
 import { getAgentRun, ApiError, type AgentEvent, type AgentRun, type Project } from '@/lib/api';
 import { modelDisplayName } from '@/lib/utils';
 import { kindLabel } from '@/lib/kindLabels';
+import { BranchPopup } from './BranchPopup';
 import { Code, GitBranch, ArrowUpRight, Sparkles, AlertCircle } from './Icons';
 
 interface AgentLogPaneProps {
@@ -17,6 +18,39 @@ interface AgentLogPaneProps {
   askLoading: boolean;
   onRunResolved?: (nodeId: string, run: AgentRun) => void; // mid-run poll (see effect below) reached 'done'/'error'
   onRetryRun?: (nodeId: string) => void; // CODE only — re-run a failed agent run in place
+  onForkBranch?: (fromNodeId: string, branchName: string) => void; // opens BranchPopup off the commit pill
+}
+
+interface PillRect { left: number; top: number; width: number; height: number; bottom: number; }
+
+// Sub-cent runs must never print as "$0.00" (reads as free/broken); zero or
+// unset costs are omitted entirely rather than showing a misleading "$0.00".
+function formatRunCost(usd: number | undefined): string | null {
+  if (!usd) return null;
+  if (usd < 0.01) return '< $0.01';
+  return `$${usd.toFixed(2)}`;
+}
+
+// A diff-less no-run CODE node is either an imported commit (has `imported`)
+// or the synthetic merge commit `mergePrNode` creates (real commit, no agent
+// run, not imported) — there's no separate MERGE-kind node to key off here.
+function ProvenanceCard({ node, project }: { node: ForkNode; project: Project | null }) {
+  const shortSha = node.commitSha ? node.commitSha.slice(0, 7) : null;
+  const ghUrl = project && node.commitSha ? `${project.repoRef.url}/commit/${node.commitSha}` : null;
+  return (
+    <div className="provenance-card">
+      <p className="provenance-card-message">{node.commitMessage || node.title || '—'}</p>
+      <div className="provenance-card-meta">
+        <span>{new Date(node.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+        {shortSha && <span>{shortSha}</span>}
+      </div>
+      {ghUrl && (
+        <a className="provenance-card-link" href={ghUrl} target="_blank" rel="noopener noreferrer">
+          View full diff on GitHub <ArrowUpRight size={11} />
+        </a>
+      )}
+    </div>
+  );
 }
 
 // Payload is `unknown` on the wire — in practice the mock agent always emits a
@@ -108,26 +142,32 @@ function LogLine({ event }: { event: AgentEvent }) {
   return <div className={`log-line log-line--${event.kind}`}>{payloadText(event.payload)}</div>;
 }
 
-export function AgentLogPane({ node, events, project, idToken, sessionId, onImplement, onAskAboutCommit, askLoading, onRunResolved, onRetryRun }: AgentLogPaneProps) {
+export function AgentLogPane({ node, events, project, idToken, sessionId, onImplement, onAskAboutCommit, askLoading, onRunResolved, onRetryRun, onForkBranch }: AgentLogPaneProps) {
   const logRef = useRef<HTMLDivElement>(null);
   const [fetchedEvents, setFetchedEvents] = useState<AgentEvent[] | null>(null);
   const [fetchLoading, setFetchLoading] = useState(false);
+  const [fetchError, setFetchError] = useState(false);
   const [askQ, setAskQ] = useState('');
+  const [branchPopupRect, setBranchPopupRect] = useState<PillRect | null>(null);
 
   const hasLiveLog = !!events?.length;
   const log = hasLiveLog ? events! : (fetchedEvents ?? []);
+  // Imported/merge commits and a bare BRANCH lane never had an agent run —
+  // the page reads as real provenance, not a failed/empty run, for those.
+  const hasRun = node.agentStatus === 'running' || node.agentStatus === 'done' || node.agentStatus === 'error';
 
   // If nothing streamed into this session (e.g. a page reload landed on an
   // already-finished CODE node), fetch the persisted AgentRun once.
   useEffect(() => {
     setFetchedEvents(null);
+    setFetchError(false);
     if (node.kind !== 'CODE' || hasLiveLog) return;
     if (node.agentStatus !== 'done' && node.agentStatus !== 'error') return;
     let cancelled = false;
     setFetchLoading(true);
     getAgentRun(idToken, sessionId, node.id)
       .then(run => { if (!cancelled) setFetchedEvents(run.events); })
-      .catch(() => { if (!cancelled) setFetchedEvents([]); })
+      .catch(() => { if (!cancelled) { setFetchedEvents([]); setFetchError(true); } })
       .finally(() => { if (!cancelled) setFetchLoading(false); });
     return () => { cancelled = true; };
   }, [node.id, node.kind, node.agentStatus, hasLiveLog, idToken, sessionId]);
@@ -183,22 +223,58 @@ export function AgentLogPane({ node, events, project, idToken, sessionId, onImpl
     );
   }
 
+  const costLabel = formatRunCost(node.runCostUsd);
+  const canForkFromPill = !!onForkBranch && !!node.commitSha;
+
   return (
     <div className="agent-pane">
       <div className="ws-meta">
         <span className="pill pill-kind pill-kind--code"><Code size={12} className="ic" /> {kindLabel('CODE')}</span>
-        {node.branchName && <span className="commit-pill">⎇ {node.branchName}{shortSha ? ` · ${shortSha}` : ''}</span>}
+        {node.branchName && (
+          canForkFromPill ? (
+            <button
+              type="button"
+              className={`commit-pill commit-pill--clickable${branchPopupRect ? ' commit-pill--open' : ''}`}
+              aria-haspopup="dialog"
+              title="Fork a branch from this commit"
+              onClick={e => {
+                const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                setBranchPopupRect({ left: r.left, top: r.top, width: r.width, height: r.height, bottom: r.bottom });
+              }}
+            >
+              ⎇ {node.branchName}{shortSha ? ` · ${shortSha}` : ''}
+              <GitBranch size={10} className="commit-pill-fork-ic" />
+            </button>
+          ) : (
+            <span className="commit-pill">⎇ {node.branchName}{shortSha ? ` · ${shortSha}` : ''}</span>
+          )
+        )}
         {node.model && <span className="pill">✳ {modelDisplayName(node.model)}</span>}
-        <span className="agent-status">
-          <span className={`status-dot status-dot--${node.agentStatus ?? 'done'}`} />
-          {node.agentStatus ?? 'done'}
-        </span>
+        {hasRun ? (
+          <span className="agent-status">
+            <span className={`status-dot status-dot--${node.agentStatus}`} />
+            {node.agentStatus}
+          </span>
+        ) : (
+          // No agent run happened here — imported history and a merge commit
+          // are real provenance, not a failed/missing run, so the status slot
+          // gets an honest neutral chip instead of a misleading green dot.
+          <span className="mock-tag">{node.imported ? 'imported' : 'merge'}</span>
+        )}
         {node.agentStatus !== 'running' && (
           <button className="pill pill-code-cta" onClick={onImplement}>
             <Code size={12} className="ic" /> Continue
           </button>
         )}
       </div>
+      {branchPopupRect && onForkBranch && (
+        <BranchPopup
+          rect={branchPopupRect}
+          fromSha={shortSha ?? '—'}
+          onSubmit={name => { onForkBranch(node.id, name); setBranchPopupRect(null); }}
+          onClose={() => setBranchPopupRect(null)}
+        />
+      )}
 
       {/* Selectable so a highlight over the instruction or the agent log can
           spawn an Ask AI branch (Phase G) — the diff summary and footer below
@@ -207,10 +283,10 @@ export function AgentLogPane({ node, events, project, idToken, sessionId, onImpl
           summary — the review artifact — can render between the instruction and
           the log, which is comparatively supporting detail. */}
       <div data-section-id="agentlog" className="agent-log-selectable">
-        <p className="ws-instruction">{node.query}</p>
+        <p className="ws-instruction">{node.query || node.commitMessage || '—'}</p>
       </div>
 
-      {node.diffSummary && (
+      {node.diffSummary ? (
         <>
           <div className="ws-block-label">Diff summary</div>
           <div className="diff-summary">
@@ -233,18 +309,30 @@ export function AgentLogPane({ node, events, project, idToken, sessionId, onImpl
             </ul>
           </div>
         </>
-      )}
+      ) : !hasRun ? (
+        <>
+          <div className="ws-block-label">{node.imported ? 'Imported from GitHub' : 'Merge commit'}</div>
+          <ProvenanceCard node={node} project={project} />
+        </>
+      ) : null}
 
-      <div data-section-id="agentlog" className="agent-log-selectable">
-        <div className="ws-block-label">Agent log</div>
-        <div className="term-panel" ref={logRef}>
-          {log.length === 0 && fetchLoading && <div className="log-line log-line--text agent-log-shimmer">Loading run…</div>}
-          {log.length === 0 && !fetchLoading && node.agentStatus === 'running' && (
-            <div className="log-line log-line--text agent-log-shimmer">Starting…</div>
-          )}
-          {log.map(e => <LogLine key={e.seq} event={e} />)}
+      {/* No-run nodes (imported/merge) never had a log — an empty "Agent log"
+          panel here was the empty-page complaint this pass fixes. */}
+      {hasRun && (
+        <div data-section-id="agentlog" className="agent-log-selectable">
+          <div className="ws-block-label">Agent log</div>
+          <div className="term-panel" ref={logRef}>
+            {log.length === 0 && fetchLoading && <div className="log-line log-line--text agent-log-shimmer">Loading run…</div>}
+            {log.length === 0 && !fetchLoading && node.agentStatus === 'running' && (
+              <div className="log-line log-line--text agent-log-shimmer">Starting…</div>
+            )}
+            {log.length === 0 && !fetchLoading && node.agentStatus !== 'running' && fetchError && (
+              <div className="log-line log-line--text agent-log-error-note">Couldn&rsquo;t load this run.</div>
+            )}
+            {log.map(e => <LogLine key={e.seq} event={e} />)}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Outside the selectable wrapper — an interactive control, not source text
           to branch from, matching the diff summary/footer convention above. */}
@@ -257,6 +345,12 @@ export function AgentLogPane({ node, events, project, idToken, sessionId, onImpl
           )}
         </div>
       )}
+      {node.budgetExceeded && (
+        <div className="ws-error ws-error--muted">
+          <AlertCircle size={16} className="ic" />
+          <span>Run stopped at the budget limit — partial work was committed.</span>
+        </div>
+      )}
 
       <div className="ws-footer">
         {project && node.commitSha && (
@@ -267,8 +361,13 @@ export function AgentLogPane({ node, events, project, idToken, sessionId, onImpl
             {/* Only mock/synthesized repos get the "mock" tag — a real 'github'
                 repo's commitSha/url are genuine, so the link should read as real. */}
             {project.repoRef.provider !== 'github' && <span className="mock-tag">mock</span>}
+            {node.pushed === true && <span className="ws-pushed ws-pushed--yes">Pushed ✓</span>}
+            {node.pushed === false && (
+              <span className="ws-pushed ws-pushed--no" title={node.pushError}>commit only in sandbox</span>
+            )}
           </>
         )}
+        {hasRun && costLabel && <span className="ws-footer-note">compute ≈ {costLabel}</span>}
         {/* Evaluated at render, not on a re-render tick — a link that's just
             past its expiry when clicked simply 404s on the sandbox (harmless,
             already-torn-down machine), so staleness between renders is fine. */}

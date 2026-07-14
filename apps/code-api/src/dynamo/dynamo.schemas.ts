@@ -191,6 +191,7 @@ export const NodeSchema = new dynamoose.Schema({
   pushed: { type: Boolean, required: false },
   pushError: { type: String, required: false },
   budgetExceeded: { type: Boolean, required: false },
+  runCostUsd: { type: Number, required: false },
 });
 
 export const AnnotationSchema = new dynamoose.Schema({
@@ -239,6 +240,7 @@ export const ProjectSchema = new dynamoose.Schema({
   sessionId: String,
   createdAt: String,
   updatedAt: String,
+  branchCount: { type: Number, required: false },
 });
 
 export const GithubInstallationSchema = new dynamoose.Schema({

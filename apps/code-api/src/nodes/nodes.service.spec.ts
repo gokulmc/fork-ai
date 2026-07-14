@@ -27,6 +27,7 @@ const mockDb = {
   putAgentRun: jest.fn(),
   updateAgentRun: jest.fn(),
   getProject: jest.fn(),
+  incrementProjectBranchCount: jest.fn(),
 };
 
 const mockLlm = {
@@ -644,6 +645,7 @@ describe('NodesService', () => {
 
     beforeEach(() => {
       mockDb.putNode.mockResolvedValue(undefined);
+      mockDb.incrementProjectBranchCount.mockResolvedValue(undefined);
       mockSessions.touchUpdatedAt.mockResolvedValue(undefined);
       mockSessions.incrementNodeCount.mockResolvedValue(undefined);
     });
@@ -656,6 +658,18 @@ describe('NodesService', () => {
       expect(result.commitSha).toBe('abcdef1234567890');
       expect(result.parentId).toBe(PARENT_NODE_ID);
       expect(result.query).toBe('Fork from abcdef1');
+    });
+
+    it('bumps the project branchCount by 1 when the session belongs to a Project', async () => {
+      mockSessions.getSession.mockResolvedValue({ ...fullSession, projectId: 'proj-1', nodes: [codeParent] });
+      await service.createBranchNode(SUB, SESSION_ID, dto);
+      expect(mockDb.incrementProjectBranchCount).toHaveBeenCalledWith(SUB, 'proj-1', 1);
+    });
+
+    it('does not touch branchCount for a bare (non-project) session', async () => {
+      mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [codeParent] });
+      await service.createBranchNode(SUB, SESSION_ID, dto);
+      expect(mockDb.incrementProjectBranchCount).not.toHaveBeenCalled();
     });
 
     it('rejects a non-CODE parent', async () => {
@@ -1105,6 +1119,16 @@ describe('NodesService', () => {
       expect(init.node!.commitSha).toBeUndefined();
       expect(done.node!.commitSha).toBeDefined();
       expect(mockDb.updateNode).toHaveBeenCalledWith(SESSION_ID, expect.any(String), expect.objectContaining({ commitSha: expect.any(String) }));
+    });
+
+    it('persists runCostUsd on the node for a mock (non-cloud) run — hoisted above the cloud-only billing ternary so it is no longer cloud-exclusive', async () => {
+      const received: Array<{ type: string; node?: { runCostUsd?: number } }> = [];
+      await service.createCodeNodeStreaming(SUB, SESSION_ID, dto, (d) => received.push(d as typeof received[number]));
+
+      // agentFinal has no claudeCostUsd — falls back to token×priceFor(BRANCH_DEFAULT_MODEL) × creditMultiplier, same basis as the cloud path's fallback.
+      expect(mockDb.updateNode).toHaveBeenCalledWith(SESSION_ID, expect.any(String), expect.objectContaining({ runCostUsd: 0.003 }));
+      const done = received.find((e) => e.type === 'done')!;
+      expect(done.node!.runCostUsd).toBe(0.003);
     });
 
     it('marks the node and AgentRun as error and emits an error event when the agent runner fails mid-stream, without throwing', async () => {

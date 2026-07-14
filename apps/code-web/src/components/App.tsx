@@ -2814,6 +2814,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
               askLoading={askCommitLoading}
               onRunResolved={handleRunResolved}
               onRetryRun={onRetryRun}
+              onForkBranch={forkBranch}
             />
           )}
           {active && active.kind === 'MERGE' && (

@@ -284,6 +284,15 @@ describe('DynamoRepository', () => {
       expect(project.queryChain.beginsWith).toHaveBeenCalledWith('PROJECT#');
       expect(result).toHaveLength(1);
     });
+
+    it('bumps branchCount via an uppercase $ADD (same operator as deductCredit/addCredit)', async () => {
+      project.mock.update.mockResolvedValue({});
+      await repo.incrementProjectBranchCount(SUB, PROJECT_ID, 1);
+      expect(project.mock.update).toHaveBeenCalledWith(
+        { PK: `USER#${SUB}`, SK: `PROJECT#${PROJECT_ID}` },
+        { '$ADD': { branchCount: 1 } },
+      );
+    });
   });
 
   describe('putAgentRun / getAgentRun / updateAgentRun', () => {

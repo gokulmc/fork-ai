@@ -7,6 +7,7 @@ const mockGithub = {
   listCommits: jest.fn(),
   listBranches: jest.fn(),
   compareCommits: jest.fn(),
+  getCommitDiff: jest.fn(),
 };
 
 const SUB = 'user-sub-123';
@@ -41,6 +42,7 @@ describe('RepoImportService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     mockGithub.listBranches.mockResolvedValue([]); // most tests don't care about branches
+    mockGithub.getCommitDiff.mockResolvedValue(null); // most tests don't care about §2c diff enrichment
     const module: TestingModule = await Test.createTestingModule({
       providers: [RepoImportService, { provide: GithubService, useValue: mockGithub }],
     }).compile();
@@ -177,6 +179,46 @@ describe('RepoImportService', () => {
       const nodes = await service.buildImportedNodes(SUB, REPO_REF, SESSION_ID);
 
       expect(nodes!.length).toBe(1000);
+    });
+  });
+
+  describe('§2c — imported-commit diff enrichment', () => {
+    const DUMMY_DIFF = { filesChanged: 1, additions: 3, deletions: 1, files: [{ path: 'x.ts', status: 'modified', additions: 3, deletions: 1 }] };
+
+    it('fetches and stores a diff for every CODE commit when under the cap', async () => {
+      mockGithub.listCommits.mockResolvedValue(makeCommitsNewestFirst('c', 3));
+      mockGithub.getCommitDiff.mockResolvedValue(DUMMY_DIFF);
+
+      const nodes = await service.buildImportedNodes(SUB, REPO_REF, SESSION_ID);
+
+      expect(mockGithub.getCommitDiff).toHaveBeenCalledTimes(3);
+      nodes!.forEach((n) => expect(n.diffSummary).toEqual(DUMMY_DIFF));
+    });
+
+    it('caps diff fetches at DIFF_FETCH_CAP (40), preferring the newest commits, leaving older ones diff-less', async () => {
+      mockGithub.listCommits.mockResolvedValue(makeCommitsNewestFirst('c', 60));
+      mockGithub.getCommitDiff.mockResolvedValue(DUMMY_DIFF);
+
+      const nodes = await service.buildImportedNodes(SUB, REPO_REF, SESSION_ID);
+
+      expect(mockGithub.getCommitDiff).toHaveBeenCalledTimes(40);
+      const withDiff = nodes!.filter((n) => n.diffSummary);
+      const withoutDiff = nodes!.filter((n) => !n.diffSummary);
+      expect(withDiff).toHaveLength(40);
+      expect(withoutDiff).toHaveLength(20);
+      // The 40 newest (highest-index shas) got diffs; the oldest 20 didn't.
+      expect(withDiff.map((n) => n.commitSha)).toEqual(expect.arrayContaining(['c-59', 'c-20']));
+      expect(withoutDiff.map((n) => n.commitSha)).toEqual(expect.arrayContaining(['c-0', 'c-19']));
+    });
+
+    it('a per-commit diff fetch failure (getCommitDiff resolves null) leaves that node diff-less without failing the import', async () => {
+      mockGithub.listCommits.mockResolvedValue(makeCommitsNewestFirst('c', 3));
+      mockGithub.getCommitDiff.mockResolvedValue(null);
+
+      const nodes = await service.buildImportedNodes(SUB, REPO_REF, SESSION_ID);
+
+      expect(nodes).toHaveLength(3);
+      nodes!.forEach((n) => expect(n.diffSummary).toBeUndefined());
     });
   });
 

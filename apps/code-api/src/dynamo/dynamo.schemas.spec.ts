@@ -36,6 +36,7 @@ describe('Dynamoose schema field coverage', () => {
       },
       agentStatus: 'done',
       imported: true,
+      runCostUsd: 0.03,
     });
     const json = item.toJSON() as Record<string, unknown>;
     expect(json.commitSha).toBe('abc1234');
@@ -49,6 +50,7 @@ describe('Dynamoose schema field coverage', () => {
     });
     expect(json.agentStatus).toBe('done');
     expect(json.imported).toBe(true);
+    expect(json.runCostUsd).toBe(0.03);
   });
 
   it('AgentRun model retains all fields', () => {
@@ -97,6 +99,7 @@ describe('Dynamoose schema field coverage', () => {
       sessionId: 's1',
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
+      branchCount: 3,
     });
     const json = item.toJSON() as Record<string, unknown>;
     expect(json.repoRef).toEqual({
@@ -108,6 +111,7 @@ describe('Dynamoose schema field coverage', () => {
       private: true,
     });
     expect(json.plugins).toEqual(['mem-palace', 'graphify']);
+    expect(json.branchCount).toBe(3);
   });
 
   it('SessionMeta model retains projectId', () => {

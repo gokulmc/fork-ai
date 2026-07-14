@@ -274,7 +274,7 @@ export class DynamoRepository {
   async updateNode(
     sessionId: string,
     nodeId: string,
-    updates: Partial<Pick<NodeItem, 'title' | 'lede' | 'starred' | 'commitSha' | 'branchName' | 'commitMessage' | 'diffSummary' | 'agentStatus' | 'imported' | 'prStatus' | 'workspace' | 'workspaceExpiresAt' | 'pushed' | 'pushError' | 'budgetExceeded'>>,
+    updates: Partial<Pick<NodeItem, 'title' | 'lede' | 'starred' | 'commitSha' | 'branchName' | 'commitMessage' | 'diffSummary' | 'agentStatus' | 'imported' | 'prStatus' | 'workspace' | 'workspaceExpiresAt' | 'pushed' | 'pushError' | 'budgetExceeded' | 'runCostUsd'>>,
   ): Promise<void> {
     await this.nodeModel.update(
       { PK: this.sessionPk(sessionId), SK: this.nodeSk(nodeId) },
@@ -463,6 +463,17 @@ export class DynamoRepository {
     await this.projectModel.update(
       { PK: this.userPk(sub), SK: this.projectSk(projectId) },
       updates,
+    );
+  }
+
+  // Atomic bump (uppercase $ADD — same operator as deductCredit/addCredit; see
+  // root CLAUDE.md's "Dynamoose update operators are case-sensitive" gotcha) —
+  // avoids the read-then-write race a plain get+update would have if two
+  // BRANCH forks landed concurrently on the same project.
+  async incrementProjectBranchCount(sub: string, projectId: string, delta: number): Promise<void> {
+    await this.projectModel.update(
+      { PK: this.userPk(sub), SK: this.projectSk(projectId) },
+      { '$ADD': { branchCount: delta } },
     );
   }
 

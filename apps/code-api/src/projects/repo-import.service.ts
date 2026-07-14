@@ -9,6 +9,10 @@ const TRUNK_CAP = 500;
 const BRANCH_CAP = 50;
 const TOTAL_CAP = 1000;
 const BRANCH_COUNT_CAP = 20;
+// Per-commit diff fetches are one extra GitHub API call each (§2c) — capped so
+// import latency stays bounded even on a repo with hundreds of commits. Well
+// within the 5000 req/hr OAuth budget either way.
+const DIFF_FETCH_CAP = 40;
 
 @Injectable()
 export class RepoImportService {
@@ -78,14 +82,14 @@ export class RepoImportService {
       parentId = nodeId;
     });
 
-    if (nodes.length >= TOTAL_CAP) return nodes;
+    if (nodes.length >= TOTAL_CAP) return this.enrichRecentDiffs(sub, owner, repo, nodes);
 
     let branches: Array<{ name: string; headSha: string }>;
     try {
       branches = await this.github.listBranches(sub, owner, repo);
     } catch (err) {
       this.logger.warn(`listBranches failed for ${owner}/${repo}: ${(err as Error).message} — trunk-only import`);
-      return nodes;
+      return this.enrichRecentDiffs(sub, owner, repo, nodes);
     }
     const nonDefaultBranches = branches.filter((b) => b.name !== defaultBranch).slice(0, BRANCH_COUNT_CAP);
 
@@ -160,6 +164,37 @@ export class RepoImportService {
       }
     }
 
+    return this.enrichRecentDiffs(sub, owner, repo, nodes);
+  }
+
+  // §2c — imported commits carry no diff by default (compareCommits/listCommits
+  // never fetch files[]). Backfill the HEAD-most DIFF_FETCH_CAP CODE commits
+  // (trunk + branches together, ranked by real commit date via createdAt, not
+  // just the trunk's tail) with a real per-commit diff, fetched in parallel —
+  // this is what lets the commit page (§3) show DIFF SUMMARY instead of falling
+  // back to the provenance card for a freshly imported repo's recent history.
+  // Older/beyond-cap commits are left diffSummary-less on purpose; a failed
+  // fetch (getCommitDiff never throws) degrades the same way. Mutates `nodes`
+  // in place — they're freshly built, not yet persisted.
+  private async enrichRecentDiffs(sub: string, owner: string, repo: string, nodes: NodeItem[]): Promise<NodeItem[]> {
+    const codeNodes = nodes.filter((n) => n.kind === 'CODE' && n.commitSha);
+    const recent = [...codeNodes]
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+      .slice(0, DIFF_FETCH_CAP);
+
+    const diffs = await Promise.all(recent.map((n) => this.github.getCommitDiff(sub, owner, repo, n.commitSha!)));
+    let fetched = 0;
+    recent.forEach((n, i) => {
+      const diff = diffs[i];
+      if (diff) {
+        n.diffSummary = diff;
+        fetched++;
+      }
+    });
+    this.logger.log(
+      `Repo import diffs for ${owner}/${repo}: ${fetched}/${recent.length} fetched, ` +
+      `${codeNodes.length - recent.length} older commits left diff-less (cap ${DIFF_FETCH_CAP})`,
+    );
     return nodes;
   }
 }

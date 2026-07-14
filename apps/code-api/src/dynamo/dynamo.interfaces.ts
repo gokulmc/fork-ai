@@ -158,6 +158,11 @@ export interface NodeItem {
   // claude child for exceeding the run's token budget mid-run. Partial work
   // was still committed/pushed as normal; this only flags the ceiling was hit.
   budgetExceeded?: boolean;
+  // Token/compute cost of this run at done (both cloud and mock paths) — the
+  // BILLED figure (claude's own cost × creditMultiplier), same basis as the
+  // cloud hold reconciliation. Machine/infra cost bills separately later at
+  // sandbox sweep and is never folded in here.
+  runCostUsd?: number;
   // MERGE node fields — second parent, render-only (ADR-0005).
   mergeFromNodeId?: string;
   prStatus?: 'open' | 'merged';
@@ -226,6 +231,10 @@ export interface ProjectItem {
   sessionId: string;
   createdAt: string;
   updatedAt: string;
+  // Distinct branch lines seeded/forked on this project's map — set at create
+  // (import: seeded branch count; 'new'/'github-mock': 1 for the default
+  // branch) and bumped by $ADD whenever a BRANCH node is forked.
+  branchCount?: number;
 }
 
 // A GitHub App installation (Contents:Read v1) the user has granted forkai

@@ -231,4 +231,47 @@ describe('GithubService', () => {
       await expect(service.getRepoSeed(SUB, 'acme', 'widgets', 'main')).rejects.toBeInstanceOf(UnauthorizedException);
     });
   });
+
+  describe('getCommitDiff', () => {
+    beforeEach(() => {
+      mockDb.getUserMeta.mockResolvedValue({ sub: SUB, githubAccessToken: 'gho_x' });
+    });
+
+    it('maps files[] to a DiffSummary, translating status and recomputing totals', async () => {
+      fetchSpy.mockResolvedValueOnce(
+        jsonResponse({
+          sha: 'abc123',
+          files: [
+            { filename: 'src/a.ts', status: 'added', additions: 10, deletions: 0 },
+            { filename: 'src/b.ts', status: 'modified', additions: 2, deletions: 1 },
+            { filename: 'old.ts', status: 'removed', additions: 0, deletions: 5 },
+            { filename: 'c.ts', status: 'renamed', additions: 0, deletions: 0 },
+          ],
+        }),
+      );
+
+      const diff = await service.getCommitDiff(SUB, 'acme', 'widgets', 'abc123');
+      expect(diff).toEqual({
+        filesChanged: 4,
+        additions: 12,
+        deletions: 6,
+        files: [
+          { path: 'src/a.ts', status: 'added', additions: 10, deletions: 0 },
+          { path: 'src/b.ts', status: 'modified', additions: 2, deletions: 1 },
+          { path: 'old.ts', status: 'deleted', additions: 0, deletions: 5 },
+          { path: 'c.ts', status: 'renamed', additions: 0, deletions: 0 },
+        ],
+      });
+    });
+
+    it('returns null (never throws) on a non-ok response', async () => {
+      fetchSpy.mockResolvedValueOnce(jsonResponse({ message: 'not found' }, { status: 404 }));
+      await expect(service.getCommitDiff(SUB, 'acme', 'widgets', 'missing-sha')).resolves.toBeNull();
+    });
+
+    it('returns null (never throws) when no token is stored', async () => {
+      mockDb.getUserMeta.mockResolvedValue({ sub: SUB });
+      await expect(service.getCommitDiff(SUB, 'acme', 'widgets', 'abc123')).resolves.toBeNull();
+    });
+  });
 });
