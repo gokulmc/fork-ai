@@ -46,6 +46,9 @@ export interface SessionSummary {
   // list()'s comment for why).
   repoRef?: { owner: string; repo: string; url: string; provider: string };
   branchCount?: number;
+  // Denormalized status of the most recent CODE agent run (see SessionMetaItem)
+  // — powers the History "Continue" rail. Absent until the session's first CODE run.
+  lastRunStatus?: 'running' | 'done' | 'error';
 }
 
 export interface FullSession extends SessionSummary {
@@ -828,6 +831,7 @@ export class SessionsService {
       nodeCount: item.nodeCount ?? 0,
       highlightCount: 0,
       projectId: item.projectId,
+      lastRunStatus: item.lastRunStatus,
     };
   }
 }

@@ -1,0 +1,141 @@
+<!-- @dsCard group="Fix proposals" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>forkai-code — Fix: Continue rail</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body { padding: 56px 64px 120px; min-height: 100vh; }
+
+  .theme-toggle {
+    position: fixed; top: 20px; right: 24px; z-index: 100;
+    font-family: var(--sans); font-size: 12px; font-weight: 500;
+    padding: 7px 14px; border-radius: var(--radius);
+    border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink-2);
+    cursor: pointer; box-shadow: var(--shadow-1);
+    transition: background .12s, color .12s;
+  }
+  .theme-toggle:hover { background: var(--hover); color: var(--ink); }
+
+  .ds-brand { display: inline-flex; align-items: center; gap: 8px; font-family: var(--sans); font-weight: 600; font-size: 13px; letter-spacing: .02em; color: var(--ink-2); margin-bottom: 28px; }
+  .ds-brand .mark { width: 15px; height: 15px; border-radius: 4px; background: var(--ink); display: inline-block; }
+  .ds-page-title { font-family: var(--serif); font-weight: 400; font-size: 34px; letter-spacing: -0.02em; margin: 0 0 8px; color: var(--ink); }
+  .ds-page-sub { font-family: var(--sans); font-size: 13px; color: var(--ink-3); margin: 0 0 48px; max-width: 660px; line-height: 1.55; }
+  .ds-section { margin-bottom: 52px; }
+  .ds-section-label { font-family: var(--sans); font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+  .ds-section-note { font-family: var(--sans); font-size: 12px; color: var(--ink-3); margin: 0 0 20px; max-width: 620px; line-height: 1.5; }
+
+  /* ── NEW: continue rail — uniform equal-size cards ───────────────── */
+  .continue-rail { display: flex; gap: 14px; flex-wrap: wrap; }
+  @keyframes rail-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+  .continue-card { width: 216px; height: 116px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 15px 16px 13px; box-shadow: var(--shadow-1); display: flex; flex-direction: column; gap: 9px; cursor: pointer; transition: border-color .12s, transform .12s, box-shadow .12s; box-sizing: border-box; }
+  .continue-card:hover { border-color: var(--line-strong); transform: translateY(-1px); box-shadow: var(--shadow-2); }
+  .continue-card-head { display: flex; align-items: center; gap: 9px; min-width: 0; }
+  .continue-card-emoji { font-size: 18px; line-height: 1; flex-shrink: 0; font-family: "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui,sans-serif; }
+  .continue-card-name { font-family: var(--sans); font-size: 13.5px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .continue-card-repo { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 27px; }
+  .continue-card-status-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 9px; border-top: 1px solid var(--line); margin-top: auto; }
+  .continue-card-status { display: inline-flex; align-items: center; gap: 6px; font-family: var(--sans); font-size: 11px; font-weight: 600; color: var(--ink-2); }
+  .continue-card-status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .continue-card-status-dot--running { background: var(--kind-code); animation: rail-pulse 1.1s ease-in-out infinite; }
+  .continue-card-status-dot--done { background: var(--diff-add); }
+  .continue-card-status-dot--failed { background: var(--diff-del); }
+  .continue-card-action { font-family: var(--sans); font-size: 11px; font-weight: 700; color: var(--ink); flex-shrink: 0; }
+  .continue-card-action--retry { color: var(--diff-del); }
+
+  .continue-card--more { align-items: center; justify-content: center; text-align: center; }
+  .continue-card--more-label { font-family: var(--sans); font-size: 13px; font-weight: 600; color: var(--ink-3); }
+  .continue-card--more:hover .continue-card--more-label { color: var(--ink); }
+
+  /* ── ported: project-page.html's project-card, for scale reference ── */
+  .date-group-demo { max-width: 380px; }
+  .date-group-label { font-family: var(--sans); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 12px; }
+  .project-card { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 18px 20px; cursor: pointer; transition: border-color .12s, transform .12s, box-shadow .12s; }
+  .project-card:hover { border-color: var(--line-strong); transform: translateY(-1px); box-shadow: var(--shadow-1); }
+  .project-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .project-card-name { font-family: var(--sans); font-size: 15px; font-weight: 600; color: var(--ink); }
+  .project-card-branches { font-family: var(--sans); font-size: 10.5px; font-weight: 600; color: var(--ink-3); background: var(--panel); border-radius: 999px; padding: 2px 8px; flex-shrink: 0; }
+  .project-card-repo { font-family: var(--mono); font-size: 12px; color: var(--ink-2); margin-top: 7px; }
+  .project-card-meta { font-family: var(--sans); font-size: 11.5px; color: var(--ink-3); margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+</style>
+</head>
+<body>
+  <button class="theme-toggle" onclick="const h=document.documentElement; h.setAttribute('data-theme', (h.getAttribute('data-theme')||'light')==='light'?'dark':'light');">Toggle theme</button>
+
+  <div class="ds-brand"><span class="mark"></span>fork ai code</div>
+  <h1 class="ds-page-title">Fix — Continue rail</h1>
+  <p class="ds-page-sub">WS-H. The History page's old variable-size momentum bubbles become a single row of uniform cards — same footprint regardless of title length, so the row reads as one scannable status board instead of a jumble of differently-weighted bubbles.</p>
+
+  <div class="ds-section">
+    <div class="ds-section-label">Continue where you left off</div>
+    <p class="ds-section-note">Every card carries the same four facts in the same place: emoji + name, repo path, a colored run-status dot, and one action. A running card's dot pulses; the row caps at a fixed count with a "+more" card of the same size.</p>
+    <div class="continue-rail">
+      <div class="continue-card">
+        <div class="continue-card-head">
+          <span class="continue-card-emoji">🧩</span>
+          <span class="continue-card-name">forkai-code core</span>
+        </div>
+        <div class="continue-card-repo">forkai/forkai-code</div>
+        <div class="continue-card-status-row">
+          <span class="continue-card-status"><span class="continue-card-status-dot continue-card-status-dot--running"></span>running</span>
+          <span class="continue-card-action">Resume →</span>
+        </div>
+      </div>
+      <div class="continue-card">
+        <div class="continue-card-head">
+          <span class="continue-card-emoji">💳</span>
+          <span class="continue-card-name">billing-service</span>
+        </div>
+        <div class="continue-card-repo">acme-labs/billing-service</div>
+        <div class="continue-card-status-row">
+          <span class="continue-card-status"><span class="continue-card-status-dot continue-card-status-dot--done"></span>done</span>
+          <span class="continue-card-action">Open →</span>
+        </div>
+      </div>
+      <div class="continue-card">
+        <div class="continue-card-head">
+          <span class="continue-card-emoji">🌐</span>
+          <span class="continue-card-name">marketing-site</span>
+        </div>
+        <div class="continue-card-repo">acme-labs/marketing-site</div>
+        <div class="continue-card-status-row">
+          <span class="continue-card-status"><span class="continue-card-status-dot continue-card-status-dot--failed"></span>failed</span>
+          <span class="continue-card-action continue-card-action--retry">Retry →</span>
+        </div>
+      </div>
+      <div class="continue-card">
+        <div class="continue-card-head">
+          <span class="continue-card-emoji">⚙️</span>
+          <span class="continue-card-name">internal-cli</span>
+        </div>
+        <div class="continue-card-repo">gokulmc/internal-cli</div>
+        <div class="continue-card-status-row">
+          <span class="continue-card-status"><span class="continue-card-status-dot continue-card-status-dot--done"></span>done</span>
+          <span class="continue-card-action">Open →</span>
+        </div>
+      </div>
+      <div class="continue-card continue-card--more">
+        <span class="continue-card--more-label">+2 more</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="ds-section">
+    <div class="ds-section-label">Relationship to the project list below it</div>
+    <p class="ds-section-note">The rail is a shortcut on top of this same list, not a separate concept — one row from the TODAY group, at its normal size, for scale reference.</p>
+    <div class="date-group-demo">
+      <div class="date-group-label">Today</div>
+      <div class="project-card">
+        <div class="project-card-head">
+          <div class="project-card-name">forkai-code core</div>
+          <div class="project-card-branches">3 branches</div>
+        </div>
+        <div class="project-card-repo">forkai/forkai-code</div>
+        <div class="project-card-meta">Last activity 2 hours ago</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

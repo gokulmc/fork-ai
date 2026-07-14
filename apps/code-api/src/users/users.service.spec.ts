@@ -15,6 +15,7 @@ const mockDb = {
   deductCreditIfSufficient: jest.fn(),
   addCredit: jest.fn(),
   putUsageEvent: jest.fn(),
+  updateNode: jest.fn(),
 };
 
 // Billing config used by the new hold/machine-billing methods — see
@@ -43,6 +44,8 @@ describe('UsersService — cloud-run billing (ADR-0004)', () => {
     // putUsageEvent is now chained with .catch() (best-effort audit write —
     // see I2/M1 fixes), so the mock must resolve, not return undefined.
     mockDb.putUsageEvent.mockResolvedValue(undefined);
+    // Same reasoning — billMachineUsage's node cost write is also .catch()-chained.
+    mockDb.updateNode.mockResolvedValue(undefined);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -205,9 +208,10 @@ describe('UsersService — cloud-run billing (ADR-0004)', () => {
 
       expect(mockDb.deductCredit).not.toHaveBeenCalled();
       expect(mockDb.putUsageEvent).not.toHaveBeenCalled();
+      expect(mockDb.updateNode).not.toHaveBeenCalled();
     });
 
-    it('bills the full machine lifetime once, guard before charge', async () => {
+    it('bills the full machine lifetime once, guard before charge, and persists machineCostUsd on the node', async () => {
       mockDb.putMachineBill.mockResolvedValue(true);
       await service.billMachineUsage(SUB, 'sbx-1', SESSION_ID, NODE_ID, createdAtIso, destroyAtMs);
 
@@ -235,12 +239,22 @@ describe('UsersService — cloud-run billing (ADR-0004)', () => {
           outputTokens: 0,
         }),
       );
+      // Same billed figure (raw cost × creditMultiplier) as the usage event above.
+      expect(mockDb.updateNode).toHaveBeenCalledWith(SESSION_ID, NODE_ID, { machineCostUsd: 0.0135 });
 
       // putMachineBill (the guard) must be called before deductCredit — the
       // ordering that makes it money-correct against a racing sweep/finally.
       const putOrder = mockDb.putMachineBill.mock.invocationCallOrder[0];
       const deductOrder = mockDb.deductCredit.mock.invocationCallOrder[0];
       expect(putOrder).toBeLessThan(deductOrder);
+    });
+
+    it('a failed updateNode after settlement is swallowed — the charge already landed', async () => {
+      mockDb.putMachineBill.mockResolvedValue(true);
+      mockDb.updateNode.mockRejectedValue(new Error('ddb blip'));
+
+      await expect(service.billMachineUsage(SUB, 'sbx-1', SESSION_ID, NODE_ID, createdAtIso, destroyAtMs)).resolves.toBeUndefined();
+      expect(mockDb.deductCredit).toHaveBeenCalledTimes(1);
     });
 
     it('clamps a negative duration (destroy before create, clock skew) to zero cost', async () => {

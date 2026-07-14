@@ -8,7 +8,7 @@ import { BRANCH_DEFAULT_MODEL, CLOUD_CODE_MODEL_ID, PLAN_MODEL_ID, resolveBranch
 import { SessionsService } from '@/sessions/sessions.service';
 import { UsersService } from '@/users/users.service';
 import { GithubAppService } from '@/github/github-app.service';
-import { AgentRunFinal } from '@/agent/agent-runner';
+import { AgentRunFinal, AgentRunContext } from '@/agent/agent-runner';
 import { AGENT_RUNNER_REGISTRY } from '@/agent/runner-registry';
 import { AgentEvent } from '@/agent/agent-run.util';
 
@@ -34,6 +34,7 @@ const mockLlm = {
   expandSection: jest.fn(),
   followUpFromHighlight: jest.fn(),
   mixNodes: jest.fn(),
+  generateCodeMeta: jest.fn(),
 };
 
 const mockSessions = {
@@ -52,6 +53,8 @@ const mockUsers = {
 
 const mockGithubApp = {
   mintInstallationToken: jest.fn(),
+  createPullRequest: jest.fn(),
+  mergePullRequest: jest.fn(),
 };
 
 const agentRunner = {
@@ -762,6 +765,87 @@ describe('NodesService', () => {
       mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [featureBranch, featureCommit] });
       await expect(service.createPrNode(SUB, SESSION_ID, dto)).rejects.toBeInstanceOf(NotFoundException);
     });
+
+    describe('real GitHub PR (WS-E)', () => {
+      const githubProject = { projectId: 'proj-1', repoRef: { provider: 'github', owner: 'acme', repo: 'widgets', defaultBranch: 'main', url: 'https://github.com/acme/widgets' }, plugins: [] };
+      const pushedRoot = { ...mainRoot, pushed: true };
+      const pushedFeatureCommit = { ...featureCommit, pushed: true };
+
+      it('attempts a real PR when the project is github and both ends are pushed, persisting prNumber/prUrl with NO prError', async () => {
+        mockSessions.getSession.mockResolvedValue({ ...fullSession, projectId: 'proj-1', nodes: [pushedRoot, featureBranch, pushedFeatureCommit] });
+        mockDb.getProject.mockResolvedValue(githubProject);
+        mockGithubApp.createPullRequest.mockResolvedValue({ number: 7, url: 'https://github.com/acme/widgets/pull/7' });
+
+        const result = await service.createPrNode(SUB, SESSION_ID, dto);
+
+        expect(result.prNumber).toBe(7);
+        expect(result.prUrl).toBe('https://github.com/acme/widgets/pull/7');
+        expect(result.prError).toBeUndefined();
+        expect(mockGithubApp.createPullRequest).toHaveBeenCalledWith(
+          SUB, 'acme', 'widgets',
+          expect.objectContaining({ head: 'feature/x', base: 'main', title: 'PR: feature/x → main' }),
+        );
+      });
+
+      it('keeps internal-only behavior (no GitHub attempt, no prError) for a github-mock repo', async () => {
+        mockSessions.getSession.mockResolvedValue({ ...fullSession, projectId: 'proj-1', nodes: [pushedRoot, featureBranch, pushedFeatureCommit] });
+        mockDb.getProject.mockResolvedValue({ ...githubProject, repoRef: { ...githubProject.repoRef, provider: 'github-mock' } });
+
+        const result = await service.createPrNode(SUB, SESSION_ID, dto);
+
+        expect(mockGithubApp.createPullRequest).not.toHaveBeenCalled();
+        expect(result.prNumber).toBeUndefined();
+        expect(result.prUrl).toBeUndefined();
+        expect(result.prError).toBeUndefined();
+      });
+
+      it('keeps internal-only behavior (no GitHub attempt, no prError) when the commits were not pushed', async () => {
+        mockSessions.getSession.mockResolvedValue({ ...fullSession, projectId: 'proj-1', nodes: [mainRoot, featureBranch, featureCommit] }); // no pushed:true
+        mockDb.getProject.mockResolvedValue(githubProject);
+
+        const result = await service.createPrNode(SUB, SESSION_ID, dto);
+
+        expect(mockGithubApp.createPullRequest).not.toHaveBeenCalled();
+        expect(result.prNumber).toBeUndefined();
+        expect(result.prError).toBeUndefined();
+      });
+
+      it("records prError: 'app_not_enabled' when there is no App installation (null token)", async () => {
+        mockSessions.getSession.mockResolvedValue({ ...fullSession, projectId: 'proj-1', nodes: [pushedRoot, featureBranch, pushedFeatureCommit] });
+        mockDb.getProject.mockResolvedValue(githubProject);
+        mockGithubApp.createPullRequest.mockResolvedValue(null);
+
+        const result = await service.createPrNode(SUB, SESSION_ID, dto);
+
+        expect(result.kind).toBe('MERGE');
+        expect(result.prNumber).toBeUndefined();
+        expect(result.prError).toBe('app_not_enabled');
+      });
+
+      it.each(['exists', 'no_diff', 'forbidden', 'failed'] as const)(
+        "records prError: '%s' when GitHub returns that typed failure, degrading to internal-only",
+        async (error) => {
+          mockSessions.getSession.mockResolvedValue({ ...fullSession, projectId: 'proj-1', nodes: [pushedRoot, featureBranch, pushedFeatureCommit] });
+          mockDb.getProject.mockResolvedValue(githubProject);
+          mockGithubApp.createPullRequest.mockResolvedValue({ error });
+
+          const result = await service.createPrNode(SUB, SESSION_ID, dto);
+
+          expect(result.kind).toBe('MERGE'); // the internal record still lands
+          expect(result.prNumber).toBeUndefined();
+          expect(result.prUrl).toBeUndefined();
+          expect(result.prError).toBe(error);
+        },
+      );
+
+      it("records prError: 'failed' (no throw, no 500) when the GitHub call itself throws", async () => {
+        mockSessions.getSession.mockResolvedValue({ ...fullSession, projectId: 'proj-1', nodes: [pushedRoot, featureBranch, pushedFeatureCommit] });
+        mockDb.getProject.mockResolvedValue(githubProject);
+        mockGithubApp.createPullRequest.mockRejectedValue(new Error('GitHub API down'));
+
+        await expect(service.createPrNode(SUB, SESSION_ID, dto)).resolves.toMatchObject({ kind: 'MERGE', prStatus: 'open', prError: 'failed' });
+      });
+    });
   });
 
   describe('mergePrNode', () => {
@@ -818,6 +902,48 @@ describe('NodesService', () => {
     it('throws NotFoundException when the node does not exist', async () => {
       mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [mainRoot] });
       await expect(service.mergePrNode(SUB, SESSION_ID, 'missing')).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    describe('real GitHub merge (WS-E)', () => {
+      const githubProject = { projectId: 'proj-1', repoRef: { provider: 'github', owner: 'acme', repo: 'widgets', defaultBranch: 'main', url: 'https://github.com/acme/widgets' }, plugins: [] };
+      const openMergeWithPr = { ...openMerge, prNumber: 7, prUrl: 'https://github.com/acme/widgets/pull/7' };
+
+      it('merges the real GitHub PR when the MERGE node carries a prNumber', async () => {
+        mockSessions.getSession.mockResolvedValue({ ...fullSession, projectId: 'proj-1', nodes: [mainRoot, featureBranch, featureCommit, openMergeWithPr] });
+        mockDb.getProject.mockResolvedValue(githubProject);
+        mockGithubApp.mergePullRequest.mockResolvedValue(true);
+
+        await service.mergePrNode(SUB, SESSION_ID, 'merge1');
+
+        expect(mockGithubApp.mergePullRequest).toHaveBeenCalledWith(SUB, 'acme', 'widgets', 7);
+      });
+
+      it('does not attempt a GitHub merge when the MERGE node has no prNumber (internal-only PR)', async () => {
+        mockSessions.getSession.mockResolvedValue({ ...fullSession, projectId: 'proj-1', nodes: [mainRoot, featureBranch, featureCommit, openMerge] });
+        mockDb.getProject.mockResolvedValue(githubProject);
+
+        await service.mergePrNode(SUB, SESSION_ID, 'merge1');
+
+        expect(mockGithubApp.mergePullRequest).not.toHaveBeenCalled();
+      });
+
+      it('still completes the internal merge-commit when the GitHub merge call reports failure', async () => {
+        mockSessions.getSession.mockResolvedValue({ ...fullSession, projectId: 'proj-1', nodes: [mainRoot, featureBranch, featureCommit, openMergeWithPr] });
+        mockDb.getProject.mockResolvedValue(githubProject);
+        mockGithubApp.mergePullRequest.mockResolvedValue(false);
+
+        const result = await service.mergePrNode(SUB, SESSION_ID, 'merge1');
+
+        expect(result.mergeNode.prStatus).toBe('merged');
+      });
+
+      it('still completes the internal merge-commit (no throw, no 500) when the GitHub merge call itself throws', async () => {
+        mockSessions.getSession.mockResolvedValue({ ...fullSession, projectId: 'proj-1', nodes: [mainRoot, featureBranch, featureCommit, openMergeWithPr] });
+        mockDb.getProject.mockResolvedValue(githubProject);
+        mockGithubApp.mergePullRequest.mockRejectedValue(new Error('GitHub API down'));
+
+        await expect(service.mergePrNode(SUB, SESSION_ID, 'merge1')).resolves.toMatchObject({ mergeNode: { prStatus: 'merged' } });
+      });
     });
   });
 
@@ -988,8 +1114,10 @@ describe('NodesService', () => {
       mockDb.updateNode.mockResolvedValue(undefined);
       mockDb.updateAgentRun.mockResolvedValue(undefined);
       mockDb.getProject.mockResolvedValue(null);
+      mockDb.updateSessionMeta.mockResolvedValue(undefined);
       mockSessions.touchUpdatedAt.mockResolvedValue(undefined);
       mockSessions.incrementNodeCount.mockResolvedValue(undefined);
+      mockLlm.generateCodeMeta.mockResolvedValue({ title: 'Add Retry Logic', emoji: '🔁', lede: 'Adds retry logic to the fetch client.' });
       runnerYields(agentEvents, agentFinal);
     });
 
@@ -1016,7 +1144,28 @@ describe('NodesService', () => {
       expect(types[5]).toBe('done');
     });
 
-    it('trims trailing punctuation the 5-word title cut leaves behind', async () => {
+    it('uses generateCodeMeta for title/emoji/lede on the done path, calling it with the haiku model', async () => {
+      const received: Array<{ type: string; node?: { title?: string; emoji?: string | null; lede?: string } }> = [];
+      await service.createCodeNodeStreaming(SUB, SESSION_ID, dto, (d) => received.push(d as typeof received[number]));
+
+      expect(mockLlm.generateCodeMeta).toHaveBeenCalledWith(
+        dto.instruction,
+        agentFinal.commitMessage,
+        agentFinal.diffSummary,
+        'claude-haiku-4-5-20251001',
+      );
+      expect(mockDb.updateNode).toHaveBeenCalledWith(
+        SESSION_ID,
+        expect.any(String),
+        expect.objectContaining({ title: 'Add Retry Logic', lede: 'Adds retry logic to the fetch client.', emoji: '🔁' }),
+      );
+      const done = received.find((e) => e.type === 'done')!;
+      expect(done.node!.title).toBe('Add Retry Logic');
+      expect(done.node!.emoji).toBe('🔁');
+    });
+
+    it('falls back to commit-message truncation (and trims trailing punctuation) when generateCodeMeta errors', async () => {
+      mockLlm.generateCodeMeta.mockRejectedValueOnce(new Error('llm down'));
       runnerYields(agentEvents, { ...agentFinal, commitMessage: 'feat: Scaffold CLI with Commander, config loader, and S3 client' });
       const send = () => {};
 
@@ -1027,6 +1176,55 @@ describe('NodesService', () => {
         expect.any(String),
         expect.objectContaining({ title: 'feat: Scaffold CLI with Commander' }),
       );
+      // Fallback never touches emoji — the persist-first node's null stays untouched.
+      const updateArgs = mockDb.updateNode.mock.calls[0][2] as { emoji?: string };
+      expect(updateArgs.emoji).toBeUndefined();
+    });
+
+    it('falls back to commit-message truncation when generateCodeMeta is unavailable (bare mock, no explicit resolve)', async () => {
+      mockLlm.generateCodeMeta.mockReset(); // undoes this describe's default mockResolvedValue — simulates an unwired/empty mock
+      const send = () => {};
+
+      await expect(service.createCodeNodeStreaming(SUB, SESSION_ID, dto, send)).resolves.toBeUndefined();
+
+      expect(mockDb.updateNode).toHaveBeenCalledWith(
+        SESSION_ID,
+        expect.any(String),
+        expect.objectContaining({ title: expect.any(String), lede: agentFinal.commitMessage }),
+      );
+    });
+
+    describe('lastRunStatus denormalization (History Continue rail)', () => {
+      it("writes lastRunStatus:'running' onto the session at persist-first, before init", async () => {
+        const order: string[] = [];
+        mockDb.updateSessionMeta.mockImplementation((_sub: string, _sid: string, updates: { lastRunStatus?: string }) => {
+          if (updates.lastRunStatus) order.push(`meta:${updates.lastRunStatus}`);
+          return Promise.resolve();
+        });
+        const send = (d: object) => order.push(`send:${(d as { type: string }).type}`);
+
+        await service.createCodeNodeStreaming(SUB, SESSION_ID, dto, send);
+
+        expect(mockDb.updateSessionMeta).toHaveBeenCalledWith(SUB, SESSION_ID, { lastRunStatus: 'running' });
+        // running is written before the init event (part of the persist-first group).
+        expect(order.indexOf('meta:running')).toBeLessThan(order.indexOf('send:init'));
+      });
+
+      it("writes lastRunStatus:'done' onto the session on the done path", async () => {
+        await service.createCodeNodeStreaming(SUB, SESSION_ID, dto, jest.fn());
+        expect(mockDb.updateSessionMeta).toHaveBeenCalledWith(SUB, SESSION_ID, { lastRunStatus: 'running' });
+        expect(mockDb.updateSessionMeta).toHaveBeenCalledWith(SUB, SESSION_ID, { lastRunStatus: 'done' });
+      });
+
+      it("writes lastRunStatus:'error' onto the session when the runner fails mid-stream", async () => {
+        runnerYields(agentEvents, new Error('boom'));
+
+        await service.createCodeNodeStreaming(SUB, SESSION_ID, dto, jest.fn());
+
+        expect(mockDb.updateSessionMeta).toHaveBeenCalledWith(SUB, SESSION_ID, { lastRunStatus: 'error' });
+        // never a 'done' write on the error path.
+        expect(mockDb.updateSessionMeta).not.toHaveBeenCalledWith(SUB, SESSION_ID, { lastRunStatus: 'done' });
+      });
     });
 
     it('emits a heartbeat agent-event between init and the first real one when the runner is slow, and never persists heartbeats', async () => {
@@ -1070,10 +1268,51 @@ describe('NodesService', () => {
         expect(heartbeatIdx).toBeGreaterThan(-1);
         expect(heartbeatIdx).toBeGreaterThan(initIdx);
         expect(heartbeatIdx).toBeLessThan(realIdx);
+        // The mock runner never calls ctx.onPhase — the heartbeat stays on its
+        // one generic default rather than the old rotating 3-message list.
+        expect(received[heartbeatIdx].event!.payload).toBe('Working…');
 
         const doneCall = mockDb.updateAgentRun.mock.calls.find((c) => (c[2] as { status?: string }).status === 'done');
         const persisted = JSON.parse((doneCall![2] as { events: string }).events) as AgentEvent[];
         expect(persisted.every((e) => e.seq >= 0)).toBe(true);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('reflects real boot-phase text reported via ctx.onPhase in the heartbeat, not a rotating list', async () => {
+      jest.useFakeTimers();
+      try {
+        let releaseFirstYield: () => void = () => {};
+        const firstYieldGate = new Promise<void>((resolve) => { releaseFirstYield = resolve; });
+        // Simulates CloudAgentRunner: reports real boot progress via ctx.onPhase
+        // before its first real event, same as FlyProvider.provisionInApp does.
+        agentRunner.run.mockImplementation(async function* (ctx: AgentRunContext) {
+          ctx.onPhase?.('Provisioning machine…');
+          ctx.onPhase?.('Booting sandbox (image pull, ~1 min)…');
+          await firstYieldGate;
+          yield {
+            type: 'result',
+            result: {
+              commitMessage: 'msg', commitSha: null,
+              diffSummary: { filesChanged: 0, additions: 0, deletions: 0, files: [] },
+              inputTokens: 1, outputTokens: 1, model: 'm',
+            },
+          };
+        });
+
+        const received: Array<{ type: string; event?: AgentEvent }> = [];
+        const send = (d: object) => received.push(d as { type: string; event?: AgentEvent });
+
+        const runPromise = service.createCodeNodeStreaming(SUB, SESSION_ID, dto, send);
+        for (let i = 0; i < 20; i++) await Promise.resolve();
+
+        jest.advanceTimersByTime(3100); // one heartbeat tick after onPhase has updated the latest phase
+        releaseFirstYield();
+        await runPromise;
+
+        const heartbeat = received.find((e) => e.type === 'agent-event' && (e.event?.seq ?? 0) < 0);
+        expect(heartbeat!.event!.payload).toBe('Booting sandbox (image pull, ~1 min)…');
       } finally {
         jest.useRealTimers();
       }

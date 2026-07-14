@@ -102,6 +102,12 @@ export interface SessionMetaItem {
   // Set by ProjectsService.create when this session is a Project's map — absent
   // for plain research sessions created outside a Project.
   projectId?: string;
+  // Denormalized status of this session's most recent CODE agent run, so the
+  // History "Continue" rail can show run state without loading every node.
+  // Written by NodesService.createCodeNodeStreaming: 'running' when the CODE
+  // node is first persisted, 'done'/'error' at the run's end. Absent for a
+  // session that has never had a CODE run.
+  lastRunStatus?: 'running' | 'done' | 'error';
 }
 
 export interface CitationSource {
@@ -163,9 +169,29 @@ export interface NodeItem {
   // cloud hold reconciliation. Machine/infra cost bills separately later at
   // sandbox sweep and is never folded in here.
   runCostUsd?: number;
+  // Fly machine wall-clock cost (ADR-0004), billed separately from runCostUsd
+  // above — set by UsersService.billMachineUsage once the sandbox is actually
+  // destroyed (success-path TTL sweep or an error-path immediate destroy), so
+  // it lands well after the node's own 'done' write. Absent until then, and
+  // absent entirely for mock/local runs (no Fly machine to bill).
+  machineCostUsd?: number;
   // MERGE node fields — second parent, render-only (ADR-0005).
   mergeFromNodeId?: string;
   prStatus?: 'open' | 'merged';
+  // Real GitHub PR (ADR-0002/0005 extension, WS-E) — set only when
+  // createPrNode successfully opened an actual PR on GitHub (github provider,
+  // both ends pushed, App has Pull-requests:Write). Absent for an
+  // internal-only MERGE node, exactly like today when any of those don't hold.
+  prNumber?: number;
+  prUrl?: string;
+  // Why a real GitHub PR attempt did NOT produce a prNumber, so the frontend
+  // can render distinct states. Set ONLY when the attempt was actually made
+  // (github provider + both ends pushed) and failed; absent both when the PR
+  // succeeded (prNumber/prUrl set instead) AND when no attempt was made at all
+  // (mock/github-mock/unpushed — a pure internal MERGE node). 'app_not_enabled'
+  // = no installation token (App not installed/configured); the rest mirror
+  // GithubAppService.createPullRequest's typed failure reasons.
+  prError?: 'app_not_enabled' | 'forbidden' | 'exists' | 'no_diff' | 'failed';
 }
 
 export interface AnnotationItem {

@@ -1,6 +1,7 @@
 'use client';
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import type { ForkNode } from '@/lib/types';
+import type { SegMeta } from '@/lib/collapseSegments';
 import { clamp } from '@/lib/utils';
 import { Hash, Search, Sparkles, CornerDownRight, GitBranch, GitMerge, Map, Minus, Plus, Maximize, Filter, Blend, X, ClipboardList, Code } from './Icons';
 import { NODE_W, NODE_H, layoutTree, layoutGitGraph, hasRailNode } from '@/lib/layoutGitGraph';
@@ -14,6 +15,10 @@ const RX = 8;
 // existing PAD (48px) fit-view margin, so layoutGitGraph's pos/bounds math
 // doesn't need to know about it (see layoutGitGraph.ts's rail-row-gap comment).
 const PILL_H = 22;
+// Re-collapse chip (#205) geometry — a slim pill headed the width of a node
+// column, sitting just above the (now-expanded) first interior commit.
+const COLLAPSE_CHIP_H = 24;
+const COLLAPSE_CHIP_GAP = 8;
 
 // A bracket tracing only the top-right rounded-corner (chamfer) arc of the
 // pill — drawn bold/accent on nodes that have been read (see globals.css).
@@ -31,6 +36,13 @@ function starEdge(y: number, h: number, r: number): string {
 
 interface MindMapProps {
   nodes: Record<string, ForkNode>;
+  // Segment metadata for BOTH collapsed (id === segId is in `nodes`) and
+  // user-expanded (id absent from `nodes`, hiddenIds[0] present instead)
+  // chains — see collapseSegments.ts. Only the latter needs rendering here
+  // (the re-collapse chip); the former renders via the segment placeholder
+  // card already in `nodes`.
+  segMeta?: Record<string, SegMeta>;
+  onCollapseSegment?: (segId: string) => void;
   rootId: string;
   activeId: string | null;
   onSelect: (id: string) => void;
@@ -64,6 +76,8 @@ interface MindMapProps {
 
 export function MindMap({
   nodes,
+  segMeta,
+  onCollapseSegment,
   rootId,
   activeId,
   onSelect,
@@ -186,7 +200,7 @@ export function MindMap({
   // which React's synthetic (passive) pointer events can't do.
   const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     if (e.pointerType === 'touch') return;
-    if ((e.target as Element).closest('.mm-node')) return;
+    if ((e.target as Element).closest('.mm-node, .mm-segment-collapse-chip')) return;
     cancelAnimationFrame(animFrame.current);
     setDrag({ x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty });
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -372,6 +386,16 @@ export function MindMap({
 
   const nodeCount = Object.keys(nodes).length;
 
+  // Re-collapse chips (#205): a segMeta entry whose segId is NOT itself in
+  // `nodes` (the placeholder card only exists while collapsed) but whose
+  // first hidden id IS in `nodes` means the user expanded that run — head it
+  // with a chip at the anchor node's position instead of leaving no way back.
+  const collapseChips = segMeta
+    ? Object.entries(segMeta)
+        .filter(([segId, meta]) => !nodes[segId] && nodes[meta.hiddenIds[0]] && pos[meta.hiddenIds[0]])
+        .map(([segId, meta]) => ({ segId, count: meta.count, anchorId: meta.hiddenIds[0] }))
+    : [];
+
   return (
     <>
       <div className="mindmap-header" data-tour="tour-mindmap">
@@ -469,6 +493,9 @@ export function MindMap({
             const loading = loadingIds.has(n.id);
             const isRead = readIds.has(n.id);
             const starred = !!n.starred;
+            // A failed run is a STATE layered on the CODE kind (red border +
+            // kicker dot), not a fifth kind — see fix-failure-states.html.
+            const isFailed = n.kind === 'CODE' && n.agentStatus === 'error';
             const NodeIcon = pickIcon(n.kind, isRoot);
             const kicker = kindLabel(n.kind, { isRoot });
 
@@ -525,7 +552,7 @@ export function MindMap({
               <g
                 key={n.id}
                 ref={el => { if (nodeRefs && el) nodeRefs.current.set(n.id, el); }}
-                className={`mm-node${isActive ? ' active' : ''}${isRoot ? ' root' : ''}${loading ? ' loading' : ''}${isRead ? ' read' : ''}${starred ? ' starred' : ''}${isMixerBase ? ' mixer-base' : ''}${isMixerSelected ? ' mixer-selected' : ''}${isMixerSelectable ? ' mixer-selectable' : ''}${isPrSourceMarked ? ' mixer-base' : ''}${(isPrSourceCandidate || isPrTargetCandidate) ? ' mixer-selectable' : ''}${isPrTargetHighlighted ? ' mm-node--pr-target' : ''}${isSegment ? ' mm-node--segment' : ''}`}
+                className={`mm-node${isActive ? ' active' : ''}${isRoot ? ' root' : ''}${loading ? ' loading' : ''}${isRead ? ' read' : ''}${starred ? ' starred' : ''}${isMixerBase ? ' mixer-base' : ''}${isMixerSelected ? ' mixer-selected' : ''}${isMixerSelectable ? ' mixer-selectable' : ''}${isPrSourceMarked ? ' mixer-base' : ''}${(isPrSourceCandidate || isPrTargetCandidate) ? ' mixer-selectable' : ''}${isPrTargetHighlighted ? ' mm-node--pr-target' : ''}${isSegment ? ' mm-node--segment' : ''}${isFailed ? ' mm-node--failed' : ''}`}
                 data-depth={Math.min(depth, 6)}
                 data-kind={n.kind}
                 transform={`translate(${p.x} ${p.y})`}
@@ -579,11 +606,11 @@ export function MindMap({
                               {n.kind === 'MERGE' && n.prStatus && (
                                 <span className={`mm-pr-status mm-pr-status--${n.prStatus}`}>{n.prStatus}</span>
                               )}
+                              {isFailed && <span className="mm-node-error-dot" title="Run failed" />}
                             </div>
                             <div className="mm-label" title={n.title || 'Untitled'}>{n.title || 'Untitled'}</div>
                           </div>
                           {n.sources?.length ? <span className="mm-search-badge">🔍</span> : null}
-                          {n.kind === 'CODE' && n.imported ? <span className="mm-imported-badge">imported</span> : null}
                           {n.kind === 'MIX' ? <span className="mm-mix-badge"><Filter size={11} /></span> : null}
                         </div>
                       </div>
@@ -593,8 +620,31 @@ export function MindMap({
               </g>
             );
           })}
+          {/* Re-collapse chips (#205) — headers an expanded run, sitting just
+              above the now-visible first interior node so there's a way back
+              to the collapsed placeholder without losing the expansion state
+              of any OTHER segment. */}
+          {collapseChips.map(({ segId, count, anchorId }) => {
+            const p = pos[anchorId];
+            const anchorHasPill = nodes[anchorId]?.kind === 'CODE' || nodes[anchorId]?.kind === 'BRANCH';
+            const y = p.y - (anchorHasPill ? PILL_H : 0) - COLLAPSE_CHIP_H - COLLAPSE_CHIP_GAP;
+            return (
+              <foreignObject key={segId} x={p.x} y={y} width={NODE_W} height={COLLAPSE_CHIP_H} overflow="visible">
+                <div style={{ display: 'flex', justifyContent: 'center' }}>
+                  <button
+                    type="button"
+                    className="mm-segment-collapse-chip"
+                    onClick={e => { e.stopPropagation(); onCollapseSegment?.(segId); }}
+                  >
+                    <span className="mm-segment-collapse-chip-caret">⌄</span>{count} commit{count === 1 ? '' : 's'} — collapse
+                  </button>
+                </div>
+              </foreignObject>
+            );
+          })}
         </g>
       </svg>
+      {gitLayout && <MapLegend />}
       {branchPopup && (
         <BranchPopup
           rect={branchPopup.rect}
@@ -604,5 +654,29 @@ export function MindMap({
         />
       )}
     </>
+  );
+}
+
+// Git-graph map legend — only rendered once the map has switched into
+// layoutGitGraph (a pure-research map has no PLAN/CODE/BRANCH/MERGE/segment
+// vocabulary to explain). Kept small and corner-anchored (bottom-left, clear
+// of the zoom controls and the mixer/PR overlay's bottom-center strip) per
+// map-git-graph.html's spec — a reference, not a dominant chrome element.
+function MapLegend() {
+  return (
+    <div className="mm-legend">
+      <div className="mm-legend-row"><span className="mm-legend-dot mm-legend-dot--learn" />Learn — go deeper / ask AI</div>
+      <div className="mm-legend-row"><span className="mm-legend-dot mm-legend-dot--plan" />Plan — synthesized implementation plan</div>
+      <div className="mm-legend-row"><span className="mm-legend-dot mm-legend-dot--code" />Code — one agent run = one commit</div>
+      <div className="mm-legend-row"><span className="mm-legend-dot mm-legend-dot--branch" />Branch — forks a new column, same row</div>
+      <div className="mm-legend-row"><span className="mm-legend-dot mm-legend-dot--merge" />Merge — PR into a target column</div>
+      <div className="mm-legend-row"><span className="mm-legend-dot mm-legend-dot--segment" />Collapsed commit chain</div>
+      <div className="mm-legend-row">⌄ Expanded run — click to re-collapse</div>
+      <div className="mm-legend-sep" />
+      <div className="mm-legend-row"><span className="mm-legend-line mm-legend-line--lane" />Column rail</div>
+      <div className="mm-legend-row"><span className="mm-legend-line mm-legend-line--learn" />Learn edge (curved, hangs below)</div>
+      <div className="mm-legend-row"><span className="mm-legend-line mm-legend-line--fork" />Branch fork (horizontal, arrowhead)</div>
+      <div className="mm-legend-row"><span className="mm-legend-line mm-legend-line--merge" />Merge edge (violet, arrowhead)</div>
+    </div>
   );
 }

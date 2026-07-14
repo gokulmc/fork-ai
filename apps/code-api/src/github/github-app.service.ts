@@ -18,6 +18,24 @@ interface CachedToken {
   expiresAt: number; // epoch ms
 }
 
+// createPullRequest's result — a real PR on success, or a typed reason when
+// GitHub rejected the request for a known cause. NodesService degrades to its
+// existing internal-only MERGE-node behavior on either the failure variant or
+// a thrown error; the distinction here only sharpens what gets logged.
+export interface CreatePullRequestSuccess {
+  number: number;
+  url: string;
+}
+export interface CreatePullRequestFailure {
+  // 'exists': GitHub already has an open PR for this head/base pair.
+  // 'no_diff': the two branches have no commits between them to PR.
+  // 'forbidden': the installation token lacks Pull-requests:Write (the App
+  //   permission this whole feature ships behind — see root CLAUDE.md's
+  //   WS-E/ADR-0002 note) — the expected outcome until that grant lands.
+  // 'failed': any other non-2xx response GitHub returned.
+  error: 'exists' | 'no_diff' | 'forbidden' | 'failed';
+}
+
 // GitHub App slice (Contents:Read v1 — see docs/forkai-code/adr/0002's
 // amendment). Distinct from GithubService's classic OAuth App: that one holds
 // a long-lived per-user token for read-only browsing/import; this one mints
@@ -104,9 +122,82 @@ export class GithubAppService {
     return data.token;
   }
 
+  // Opens a real GitHub PR (ADR-0002/0005 extension — behind the App's
+  // Pull-requests:Write permission, an infra grant that ships separately; see
+  // the CreatePullRequestFailure 'forbidden' case). Never throws for an
+  // expected outcome — mirrors mintInstallationToken's own null-on-"not
+  // available" convention — so the caller (NodesService) can always degrade
+  // to its internal-only MERGE-node record without a try/catch around a
+  // routine "not installed yet" case. Returns null only when there's no
+  // installation token to attempt with at all.
+  async createPullRequest(
+    sub: string,
+    owner: string,
+    repo: string,
+    opts: { head: string; base: string; title: string; body?: string },
+  ): Promise<CreatePullRequestSuccess | CreatePullRequestFailure | null> {
+    const token = await this.mintInstallationToken(sub, owner, repo);
+    if (!token) return null;
+
+    const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls`, {
+      method: 'POST',
+      headers: { ...this.installationHeaders(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ head: opts.head, base: opts.base, title: opts.title, body: opts.body }),
+    });
+    if (res.ok) {
+      const data = (await res.json()) as { number: number; html_url: string };
+      return { number: data.number, url: data.html_url };
+    }
+
+    const body = (await res.json().catch(() => ({}))) as { message?: string; errors?: Array<{ message?: string }> };
+    if (res.status === 422 && /no commits between/i.test(body.message ?? '')) {
+      return { error: 'no_diff' };
+    }
+    if (res.status === 422 && body.errors?.some((e) => /already exists/i.test(e.message ?? ''))) {
+      return { error: 'exists' };
+    }
+    if (res.status === 403) {
+      return { error: 'forbidden' };
+    }
+    this.logger.warn(`createPullRequest failed for ${owner}/${repo} (${opts.head} → ${opts.base}): ${res.status} ${JSON.stringify(body)}`);
+    return { error: 'failed' };
+  }
+
+  // Merges an already-open real GitHub PR (only ever called once createPullRequest
+  // above has confirmed one exists — see NodesService.mergePrNode). Never
+  // throws — false covers both "no installation token" and any non-2xx
+  // response; the caller logs and keeps its internal-only merge-commit record
+  // either way.
+  async mergePullRequest(sub: string, owner: string, repo: string, number: number): Promise<boolean> {
+    const token = await this.mintInstallationToken(sub, owner, repo);
+    if (!token) return false;
+
+    const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${number}/merge`, {
+      method: 'PUT',
+      headers: { ...this.installationHeaders(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    if (!res.ok) {
+      this.logger.warn(`mergePullRequest failed for ${owner}/${repo}#${number}: ${res.status} ${await res.text().catch(() => '')}`);
+      return false;
+    }
+    return true;
+  }
+
   private appHeaders(): Record<string, string> {
     return {
       Authorization: `Bearer ${this.appJwt()}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    };
+  }
+
+  // Same shape as appHeaders, but authenticated as an installation (repo-scoped
+  // access token) rather than the App itself — required for repo-level
+  // endpoints like /repos/{owner}/{repo}/pulls, which reject an App JWT.
+  private installationHeaders(token: string): Record<string, string> {
+    return {
+      Authorization: `Bearer ${token}`,
       Accept: 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28',
     };

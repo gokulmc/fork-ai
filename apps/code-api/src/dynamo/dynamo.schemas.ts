@@ -121,6 +121,7 @@ export const SessionMetaSchema = new dynamoose.Schema({
   },
   gsi1sk: String,
   projectId: { type: String, required: false },
+  lastRunStatus: { type: String, required: false },
 });
 
 export const NodeSchema = new dynamoose.Schema({
@@ -174,6 +175,9 @@ export const NodeSchema = new dynamoose.Schema({
   // on write/read (see root CLAUDE.md "Dynamoose saveUnknown" gotcha).
   mergeFromNodeId: { type: String, required: false },
   prStatus: { type: String, required: false },
+  prNumber: { type: Number, required: false },
+  prUrl: { type: String, required: false },
+  prError: { type: String, required: false },
   // Nested object covers both workspace kinds' fields (Dynamoose has no tagged
   // union) — sandboxId/vscodeUrl for 'cloud', path for 'local', all optional
   // besides kind so either shape round-trips.
@@ -192,6 +196,7 @@ export const NodeSchema = new dynamoose.Schema({
   pushError: { type: String, required: false },
   budgetExceeded: { type: Boolean, required: false },
   runCostUsd: { type: Number, required: false },
+  machineCostUsd: { type: Number, required: false },
 });
 
 export const AnnotationSchema = new dynamoose.Schema({

@@ -1,0 +1,144 @@
+<!-- @dsCard group="Fix proposals" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>forkai-code — Fix: Cost footer</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body { padding: 56px 64px 120px; min-height: 100vh; }
+
+  .theme-toggle {
+    position: fixed; top: 20px; right: 24px; z-index: 100;
+    font-family: var(--sans); font-size: 12px; font-weight: 500;
+    padding: 7px 14px; border-radius: var(--radius);
+    border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink-2);
+    cursor: pointer; box-shadow: var(--shadow-1);
+    transition: background .12s, color .12s;
+  }
+  .theme-toggle:hover { background: var(--hover); color: var(--ink); }
+
+  .ds-brand { display: inline-flex; align-items: center; gap: 8px; font-family: var(--sans); font-weight: 600; font-size: 13px; letter-spacing: .02em; color: var(--ink-2); margin-bottom: 28px; }
+  .ds-brand .mark { width: 15px; height: 15px; border-radius: 4px; background: var(--ink); display: inline-block; }
+  .ds-page-title { font-family: var(--serif); font-weight: 400; font-size: 34px; letter-spacing: -0.02em; margin: 0 0 8px; color: var(--ink); }
+  .ds-page-sub { font-family: var(--sans); font-size: 13px; color: var(--ink-3); margin: 0 0 48px; max-width: 660px; line-height: 1.55; }
+  .ds-section { margin-bottom: 52px; max-width: 660px; }
+  .ds-section-label { font-family: var(--sans); font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+  .ds-section-note { font-family: var(--sans); font-size: 12px; color: var(--ink-3); margin: 0 0 16px; line-height: 1.5; }
+
+  .footer-demo-shell { background: var(--sidebar, var(--panel)); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 22px 24px; }
+
+  /* ── ported from code-workspace.html ────────────────────────────── */
+  .ws-footer { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .gh-btn { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 14px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 12.5px; font-weight: 500; cursor: pointer; }
+  .gh-btn:hover { background: var(--hover); }
+  .mock-tag { font-family: var(--sans); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); border: 1px solid var(--line-strong); border-radius: 999px; padding: 2px 7px; }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+
+  /* ── NEW: provenance/state chips — left cluster ─────────────────── */
+  .state-chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px; border-radius: 999px; font-family: var(--sans); font-size: 11.5px; font-weight: 600; border: 1px solid var(--line); background: var(--panel); color: var(--ink-2); white-space: nowrap; }
+  .state-chip--pushed { color: var(--diff-add); background: var(--diff-add-bg); border-color: color-mix(in oklab, var(--diff-add) 35%, var(--line)); }
+  .state-chip--pushed .status-dot { background: var(--diff-add); }
+  .state-chip--sandbox-only { color: var(--ink-3); }
+  .state-chip--sandbox-only .status-dot { background: var(--ink-3); }
+  .state-chip--ws-active .status-dot { background: var(--diff-add); }
+  .state-chip--ws-expired { color: var(--ink-3); }
+
+  /* ── NEW: right cluster — single cost total, hover popover ─────── */
+  .cost-total-wrap { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+  .cost-total-group { position: relative; }
+  .cost-total { display: inline-flex; align-items: center; height: 28px; font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--ink); cursor: default; border-bottom: 1px dashed var(--line-strong); }
+  .cost-note { font-family: var(--sans); font-size: 10.5px; color: var(--ink-3); line-height: 1.4; }
+
+  .cost-popover { position: absolute; bottom: calc(100% + 10px); right: 0; background: var(--paper); border: 1px solid var(--line-strong); border-radius: var(--radius); box-shadow: var(--shadow-2); padding: 10px 13px; font-family: var(--sans); font-size: 11.5px; color: var(--ink-2); white-space: nowrap; opacity: 0; visibility: hidden; transform: translateY(3px); transition: opacity .12s, transform .12s; z-index: 5; }
+  .cost-popover::after { content: ""; position: absolute; top: 100%; right: 13px; width: 9px; height: 9px; margin-top: -5px; background: var(--paper); border-right: 1px solid var(--line-strong); border-bottom: 1px solid var(--line-strong); transform: rotate(45deg); }
+  .cost-total-group:hover .cost-popover, .cost-total-group--open .cost-popover { opacity: 1; visibility: visible; transform: translateY(0); }
+  .cost-popover-row { display: flex; justify-content: space-between; gap: 18px; padding: 2px 0; }
+  .cost-popover-row + .cost-popover-row { border-top: 1px solid var(--line); margin-top: 2px; padding-top: 5px; }
+  .cost-popover-row span:first-child { color: var(--ink-3); }
+  .cost-popover-row span:last-child { font-family: var(--mono); font-weight: 600; color: var(--ink); }
+
+  /* ── NEW: expired-workspace consequence line — pairs with the chip
+     so expiry never reads as a dead end ──────────────────────────── */
+  .ws-footer-note { font-family: var(--sans); font-size: 11.5px; color: var(--ink-3); margin: 12px 0 0; line-height: 1.5; }
+  .ws-footer-note-action { color: var(--kind-code); font-weight: 600; text-decoration: none; }
+  .ws-footer-note-action:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+  <button class="theme-toggle" onclick="const h=document.documentElement; h.setAttribute('data-theme', (h.getAttribute('data-theme')||'light')==='light'?'dark':'light');">Toggle theme</button>
+
+  <div class="ds-brand"><span class="mark"></span>fork ai code</div>
+  <h1 class="ds-page-title">Fix — Cost footer</h1>
+  <p class="ds-page-sub">WS-G. The commit footer regrouped into two clusters: provenance/state chips on the left (push status, workspace status), a single cost total on the right that reveals its AI/compute breakdown on hover instead of showing both numbers all the time.</p>
+
+  <div class="ds-section">
+    <div class="ds-section-label">(a) Normal — done, breakdown popover open</div>
+    <p class="ds-section-note">Hover (or, pinned here for review) the cost total to see the AI/compute split. The workspace stays warm for a moment after a run finishes, so a follow-up Ask doesn't need a fresh sandbox yet.</p>
+    <div class="footer-demo-shell">
+      <div class="ws-footer">
+        <button class="gh-btn">View on GitHub ↗</button>
+        <span class="mock-tag">mock</span>
+        <span class="state-chip state-chip--pushed"><span class="status-dot"></span>Pushed ✓</span>
+        <span class="state-chip state-chip--ws-active"><span class="status-dot"></span>Workspace active</span>
+        <div class="cost-total-wrap">
+          <div class="cost-total-group cost-total-group--open">
+            <span class="cost-total">≈ $0.78</span>
+            <div class="cost-popover">
+              <div class="cost-popover-row"><span>AI (Claude Sonnet)</span><span>$0.60</span></div>
+              <div class="cost-popover-row"><span>Compute</span><span>$0.18</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ds-section">
+    <div class="ds-section-label">(b) Provisional — run still finishing</div>
+    <p class="ds-section-note">The commit exists locally but hasn't been pushed yet, and compute is still metering — the "+" and the note make clear $0.60 is a floor, not the final number.</p>
+    <div class="footer-demo-shell">
+      <div class="ws-footer">
+        <button class="gh-btn">View on GitHub ↗</button>
+        <span class="mock-tag">mock</span>
+        <span class="state-chip state-chip--sandbox-only"><span class="status-dot"></span>commit only in sandbox</span>
+        <span class="state-chip state-chip--ws-active"><span class="status-dot"></span>Workspace active</span>
+        <div class="cost-total-wrap">
+          <div class="cost-total-group">
+            <span class="cost-total">≈ $0.60+</span>
+            <div class="cost-popover">
+              <div class="cost-popover-row"><span>AI (Claude Sonnet)</span><span>$0.60</span></div>
+              <div class="cost-popover-row"><span>Compute</span><span>accruing…</span></div>
+            </div>
+          </div>
+          <span class="cost-note">compute still accruing</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ds-section">
+    <div class="ds-section-label">(c) Workspace expired — paired consequence, not a dead end</div>
+    <p class="ds-section-note">The gray clock chip alone would read as an error state. Pairing it with an explicit next step keeps expiry routine: the commit and diff are permanent, only the live sandbox timed out.</p>
+    <div class="footer-demo-shell">
+      <div class="ws-footer">
+        <button class="gh-btn">View on GitHub ↗</button>
+        <span class="mock-tag">mock</span>
+        <span class="state-chip state-chip--pushed"><span class="status-dot"></span>Pushed ✓</span>
+        <span class="state-chip state-chip--ws-expired">🕐 Workspace expired</span>
+        <div class="cost-total-wrap">
+          <div class="cost-total-group">
+            <span class="cost-total">≈ $0.78</span>
+            <div class="cost-popover">
+              <div class="cost-popover-row"><span>AI (Claude Sonnet)</span><span>$0.60</span></div>
+              <div class="cost-popover-row"><span>Compute</span><span>$0.18</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="ws-footer-note">Continuing starts a fresh sandbox from this commit — nothing you've built is lost. <a class="ws-footer-note-action" href="#">Continue →</a></p>
+    </div>
+  </div>
+</body>
+</html>

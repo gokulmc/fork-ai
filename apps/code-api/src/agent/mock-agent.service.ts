@@ -30,6 +30,12 @@ export interface AgentRunContext {
   sub?: string;
   sessionId?: string;
   maxBudgetUsd?: number;
+  // Real boot-progress reporting (cloud only) — threaded down to
+  // CloudAgentRunner → FlyProvider.create, called at each real provisioning
+  // boundary so nodes.service.ts's heartbeat can show actual progress instead
+  // of a repeating canned message. Mock/local runners never call it, so their
+  // heartbeat stays on its single generic default (see nodes.service.ts).
+  onPhase?: (msg: string) => void;
   // Where a real (local/cloud) runner finds or creates its working copy — the
   // mock ignores all of it. cloneUrl/localPath are set from a real project's
   // repoRef (nodes.service.ts's resolveRunRepo) or, dev-only, straight from

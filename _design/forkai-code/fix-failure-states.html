@@ -1,0 +1,161 @@
+<!-- @dsCard group="Fix proposals" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>forkai-code — Fix: Failure states</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body { padding: 56px 64px 120px; min-height: 100vh; }
+
+  .theme-toggle {
+    position: fixed; top: 20px; right: 24px; z-index: 100;
+    font-family: var(--sans); font-size: 12px; font-weight: 500;
+    padding: 7px 14px; border-radius: var(--radius);
+    border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink-2);
+    cursor: pointer; box-shadow: var(--shadow-1);
+    transition: background .12s, color .12s;
+  }
+  .theme-toggle:hover { background: var(--hover); color: var(--ink); }
+
+  .ds-brand { display: inline-flex; align-items: center; gap: 8px; font-family: var(--sans); font-weight: 600; font-size: 13px; letter-spacing: .02em; color: var(--ink-2); margin-bottom: 28px; }
+  .ds-brand .mark { width: 15px; height: 15px; border-radius: 4px; background: var(--ink); display: inline-block; }
+  .ds-page-title { font-family: var(--serif); font-weight: 400; font-size: 34px; letter-spacing: -0.02em; margin: 0 0 8px; color: var(--ink); }
+  .ds-page-sub { font-family: var(--sans); font-size: 13px; color: var(--ink-3); margin: 0 0 48px; max-width: 660px; line-height: 1.55; }
+  .ds-section { margin-bottom: 52px; }
+  .ds-section-label { font-family: var(--sans); font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+  .ds-section-note { font-family: var(--sans); font-size: 12px; color: var(--ink-3); margin: 0 0 16px; max-width: 620px; line-height: 1.5; }
+  .ds-row { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+  .ds-label-sm { font-family: var(--sans); font-size: 10.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; }
+
+  /* ── ported: term-panel / step rows (see fix-agent-timeline.html) ── */
+  .term-panel { background: var(--term-bg); border: 1px solid var(--term-line); border-radius: var(--radius); padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; max-width: 620px; }
+  .timeline-step { display: flex; align-items: flex-start; gap: 9px; }
+  .timeline-step-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--diff-add); flex-shrink: 0; margin-top: 7px; }
+  .timeline-step-body { min-width: 0; font-family: var(--sans); font-size: 12.5px; line-height: 1.55; color: var(--term-ink-dim); }
+  .timeline-step-verb { font-weight: 700; color: var(--term-ink); }
+  .timeline-step-verb code { font-family: var(--mono); font-weight: 600; font-size: 12px; color: var(--term-ink); }
+  .file-edit-chip { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 10.5px; font-weight: 600; padding: 1px 7px; border-radius: 4px; background: var(--panel); border: 1px solid var(--line); flex-shrink: 0; margin-left: 6px; }
+  [data-theme="dark"] .file-edit-chip { background: var(--paper); }
+  .diff-add-text { color: var(--diff-add); font-family: var(--mono); font-weight: 600; }
+  .diff-del-text { color: var(--diff-del); font-family: var(--mono); font-weight: 600; }
+
+  /* ── NEW: error row — red-accented step + reason + Retry ────────── */
+  .timeline-step-dot--error { background: var(--diff-del); }
+  .timeline-step--error .timeline-step-verb { color: var(--diff-del); }
+  .timeline-step-error-panel { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 6px; padding: 8px 11px; background: var(--diff-del-bg); border: 1px solid color-mix(in oklab, var(--diff-del) 35%, var(--line)); border-radius: var(--radius-sm); }
+  .timeline-step-error-reason { font-family: var(--mono); font-size: 11.5px; color: var(--diff-del); }
+  .timeline-retry-btn { flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px; height: 27px; padding: 0 12px; border-radius: var(--radius-sm); border: 1px solid color-mix(in oklab, var(--diff-del) 45%, var(--line-strong)); background: var(--paper); color: var(--diff-del); font-family: var(--sans); font-size: 11.5px; font-weight: 600; cursor: pointer; }
+  .timeline-retry-btn:hover { background: var(--diff-del-bg); }
+
+  /* ── node cards — ported from components.html ───────────────────── */
+  .node-card { width: 236px; background: var(--paper); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); box-shadow: var(--shadow-1); padding: 11px 14px; font-family: var(--sans); }
+  .node-card--code { border-color: color-mix(in oklab, var(--kind-code) 40%, var(--line-strong)); }
+  .node-card-top { margin-bottom: 8px; }
+  .node-card-main { display: flex; align-items: center; gap: 10px; }
+  .node-card-emoji { font-size: 18px; line-height: 1; flex-shrink: 0; font-family: "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui,sans-serif; }
+  .node-card-text { min-width: 0; }
+  .node-card-kicker { display: flex; align-items: center; gap: 6px; font-size: 9px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); line-height: 1; }
+  .node-card--code .node-card-kicker { color: var(--kind-code); }
+  .node-card-label { font-size: 12.5px; font-weight: 500; color: var(--ink); line-height: 1.28; margin-top: 3px; }
+  .commit-pill { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 10.5px; font-weight: 500; padding: 3px 9px; border-radius: 999px; background: var(--commit-pill-bg); color: var(--commit-pill-ink); border: 1px solid var(--commit-pill-border); }
+
+  /* ── NEW: failed map node card — red border + inline error dot,
+     consistent with how a MERGE card appends a status chip after its
+     kicker label rather than recoloring the whole surface ──────────── */
+  .node-card--failed { border-color: color-mix(in oklab, var(--diff-del) 45%, var(--line-strong)); }
+  .node-card-error-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--diff-del); flex-shrink: 0; }
+  .node-card--failed .node-card-kicker { color: var(--diff-del); }
+
+  /* ── ported: workspace header meta ───────────────────────────────── */
+  .status-demo-shell { background: var(--sidebar, var(--panel)); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 22px 24px; max-width: 560px; }
+  .ws-meta { display: flex; align-items: center; gap: 8px; font-family: var(--sans); font-size: 12px; color: var(--ink-3); flex-wrap: wrap; }
+  .pill-kind { border: 1px solid var(--line); border-radius: 4px; padding: 2px 8px; background: var(--paper); display: inline-flex; align-items: center; gap: 5px; font-weight: 600; }
+  .pill-kind--code { border-color: color-mix(in oklab, var(--kind-code) 45%, var(--line)); color: var(--kind-code); }
+  .agent-status { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; margin-left: auto; }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+
+  /* ── NEW: boot-failure status ─────────────────────────────────────── */
+  .agent-status--error { color: var(--diff-del); }
+  .status-dot--error { background: var(--diff-del); }
+</style>
+</head>
+<body>
+  <button class="theme-toggle" onclick="const h=document.documentElement; h.setAttribute('data-theme', (h.getAttribute('data-theme')||'light')==='light'?'dark':'light');">Toggle theme</button>
+
+  <div class="ds-brand"><span class="mark"></span>fork ai code</div>
+  <h1 class="ds-page-title">Fix — Failure states</h1>
+  <p class="ds-page-sub">WS-FAIL. Three places a run can fail — mid-step, the whole node, and boot — each named plainly with a reason and a Retry, using <code style="font-family: var(--mono);">--diff-del</code> as the one error accent instead of introducing a new red.</p>
+
+  <div class="ds-section">
+    <div class="ds-section-label">(a) Timeline error row</div>
+    <p class="ds-section-note">The failing step gets a red dot and a bordered reason panel with an inline Retry — the steps before it stay green, so it's clear exactly where the run stopped.</p>
+    <div class="term-panel">
+      <div class="timeline-step">
+        <span class="timeline-step-dot"></span>
+        <div class="timeline-step-body"><span class="timeline-step-verb">Read <code>src/middleware/rate-limit.middleware.ts</code></span> — 42 lines, in-memory Map, no persistence</div>
+      </div>
+      <div class="timeline-step">
+        <span class="timeline-step-dot"></span>
+        <div class="timeline-step-body"><span class="timeline-step-verb">Edited <code>src/middleware/rate-limit.middleware.ts</code></span><span class="file-edit-chip"><span class="diff-add-text">+47</span> <span class="diff-del-text">−15</span></span></div>
+      </div>
+      <div class="timeline-step timeline-step--error">
+        <span class="timeline-step-dot timeline-step-dot--error"></span>
+        <div class="timeline-step-body">
+          <span class="timeline-step-verb">Ran <code>npm test -- rate-limit</code></span>
+          <div class="timeline-step-error-panel">
+            <span class="timeline-step-error-reason">npm test exited 1</span>
+            <button type="button" class="timeline-retry-btn">↻ Retry</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ds-section">
+    <div class="ds-section-label">(b) Failed map node card</div>
+    <p class="ds-section-note">The card keeps its Code kind identity (blue kicker, commit pill) but the border shifts to the error accent and the kicker gains a small red dot — a state layered on top of a kind, not a fifth kind.</p>
+    <div class="ds-row">
+      <div>
+        <div class="ds-label-sm">Normal</div>
+        <div class="node-card node-card--code">
+          <div class="node-card-top"><span class="commit-pill">⎇ main · f0e91aa</span></div>
+          <div class="node-card-main">
+            <span class="node-card-emoji">🧩</span>
+            <div class="node-card-text">
+              <div class="node-card-kicker">Code</div>
+              <div class="node-card-label">Wire Redis token-bucket store</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="ds-label-sm">Failed</div>
+        <div class="node-card node-card--code node-card--failed">
+          <div class="node-card-top"><span class="commit-pill">⎇ main · (no commit)</span></div>
+          <div class="node-card-main">
+            <span class="node-card-emoji">🧩</span>
+            <div class="node-card-text">
+              <div class="node-card-kicker">Code <span class="node-card-error-dot"></span></div>
+              <div class="node-card-label">Wire Redis token-bucket store</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ds-section">
+    <div class="ds-section-label">(c) Boot failure</div>
+    <p class="ds-section-note">The sandbox never came up — there's no log or diff to show, so the status line itself carries the reason and the recovery action.</p>
+    <div class="status-demo-shell">
+      <div class="ws-meta">
+        <span class="pill-kind pill-kind--code">🧩 Code</span>
+        <span class="agent-status agent-status--error"><span class="status-dot status-dot--error"></span>Sandbox failed to start</span>
+        <button type="button" class="timeline-retry-btn">↻ Retry</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

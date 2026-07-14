@@ -207,6 +207,18 @@ describe('CloudAgentRunner', () => {
     expect(body.maxBudgetUsd).toBe(0.5);
   });
 
+  // WS-F: real boot-phase reporting — ctx.onPhase (nodes.service.ts's heartbeat
+  // updater) must reach FlyProvider.create verbatim so its provisioning-boundary
+  // calls actually update the heartbeat text.
+  it('forwards ctx.onPhase through to provider.create', async () => {
+    fetchMock.mockResolvedValue(new Response(sse([RESULT_FRAME]), { status: 200 }));
+    const onPhase = jest.fn();
+
+    await drain(runner.run(mkCtx({ onPhase })));
+
+    expect(provider.create).toHaveBeenCalledWith(expect.objectContaining({ onPhase }));
+  });
+
   it('destroys the sandbox when the stream carries a runner error frame, and does NOT bill without ctx.sub', async () => {
     fetchMock.mockResolvedValue(
       new Response(sse([{ type: 'claude', line: { type: 'system', subtype: 'init', model: 'm' } }, { type: 'error', message: 'clone failed: boom' }]), {

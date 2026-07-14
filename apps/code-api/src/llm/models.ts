@@ -18,7 +18,10 @@ export type ProviderName = 'anthropic' | 'gemini' | 'deepseek' | 'glm';
 // move the whole root flow — including streaming — back to Anthropic.
 export const ROOT_MODEL = 'gemini-2.5-flash';
 
-const ALIAS_TO_ID: Record<ModelAlias, string> = {
+// Exported so call sites that need a specific tier outright (e.g. nodes.service.ts's
+// generateCodeMeta, always haiku regardless of dto.model) can reference it directly
+// instead of going through resolveBranchModel's alias-or-default logic.
+export const ALIAS_TO_ID: Record<ModelAlias, string> = {
   haiku: 'claude-haiku-4-5-20251001',
   sonnet: 'claude-sonnet-4-6',
   opus: 'claude-opus-4-8',

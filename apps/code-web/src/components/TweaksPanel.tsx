@@ -223,7 +223,7 @@ const PAD = 16;
 // history (ASK/DEEPER/MIX usage events), not a list-price estimate, since real prompts
 // per model don't carry the same token volume. Re-derive periodically as usage grows;
 // glm/glm-air were computed from very small samples (n=3 / n=7) and may shift.
-const MODEL_OPTIONS: { value: Tweaks['branchModel']; label: string; cost: string; note?: string }[] = [
+export const MODEL_OPTIONS: { value: Tweaks['branchModel']; label: string; cost: string; note?: string }[] = [
   { value: 'haiku', label: 'Claude Haiku', cost: '1×' },
   { value: 'sonnet', label: 'Claude Sonnet', cost: '5×' },
   { value: 'opus', label: 'Claude Opus', cost: '40×' },
@@ -235,8 +235,6 @@ const MODEL_OPTIONS: { value: Tweaks['branchModel']; label: string; cost: string
   { value: 'glm-air', label: 'GLM 4.5 Air', cost: '0.07×' },
   { value: 'glm', label: 'GLM 5.2', cost: '1×', note: 'slow' },
 ];
-const modelLabel = (v: string) => MODEL_OPTIONS.find(o => o.value === v)?.label ?? v;
-
 interface TweaksPanelProps {
   tweaks: Tweaks;
   setTweak: SetTweak;
@@ -316,27 +314,19 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, 
 
   return (
     <>
-      {/* Floating status chips + trigger (both hidden once the panel is open) */}
+      {/* Floating trigger (hidden once the panel is open) — the model/web-search
+          status chips that used to float above it moved into the composer's own
+          control row (see CodeComposer.tsx); this settings gear now only covers
+          theme/density/font/maxSections, so it no longer needs a status readout. */}
       {!open && (
-        <>
-          <div className="twk-status" aria-hidden="true">
-            <span className="twk-status-pill">
-              {tweaks.answerStyle === 'verbose' ? '📝 Verbose' : '📑 Sectioned'}
-            </span>
-            <span className="twk-status-pill">🤖 {modelLabel(tweaks.branchModel)}</span>
-            <span className={`twk-status-pill ${tweaks.branchModel.startsWith('deepseek') ? 'twk-status-off' : (tweaks.webSearch ? 'twk-status-on' : 'twk-status-off')}`}>
-              🔍 Web {tweaks.branchModel.startsWith('deepseek') ? 'n/a' : (tweaks.webSearch ? 'on' : 'off')}
-            </span>
-          </div>
-          <button
-            className="twk-trigger"
-            onClick={() => setOpen(true)}
-            title="Tweaks"
-            aria-label="Open tweaks panel"
-          >
-            ⚙
-          </button>
-        </>
+        <button
+          className="twk-trigger"
+          onClick={() => setOpen(true)}
+          title="Tweaks"
+          aria-label="Open tweaks panel"
+        >
+          ⚙
+        </button>
       )}
 
       {open && (

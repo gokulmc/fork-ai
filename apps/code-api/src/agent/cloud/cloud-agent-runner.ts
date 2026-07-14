@@ -139,6 +139,9 @@ export class CloudAgentRunner implements AgentRunner {
         // in-machine runner hands it only to the claude process. RUN_TOKEN and
         // VSCODE_TOKEN are per-run and low-value, so machine env is fine.
         env: { RUN_TOKEN: runToken, VSCODE_TOKEN: vscodeToken, IS_SANDBOX: '1' },
+        // Real boot-progress (WS-F) — forwarded straight through to
+        // FlyProvider.provisionInApp's onPhase? calls.
+        onPhase: ctx.onPhase,
       });
 
       const res = await fetch(`${sandbox.baseUrl}/__forkai/run`, {

@@ -298,6 +298,12 @@ export class UsersService {
     await this.db.putUsageEvent(event).catch((err) => {
       this.logger.warn(`billMachineUsage: putUsageEvent failed after settlement sub=${sub} sandboxId=${sandboxId}: ${String(err)}`);
     });
+    // Best-effort — surfaces the machine cost on the node's own cost
+    // breakdown (alongside runCostUsd) for an accurate total; a write failure
+    // here must never mask/undo the settled charge above either.
+    await this.db.updateNode(sessionId, nodeId, { machineCostUsd: costUsd }).catch((err) => {
+      this.logger.warn(`billMachineUsage: updateNode failed after settlement sub=${sub} sandboxId=${sandboxId} nodeId=${nodeId}: ${String(err)}`);
+    });
   }
 
   // Crash net, called each sweep tick: releases the reserve for holds whose
