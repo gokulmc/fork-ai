@@ -1,9 +1,13 @@
-# cloud-sandbox spike (Fly Machines, region `bom`)
+# cloud-sandbox spike (Fly Machines, region `sin` — `bom` had no capacity)
 
-> **THROWAWAY feasibility spike.** Not wired into `apps/`, not part of the npm
-> workspace, no production code depends on this. Delete the whole
-> `tools/spikes/cloud-sandbox/` directory once the questions below are
-> answered and the decision is made.
+> **THROWAWAY feasibility spike — PASSED live on 2026-07-13.** Not wired into
+> `apps/` as a dependency. The sandbox image (Dockerfile + runner.mjs) has
+> since been promoted to **`infra/sandbox-image/`** (Phase A5) — that's the
+> canonical source used by `CloudAgentRunner`
+> (`apps/code-api/src/agent/cloud/`) now, including a single-service reverse
+> proxy + shared-IPv4 redesign this spike's `image/` never had. This
+> directory (and `src/fly-provider.ts`'s two-public-service client below) is
+> kept as the historical record of the original feasibility run.
 
 ## What this proves
 
@@ -18,11 +22,10 @@ If yes — with acceptable cold-boot latency and cost — this is the shape of a
 to the current local (same-host) agent runner
 (`apps/code-api/src/agent/local/`).
 
-**This spike was built and typechecked/docker-built locally but never run
-against a real Fly account** — no `flyctl`, no `FLY_API_TOKEN` on this
-machine. Everything below the "Verified locally" section is unexecuted;
-treat the Fly API shapes as "verified against docs and community reports,"
-not "verified by running."
+**Answer: yes — verified live on 2026-07-13** (see "Live-run attempt log" and
+the filled findings table below), with one qualification: the openvscode URL
+works in a new tab but NOT in a cross-site iframe (blocked by its
+`SameSite=Lax` auth cookie, not by frame headers — see Open questions #4).
 
 ---
 
@@ -152,22 +155,53 @@ container does — unless this is set), and the machine `/wait?state=started`
 call in `fly-provider.ts` retries up to 5×60s windows since a ~900MB cold
 image pull can exceed a single window.
 
+**2026-07-13 — PASSED (account verified, region `sin`).** First attempt in
+`bom` (Mumbai) failed at machine create with `422 insufficient_capacity` for
+`shared-cpu-2x` — no capacity in that region that day, not an API-shape
+problem; the app-delete-on-failure cleanup released the app + dedicated IPv4
+correctly. Re-run in `sin` (Singapore) passed end to end: real commit
+`c00c4080ac39df64707ca215b8162a7a87711b03` on base `7fd1a60` (+15/-0 across
+2 files, claude exit 0), `IS_SANDBOX=1` confirmed required, sandbox destroyed
+cleanly. All numbers in the table below are from this run.
+
+**Operational incident (same day):** an orphaned machine from an earlier
+attempt ran ~22h (~$0.66) after the client process crashed before its
+`destroy()` — nothing server-side reaps a sandbox whose owner dies.
+Consequence for the product runner: destroy-in-`finally` on success AND error
+(now implemented in `CloudAgentRunner`) plus a periodic orphan sweep
+(`sweepOrphanSandboxes` in `apps/code-api/src/agent/cloud/cloud-agent-runner.ts`
+— exported, deliberately not yet scheduled) are mandatory, not nice-to-haves.
+
+**2026-07-13 (later) — product `CloudAgentRunner` e2e, 2 runs, both PASSED.**
+Same image, driven through the real NestJS service path
+(`NodesService.createCodeNodeStreaming` → `CloudAgentRunner`,
+`octocat/Hello-World`, region `sin`): real commits `61c3c241` / `cca332b8`
+(+3/-0, VERSION added + README modified), `workspace: { kind: 'cloud',
+sandboxId, vscodeUrl }` on the `done` SSE payload, translated agent events
+streamed live and persisted to the AgentRun row, sandbox destroyed in
+`finally` both times (`fly apps list` after each run: only `forkai-sbx-base`).
+Timings: total wall 91.7s / 94.5s instruction→done; first heartbeat 3.2s;
+first REAL agent event 74.3s (run 2 — provisioning + clone + claude spin-up
+dominates; the SSE heartbeat covers the gap in the UI). One real bug caught:
+Fly app names must be lowercase (≤63 chars, `[a-z0-9-]`) and product runIds
+are ULIDs (uppercase) — `FlyProvider.create` now lowercases the runId.
+
 ---
 
-## What to record (fill this in during the live run)
+## What to record (filled from the 2026-07-13 live runs)
 
 | Metric | Value |
 |---|---|
-| Cold app+machine create → `/healthz` OK | |
-| Warm re-run (existing image, new app) | |
-| Time-to-first-agent-event (POST /run → first `claude` SSE line) | |
-| openvscode-server ready (from machine start) | |
-| Total wall time for a trivial instruction | |
-| iframe embed result (headers-check + visual load in iframe-test.html) | |
-| `x-frame-options` / `content-security-policy` seen | |
-| Cost estimate printed by run-spike.ts | |
-| Cleanup verified (`fly apps list` shows no leftover `forkai-sbx-*`) | |
-| Any GraphQL `allocateIpAddress` failures / fallback to flyctl used? | |
+| Cold app+machine create → `/healthz` OK | **30.3s** (app + dedicated IPv4 + machine create + wait + healthz through the edge; ~900MB image pull dominates on a cold host) |
+| Warm re-run (existing image, new app) | Not isolated as a separate measurement — the two product-runner e2e runs (91.7s / 94.5s total) landed on hosts that still needed a pull; per-host image caching makes this highly variable |
+| Time-to-first-agent-event (POST /run → first `claude` SSE line) | **t=68.1s** from run start (spike run); 74.3s in the product-runner e2e |
+| openvscode-server ready (from machine start) | **t=46.9s** from run start |
+| Total wall time for a trivial instruction | **79.6s** (spike); 91.7s / 94.5s (product runner incl. Nest service path) |
+| iframe embed result (headers-check + visual load in iframe-test.html) | **Blocked cross-site** — not by headers but by the `SameSite=Lax` auth cookie (see Open questions #4). New-tab works today |
+| `x-frame-options` / `content-security-policy` seen | **Neither is sent** by openvscode-server |
+| Cost estimate printed by run-spike.ts | **$0.0007** (1.33 min × $0.00051/min; the per-minute rate is still the unverified placeholder — cross-check fly.io/docs/about/pricing before trusting it at volume) |
+| Cleanup verified (`fly apps list` shows no leftover `forkai-sbx-*`) | **Yes** — after the spike run and after each product-runner e2e run, only `forkai-sbx-base` remained |
+| Any GraphQL `allocateIpAddress` failures / fallback to flyctl used? | **No — GraphQL worked first try** (dedicated IPv4 allocated). The flyctl fallback was never exercised, and is removed entirely in the product port (`apps/code-api/src/agent/cloud/fly-provider.ts` — no shelling out from the API server) |
 
 ---
 
@@ -233,8 +267,16 @@ image pull can exceed a single window.
   `https://<user>@` before emitting the error over SSE. This is a
   best-effort regex, not a guarantee — don't rely on it for a
   high-sensitivity token.
-- `ANTHROPIC_API_KEY` is passed straight through to the `claude` process's
-  env — same trust model as the local runner already has.
+- **`ANTHROPIC_API_KEY` is delivered in the `POST /run` body, NOT the machine
+  env** (changed 2026-07-13, after the live run). The machine env is readable
+  from the sandbox's own openvscode terminal (root VM, `cat /proc/1/environ`)
+  — with a shared platform key that's an exfiltration hole, not a
+  convenience. `runner.mjs` now holds the body-delivered key in-process only
+  and hands it solely to the spawned `claude` process; openvscode-server is
+  spawned with a sanitized env (no key, no `RUN_TOKEN`). The machine-env
+  fallback remains so `run-spike.ts` (which still sets the key as env) keeps
+  working — product clients (`CloudAgentRunner`) must use the body. Roadmap
+  before GA: per-run scoped keys or an authed code-api LLM proxy.
 
 ## openvscode-server licensing note
 
@@ -264,28 +306,37 @@ added.
 
 ---
 
-## Open questions (for the live run)
+## Open questions — ANSWERED (2026-07-13 live runs)
 
-1. **Cold-boot latency end to end** — is "app create → dedicated IPv4 →
-   machine create → wait started → healthz OK through the edge" fast enough
-   (seconds, not tens of seconds) for a responsive product feature, or does
-   it need a warm-pool of pre-created machines?
-2. **Does the GraphQL `allocateIpAddress` mutation actually work as
-   documented?** It's unofficial/undocumented — this spike's fallback to
-   `fly ips allocate-v4 -a <app>` via flyctl may end up being the primary
-   path in practice, not just a fallback.
-3. **Does the dedicated-IPv4 two-service scheme actually route correctly**,
-   or does `<app>.fly.dev:10300` need something this research missed (e.g.
-   Fly may not proxy non-standard ports on the `*.fly.dev` wildcard cleanly)?
-4. **iframe embedding** — does openvscode-server send any
-   `X-Frame-Options`/`frame-ancestors` header out of the box that would block
-   embedding, and if so, does it have a documented flag to disable it (vs.
-   needing a reverse proxy to strip the header)?
-5. **Real cost per run** — the `$0.00051/min` figure in `run-spike.ts` is an
-   unverified placeholder; get the actual current shared-cpu-2x/4096mb Fly
-   Machine rate from `fly.io/docs/about/pricing/` and update it.
-6. **Image pull latency on a cold machine** — 911MB is not small; check
-   whether Fly's registry pull is fast enough on `bom`, or whether the image
-   needs slimming (e.g. is `git-man`/`liberror-perl` etc. pulled in by `apt
-   install git` actually all needed, could a smaller openvscode-server
-   variant be used).
+1. **Cold-boot latency end to end** — 30.3s to healthz-through-edge, ~68s to
+   the first agent event, ~80s total for a trivial instruction. Tens of
+   seconds, not seconds — acceptable for v1 (the product's SSE heartbeat
+   covers the provisioning gap in the UI), but a warm pool / per-project
+   persistent workspaces are the known lever if it needs to feel instant
+   (see ADR-0001 amendment follow-ups).
+2. **GraphQL `allocateIpAddress`** — worked first try, dedicated IPv4
+   allocated. The flyctl fallback was never needed and is REMOVED in the
+   product port (`apps/code-api/src/agent/cloud/fly-provider.ts`): the API
+   server has no flyctl binary/auth, and if the unofficial GraphQL surface
+   ever breaks, the right response is to fail the run, not shell out.
+3. **Dedicated-IPv4 two-service routing** — yes, routes cleanly.
+   `<app>.fly.dev` (80/443 → runner :8080) and `<app>.fly.dev:10300`
+   (→ openvscode :3000) both worked through the edge exactly as configured.
+4. **iframe embedding** — openvscode-server sends NO `X-Frame-Options` and NO
+   CSP, so frame headers are not the blocker. Its auth is: `?tkn=` → `302`
+   with `Set-Cookie: vscode-tkn=… SameSite=Lax` → `200`; unauthenticated →
+   `403`. In a **cross-site** iframe the `SameSite=Lax` cookie is never sent,
+   so the embed 403s after the redirect — blocked by the cookie, not the
+   headers. Fix requires a same-site domain strategy (serve sandboxes under
+   `*.forkai.in` via Fly custom domains) or a cookie/auth rewrite in the
+   runner's own proxy. **New-tab works today** and is what the product ships
+   with (`workspace.vscodeUrl` on the `done` payload).
+5. **Real cost per run** — the run printed **$0.0007** (1.33 min ×
+   $0.00051/min). The per-minute *rate* is still the unverified placeholder —
+   verify against fly.io/docs/about/pricing before relying on it at volume;
+   the dedicated IPv4's prorated cost is additional and unbudgeted (see the
+   single-public-service proxy idea in the roadmap's adversarial review).
+6. **Image pull latency** — real but survivable: the 911MB pull is the bulk
+   of the 30.3s cold create, is per-host cached (repeat runs can land on a
+   warm host), and the `/wait` retry (5×60s) absorbs the worst case. Slimming
+   the image remains worthwhile, not blocking.

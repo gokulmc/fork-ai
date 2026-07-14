@@ -41,6 +41,11 @@ export interface SessionSummary {
   highlightCount: number;
   // Set when this session is a Project's map (see ProjectsService.create).
   projectId?: string;
+  // Resolved from the Project's own ProjectItem in list() — absent for a bare
+  // (non-project) session, never fetched via a per-session node scan (see
+  // list()'s comment for why).
+  repoRef?: { owner: string; repo: string; url: string; provider: string };
+  branchCount?: number;
 }
 
 export interface FullSession extends SessionSummary {
@@ -725,10 +730,34 @@ export class SessionsService {
 
   async list(sub: string): Promise<SessionSummary[]> {
     const items = await this.db.listSessionMeta(sub);
-    const counts = await Promise.all(
-      items.map(async (m) => (await this.db.queryHighlights(m.sessionId)).length),
-    );
-    return items.map((m, i) => ({ ...this.toSummary(m), highlightCount: counts[i] }));
+    // Per-session fan-out stays cheap: queryHighlights (existing) + one
+    // getProject point-read for sessions that have a projectId — NOT a
+    // per-session queryNodes, which would be a heavy item scan just to count
+    // distinct branchNames. branchCount is instead maintained on the
+    // ProjectItem itself (repo-import.service.ts at import, incrementProjectBranchCount
+    // on every BRANCH fork) — see root CLAUDE.md's §2b note.
+    const [counts, projects] = await Promise.all([
+      Promise.all(items.map(async (m) => (await this.db.queryHighlights(m.sessionId)).length)),
+      Promise.all(items.map((m) => (m.projectId ? this.db.getProject(sub, m.projectId) : null))),
+    ]);
+    return items.map((m, i) => {
+      const project = projects[i];
+      return {
+        ...this.toSummary(m),
+        highlightCount: counts[i],
+        ...(project
+          ? {
+              repoRef: {
+                owner: project.repoRef.owner,
+                repo: project.repoRef.repo,
+                url: project.repoRef.url,
+                provider: project.repoRef.provider,
+              },
+              branchCount: project.branchCount,
+            }
+          : {}),
+      };
+    });
   }
 
   async getSession(sub: string, sessionId: string): Promise<FullSession> {

@@ -1,5 +1,5 @@
 import * as dynamoose from 'dynamoose';
-import { NodeSchema, AgentRunSchema, ProjectSchema, SessionMetaSchema } from './dynamo.schemas';
+import { NodeSchema, AgentRunSchema, ProjectSchema, SessionMetaSchema, GithubInstallationSchema } from './dynamo.schemas';
 
 // Model instantiation + toJSON only — no .save()/.get(), so no AWS calls/creds
 // needed. This exists to catch the exact bug this codebase has hit before:
@@ -36,6 +36,7 @@ describe('Dynamoose schema field coverage', () => {
       },
       agentStatus: 'done',
       imported: true,
+      runCostUsd: 0.03,
     });
     const json = item.toJSON() as Record<string, unknown>;
     expect(json.commitSha).toBe('abc1234');
@@ -49,6 +50,7 @@ describe('Dynamoose schema field coverage', () => {
     });
     expect(json.agentStatus).toBe('done');
     expect(json.imported).toBe(true);
+    expect(json.runCostUsd).toBe(0.03);
   });
 
   it('AgentRun model retains all fields', () => {
@@ -86,26 +88,30 @@ describe('Dynamoose schema field coverage', () => {
       projectId: 'p1',
       name: 'My Project',
       repoRef: {
-        provider: 'github-mock',
+        provider: 'github',
         owner: 'acme',
         repo: 'widgets',
         defaultBranch: 'main',
-        url: 'https://mock.git/acme/widgets',
+        url: 'https://github.com/acme/widgets',
+        private: true,
       },
       plugins: ['mem-palace', 'graphify'],
       sessionId: 's1',
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
+      branchCount: 3,
     });
     const json = item.toJSON() as Record<string, unknown>;
     expect(json.repoRef).toEqual({
-      provider: 'github-mock',
+      provider: 'github',
       owner: 'acme',
       repo: 'widgets',
       defaultBranch: 'main',
-      url: 'https://mock.git/acme/widgets',
+      url: 'https://github.com/acme/widgets',
+      private: true,
     });
     expect(json.plugins).toEqual(['mem-palace', 'graphify']);
+    expect(json.branchCount).toBe(3);
   });
 
   it('SessionMeta model retains projectId', () => {
@@ -127,5 +133,19 @@ describe('Dynamoose schema field coverage', () => {
     });
     const json = item.toJSON() as Record<string, unknown>;
     expect(json.projectId).toBe('p1');
+  });
+
+  it('GithubInstallation model retains all fields', () => {
+    const GithubInstallationModel = dynamoose.model('GithubInstallationSchemaCoverageTest', GithubInstallationSchema);
+    const item = new GithubInstallationModel({
+      PK: 'USER#u1',
+      SK: 'GHINST#12345',
+      installationId: '12345',
+      accountLogin: 'acme',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+    const json = item.toJSON() as Record<string, unknown>;
+    expect(json.installationId).toBe('12345');
+    expect(json.accountLogin).toBe('acme');
   });
 });

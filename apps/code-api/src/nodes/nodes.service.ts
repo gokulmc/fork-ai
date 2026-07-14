@@ -1,14 +1,17 @@
 import { randomBytes } from 'crypto';
-import { Inject, Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ulid } from 'ulid';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
-import type { NodeItem, AgentRunItem } from '@/dynamo/dynamo.interfaces';
+import type { NodeItem, AgentRunItem, RepoRef } from '@/dynamo/dynamo.interfaces';
 import { LlmService, friendlyLlmError } from '@/llm/llm.service';
-import { resolveBranchModel } from '@/llm/models';
+import { resolveBranchModel, priceFor, CLOUD_CODE_MODEL_ID, PLAN_MODEL_ID } from '@/llm/models';
 import { NodeKind } from '@/llm/llm.types';
 import { SessionsService } from '@/sessions/sessions.service';
 import { UsersService } from '@/users/users.service';
-import { AGENT_RUNNER, AgentRunner, AgentRunFinal, AgentRunContext } from '@/agent/agent-runner';
+import { GithubAppService } from '@/github/github-app.service';
+import { AgentRunFinal, AgentRunContext } from '@/agent/agent-runner';
+import { AGENT_RUNNER_REGISTRY, AgentRunnerRegistry } from '@/agent/runner-registry';
 import { AgentEvent, serializeEventsCapped } from '@/agent/agent-run.util';
 import { CreateNodeDto } from './dto/create-node.dto';
 import { CreateMixNodeDto } from './dto/create-mix-node.dto';
@@ -21,12 +24,16 @@ import { findRailChain, planDocOf, codeSummaryOf, codeContextBlockOf } from './c
 
 @Injectable()
 export class NodesService {
+  private readonly logger = new Logger(NodesService.name);
+
   constructor(
     private readonly db: DynamoRepository,
     private readonly llm: LlmService,
     private readonly sessions: SessionsService,
     private readonly users: UsersService,
-    @Inject(AGENT_RUNNER) private readonly agentRunner: AgentRunner,
+    private readonly githubApp: GithubAppService,
+    private readonly cfg: ConfigService,
+    @Inject(AGENT_RUNNER_REGISTRY) private readonly runners: AgentRunnerRegistry,
   ) {}
 
   async createNode(sub: string, sessionId: string, dto: CreateNodeDto): Promise<NodeItem> {
@@ -130,7 +137,9 @@ export class NodesService {
   async createMixNode(sub: string, sessionId: string, dto: CreateMixNodeDto): Promise<NodeItem> {
     await this.users.checkCredit(sub);
 
-    const model = resolveBranchModel(dto.model);
+    // PLAN nodes always synthesize with Opus (product decision: opus plans,
+    // sonnet implements); plain MIX nodes keep the user-selectable default.
+    const model = dto.plan ? PLAN_MODEL_ID : resolveBranchModel(dto.model);
 
     const session = await this.sessions.getSession(sub, sessionId);
     const nodeById = new Map(session.nodes.map((n) => [n.nodeId, n]));
@@ -438,6 +447,9 @@ export class NodesService {
     await Promise.all([
       this.sessions.touchUpdatedAt(sub, sessionId),
       this.sessions.incrementNodeCount(sub, sessionId, 1),
+      // Only when the map belongs to a Project — a bare session has no
+      // ProjectItem to bump (see root CLAUDE.md's §2b note).
+      session.projectId ? this.db.incrementProjectBranchCount(sub, session.projectId, 1) : Promise.resolve(),
     ]);
 
     return node;
@@ -582,22 +594,105 @@ export class NodesService {
     return { mergeNode: { ...mergeNode, prStatus: 'merged' }, commitNode };
   }
 
+  // Resolves what a real runner works against, from the project's repoRef —
+  // or the LOCAL_AGENT_REPO_* env fallback when there's no project (dev/mock
+  // convenience, unchanged from before the GitHub App slice). 'new' has no
+  // repo yet, so the runner git-inits one instead of cloning. 'github-mock'
+  // has no real repo either, but that's fine for mock/local runs — only an
+  // explicit cloud request needs to 400, since MockAgentRunner never reads
+  // ctx.repo. A private 'github' repo needs an installation token; no
+  // installation covering the owner is a friendly 400, not a 500.
+  private async resolveRunRepo(
+    sub: string,
+    repoRef: RepoRef | null,
+    environment: 'cloud' | 'mock' | undefined,
+  ): Promise<NonNullable<AgentRunContext['repo']> | undefined> {
+    if (!repoRef) {
+      return process.env.LOCAL_AGENT_REPO_PATH
+        ? { localPath: process.env.LOCAL_AGENT_REPO_PATH }
+        : process.env.LOCAL_AGENT_REPO_URL
+          ? { cloneUrl: process.env.LOCAL_AGENT_REPO_URL }
+          : undefined;
+    }
+    if (repoRef.provider === 'new') {
+      return { init: { defaultBranch: repoRef.defaultBranch } };
+    }
+    if (repoRef.provider === 'github-mock') {
+      if (environment === 'cloud') {
+        throw new BadRequestException(
+          'This project uses a mock repo — attach a real GitHub repo (or run on Demo) to use the Cloud environment.',
+        );
+      }
+      return undefined;
+    }
+    // provider === 'github'
+    if (!repoRef.private) {
+      return { cloneUrl: `${repoRef.url}.git` };
+    }
+    const token = await this.githubApp.mintInstallationToken(sub, repoRef.owner, repoRef.repo);
+    if (!token) {
+      throw new BadRequestException(
+        `${repoRef.owner}/${repoRef.repo} is private — install the forkai code GitHub App (Connect GitHub → Install App) to run the coding agent on it.`,
+      );
+    }
+    return { cloneUrl: `https://x-access-token:${token}@github.com/${repoRef.owner}/${repoRef.repo}.git` };
+  }
+
+  // Cloud-only (ADR-0004): releases a still-open hold with zero token usage —
+  // used by every failure path once placeHold has succeeded (the runner's own
+  // error, or anything that throws before the run even starts). reconcileHold
+  // is a conditional flip guarded by HoldItem.status, so calling it again after
+  // the run's own done/error path already settled it is a harmless no-op.
+  // Swallows its own errors — a reconcile failure must never mask the run's
+  // real error from the client; reconcileStaleHolds is the eventual backstop.
+  private async releaseHoldOnFailure(sub: string, sessionId: string, nodeId: string, model: string): Promise<void> {
+    await this.users.reconcileHold(sub, sessionId, nodeId, 0, 0, 0, model, 'CODE').catch((err) => {
+      this.logger.warn(`reconcileHold failed while releasing cloud hold sub=${sub} nodeId=${nodeId}: ${String(err)}`);
+    });
+  }
+
+  // Money basis for a cloud run (ADR-0004 redesign): claude's own reported
+  // total_cost_usd — cache-accurate, present on both a normal finish and a
+  // `--max-budget-usd` stop — mapped to the BILLED figure via creditMultiplier.
+  // The per-message token counts the sandbox stream carries are placeholder
+  // values and can never be trusted as a cost basis; the token×priceFor
+  // estimate below is only a fallback for the rare run that produced no
+  // result line at all (e.g. a CLAUDE_TIMEOUT_MS kill).
+  private runCostUsd(final: AgentRunFinal, multiplier: number): number {
+    if (final.claudeCostUsd !== undefined) {
+      return Math.round(final.claudeCostUsd * multiplier * 1_000_000) / 1_000_000;
+    }
+    const rate = priceFor(final.model);
+    const raw = (final.inputTokens * rate.input / 1_000_000) + (final.outputTokens * rate.output / 1_000_000);
+    return Math.round(raw * multiplier * 1_000_000) / 1_000_000;
+  }
+
   // Streaming CODE-node creation: persist-first (loading node + running AgentRun,
   // `init` emitted before any agent-event — see root CLAUDE.md's root-query
   // streaming contract, followed here for the same refresh-survives-mid-run
   // reason), then a single mocked agent run replayed over SSE with jittered
   // pacing. `send` is wrapped in a swallow-errors `emit` exactly like
   // SessionsService.createStreaming so a client disconnect never aborts the run —
-  // it still lands fully in the DB.
+  // it still lands fully in the DB. Cloud runs additionally gate on a strict
+  // pre-auth hold (ADR-0004), placed right after nodeId is minted and before
+  // any node is persisted — see placeHold/reconcileHold in UsersService.
   async createCodeNodeStreaming(
     sub: string,
     sessionId: string,
     dto: CreateCodeNodeDto,
     send: (data: object) => void,
   ): Promise<void> {
-    await this.users.checkCredit(sub);
+    // Cloud runs are gated by the strict pre-auth hold below instead of the
+    // bare balance check — checkCredit stays for mock/local, unchanged.
+    const isCloud = this.runners.isCloud(dto.environment);
+    if (!isCloud) await this.users.checkCredit(sub);
 
-    const model = resolveBranchModel(dto.model);
+    // Cloud CODE runs always use Sonnet (product decision: opus plans, sonnet
+    // implements), overriding whatever dto.model requested — this is also
+    // what fixes the model-mismatch bug where the hold/usage-event bookkeeping
+    // and the sandbox's actual --model flag could disagree (see models.ts).
+    const model = isCloud ? CLOUD_CODE_MODEL_ID : resolveBranchModel(dto.model);
+    const creditMultiplier = this.cfg.get<number>('billing.creditMultiplier') ?? 1.5;
     const session = await this.sessions.getSession(sub, sessionId);
     const nodeById = new Map(session.nodes.map((n) => [n.nodeId, n]));
 
@@ -607,233 +702,292 @@ export class NodesService {
     }
     assertKindAllowed(parentNode.kind as NodeKind, 'CODE');
 
+    // Resolve BEFORE any write below (auto-branch or the CODE node itself) —
+    // an invalid/unavailable environment must 400 cleanly, never leave an
+    // orphaned 'running' node (or a stray auto-branch fork) behind it. The
+    // project/repo lookup is a pure read, so it's hoisted up here too (used
+    // again for branchName below) — an unreachable-private-repo or a
+    // github-mock+explicit-cloud combination must 400 the same way.
+    const runner = this.runners.resolve(dto.environment);
+    const project = session.projectId ? await this.db.getProject(sub, session.projectId) : null;
+    const repo = await this.resolveRunRepo(sub, project?.repoRef ?? null, dto.environment);
+
     const emit = (data: object) => { try { send(data); } catch { /* client gone */ } };
 
-    // Auto-branch on a parallel instruction: submitting a NEW instruction while
-    // sitting on a CODE node that already has a *finished* CODE child means this
-    // is a second, independent line of work off the same commit — not a
-    // continuation of that child — so fork a BRANCH node first rather than
-    // silently adding a second child under the same parent. A running/errored
-    // existing child is left alone (retry semantics, newest-wins, no branch) so
-    // a failed/in-flight attempt can still just be retried directly.
-    let autoBranchNode: NodeItem | null = null;
-    if (parentNode.kind === 'CODE') {
-      const existingCodeChildren = session.nodes.filter((n) => n.kind === 'CODE' && n.parentId === parentNode.nodeId);
-      const tip = existingCodeChildren.length
-        ? existingCodeChildren.reduce((a, b) => (a.createdAt > b.createdAt ? a : b))
-        : null;
-      if (tip?.agentStatus === 'done' && parentNode.commitSha) {
-        const existingBranchNames = new Set(
-          session.nodes.filter((n) => n.branchName).map((n) => n.branchName as string),
-        );
-        const branchNodeId = ulid();
-        const branchNow = new Date().toISOString();
-        const newBranchName = this.slugifyBranchName(dto.instruction, existingBranchNames);
-        autoBranchNode = {
-          PK: `SESSION#${sessionId}`,
-          SK: `NODE#${branchNodeId}`,
-          nodeId: branchNodeId,
-          parentId: parentNode.nodeId,
-          kind: 'BRANCH',
-          title: newBranchName,
-          emoji: null,
-          query: `Fork from ${parentNode.commitSha.slice(0, 7)}`,
-          lede: '',
-          sections: [],
-          fromSection: null,
-          fromText: null,
-          createdAt: branchNow,
-          branchName: newBranchName,
-          commitSha: parentNode.commitSha,
-        };
-        await this.db.putNode(autoBranchNode);
-        nodeById.set(branchNodeId, autoBranchNode);
-        await Promise.all([
-          this.sessions.touchUpdatedAt(sub, sessionId),
-          this.sessions.incrementNodeCount(sub, sessionId, 1),
-        ]);
-        emit({ type: 'branch-init', node: autoBranchNode });
-      }
+    // nodeId is minted here — BEFORE the auto-branch fork below — so the cloud
+    // hold (keyed by nodeId) can be placed before ANY node for this request is
+    // persisted. A 402 here leaves nothing behind, the same clean-failure
+    // property checkCredit had at the very top before this change.
+    const nodeId = ulid();
+    let maxBudgetUsd: number | undefined;
+    if (isCloud) {
+      const { ceilingUsd } = await this.users.placeHold(sub, sessionId, nodeId, model);
+      // ceilingUsd is a BILLED dollar figure (what the user is charged, i.e.
+      // claudeCost × multiplier) — claude's own --max-budget-usd is denominated
+      // in its RAW cost, so map back down by the multiplier before passing it
+      // through, otherwise the sandbox would let claude spend multiplier×
+      // too much before its own cap trips.
+      maxBudgetUsd = ceilingUsd / creditMultiplier;
     }
 
-    // The CODE node's real parent is the auto-branch node when one was just
-    // forked, otherwise the requested parent, unchanged.
-    const codeParentId = autoBranchNode?.nodeId ?? dto.parentNodeId;
-
-    // Lane identity: the nearest BRANCH ancestor's branchName wins; otherwise a
-    // PLAN's own forked branchName (F1); otherwise the project's default
-    // branch; otherwise a bare 'main' (no project at all).
-    const chain = findRailChain(nodeById, codeParentId);
-    const project = session.projectId ? await this.db.getProject(sub, session.projectId) : null;
-    const branchName = chain.branchNode?.branchName ?? chain.planNode?.branchName ?? project?.repoRef.defaultBranch ?? 'main';
-    const baseCommitSha = parentNode.commitSha ?? null;
-
-    const nodeId = ulid();
-
-    const ctx: AgentRunContext = {
-      instruction: dto.instruction,
-      planDoc: chain.planNode ? planDocOf(chain.planNode) : null,
-      branchName,
-      baseCommitSha,
-      repoRef: project?.repoRef ?? null,
-      plugins: project?.plugins ?? [],
-      ancestorCodeSummaries: chain.codeAncestors.slice(0, 10).map(codeSummaryOf),
-      model,
-      // Attachments only ever feed the prompt — never spread onto the NodeItem
-      // below (Dynamoose saveUnknown:false would silently strip them anyway,
-      // but the node schema doesn't declare the field at all; see root CLAUDE.md).
-      attachments: dto.attachments?.map((a) => ({ name: a.name, content: a.content })),
-      runId: nodeId,
-      // Prototype-only: a local runner needs a working copy of the repo, and
-      // there's no GitHub clone/checkout wired up yet, so it's env-plumbed
-      // straight from the box running this process.
-      repo: process.env.LOCAL_AGENT_REPO_PATH
-        ? { localPath: process.env.LOCAL_AGENT_REPO_PATH }
-        : process.env.LOCAL_AGENT_REPO_URL
-          ? { cloneUrl: process.env.LOCAL_AGENT_REPO_URL }
-          : undefined,
-    };
-
-    const now = new Date().toISOString();
-
-    const node: NodeItem = {
-      PK: `SESSION#${sessionId}`,
-      SK: `NODE#${nodeId}`,
-      nodeId,
-      parentId: codeParentId,
-      kind: 'CODE',
-      title: dto.instruction.slice(0, 60),
-      emoji: null,
-      query: dto.instruction,
-      lede: '',
-      sections: [],
-      fromSection: null,
-      fromText: null,
-      createdAt: now,
-      model,
-      branchName,
-      agentStatus: 'running',
-    };
-    const agentRun: AgentRunItem = {
-      PK: `SESSION#${sessionId}`,
-      SK: `AGENTRUN#${nodeId}`,
-      nodeId,
-      status: 'running',
-      events: '[]',
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    // Persist BEFORE any SSE event — a refresh mid-run must restore a real node,
-    // not drop back to nothing.
-    await Promise.all([this.db.putNode(node), this.db.putAgentRun(agentRun)]);
-    emit({ type: 'init', node });
-
-    // MockAgentRunner (and any future non-streaming runner) awaits a full LLM
-    // transcript before yielding its first event — without this, the client
-    // sees a frozen "Starting…" for the entire LLM latency (~18s on the mock).
-    // These synthetic events go over SSE only (never pushed to `events` below,
-    // so they're never persisted to the AgentRun row). Negative, descending
-    // seqs can never collide with the runner's own server-assigned seqs
-    // (0, 1, 2, ... below), so the frontend can always tell a heartbeat apart
-    // from a real event. Cleared on the first real yield (in the loop) and
-    // again in `finally` as a leak-proof backstop for a runner that throws
-    // before ever yielding.
-    const heartbeatMessages = ['Agent is working…', 'Reading the repository…', 'Planning the change…'];
-    let heartbeatSeq = -1;
-    let heartbeatIdx = 0;
-    const heartbeatTimer = setInterval(() => {
-      emit({
-        type: 'agent-event',
-        event: {
-          seq: heartbeatSeq--,
-          ts: new Date().toISOString(),
-          kind: 'text',
-          payload: heartbeatMessages[heartbeatIdx++ % heartbeatMessages.length],
-        },
-      });
-    }, 3000);
-
-    const events: AgentEvent[] = [];
-    let final: AgentRunFinal | null = null;
-    let lastPersistAt = Date.now();
-    let seq = 0;
     try {
-      for await (const item of this.agentRunner.run(ctx)) {
-        clearInterval(heartbeatTimer); // first real yield ends the heartbeat window
-        if (item.type === 'result') { final = item.result; continue; }
-        const event: AgentEvent = { ...item.event, seq: seq++ }; // server owns seq numbering
-        events.push(event);
-        emit({ type: 'agent-event', event });
-        if (events.length % 10 === 0 || Date.now() - lastPersistAt >= 2000) {
-          await this.db.updateAgentRun(sessionId, nodeId, { events: serializeEventsCapped(events), updatedAt: new Date().toISOString() });
-          lastPersistAt = Date.now();
+      // Auto-branch on a parallel instruction: submitting a NEW instruction while
+      // sitting on a CODE node that already has a *finished* CODE child means this
+      // is a second, independent line of work off the same commit — not a
+      // continuation of that child — so fork a BRANCH node first rather than
+      // silently adding a second child under the same parent. A running/errored
+      // existing child is left alone (retry semantics, newest-wins, no branch) so
+      // a failed/in-flight attempt can still just be retried directly.
+      let autoBranchNode: NodeItem | null = null;
+      if (parentNode.kind === 'CODE') {
+        const existingCodeChildren = session.nodes.filter((n) => n.kind === 'CODE' && n.parentId === parentNode.nodeId);
+        const tip = existingCodeChildren.length
+          ? existingCodeChildren.reduce((a, b) => (a.createdAt > b.createdAt ? a : b))
+          : null;
+        if (tip?.agentStatus === 'done' && parentNode.commitSha) {
+          const existingBranchNames = new Set(
+            session.nodes.filter((n) => n.branchName).map((n) => n.branchName as string),
+          );
+          const branchNodeId = ulid();
+          const branchNow = new Date().toISOString();
+          const newBranchName = this.slugifyBranchName(dto.instruction, existingBranchNames);
+          autoBranchNode = {
+            PK: `SESSION#${sessionId}`,
+            SK: `NODE#${branchNodeId}`,
+            nodeId: branchNodeId,
+            parentId: parentNode.nodeId,
+            kind: 'BRANCH',
+            title: newBranchName,
+            emoji: null,
+            query: `Fork from ${parentNode.commitSha.slice(0, 7)}`,
+            lede: '',
+            sections: [],
+            fromSection: null,
+            fromText: null,
+            createdAt: branchNow,
+            branchName: newBranchName,
+            commitSha: parentNode.commitSha,
+          };
+          await this.db.putNode(autoBranchNode);
+          nodeById.set(branchNodeId, autoBranchNode);
+          await Promise.all([
+            this.sessions.touchUpdatedAt(sub, sessionId),
+            this.sessions.incrementNodeCount(sub, sessionId, 1),
+          ]);
+          emit({ type: 'branch-init', node: autoBranchNode });
         }
       }
-      if (!final) throw new Error('Agent runner ended without a result');
-    } catch (err) {
-      // persist events accumulated so far — a refresh after a mid-run failure must
-      // show the log up to the failure, not a stale snapshot
-      await Promise.all([
-        this.db.updateNode(sessionId, nodeId, { agentStatus: 'error' }),
-        this.db.updateAgentRun(sessionId, nodeId, { status: 'error', events: serializeEventsCapped(events), updatedAt: new Date().toISOString() }),
-      ]);
-      emit({ type: 'error', message: friendlyLlmError(err as Error) });
-      return;
-    } finally {
-      clearInterval(heartbeatTimer);
-    }
 
-    // No real git backend exists yet (mock-first per ADR-0001) — a random
-    // SHA-1-shaped hex string stands in for the commit this run "produces"
-    // when the runner itself doesn't supply a real one.
-    const commitSha = final.commitSha ?? randomBytes(20).toString('hex');
+      // The CODE node's real parent is the auto-branch node when one was just
+      // forked, otherwise the requested parent, unchanged.
+      const codeParentId = autoBranchNode?.nodeId ?? dto.parentNodeId;
 
-    // No extra LLM call for title/lede — a simple truncation of the commit
-    // message is enough for the map card and breadcrumb. Trim trailing
-    // punctuation the word cut leaves behind ("feat: Scaffold CLI with Commander,").
-    const title = final.commitMessage.split(/\s+/).filter(Boolean).slice(0, 5).join(' ').replace(/[,;:.]+$/, '') || node.title;
-    const lede = final.commitMessage.length > 140 ? `${final.commitMessage.slice(0, 140)}…` : final.commitMessage;
+      // Lane identity: the nearest BRANCH ancestor's branchName wins; otherwise a
+      // PLAN's own forked branchName (F1); otherwise the project's default
+      // branch; otherwise a bare 'main' (no project at all).
+      const chain = findRailChain(nodeById, codeParentId);
+      const branchName = chain.branchNode?.branchName ?? chain.planNode?.branchName ?? project?.repoRef.defaultBranch ?? 'main';
+      const baseCommitSha = parentNode.commitSha ?? null;
 
-    await Promise.all([
-      this.db.updateNode(sessionId, nodeId, {
-        title,
-        lede,
-        commitSha,
-        commitMessage: final.commitMessage,
-        diffSummary: final.diffSummary,
-        agentStatus: 'done',
-      }),
-      this.db.updateAgentRun(sessionId, nodeId, {
-        status: 'done',
-        events: serializeEventsCapped(events),
-        commitSha,
+      const ctx: AgentRunContext = {
+        instruction: dto.instruction,
+        planDoc: chain.planNode ? planDocOf(chain.planNode) : null,
         branchName,
-        commitMessage: final.commitMessage,
-        diffSummary: final.diffSummary,
-        updatedAt: new Date().toISOString(),
-      }),
-    ]);
-    await Promise.all([
-      this.sessions.touchUpdatedAt(sub, sessionId),
-      this.sessions.incrementNodeCount(sub, sessionId, 1),
-      this.users.billUsage(sub, final.inputTokens, final.outputTokens, 'CODE', sessionId, nodeId, final.model),
-    ]);
+        baseCommitSha,
+        repoRef: project?.repoRef ?? null,
+        plugins: project?.plugins ?? [],
+        ancestorCodeSummaries: chain.codeAncestors.slice(0, 10).map(codeSummaryOf),
+        model,
+        // Attachments only ever feed the prompt — never spread onto the NodeItem
+        // below (Dynamoose saveUnknown:false would silently strip them anyway,
+        // but the node schema doesn't declare the field at all; see root CLAUDE.md).
+        attachments: dto.attachments?.map((a) => ({ name: a.name, content: a.content })),
+        runId: nodeId,
+        repo,
+        // Billing plumbing (ADR-0004) — sub/sessionId complete the identity
+        // tagged onto a cloud sandbox at create; mock/local ignore all three.
+        sub,
+        sessionId,
+        maxBudgetUsd,
+      };
 
-    emit({ type: 'commit', sha: commitSha, branchName, message: final.commitMessage, diffSummary: final.diffSummary });
-    emit({
-      type: 'done',
-      node: {
-        ...node,
-        title,
-        lede,
-        commitMessage: final.commitMessage,
-        diffSummary: final.diffSummary,
-        agentStatus: 'done',
-        commitSha,
-        ...(final.workspace ? { workspace: final.workspace } : {}),
-      },
-    });
+      const now = new Date().toISOString();
+
+      const node: NodeItem = {
+        PK: `SESSION#${sessionId}`,
+        SK: `NODE#${nodeId}`,
+        nodeId,
+        parentId: codeParentId,
+        kind: 'CODE',
+        title: dto.instruction.slice(0, 60),
+        emoji: null,
+        query: dto.instruction,
+        lede: '',
+        sections: [],
+        fromSection: null,
+        fromText: null,
+        createdAt: now,
+        model,
+        branchName,
+        agentStatus: 'running',
+      };
+      const agentRun: AgentRunItem = {
+        PK: `SESSION#${sessionId}`,
+        SK: `AGENTRUN#${nodeId}`,
+        nodeId,
+        status: 'running',
+        events: '[]',
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      // Persist BEFORE any SSE event — a refresh mid-run must restore a real node,
+      // not drop back to nothing.
+      await Promise.all([this.db.putNode(node), this.db.putAgentRun(agentRun)]);
+      emit({ type: 'init', node });
+
+      // MockAgentRunner (and any future non-streaming runner) awaits a full LLM
+      // transcript before yielding its first event — without this, the client
+      // sees a frozen "Starting…" for the entire LLM latency (~18s on the mock).
+      // These synthetic events go over SSE only (never pushed to `events` below,
+      // so they're never persisted to the AgentRun row). Negative, descending
+      // seqs can never collide with the runner's own server-assigned seqs
+      // (0, 1, 2, ... below), so the frontend can always tell a heartbeat apart
+      // from a real event. Cleared on the first real yield (in the loop) and
+      // again in `finally` as a leak-proof backstop for a runner that throws
+      // before ever yielding.
+      const heartbeatMessages = ['Agent is working…', 'Reading the repository…', 'Planning the change…'];
+      let heartbeatSeq = -1;
+      let heartbeatIdx = 0;
+      const heartbeatTimer = setInterval(() => {
+        emit({
+          type: 'agent-event',
+          event: {
+            seq: heartbeatSeq--,
+            ts: new Date().toISOString(),
+            kind: 'text',
+            payload: heartbeatMessages[heartbeatIdx++ % heartbeatMessages.length],
+          },
+        });
+      }, 3000);
+
+      const events: AgentEvent[] = [];
+      let final: AgentRunFinal | null = null;
+      let lastPersistAt = Date.now();
+      let seq = 0;
+      try {
+        for await (const item of runner.run(ctx)) {
+          clearInterval(heartbeatTimer); // first real yield ends the heartbeat window
+          if (item.type === 'result') { final = item.result; continue; }
+          const event: AgentEvent = { ...item.event, seq: seq++ }; // server owns seq numbering
+          events.push(event);
+          emit({ type: 'agent-event', event });
+          if (events.length % 10 === 0 || Date.now() - lastPersistAt >= 2000) {
+            await this.db.updateAgentRun(sessionId, nodeId, { events: serializeEventsCapped(events), updatedAt: new Date().toISOString() });
+            lastPersistAt = Date.now();
+          }
+        }
+        if (!final) throw new Error('Agent runner ended without a result');
+      } catch (err) {
+        // persist events accumulated so far — a refresh after a mid-run failure must
+        // show the log up to the failure, not a stale snapshot
+        await Promise.all([
+          this.db.updateNode(sessionId, nodeId, { agentStatus: 'error' }),
+          this.db.updateAgentRun(sessionId, nodeId, { status: 'error', events: serializeEventsCapped(events), updatedAt: new Date().toISOString() }),
+        ]);
+        if (isCloud) await this.releaseHoldOnFailure(sub, sessionId, nodeId, model);
+        emit({ type: 'error', message: friendlyLlmError(err as Error) });
+        return;
+      } finally {
+        clearInterval(heartbeatTimer);
+      }
+
+      // No real git backend exists yet (mock-first per ADR-0001) — a random
+      // SHA-1-shaped hex string stands in for the commit this run "produces"
+      // when the runner itself doesn't supply a real one.
+      const commitSha = final.commitSha ?? randomBytes(20).toString('hex');
+
+      // No extra LLM call for title/lede — a simple truncation of the commit
+      // message is enough for the map card and breadcrumb. Trim trailing
+      // punctuation the word cut leaves behind ("feat: Scaffold CLI with Commander,").
+      const title = final.commitMessage.split(/\s+/).filter(Boolean).slice(0, 5).join(' ').replace(/[,;:.]+$/, '') || node.title;
+      const lede = final.commitMessage.length > 140 ? `${final.commitMessage.slice(0, 140)}…` : final.commitMessage;
+
+      // Hoisted above the billing ternary so BOTH the cloud (reconcileHold) and
+      // mock (billUsage) paths get a persisted per-commit cost on the node —
+      // previously this was computed only inside the cloud arm, for billing
+      // only, so a mock run's node never carried a cost at all.
+      const runCost = this.runCostUsd(final, creditMultiplier);
+
+      await Promise.all([
+        this.db.updateNode(sessionId, nodeId, {
+          title,
+          lede,
+          commitSha,
+          commitMessage: final.commitMessage,
+          diffSummary: final.diffSummary,
+          agentStatus: 'done',
+          runCostUsd: runCost,
+          ...(final.workspace
+            ? { workspace: final.workspace, ...(final.workspaceExpiresAt ? { workspaceExpiresAt: final.workspaceExpiresAt } : {}) }
+            : {}),
+          ...(final.pushed !== undefined
+            ? { pushed: final.pushed, ...(final.pushError ? { pushError: final.pushError } : {}) }
+            : {}),
+          ...(final.budgetExceeded !== undefined ? { budgetExceeded: final.budgetExceeded } : {}),
+        }),
+        this.db.updateAgentRun(sessionId, nodeId, {
+          status: 'done',
+          events: serializeEventsCapped(events),
+          commitSha,
+          branchName,
+          commitMessage: final.commitMessage,
+          diffSummary: final.diffSummary,
+          updatedAt: new Date().toISOString(),
+        }),
+      ]);
+      await Promise.all([
+        this.sessions.touchUpdatedAt(sub, sessionId),
+        this.sessions.incrementNodeCount(sub, sessionId, 1),
+        isCloud
+          ? this.users.reconcileHold(
+              sub, sessionId, nodeId,
+              runCost,
+              final.inputTokens, final.outputTokens, final.model, 'CODE',
+            )
+          : this.users.billUsage(sub, final.inputTokens, final.outputTokens, 'CODE', sessionId, nodeId, final.model),
+      ]);
+
+      emit({ type: 'commit', sha: commitSha, branchName, message: final.commitMessage, diffSummary: final.diffSummary });
+      emit({
+        type: 'done',
+        node: {
+          ...node,
+          title,
+          lede,
+          commitMessage: final.commitMessage,
+          diffSummary: final.diffSummary,
+          agentStatus: 'done',
+          commitSha,
+          runCostUsd: runCost,
+          ...(final.workspace
+            ? { workspace: final.workspace, ...(final.workspaceExpiresAt ? { workspaceExpiresAt: final.workspaceExpiresAt } : {}) }
+            : {}),
+          ...(final.pushed !== undefined
+            ? { pushed: final.pushed, ...(final.pushError ? { pushError: final.pushError } : {}) }
+            : {}),
+          ...(final.budgetExceeded !== undefined ? { budgetExceeded: final.budgetExceeded } : {}),
+        },
+      });
+    } catch (err) {
+      // Anything that throws between placeHold and the handled runner-error
+      // path above (auto-branch persistence, chain resolution, persist-first
+      // writes, the done-block's own writes) must still release the reserve
+      // for cloud — reconcileStaleHolds is only a 30-minute crash-net backstop,
+      // not the primary release path for an in-process failure.
+      if (isCloud) await this.releaseHoldOnFailure(sub, sessionId, nodeId, model);
+      throw err;
+    }
   }
 
   async getAgentRun(sub: string, sessionId: string, nodeId: string): Promise<AgentRunItem> {

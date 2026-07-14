@@ -33,8 +33,16 @@ export interface ApiNode {
   diffSummary?: DiffSummary;
   agentStatus?: 'running' | 'done' | 'error';
   imported?: boolean;
+  workspace?:
+    | { kind: 'cloud'; sandboxId: string; vscodeUrl: string }
+    | { kind: 'local'; path: string };
+  workspaceExpiresAt?: string;
   mergeFromNodeId?: string;
   prStatus?: 'open' | 'merged';
+  pushed?: boolean;
+  pushError?: string;
+  budgetExceeded?: boolean;
+  runCostUsd?: number;
 }
 
 export interface ApiAnnotation {
@@ -70,6 +78,10 @@ export interface SessionSummary {
   // Set when this session is a Project's map (see ProjectsService.create) — used
   // to re-fetch and set activeProject when a session is opened from History.
   projectId?: string;
+  // Resolved server-side from the Project's own ProjectItem — absent for a
+  // bare (non-project) session.
+  repoRef?: { owner: string; repo: string; url: string; provider: string };
+  branchCount?: number;
 }
 
 export interface FullSession extends SessionSummary {
@@ -106,8 +118,14 @@ export function toForkNode(n: ApiNode): ForkNode {
     diffSummary: n.diffSummary,
     agentStatus: n.agentStatus,
     imported: n.imported,
+    workspace: n.workspace,
+    workspaceExpiresAt: n.workspaceExpiresAt,
     mergeFromNodeId: n.mergeFromNodeId,
     prStatus: n.prStatus,
+    pushed: n.pushed,
+    pushError: n.pushError,
+    budgetExceeded: n.budgetExceeded,
+    runCostUsd: n.runCostUsd,
   };
 }
 
@@ -661,6 +679,10 @@ export interface RepoRef {
   repo: string;
   defaultBranch: string;
   url: string;
+  // Only meaningful for provider 'github' — carried over from GithubRepo's own
+  // `private` field at repo-pick time (see NewProjectModal's toRepoOption).
+  // Gates whether a cloud run needs a GitHub App installation token to clone.
+  private?: boolean;
 }
 
 export interface Project {
@@ -729,6 +751,16 @@ export function listGithubRepos(idToken: string): Promise<GithubRepo[]> {
   return apiFetch<GithubRepo[]>('/github/repos', idToken);
 }
 
+// GitHub App (Contents:Read v1 — private-repo sandbox clones). The install
+// entry point (`GET /github/app/install`) is a plain browser navigation, not
+// an apiFetch call — see `/github/setup`'s "Install" link.
+export function linkGithubInstallation(idToken: string, installationId: string): Promise<{ linked: boolean }> {
+  return apiFetch<{ linked: boolean }>('/github/app/installations', idToken, {
+    method: 'POST',
+    body: JSON.stringify({ installationId }),
+  });
+}
+
 // ── Root query into an existing (empty) project session ────────────────────
 // Same SSE vocabulary as createSessionStream (init/meta/section/done/error) —
 // the only difference is the session already exists, so `init`'s sessionId is
@@ -782,6 +814,7 @@ export interface CreateCodeNodePayload {
   instruction: string;
   model?: 'haiku' | 'sonnet' | 'opus' | 'gemini-pro' | 'gemini-flash' | 'gemini-flash-lite' | 'deepseek-pro' | 'deepseek-flash' | 'glm' | 'glm-air';
   attachments?: Array<{ name: string; content: string }>;
+  environment?: 'cloud' | 'mock';
 }
 
 export type CodeStreamEvent =

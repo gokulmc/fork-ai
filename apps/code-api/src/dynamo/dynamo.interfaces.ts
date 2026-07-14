@@ -43,10 +43,46 @@ export interface UsageEventItem {
   inputTokens: number;
   outputTokens: number;
   costUsd: number;
-  kind: 'QUERY' | 'DEEPER' | 'ASK' | 'MIX' | 'PLAN' | 'CODE';
+  kind: 'QUERY' | 'DEEPER' | 'ASK' | 'MIX' | 'PLAN' | 'CODE' | 'MACHINE';
   model: string;
   sessionId: string;
   nodeId: string;
+  createdAt: string;
+  // Cloud-run settlement fields (ADR-0004) — runId links a CODE token-usage row
+  // and a MACHINE infra row to the same run (both keyed by nodeId). machineSeconds
+  // is set only on kind 'MACHINE' rows.
+  runId?: string;
+  machineSeconds?: number;
+}
+
+// Pre-auth reserve for a cloud CODE run (ADR-0004). PK USER#{sub} / SK HOLD#{nodeId}.
+// Lifecycle: 'held' at placeHold → 'reconciled' via the conditional flip in
+// reconcileHoldStatus, which is the exactly-once guard for release+charge.
+export interface HoldItem {
+  PK: string;
+  SK: string;
+  sub: string;
+  nodeId: string;
+  sessionId: string;
+  holdUsd: number;
+  status: 'held' | 'reconciled';
+  model: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// One Fly machine's full-lifetime bill (ADR-0004). PK USER#{sub} / SK
+// MACHINEBILL#{sandboxId} — the conditional-create guard so a sweep tick and a
+// concurrent runner `finally` can't both bill the same machine.
+export interface MachineBillItem {
+  PK: string;
+  SK: string;
+  sub: string;
+  sandboxId: string;
+  sessionId: string;
+  nodeId: string;
+  machineSeconds: number;
+  costUsd: number;
   createdAt: string;
 }
 
@@ -105,6 +141,28 @@ export interface NodeItem {
   diffSummary?: DiffSummary;
   agentStatus?: 'running' | 'done' | 'error';
   imported?: boolean;
+  // Where a CODE node's agent run actually happened — set at done. Absent on
+  // mock runs (no real workspace exists). workspaceExpiresAt is cloud-only;
+  // sandbox-sweep.ts destroys the sandbox once it passes.
+  workspace?:
+    | { kind: 'cloud'; sandboxId: string; vscodeUrl: string }
+    | { kind: 'local'; path: string };
+  workspaceExpiresAt?: string;
+  // Whether the run's commit was pushed to the real GitHub remote (cloud
+  // private-repo runs only — see ADR-0002's push-back amendment). Absent on
+  // mock/local/no-remote runs, not just false, since "no push was attempted"
+  // and "push was attempted and failed" are different states.
+  pushed?: boolean;
+  pushError?: string;
+  // Cloud-only (ADR-0004) — set when the sandbox's runner.mjs SIGKILLed the
+  // claude child for exceeding the run's token budget mid-run. Partial work
+  // was still committed/pushed as normal; this only flags the ceiling was hit.
+  budgetExceeded?: boolean;
+  // Token/compute cost of this run at done (both cloud and mock paths) — the
+  // BILLED figure (claude's own cost × creditMultiplier), same basis as the
+  // cloud hold reconciliation. Machine/infra cost bills separately later at
+  // sandbox sweep and is never folded in here.
+  runCostUsd?: number;
   // MERGE node fields — second parent, render-only (ADR-0005).
   mergeFromNodeId?: string;
   prStatus?: 'open' | 'merged';
@@ -153,6 +211,11 @@ export interface RepoRef {
   repo: string;
   defaultBranch: string;
   url: string;
+  // Only meaningful for provider 'github' — set at project create from the
+  // GitHub API's own `private` field (see github.service.ts's listRepos).
+  // Gates whether createCodeNodeStreaming needs an installation token to
+  // clone (see NodesService.resolveRunRepo / GithubAppService).
+  private?: boolean;
 }
 
 // A Project owns a repo ref + plugin list and points at the one Session that is
@@ -168,6 +231,24 @@ export interface ProjectItem {
   sessionId: string;
   createdAt: string;
   updatedAt: string;
+  // Distinct branch lines seeded/forked on this project's map — set at create
+  // (import: seeded branch count; 'new'/'github-mock': 1 for the default
+  // branch) and bumped by $ADD whenever a BRANCH node is forked.
+  branchCount?: number;
+}
+
+// A GitHub App installation (Contents:Read v1) the user has granted forkai
+// code access to — distinct from UserMetaItem.githubAccessToken above, which
+// is a classic OAuth token used only for read-only browsing/import
+// (github.service.ts). This is what GithubAppService.mintInstallationToken
+// uses to clone PRIVATE repos into a cloud sandbox run. A user can have more
+// than one (one per GitHub org/account they installed the App on).
+export interface GithubInstallationItem {
+  PK: string;
+  SK: string;
+  installationId: string;
+  accountLogin: string;
+  createdAt: string;
 }
 
 // One CODE node's agent run: the full event stream plus the resulting commit.

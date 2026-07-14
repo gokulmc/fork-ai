@@ -731,6 +731,34 @@ describe('SessionsService', () => {
       const result = await service.list(SUB);
       expect(result).toHaveLength(0);
     });
+
+    it('enriches a project session with repoRef + branchCount resolved from the ProjectItem (§2b)', async () => {
+      const projectMeta = { ...sessionMeta, projectId: 'proj-1' };
+      mockDb.listSessionMeta.mockResolvedValue([projectMeta]);
+      mockDb.queryHighlights.mockResolvedValue([]);
+      mockDb.getProject.mockResolvedValue({
+        projectId: 'proj-1',
+        repoRef: { provider: 'github', owner: 'acme', repo: 'widgets', defaultBranch: 'main', url: 'https://github.com/acme/widgets' },
+        branchCount: 3,
+      });
+
+      const result = await service.list(SUB);
+
+      expect(mockDb.getProject).toHaveBeenCalledWith(SUB, 'proj-1');
+      expect(result[0].repoRef).toEqual({ owner: 'acme', repo: 'widgets', url: 'https://github.com/acme/widgets', provider: 'github' });
+      expect(result[0].branchCount).toBe(3);
+    });
+
+    it('omits repoRef/branchCount for a bare (non-project) session — never fetches a project', async () => {
+      mockDb.listSessionMeta.mockResolvedValue([sessionMeta]); // no projectId
+      mockDb.queryHighlights.mockResolvedValue([]);
+
+      const result = await service.list(SUB);
+
+      expect(mockDb.getProject).not.toHaveBeenCalled();
+      expect(result[0].repoRef).toBeUndefined();
+      expect(result[0].branchCount).toBeUndefined();
+    });
   });
 
   describe('getSession', () => {

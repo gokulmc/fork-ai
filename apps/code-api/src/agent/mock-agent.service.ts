@@ -18,11 +18,25 @@ export interface AgentRunContext {
   ancestorCodeSummaries: Array<{ commitMessage: string; filePaths: string[]; additions: number; deletions: number }>;
   model?: string;
   attachments?: Array<{ name: string; content: string }>;
-  // Prototype-only fields, plumbed straight from env in nodes.service.ts — the
-  // mock ignores both; a future local/cloud runner reads them to know where to
-  // work.
   runId?: string; // the CODE nodeId — workspace naming / log correlation
-  repo?: { cloneUrl?: string; localPath?: string; authToken?: string };
+  // Cloud-only billing plumbing (ADR-0004) — mock/local ignore all three.
+  // `sub` identifies who to bill for machine lifetime; `sessionId` (alongside
+  // `runId` as the nodeId) completes the identity tagged onto the sandbox's
+  // metadata at create, so a later sweep/error-path destroy can bill the
+  // right user/session/node; `maxBudgetUsd` is the pre-computed ceiling
+  // (min(maxRunCostUsd, balance) mapped from BILLED dollars to claude's own
+  // raw budget — see nodes.service.ts) passed straight to the sandbox's
+  // `claude --max-budget-usd` flag (see runner.mjs).
+  sub?: string;
+  sessionId?: string;
+  maxBudgetUsd?: number;
+  // Where a real (local/cloud) runner finds or creates its working copy — the
+  // mock ignores all of it. cloneUrl/localPath are set from a real project's
+  // repoRef (nodes.service.ts's resolveRunRepo) or, dev-only, straight from
+  // LOCAL_AGENT_REPO_PATH/URL env. `init` is provider 'new' — no repo exists
+  // yet, so the runner `git init`s an empty one instead of cloning (see
+  // runner.mjs / CloudAgentRunner).
+  repo?: { cloneUrl?: string; localPath?: string; authToken?: string; init?: { defaultBranch: string } };
 }
 
 export interface AgentRunResult {

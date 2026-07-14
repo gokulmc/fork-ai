@@ -42,9 +42,25 @@ export interface ForkNode {
   diffSummary?: DiffSummary;
   agentStatus?: 'running' | 'done' | 'error';
   imported?: boolean;
+  // Where the agent run actually happened — set at done, absent on mock runs.
+  // workspaceExpiresAt is cloud-only (the sandbox is swept once it passes).
+  workspace?:
+    | { kind: 'cloud'; sandboxId: string; vscodeUrl: string }
+    | { kind: 'local'; path: string };
+  workspaceExpiresAt?: string;
   // ── forkai-code: MERGE rail nodes — second parent, render-only (ADR-0005) ──
   mergeFromNodeId?: string;
   prStatus?: 'open' | 'merged';
+  // Cloud push state — set at done for a cloud run; absent (not false) for a
+  // mock run or a node whose push hasn't been attempted.
+  pushed?: boolean;
+  pushError?: string;
+  // The run hit the token/compute budget ceiling and was stopped early —
+  // partial work was still committed.
+  budgetExceeded?: boolean;
+  // Token/compute cost at done, ≈ (approximate) — machine/infra cost is
+  // billed separately later at sweep and is not included here.
+  runCostUsd?: number;
 }
 
 export type NodeKind = ForkNode['kind'];
@@ -85,6 +101,7 @@ export interface Tweaks {
   maxSections: number;
   webSearch: boolean;
   branchModel: 'haiku' | 'sonnet' | 'opus' | 'gemini-pro' | 'gemini-flash' | 'gemini-flash-lite' | 'deepseek-pro' | 'deepseek-flash' | 'glm' | 'glm-air';
+  environment: 'cloud' | 'demo';
 }
 
 export interface HlMenuState {

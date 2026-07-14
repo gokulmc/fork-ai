@@ -64,6 +64,33 @@ export const UsageEventSchema = new dynamoose.Schema({
   // Without this, Dynamoose (saveUnknown:false) silently drops `model` on write,
   // so every usage event lands model-less and gets attributed to the default provider.
   model: { type: String, required: false },
+  runId: { type: String, required: false },
+  machineSeconds: { type: Number, required: false },
+});
+
+export const HoldSchema = new dynamoose.Schema({
+  PK: { type: String, hashKey: true },
+  SK: { type: String, rangeKey: true },
+  sub: String,
+  nodeId: String,
+  sessionId: String,
+  holdUsd: Number,
+  status: String,
+  model: String,
+  createdAt: String,
+  updatedAt: String,
+});
+
+export const MachineBillSchema = new dynamoose.Schema({
+  PK: { type: String, hashKey: true },
+  SK: { type: String, rangeKey: true },
+  sub: String,
+  sandboxId: String,
+  sessionId: String,
+  nodeId: String,
+  machineSeconds: Number,
+  costUsd: Number,
+  createdAt: String,
 });
 
 export const PaymentSchema = new dynamoose.Schema({
@@ -147,6 +174,24 @@ export const NodeSchema = new dynamoose.Schema({
   // on write/read (see root CLAUDE.md "Dynamoose saveUnknown" gotcha).
   mergeFromNodeId: { type: String, required: false },
   prStatus: { type: String, required: false },
+  // Nested object covers both workspace kinds' fields (Dynamoose has no tagged
+  // union) — sandboxId/vscodeUrl for 'cloud', path for 'local', all optional
+  // besides kind so either shape round-trips.
+  workspace: {
+    type: Object,
+    required: false,
+    schema: {
+      kind: String,
+      sandboxId: { type: String, required: false },
+      vscodeUrl: { type: String, required: false },
+      path: { type: String, required: false },
+    },
+  },
+  workspaceExpiresAt: { type: String, required: false },
+  pushed: { type: Boolean, required: false },
+  pushError: { type: String, required: false },
+  budgetExceeded: { type: Boolean, required: false },
+  runCostUsd: { type: Number, required: false },
 });
 
 export const AnnotationSchema = new dynamoose.Schema({
@@ -188,12 +233,22 @@ export const ProjectSchema = new dynamoose.Schema({
       repo: String,
       defaultBranch: String,
       url: String,
+      private: { type: Boolean, required: false },
     },
   },
   plugins: { type: Array, schema: [String] },
   sessionId: String,
   createdAt: String,
   updatedAt: String,
+  branchCount: { type: Number, required: false },
+});
+
+export const GithubInstallationSchema = new dynamoose.Schema({
+  PK: { type: String, hashKey: true },
+  SK: { type: String, rangeKey: true },
+  installationId: String,
+  accountLogin: String,
+  createdAt: String,
 });
 
 export const AgentRunSchema = new dynamoose.Schema({

@@ -86,6 +86,7 @@ describe('ProjectsService', () => {
       );
       expect(result.sessionId).toBe('sess-1');
       expect(result.projectId).toBeDefined();
+      expect(result.branchCount).toBe(1); // synthesized seed — only the default branch
     });
 
     it('links the new session back to the project via projectId', async () => {
@@ -174,6 +175,23 @@ describe('ProjectsService', () => {
       expect(mockSessions.createProjectSession).not.toHaveBeenCalled();
       expect(mockSessions.createImportedProjectSession).toHaveBeenCalledWith(SUB, githubDto.name, expect.any(String), importedNodes);
       expect(result.sessionId).toBe('sess-imported');
+      expect(result.branchCount).toBe(1); // both imported nodes carry no branchName in this fixture
+    });
+
+    it('counts distinct branchName values across the imported nodes for branchCount', async () => {
+      const multiBranchNodes = [
+        { ...importedNodes[0], branchName: 'main' },
+        { ...importedNodes[1], branchName: 'main' },
+        { PK: 'SESSION#sess-imported', SK: 'NODE#n3', nodeId: 'n3', parentId: 'n1', kind: 'BRANCH', title: 'Fork from n1', branchName: 'feature' },
+      ] as unknown as Parameters<typeof mockSessions.createImportedProjectSession>[3];
+      mockRepoImport.buildImportedNodes.mockResolvedValue(multiBranchNodes);
+      mockSessions.createImportedProjectSession.mockResolvedValue('sess-imported');
+      mockDb.putProject.mockResolvedValue(undefined);
+      mockDb.updateSessionMeta.mockResolvedValue(undefined);
+
+      const result = await service.create(SUB, githubDto);
+
+      expect(result.branchCount).toBe(2); // 'main' + 'feature'
     });
 
     it('falls back to the synthesized 2-node seed when the import returns null', async () => {

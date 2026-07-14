@@ -1,6 +1,7 @@
-import { Injectable, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
+import type { DiffSummary } from '@/dynamo/dynamo.interfaces';
 
 export interface GithubRepo {
   owner: string;
@@ -54,6 +55,8 @@ const MAX_BRANCHES = 20;
 
 @Injectable()
 export class GithubService {
+  private readonly logger = new Logger(GithubService.name);
+
   // Short-lived in-memory map: state → sub+email (survives only the OAuth round-trip, ~60 s)
   private readonly pendingStates = new Map<string, { sub: string; email: string; expiresAt: number }>();
 
@@ -281,10 +284,51 @@ export class GithubService {
       commits: data.commits.map(toRepoSeedCommit),
     };
   }
+
+  // Per-commit file-level diff for an imported commit — compareCommits above
+  // only carries {sha,message,date} per commit, never files[]. Never throws:
+  // a partial import (§2c) must not fail because one commit's diff fetch did.
+  async getCommitDiff(sub: string, owner: string, repo: string, sha: string): Promise<DiffSummary | null> {
+    try {
+      const token = await this.requireToken(sub);
+      const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/commits/${sha}`, { headers: this.authHeaders(token) });
+      if (!res.ok) return null;
+      const data = (await res.json()) as {
+        files?: Array<{ filename: string; status: string; additions: number; deletions: number }>;
+      };
+      const files = (data.files ?? []).map((f) => ({
+        path: f.filename,
+        status: toDiffStatus(f.status),
+        additions: f.additions,
+        deletions: f.deletions,
+      }));
+      return {
+        filesChanged: files.length,
+        additions: files.reduce((sum, f) => sum + f.additions, 0),
+        deletions: files.reduce((sum, f) => sum + f.deletions, 0),
+        files,
+      };
+    } catch (err) {
+      this.logger.warn(`getCommitDiff failed for ${owner}/${repo}@${sha}: ${(err as Error).message}`);
+      return null;
+    }
+  }
 }
 
 function toRepoSeedCommit(c: GithubCommitApi): RepoSeedCommit {
   return { sha: c.sha, message: c.commit.message, date: c.commit.author?.date ?? new Date().toISOString() };
+}
+
+// Maps GitHub's per-file commit status onto the app's own DiffSummary status
+// vocabulary — 'added'/'modified'/'deleted'/'renamed'/'copied', the same
+// values a real agent run's own diffSummaryBetween (git-diff.ts's
+// STATUS_WORDS + name-status R/C handling) produces. GitHub's 'removed' maps
+// to 'deleted'; its rarer 'changed'/'unchanged' (mode-only or no-op diffs)
+// fall back to 'modified' like an unrecognised git status code does.
+function toDiffStatus(githubStatus: string): string {
+  if (githubStatus === 'removed') return 'deleted';
+  if (githubStatus === 'added' || githubStatus === 'renamed' || githubStatus === 'copied') return githubStatus;
+  return 'modified';
 }
 
 // Extracts the rel="last" URL from a GitHub Link header, e.g.

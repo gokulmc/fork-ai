@@ -1,12 +1,15 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { NodesService } from './nodes.service';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
 import { LlmService } from '@/llm/llm.service';
-import { BRANCH_DEFAULT_MODEL } from '@/llm/models';
+import { BRANCH_DEFAULT_MODEL, CLOUD_CODE_MODEL_ID, PLAN_MODEL_ID, resolveBranchModel } from '@/llm/models';
 import { SessionsService } from '@/sessions/sessions.service';
 import { UsersService } from '@/users/users.service';
-import { AGENT_RUNNER, AgentRunFinal } from '@/agent/agent-runner';
+import { GithubAppService } from '@/github/github-app.service';
+import { AgentRunFinal } from '@/agent/agent-runner';
+import { AGENT_RUNNER_REGISTRY } from '@/agent/runner-registry';
 import { AgentEvent } from '@/agent/agent-run.util';
 
 const mockDb = {
@@ -24,6 +27,7 @@ const mockDb = {
   putAgentRun: jest.fn(),
   updateAgentRun: jest.fn(),
   getProject: jest.fn(),
+  incrementProjectBranchCount: jest.fn(),
 };
 
 const mockLlm = {
@@ -42,10 +46,31 @@ const mockUsers = {
   checkCredit: jest.fn(),
   billUsage: jest.fn(),
   getPersona: jest.fn(),
+  placeHold: jest.fn(),
+  reconcileHold: jest.fn(),
+};
+
+const mockGithubApp = {
+  mintInstallationToken: jest.fn(),
 };
 
 const agentRunner = {
   run: jest.fn(),
+};
+
+// Stands in for the AGENT_RUNNER_REGISTRY seam — resolves to `agentRunner`
+// by default so every existing createCodeNodeStreaming test keeps working
+// unchanged; tests that care about environment routing override resolve().
+// isCloud defaults to false (mirrors RunnerRegistry's default env being
+// non-cloud in every existing test's implicit setup) — cloud-billing tests
+// override it explicitly.
+const mockRunners = {
+  resolve: jest.fn(() => agentRunner),
+  isCloud: jest.fn(() => false),
+};
+
+const mockConfig = {
+  get: jest.fn((key: string) => (key === 'billing.creditMultiplier' ? 1.5 : undefined)),
 };
 
 // Drives the AGENT_RUNNER seam the way MockAgentRunner does: an async
@@ -118,7 +143,9 @@ describe('NodesService', () => {
         { provide: LlmService, useValue: mockLlm },
         { provide: SessionsService, useValue: mockSessions },
         { provide: UsersService, useValue: mockUsers },
-        { provide: AGENT_RUNNER, useValue: agentRunner },
+        { provide: GithubAppService, useValue: mockGithubApp },
+        { provide: ConfigService, useValue: mockConfig },
+        { provide: AGENT_RUNNER_REGISTRY, useValue: mockRunners },
       ],
     }).compile();
     service = module.get<NodesService>(NodesService);
@@ -442,6 +469,26 @@ describe('NodesService', () => {
       );
     });
 
+    it('plan:true always synthesizes with Opus (PLAN_MODEL_ID), ignoring dto.model', async () => {
+      mockSessions.getSession.mockResolvedValue({
+        ...fullSession,
+        nodes: [parentNode, { ...sourceNode, kind: 'ASK' }],
+      });
+      const result = await service.createMixNode(SUB, SESSION_ID, { ...mixDto, plan: true, model: 'haiku' });
+      expect(result.model).toBe(PLAN_MODEL_ID);
+      expect(result.model).toBe('claude-opus-4-8');
+    });
+
+    it('plan:false (MIX) resolves the model from dto.model via resolveBranchModel', async () => {
+      mockSessions.getSession.mockResolvedValue({
+        ...fullSession,
+        nodes: [parentNode, { ...sourceNode, kind: 'CODE' }],
+      });
+      const result = await service.createMixNode(SUB, SESSION_ID, { ...mixDto, model: 'sonnet' });
+      expect(result.model).toBe(resolveBranchModel('sonnet'));
+      expect(result.model).not.toBe(PLAN_MODEL_ID);
+    });
+
     it('plan:true rejects a non-learn base node', async () => {
       mockSessions.getSession.mockResolvedValue({
         ...fullSession,
@@ -598,6 +645,7 @@ describe('NodesService', () => {
 
     beforeEach(() => {
       mockDb.putNode.mockResolvedValue(undefined);
+      mockDb.incrementProjectBranchCount.mockResolvedValue(undefined);
       mockSessions.touchUpdatedAt.mockResolvedValue(undefined);
       mockSessions.incrementNodeCount.mockResolvedValue(undefined);
     });
@@ -610,6 +658,18 @@ describe('NodesService', () => {
       expect(result.commitSha).toBe('abcdef1234567890');
       expect(result.parentId).toBe(PARENT_NODE_ID);
       expect(result.query).toBe('Fork from abcdef1');
+    });
+
+    it('bumps the project branchCount by 1 when the session belongs to a Project', async () => {
+      mockSessions.getSession.mockResolvedValue({ ...fullSession, projectId: 'proj-1', nodes: [codeParent] });
+      await service.createBranchNode(SUB, SESSION_ID, dto);
+      expect(mockDb.incrementProjectBranchCount).toHaveBeenCalledWith(SUB, 'proj-1', 1);
+    });
+
+    it('does not touch branchCount for a bare (non-project) session', async () => {
+      mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [codeParent] });
+      await service.createBranchNode(SUB, SESSION_ID, dto);
+      expect(mockDb.incrementProjectBranchCount).not.toHaveBeenCalled();
     });
 
     it('rejects a non-CODE parent', async () => {
@@ -1061,6 +1121,16 @@ describe('NodesService', () => {
       expect(mockDb.updateNode).toHaveBeenCalledWith(SESSION_ID, expect.any(String), expect.objectContaining({ commitSha: expect.any(String) }));
     });
 
+    it('persists runCostUsd on the node for a mock (non-cloud) run — hoisted above the cloud-only billing ternary so it is no longer cloud-exclusive', async () => {
+      const received: Array<{ type: string; node?: { runCostUsd?: number } }> = [];
+      await service.createCodeNodeStreaming(SUB, SESSION_ID, dto, (d) => received.push(d as typeof received[number]));
+
+      // agentFinal has no claudeCostUsd — falls back to token×priceFor(BRANCH_DEFAULT_MODEL) × creditMultiplier, same basis as the cloud path's fallback.
+      expect(mockDb.updateNode).toHaveBeenCalledWith(SESSION_ID, expect.any(String), expect.objectContaining({ runCostUsd: 0.003 }));
+      const done = received.find((e) => e.type === 'done')!;
+      expect(done.node!.runCostUsd).toBe(0.003);
+    });
+
     it('marks the node and AgentRun as error and emits an error event when the agent runner fails mid-stream, without throwing', async () => {
       runnerYields(agentEvents, new Error('boom'));
       const received: Array<{ type: string }> = [];
@@ -1101,6 +1171,22 @@ describe('NodesService', () => {
       await expect(service.createCodeNodeStreaming(SUB, SESSION_ID, dto, jest.fn())).rejects.toBeInstanceOf(NotFoundException);
     });
 
+    it('passes dto.environment through to runners.resolve()', async () => {
+      await service.createCodeNodeStreaming(SUB, SESSION_ID, { ...dto, environment: 'cloud' }, jest.fn());
+      expect(mockRunners.resolve).toHaveBeenCalledWith('cloud');
+    });
+
+    it('propagates a BadRequestException from runners.resolve() before any persistence', async () => {
+      mockRunners.resolve.mockImplementationOnce(() => { throw new BadRequestException("Execution environment 'cloud' is not available on this server"); });
+
+      await expect(
+        service.createCodeNodeStreaming(SUB, SESSION_ID, { ...dto, environment: 'cloud' }, jest.fn()),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mockDb.putNode).not.toHaveBeenCalled();
+      expect(mockDb.putAgentRun).not.toHaveBeenCalled();
+    });
+
     it('threads attachments into the agent run context', async () => {
       const attachments = [{ name: 'notes.md', content: '# context' }];
       await service.createCodeNodeStreaming(SUB, SESSION_ID, { ...dto, attachments }, jest.fn());
@@ -1112,6 +1198,86 @@ describe('NodesService', () => {
       await service.createCodeNodeStreaming(SUB, SESSION_ID, dto, jest.fn());
       const ctxArg = agentRunner.run.mock.calls[0][0];
       expect(ctxArg.attachments).toBeUndefined();
+    });
+
+    describe('repo resolution (project repoRef → ctx.repo)', () => {
+      const githubProject = (overrides: Partial<{ private: boolean }> = {}) => ({
+        projectId: 'proj-1',
+        repoRef: { provider: 'github', owner: 'acme', repo: 'widgets', defaultBranch: 'main', url: 'https://github.com/acme/widgets', ...overrides },
+        plugins: [],
+      });
+
+      beforeEach(() => {
+        mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [planNode], projectId: 'proj-1' });
+      });
+
+      it("provider 'new' passes ctx.repo.init through — no clone, no LOCAL_AGENT_REPO_* fallback", async () => {
+        mockDb.getProject.mockResolvedValue({
+          projectId: 'proj-1',
+          repoRef: { provider: 'new', owner: 'you', repo: 'widgets', defaultBranch: 'main', url: 'mock://new/widgets' },
+          plugins: [],
+        });
+
+        await service.createCodeNodeStreaming(SUB, SESSION_ID, dto, jest.fn());
+
+        const ctxArg = agentRunner.run.mock.calls[0][0];
+        expect(ctxArg.repo).toEqual({ init: { defaultBranch: 'main' } });
+      });
+
+      it("provider 'github-mock' + explicit cloud environment 400s before any persistence", async () => {
+        mockDb.getProject.mockResolvedValue({
+          projectId: 'proj-1',
+          repoRef: { provider: 'github-mock', owner: 'acme', repo: 'widgets', defaultBranch: 'main', url: 'mock://acme/widgets' },
+          plugins: [],
+        });
+
+        await expect(
+          service.createCodeNodeStreaming(SUB, SESSION_ID, { ...dto, environment: 'cloud' }, jest.fn()),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(mockDb.putNode).not.toHaveBeenCalled();
+      });
+
+      it("provider 'github-mock' without an explicit cloud request runs fine (mock never reads ctx.repo)", async () => {
+        mockDb.getProject.mockResolvedValue({
+          projectId: 'proj-1',
+          repoRef: { provider: 'github-mock', owner: 'acme', repo: 'widgets', defaultBranch: 'main', url: 'mock://acme/widgets' },
+          plugins: [],
+        });
+
+        await service.createCodeNodeStreaming(SUB, SESSION_ID, dto, jest.fn());
+
+        const ctxArg = agentRunner.run.mock.calls[0][0];
+        expect(ctxArg.repo).toBeUndefined();
+      });
+
+      it('private github repo with no covering installation 400s before any persistence', async () => {
+        mockDb.getProject.mockResolvedValue(githubProject({ private: true }));
+        mockGithubApp.mintInstallationToken.mockResolvedValue(null);
+
+        await expect(service.createCodeNodeStreaming(SUB, SESSION_ID, dto, jest.fn())).rejects.toBeInstanceOf(BadRequestException);
+        expect(mockDb.putNode).not.toHaveBeenCalled();
+        expect(mockGithubApp.mintInstallationToken).toHaveBeenCalledWith(SUB, 'acme', 'widgets');
+      });
+
+      it('private github repo with a covering installation clones via an x-access-token URL', async () => {
+        mockDb.getProject.mockResolvedValue(githubProject({ private: true }));
+        mockGithubApp.mintInstallationToken.mockResolvedValue('ghs_installtoken');
+
+        await service.createCodeNodeStreaming(SUB, SESSION_ID, dto, jest.fn());
+
+        const ctxArg = agentRunner.run.mock.calls[0][0];
+        expect(ctxArg.repo).toEqual({ cloneUrl: 'https://x-access-token:ghs_installtoken@github.com/acme/widgets.git' });
+      });
+
+      it('public github repo clones the plain repo URL — no installation lookup', async () => {
+        mockDb.getProject.mockResolvedValue(githubProject());
+
+        await service.createCodeNodeStreaming(SUB, SESSION_ID, dto, jest.fn());
+
+        const ctxArg = agentRunner.run.mock.calls[0][0];
+        expect(ctxArg.repo).toEqual({ cloneUrl: 'https://github.com/acme/widgets.git' });
+        expect(mockGithubApp.mintInstallationToken).not.toHaveBeenCalled();
+      });
     });
 
     describe('auto-branch on a parallel instruction', () => {
@@ -1168,6 +1334,109 @@ describe('NodesService', () => {
 
         expect(received.some((e) => e.type === 'branch-init')).toBe(false);
         expect(received[0].type).toBe('init');
+      });
+    });
+
+    describe('ADR-0004 cloud billing (pre-auth hold + reconciliation, cost-basis redesign)', () => {
+      beforeEach(() => {
+        mockRunners.isCloud.mockReturnValue(true);
+        mockUsers.placeHold.mockResolvedValue({ holdUsd: 1, ceilingUsd: 1 });
+        mockUsers.reconcileHold.mockResolvedValue(undefined);
+      });
+
+      it('places a hold (not checkCredit) before persisting any node, keyed by the minted nodeId, always on the sonnet id', async () => {
+        const order: string[] = [];
+        mockUsers.placeHold.mockImplementation(() => { order.push('placeHold'); return Promise.resolve({ holdUsd: 1, ceilingUsd: 1 }); });
+        mockDb.putNode.mockImplementation(() => { order.push('putNode'); return Promise.resolve(); });
+
+        await service.createCodeNodeStreaming(SUB, SESSION_ID, { ...dto, environment: 'cloud' }, jest.fn());
+
+        expect(order[0]).toBe('placeHold');
+        expect(order[1]).toBe('putNode');
+        // Cloud CODE runs always use Sonnet regardless of dto.model — this is
+        // what keeps the hold/usage-event model and the sandbox's actual
+        // --model flag from disagreeing (the old model-mismatch bug).
+        expect(mockUsers.placeHold).toHaveBeenCalledWith(SUB, SESSION_ID, expect.any(String), CLOUD_CODE_MODEL_ID);
+        expect(mockUsers.checkCredit).not.toHaveBeenCalled();
+      });
+
+      it('forces ctx.model to the sonnet id and threads maxBudgetUsd = ceilingUsd / creditMultiplier into ctx for a cloud run', async () => {
+        await service.createCodeNodeStreaming(SUB, SESSION_ID, { ...dto, environment: 'cloud' }, jest.fn());
+        const ctxArg = agentRunner.run.mock.calls[0][0];
+        expect(ctxArg.sub).toBe(SUB);
+        expect(ctxArg.sessionId).toBe(SESSION_ID);
+        expect(ctxArg.model).toBe(CLOUD_CODE_MODEL_ID);
+        // ceilingUsd=1 (mocked placeHold), creditMultiplier=1.5 (mockConfig) →
+        // maxBudgetUsd is claude's own RAW budget, mapped down from the
+        // BILLED ceiling so the sandbox's cap doesn't let claude overspend
+        // by the multiplier before it trips.
+        expect(ctxArg.maxBudgetUsd).toBeCloseTo(1 / 1.5);
+      });
+
+      it('reconciles the hold with runCostUsd = claudeCostUsd × creditMultiplier on done — not billUsage', async () => {
+        runnerYields(agentEvents, { ...agentFinal, claudeCostUsd: 0.02 });
+        await service.createCodeNodeStreaming(SUB, SESSION_ID, { ...dto, environment: 'cloud' }, jest.fn());
+        // round6(0.02 * 1.5 * 1e6) / 1e6 = 0.03
+        expect(mockUsers.reconcileHold).toHaveBeenCalledWith(SUB, SESSION_ID, expect.any(String), 0.03, 500, 300, BRANCH_DEFAULT_MODEL, 'CODE');
+        expect(mockUsers.billUsage).not.toHaveBeenCalled();
+      });
+
+      it('falls back to a token×priceFor estimate when the runner reports no claudeCostUsd (rare no-result-line case)', async () => {
+        // agentFinal has no claudeCostUsd — model BRANCH_DEFAULT_MODEL (haiku):
+        // input $1/MTok, output $5/MTok. 500 input + 300 output:
+        // raw = 500*1/1e6 + 300*5/1e6 = 0.0005 + 0.0015 = 0.002
+        // round6(0.002 * 1.5 * 1e6)/1e6 = 0.003
+        await service.createCodeNodeStreaming(SUB, SESSION_ID, { ...dto, environment: 'cloud' }, jest.fn());
+        expect(mockUsers.reconcileHold).toHaveBeenCalledWith(SUB, SESSION_ID, expect.any(String), 0.003, 500, 300, BRANCH_DEFAULT_MODEL, 'CODE');
+      });
+
+      it('reconciles the hold with runCostUsd=0 and zero tokens when the runner fails mid-stream', async () => {
+        runnerYields(agentEvents, new Error('boom'));
+        await service.createCodeNodeStreaming(SUB, SESSION_ID, { ...dto, environment: 'cloud' }, jest.fn());
+        expect(mockUsers.reconcileHold).toHaveBeenCalledWith(SUB, SESSION_ID, expect.any(String), 0, 0, 0, CLOUD_CODE_MODEL_ID, 'CODE');
+        expect(mockUsers.billUsage).not.toHaveBeenCalled();
+      });
+
+      it('releases the hold when a failure happens after placeHold but before the run loop starts', async () => {
+        mockDb.putNode.mockRejectedValueOnce(new Error('ddb blip'));
+
+        await expect(
+          service.createCodeNodeStreaming(SUB, SESSION_ID, { ...dto, environment: 'cloud' }, jest.fn()),
+        ).rejects.toThrow('ddb blip');
+
+        expect(mockUsers.reconcileHold).toHaveBeenCalledWith(SUB, SESSION_ID, expect.any(String), 0, 0, 0, CLOUD_CODE_MODEL_ID, 'CODE');
+      });
+
+      it('a reconcileHold failure does not mask the original error surfacing to the caller', async () => {
+        mockDb.putNode.mockRejectedValueOnce(new Error('ddb blip'));
+        mockUsers.reconcileHold.mockRejectedValueOnce(new Error('reconcile also failed'));
+
+        await expect(
+          service.createCodeNodeStreaming(SUB, SESSION_ID, { ...dto, environment: 'cloud' }, jest.fn()),
+        ).rejects.toThrow('ddb blip');
+      });
+
+      it('persists and emits budgetExceeded when the runner sets it', async () => {
+        runnerYields(agentEvents, { ...agentFinal, budgetExceeded: true });
+        const received: Array<{ type: string; node?: { budgetExceeded?: boolean } }> = [];
+
+        await service.createCodeNodeStreaming(SUB, SESSION_ID, { ...dto, environment: 'cloud' }, (d) => received.push(d as typeof received[number]));
+
+        expect(mockDb.updateNode).toHaveBeenCalledWith(SESSION_ID, expect.any(String), expect.objectContaining({ budgetExceeded: true }));
+        const done = received.find((e) => e.type === 'done')!;
+        expect(done.node!.budgetExceeded).toBe(true);
+      });
+
+      it('a non-cloud run never places or reconciles a hold — checkCredit/billUsage unchanged, model stays dto.model-resolved', async () => {
+        mockRunners.isCloud.mockReturnValue(false);
+        await service.createCodeNodeStreaming(SUB, SESSION_ID, dto, jest.fn());
+        expect(mockUsers.placeHold).not.toHaveBeenCalled();
+        expect(mockUsers.reconcileHold).not.toHaveBeenCalled();
+        expect(mockUsers.checkCredit).toHaveBeenCalledWith(SUB);
+        expect(mockUsers.billUsage).toHaveBeenCalledWith(SUB, 500, 300, 'CODE', SESSION_ID, expect.any(String), BRANCH_DEFAULT_MODEL);
+        const ctxArg = agentRunner.run.mock.calls[0][0];
+        expect(ctxArg.model).toBe(BRANCH_DEFAULT_MODEL);
+        expect(ctxArg.maxBudgetUsd).toBeUndefined();
       });
     });
   });

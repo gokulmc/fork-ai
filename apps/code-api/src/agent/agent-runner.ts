@@ -16,6 +16,30 @@ export interface AgentRunFinal {
   workspace?:
     | { kind: 'local'; path: string }
     | { kind: 'cloud'; sandboxId: string; vscodeUrl: string };
+  // ISO timestamp — cloud only (local workspaces don't expire). Set alongside
+  // `workspace` on a successful cloud run; see CloudAgentRunner.
+  workspaceExpiresAt?: string;
+  // GitHub push-back (ADR-0002 amendment, v1.1) — cloud-only. Set from the
+  // sandbox runner's `result` frame: `git push origin <branch>` is attempted
+  // after a successful commit, reusing the same installation-token remote
+  // the repo was cloned from. `false` is not itself an error — it also
+  // covers the expected no-op case of a 'new'-project run with no origin
+  // remote. Read-only plumbing for now: not yet surfaced in product UI or
+  // persisted to NodeItem/Dynamo (see docs/forkai-code/adr/0002).
+  pushed?: boolean;
+  pushError?: string;
+  // Cloud-only (ADR-0004) — set when claude's own `--max-budget-usd` stopped
+  // the run after finishing its in-flight turn (runner.mjs reads this off the
+  // stream's `result` line, subtype `error_max_budget_usd`). Not a run
+  // failure: partial work is still committed/pushed as normal, this only
+  // flags that the ceiling was hit.
+  budgetExceeded?: boolean;
+  // Cloud-only (ADR-0004) — claude's own reported `total_cost_usd` for the
+  // run (cache-accurate; present on both a normal finish and a budget stop).
+  // This, not token×priceFor, is the authoritative cost basis — see
+  // nodes.service.ts. Undefined only for the rare case claude never emitted
+  // a result line at all (a CLAUDE_TIMEOUT_MS kill).
+  claudeCostUsd?: number;
 }
 
 // A discriminated union rather than a generator return value: `for await`
@@ -29,7 +53,5 @@ export type RunnerYield =
 export interface AgentRunner {
   run(ctx: AgentRunContext): AsyncIterable<RunnerYield>;
 }
-
-export const AGENT_RUNNER = Symbol('AGENT_RUNNER');
 
 export type { AgentRunContext };

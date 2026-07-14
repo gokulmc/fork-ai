@@ -26,7 +26,7 @@ export class ProjectsService {
     // (createRootNodeStreaming). provider 'github' tries a full-history import
     // first (RepoImportService); a synthesized 2-node seed (buildSeed) is the
     // fallback for every other case, including a failed/empty import.
-    const sessionId = await this.buildSession(sub, dto);
+    const { sessionId, branchCount } = await this.buildSession(sub, dto);
 
     const projectId = ulid();
     const now = new Date().toISOString();
@@ -42,6 +42,7 @@ export class ProjectsService {
       sessionId,
       createdAt: now,
       updatedAt: now,
+      branchCount,
     };
 
     await this.db.putProject(project);
@@ -54,15 +55,25 @@ export class ProjectsService {
   // provider 'github': try the full-history import first — it never throws
   // (buildImportedNodes catches internally), returning null for "no real repo
   // history to import" (fetch failure, or a genuinely empty repo). Every other
-  // case (mock, new, or a null import) falls back to the synthesized 2-node seed.
-  private async buildSession(sub: string, dto: CreateProjectDto): Promise<string> {
+  // case (mock, new, or a null import) falls back to the synthesized 2-node seed,
+  // which has exactly one branch (the default).
+  private async buildSession(sub: string, dto: CreateProjectDto): Promise<{ sessionId: string; branchCount: number }> {
     if (dto.repoRef.provider === 'github') {
       const sessionId = ulid();
       const nodes = await this.repoImport.buildImportedNodes(sub, dto.repoRef, sessionId);
-      if (nodes) return this.sessions.createImportedProjectSession(sub, dto.name, sessionId, nodes);
+      if (nodes) {
+        // Distinct branchName values actually seeded (not nonDefaultBranches.length
+        // — a branch whose merge base got cut off by a cap is silently skipped, so
+        // counting the real nodes is the accurate figure). Always includes the
+        // default branch since every trunk commit carries it.
+        const branchCount = new Set(nodes.map((n) => n.branchName).filter((b): b is string => !!b)).size || 1;
+        const importedSessionId = await this.sessions.createImportedProjectSession(sub, dto.name, sessionId, nodes);
+        return { sessionId: importedSessionId, branchCount };
+      }
     }
     const seed = await this.buildSeed(sub, dto);
-    return this.sessions.createProjectSession(sub, dto.name, seed, dto.repoRef.provider === 'new' ? dto.rootQuery : undefined);
+    const sessionId = await this.sessions.createProjectSession(sub, dto.name, seed, dto.repoRef.provider === 'new' ? dto.rootQuery : undefined);
+    return { sessionId, branchCount: 1 };
   }
 
   // A mock repo has no real commit history to seed from — every non-github

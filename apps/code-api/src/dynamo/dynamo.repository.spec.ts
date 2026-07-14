@@ -12,9 +12,12 @@ import {
   CREDIT_EVENT_MODEL,
   PROJECT_MODEL,
   AGENT_RUN_MODEL,
+  GITHUB_INSTALLATION_MODEL,
+  HOLD_MODEL,
+  MACHINE_BILL_MODEL,
 } from './dynamo.constants';
 
-// Factory for a Dynamoose-model-shaped mock with chainable query builder
+// Factory for a Dynamoose-model-shaped mock with chainable query/scan builder
 function makeModelMock() {
   const mock = {
     get: jest.fn(),
@@ -24,9 +27,11 @@ function makeModelMock() {
     batchDelete: jest.fn(),
     batchPut: jest.fn(),
     query: jest.fn(),
+    scan: jest.fn(),
   };
   // query().eq().using().sort().where().beginsWith().limit().all().exec() chain
-  const queryChain = { eq: jest.fn(), using: jest.fn(), sort: jest.fn(), exec: jest.fn(), where: jest.fn(), beginsWith: jest.fn(), limit: jest.fn(), all: jest.fn() };
+  // (scan reuses the same chain shape: .beginsWith().and().where().eq()/.lt().all().exec())
+  const queryChain = { eq: jest.fn(), using: jest.fn(), sort: jest.fn(), exec: jest.fn(), where: jest.fn(), beginsWith: jest.fn(), limit: jest.fn(), all: jest.fn(), and: jest.fn(), lt: jest.fn() };
   queryChain.eq.mockReturnValue(queryChain);
   queryChain.using.mockReturnValue(queryChain);
   queryChain.sort.mockReturnValue(queryChain);
@@ -34,8 +39,11 @@ function makeModelMock() {
   queryChain.beginsWith.mockReturnValue(queryChain);
   queryChain.limit.mockReturnValue(queryChain);
   queryChain.all.mockReturnValue(queryChain);
+  queryChain.and.mockReturnValue(queryChain);
+  queryChain.lt.mockReturnValue(queryChain);
   queryChain.exec.mockResolvedValue([]);
   mock.query.mockReturnValue(queryChain);
+  mock.scan.mockReturnValue(queryChain);
   return { mock, queryChain };
 }
 
@@ -55,6 +63,9 @@ describe('DynamoRepository', () => {
   let creditEvent: ReturnType<typeof makeModelMock>;
   let project: ReturnType<typeof makeModelMock>;
   let agentRun: ReturnType<typeof makeModelMock>;
+  let githubInstallation: ReturnType<typeof makeModelMock>;
+  let hold: ReturnType<typeof makeModelMock>;
+  let machineBill: ReturnType<typeof makeModelMock>;
 
   beforeEach(async () => {
     userMeta = makeModelMock();
@@ -67,6 +78,9 @@ describe('DynamoRepository', () => {
     creditEvent = makeModelMock();
     project = makeModelMock();
     agentRun = makeModelMock();
+    githubInstallation = makeModelMock();
+    hold = makeModelMock();
+    machineBill = makeModelMock();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -82,6 +96,9 @@ describe('DynamoRepository', () => {
         { provide: CREDIT_EVENT_MODEL, useValue: creditEvent.mock },
         { provide: PROJECT_MODEL, useValue: project.mock },
         { provide: AGENT_RUN_MODEL, useValue: agentRun.mock },
+        { provide: GITHUB_INSTALLATION_MODEL, useValue: githubInstallation.mock },
+        { provide: HOLD_MODEL, useValue: hold.mock },
+        { provide: MACHINE_BILL_MODEL, useValue: machineBill.mock },
       ],
     }).compile();
     repo = module.get<DynamoRepository>(DynamoRepository);
@@ -267,6 +284,15 @@ describe('DynamoRepository', () => {
       expect(project.queryChain.beginsWith).toHaveBeenCalledWith('PROJECT#');
       expect(result).toHaveLength(1);
     });
+
+    it('bumps branchCount via an uppercase $ADD (same operator as deductCredit/addCredit)', async () => {
+      project.mock.update.mockResolvedValue({});
+      await repo.incrementProjectBranchCount(SUB, PROJECT_ID, 1);
+      expect(project.mock.update).toHaveBeenCalledWith(
+        { PK: `USER#${SUB}`, SK: `PROJECT#${PROJECT_ID}` },
+        { '$ADD': { branchCount: 1 } },
+      );
+    });
   });
 
   describe('putAgentRun / getAgentRun / updateAgentRun', () => {
@@ -291,6 +317,139 @@ describe('DynamoRepository', () => {
         { PK: `SESSION#${SESSION_ID}`, SK: `AGENTRUN#${NODE_ID}` },
         { status: 'done', events: '[]' },
       );
+    });
+  });
+
+  describe('putGithubInstallation / listGithubInstallations', () => {
+    it('puts an installation with overwrite', async () => {
+      githubInstallation.mock.create.mockResolvedValue({});
+      await repo.putGithubInstallation({
+        PK: `USER#${SUB}`, SK: 'GHINST#12345', installationId: '12345', accountLogin: 'acme', createdAt: 'now',
+      });
+      expect(githubInstallation.mock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ installationId: '12345', accountLogin: 'acme' }),
+        { overwrite: true },
+      );
+    });
+
+    it('lists installations for the user', async () => {
+      githubInstallation.queryChain.exec.mockResolvedValue([{ installationId: '12345', accountLogin: 'acme' }]);
+      const result = await repo.listGithubInstallations(SUB);
+      expect(githubInstallation.mock.query).toHaveBeenCalledWith('PK');
+      expect(githubInstallation.queryChain.eq).toHaveBeenCalledWith(`USER#${SUB}`);
+      expect(githubInstallation.queryChain.beginsWith).toHaveBeenCalledWith('GHINST#');
+      expect(result).toHaveLength(1);
+    });
+  });
+
+  describe('deductCreditIfSufficient', () => {
+    // Money-correctness guard #3 (ADR-0004, fix I1/M1) — atomic
+    // check-and-deduct for placeHold's strict pre-auth gate.
+    it('deducts and returns true when the condition passes (sufficient balance)', async () => {
+      userMeta.mock.update.mockResolvedValue({});
+      const result = await repo.deductCreditIfSufficient(SUB, 1.0);
+      expect(result).toBe(true);
+      expect(userMeta.mock.update).toHaveBeenCalledWith(
+        { PK: `USER#${SUB}`, SK: 'METADATA' },
+        { '$ADD': { creditUsd: -1.0 } },
+        expect.objectContaining({ condition: expect.anything() }),
+      );
+    });
+
+    it('returns false (not throw) when the condition fails — insufficient balance', async () => {
+      const err = Object.assign(new Error('conditional check failed'), { name: 'ConditionalCheckFailedException' });
+      userMeta.mock.update.mockRejectedValue(err);
+      const result = await repo.deductCreditIfSufficient(SUB, 100);
+      expect(result).toBe(false);
+    });
+
+    // The condition requires creditUsd to EXIST (not just >= amount) — a user
+    // whose creditUsd attribute was never set must fail the same way an
+    // insufficient balance does, not throw an unhandled error.
+    it('returns false (not throw) when creditUsd is entirely absent on the item', async () => {
+      const err = Object.assign(new Error('conditional check failed'), { name: 'ConditionalCheckFailedException' });
+      userMeta.mock.update.mockRejectedValue(err);
+      const result = await repo.deductCreditIfSufficient(SUB, 0.01);
+      expect(result).toBe(false);
+    });
+
+    it('rethrows any other error', async () => {
+      userMeta.mock.update.mockRejectedValue(new Error('network blip'));
+      await expect(repo.deductCreditIfSufficient(SUB, 1.0)).rejects.toThrow('network blip');
+    });
+  });
+
+  describe('putHold / getHold', () => {
+    it('creates a hold with overwrite', async () => {
+      hold.mock.create.mockResolvedValue({});
+      await repo.putHold({ PK: `USER#${SUB}`, SK: `HOLD#${NODE_ID}`, sub: SUB, nodeId: NODE_ID, sessionId: SESSION_ID, holdUsd: 1, status: 'held', model: 'm', createdAt: 'now', updatedAt: 'now' });
+      expect(hold.mock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ nodeId: NODE_ID, status: 'held' }),
+        { overwrite: true },
+      );
+    });
+
+    it('returns null when no hold exists', async () => {
+      hold.mock.get.mockResolvedValue(null);
+      expect(await repo.getHold(SUB, NODE_ID)).toBeNull();
+    });
+  });
+
+  describe('reconcileHoldStatus', () => {
+    // Money-correctness guard #1 (ADR-0004) — verifies the exact Dynamoose v4
+    // conditional-update shape: `model.update(key, updateObj, { condition })`.
+    it('flips held→reconciled with a status=held condition and returns true', async () => {
+      hold.mock.update.mockResolvedValue({});
+      const result = await repo.reconcileHoldStatus(SUB, NODE_ID);
+      expect(result).toBe(true);
+      expect(hold.mock.update).toHaveBeenCalledWith(
+        { PK: `USER#${SUB}`, SK: `HOLD#${NODE_ID}` },
+        expect.objectContaining({ status: 'reconciled' }),
+        expect.objectContaining({ condition: expect.anything() }),
+      );
+    });
+
+    it('returns false (not throw) when the condition fails — a concurrent caller already flipped it', async () => {
+      const err = Object.assign(new Error('conditional check failed'), { name: 'ConditionalCheckFailedException' });
+      hold.mock.update.mockRejectedValue(err);
+      expect(await repo.reconcileHoldStatus(SUB, NODE_ID)).toBe(false);
+    });
+
+    it('rethrows any other error', async () => {
+      hold.mock.update.mockRejectedValue(new Error('network blip'));
+      await expect(repo.reconcileHoldStatus(SUB, NODE_ID)).rejects.toThrow('network blip');
+    });
+  });
+
+  describe('putMachineBill', () => {
+    // Money-correctness guard #2 (ADR-0004) — verifies `create(item, { overwrite: false })`.
+    it('creates with overwrite:false and returns true on success', async () => {
+      machineBill.mock.create.mockResolvedValue({});
+      const result = await repo.putMachineBill({ PK: `USER#${SUB}`, SK: 'MACHINEBILL#sbx-1', sub: SUB, sandboxId: 'sbx-1', sessionId: SESSION_ID, nodeId: NODE_ID, machineSeconds: 60, costUsd: 0.01, createdAt: 'now' });
+      expect(result).toBe(true);
+      expect(machineBill.mock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ sandboxId: 'sbx-1' }),
+        { overwrite: false },
+      );
+    });
+
+    it('returns false (not throw) when the item already exists', async () => {
+      const err = Object.assign(new Error('conditional check failed'), { name: 'ConditionalCheckFailedException' });
+      machineBill.mock.create.mockRejectedValue(err);
+      const result = await repo.putMachineBill({ PK: `USER#${SUB}`, SK: 'MACHINEBILL#sbx-1', sub: SUB, sandboxId: 'sbx-1', sessionId: SESSION_ID, nodeId: NODE_ID, machineSeconds: 60, costUsd: 0.01, createdAt: 'now' });
+      expect(result).toBe(false);
+    });
+  });
+
+  describe('scanHeldHolds', () => {
+    it('scans SK beginsWith HOLD#, filtered by status=held and updatedAt<cutoff', async () => {
+      hold.queryChain.exec.mockResolvedValue([{ sub: SUB, nodeId: NODE_ID, status: 'held' }]);
+      const result = await repo.scanHeldHolds('2026-07-13T00:00:00.000Z');
+      expect(hold.mock.scan).toHaveBeenCalledWith('SK');
+      expect(hold.queryChain.beginsWith).toHaveBeenCalledWith('HOLD#');
+      expect(hold.queryChain.eq).toHaveBeenCalledWith('held');
+      expect(hold.queryChain.lt).toHaveBeenCalledWith('2026-07-13T00:00:00.000Z');
+      expect(result).toHaveLength(1);
     });
   });
 });

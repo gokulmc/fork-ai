@@ -34,6 +34,21 @@ const ALIAS_TO_ID: Record<ModelAlias, string> = {
 // Default branch model when the client sends nothing / something invalid (cheapest Claude tier).
 export const BRANCH_DEFAULT_MODEL = ALIAS_TO_ID.haiku;
 
+// Cloud CODE runs always use Sonnet (product decision: opus plans, sonnet
+// implements) — resolved once here so the sandbox's `claude --model` flag
+// and the hold/usage-event bookkeeping always agree. Previously the API
+// billed against dto.model while the sandbox ran whatever claude defaulted
+// to, so the two silently disagreed (see nodes.service.ts). Passed to the
+// CLI both as ctx.model and verified directly against `claude --model
+// claude-sonnet-4-6` — the full id resolves the same as the 'sonnet' alias.
+export const CLOUD_CODE_MODEL_ID = ALIAS_TO_ID.sonnet;
+
+// PLAN nodes always synthesize with Opus — the reasoning-heavy half of the
+// same "opus plans, sonnet implements" product decision. Not user-overridable
+// (a plan is where model quality matters most); the cheaper resolveBranchModel
+// default still governs plain MIX and learn nodes.
+export const PLAN_MODEL_ID = ALIAS_TO_ID.opus;
+
 // Cheap, fast model for the share OG hook generation (not user-selectable).
 export const SHARE_HOOK_MODEL = ALIAS_TO_ID['gemini-flash-lite'];
 
@@ -129,4 +144,10 @@ export function priceFor(modelId: string, now: Date = new Date()): { input: numb
     return { input: rate.input * 2, output: rate.output * 2 };
   }
   return rate;
+}
+
+// Machine wall-clock cost, mirrors billUsage's 6-dp rounding.
+export function machineSecondsCostUsd(seconds: number, ratePerMinuteUsd: number, multiplier: number): number {
+  const raw = (Math.max(0, seconds) / 60) * ratePerMinuteUsd;
+  return Math.round(raw * multiplier * 1_000_000) / 1_000_000;
 }
