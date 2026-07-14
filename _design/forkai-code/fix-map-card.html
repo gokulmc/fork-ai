@@ -1,0 +1,258 @@
+<!-- @dsCard group="Fix proposals" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>forkai-code — Fix: Map cards</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body { padding: 56px 64px 120px; min-height: 100vh; }
+
+  .theme-toggle {
+    position: fixed; top: 20px; right: 24px; z-index: 100;
+    font-family: var(--sans); font-size: 12px; font-weight: 500;
+    padding: 7px 14px; border-radius: var(--radius);
+    border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink-2);
+    cursor: pointer; box-shadow: var(--shadow-1);
+    transition: background .12s, color .12s;
+  }
+  .theme-toggle:hover { background: var(--hover); color: var(--ink); }
+
+  .ds-brand { display: inline-flex; align-items: center; gap: 8px; font-family: var(--sans); font-weight: 600; font-size: 13px; letter-spacing: .02em; color: var(--ink-2); margin-bottom: 28px; }
+  .ds-brand .mark { width: 15px; height: 15px; border-radius: 4px; background: var(--ink); display: inline-block; }
+  .ds-page-title { font-family: var(--serif); font-weight: 400; font-size: 34px; letter-spacing: -0.02em; margin: 0 0 8px; color: var(--ink); }
+  .ds-page-sub { font-family: var(--sans); font-size: 13px; color: var(--ink-3); margin: 0 0 48px; max-width: 680px; line-height: 1.55; }
+  .ds-section { margin-bottom: 56px; }
+  .ds-section-label { font-family: var(--sans); font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+  .ds-section-note { font-family: var(--sans); font-size: 12px; color: var(--ink-3); margin: 0 0 20px; max-width: 660px; line-height: 1.5; }
+  .ds-row { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+  .ds-label-sm { font-family: var(--sans); font-size: 10.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; }
+
+  /* ── node cards — ported at map-git-graph.html's exact map scale
+     (smaller than components.html's library scale) ─────────────────── */
+  .node-card { width: 190px; background: var(--paper); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); box-shadow: var(--shadow-1); padding: 9px 12px; font-family: var(--sans); box-sizing: border-box; }
+  .node-card--learn { background: #fafafa; width: 170px; padding: 8px 11px; }
+  [data-theme="dark"] .node-card--learn { background: #1c1c1c; }
+  .node-card--plan { border-color: color-mix(in oklab, var(--kind-plan) 40%, var(--line-strong)); }
+  .node-card--code { border-color: color-mix(in oklab, var(--kind-code) 40%, var(--line-strong)); }
+  .node-card--branch { border-color: color-mix(in oklab, var(--kind-branch) 40%, var(--line-strong)); }
+  .node-card--merge { border-color: color-mix(in oklab, var(--kind-merge) 40%, var(--line-strong)); }
+  .node-card-top { margin-bottom: 6px; }
+  .node-card-main { display: flex; align-items: center; gap: 8px; }
+  .node-card-emoji { font-size: 16px; line-height: 1; flex-shrink: 0; font-family: "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui,sans-serif; }
+  .node-card-text { min-width: 0; }
+  .node-card-kicker { display: flex; align-items: center; gap: 6px; font-size: 8.5px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3); line-height: 1; }
+  .node-card--plan .node-card-kicker { color: var(--kind-plan); }
+  .node-card--code .node-card-kicker { color: var(--kind-code); }
+  .node-card--branch .node-card-kicker { color: var(--kind-branch); }
+  .node-card--merge .node-card-kicker { color: var(--kind-merge); }
+  .node-card-label { font-size: 11.5px; font-weight: 500; color: var(--ink); line-height: 1.25; margin-top: 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .commit-pill { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 9.5px; font-weight: 500; padding: 2px 7px; border-radius: 999px; background: var(--commit-pill-bg); color: var(--commit-pill-ink); border: 1px solid var(--commit-pill-border); }
+  .pr-status-chip { font-family: var(--sans); font-size: 7.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 1px 5px; border-radius: 999px; line-height: 1.5; }
+  .pr-status-chip--open { color: var(--kind-merge); border: 1px solid color-mix(in oklab, var(--kind-merge) 50%, var(--line)); }
+  .pr-status-chip--merged { color: #fff; background: var(--kind-merge); }
+  .node-card--segment { display: flex; align-items: center; justify-content: center; text-align: center; width: 170px; padding: 8px 10px; background: var(--kind-code-soft); border: 1px dashed var(--kind-code); font-size: 11px; font-weight: 500; color: var(--ink-3); box-sizing: border-box; }
+
+  /* ── NEW: re-collapse chip — sits at the top of an expanded run,
+     same dashed kind-code family as .node-card--segment but a slim
+     pill instead of a full card, since it labels a rail position
+     rather than standing in for hidden content ─────────────────────── */
+  .segment-collapse-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 13px 5px 10px; background: var(--kind-code-soft); border: 1px dashed var(--kind-code); border-radius: 999px; font-family: var(--sans); font-size: 10.5px; font-weight: 600; color: var(--kind-code); cursor: pointer; white-space: nowrap; }
+  .segment-collapse-chip:hover { background: color-mix(in oklab, var(--kind-code) 14%, var(--kind-code-soft)); }
+  .segment-collapse-chip-caret { font-size: 9px; }
+
+  .segment-expand-demo { position: relative; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 6px 40px; }
+  .segment-expand-demo::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--lane-line); transform: translateX(-50%); z-index: 0; }
+  .segment-expand-demo > * { position: relative; z-index: 1; }
+
+  /* ── map legend — ported from map-git-graph.html, rendered as a
+     static block here instead of position:absolute over a map ──────── */
+  .map-legend-static { display: inline-flex; flex-direction: column; gap: 6px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-2); padding: 14px 16px; font-family: var(--sans); font-size: 11.5px; color: var(--ink-2); }
+  .legend-row { display: flex; align-items: center; gap: 8px; }
+  .legend-sep { height: 1px; background: var(--line); margin: 2px 0; }
+  .legend-dot { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
+  .legend-dot--learn { background: var(--ink-3); }
+  .legend-dot--plan { background: var(--kind-plan); }
+  .legend-dot--code { background: var(--kind-code); }
+  .legend-dot--branch { background: var(--kind-branch); }
+  .legend-dot--merge { background: var(--kind-merge); }
+  .legend-dot--segment { background: var(--kind-code-soft); border: 1px dashed var(--kind-code); }
+  .legend-line { width: 18px; height: 0; border-top: 2px solid; flex-shrink: 0; }
+  .legend-line--lane { border-top-style: dashed; border-top-color: var(--lane-line); }
+  .legend-line--learn { border-top-style: solid; border-top-color: var(--ink-3); opacity: .6; }
+  .legend-line--fork { border-top-style: solid; border-top-color: var(--kind-branch); }
+  .legend-line--merge { border-top-style: solid; border-top-color: var(--kind-merge); }
+  .legend-new-tag { font-family: var(--sans); font-size: 8px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--kind-code); border: 1px solid color-mix(in oklab, var(--kind-code) 45%, var(--line)); border-radius: 999px; padding: 1px 5px; margin-left: 2px; }
+</style>
+</head>
+<body>
+  <button class="theme-toggle" onclick="const h=document.documentElement; h.setAttribute('data-theme', (h.getAttribute('data-theme')||'light')==='light'?'dark':'light');">Toggle theme</button>
+
+  <div class="ds-brand"><span class="mark"></span>fork ai code</div>
+  <h1 class="ds-page-title">Fix — Map cards</h1>
+  <p class="ds-page-sub">WS-C. The shipped map fades a node's fill from <code style="font-family:var(--mono);">--paper</code> toward grey by tree depth — a holdover from the research map that dilutes the git-graph's kind-color language. These cards are the correction: uniform paper surfaces, distinguished only by a kind-tinted border, a kind-colored kicker, and the commit pill — exactly as specified in <code style="font-family:var(--mono);">map-git-graph.html</code>, no depth fill anywhere.</p>
+
+  <div class="ds-section">
+    <div class="ds-section-label">Map cards — kind accents only, no depth fill</div>
+    <div class="ds-row">
+      <div>
+        <div class="ds-label-sm">Query (root)</div>
+        <div class="node-card node-card--learn">
+          <div class="node-card-main">
+            <span class="node-card-emoji">💬</span>
+            <div class="node-card-text">
+              <div class="node-card-kicker">Query</div>
+              <div class="node-card-label">Add rate limiting to the API</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="ds-label-sm">Learn</div>
+        <div class="node-card node-card--learn">
+          <div class="node-card-main">
+            <span class="node-card-emoji">📎</span>
+            <div class="node-card-text">
+              <div class="node-card-kicker">Learn</div>
+              <div class="node-card-label">Why Redis over in-memory state</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="ds-label-sm">Plan</div>
+        <div class="node-card node-card--plan">
+          <div class="node-card-main">
+            <span class="node-card-emoji">🗂</span>
+            <div class="node-card-text">
+              <div class="node-card-kicker">Plan</div>
+              <div class="node-card-label">Implementation plan</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="ds-label-sm">Code</div>
+        <div class="node-card node-card--code">
+          <div class="node-card-top"><span class="commit-pill">⎇ main · f0e91aa</span></div>
+          <div class="node-card-main">
+            <span class="node-card-emoji">🧩</span>
+            <div class="node-card-text">
+              <div class="node-card-kicker">Code</div>
+              <div class="node-card-label">Wire Redis token-bucket store</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="ds-label-sm">Branch</div>
+        <div class="node-card node-card--branch">
+          <div class="node-card-top"><span class="commit-pill">⎇ feature/sliding-window · d41f7b2</span></div>
+          <div class="node-card-main">
+            <span class="node-card-emoji">⑂</span>
+            <div class="node-card-text">
+              <div class="node-card-kicker">Branch</div>
+              <div class="node-card-label">Fork: feature/sliding-window</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="ds-label-sm">Merge (open)</div>
+        <div class="node-card node-card--merge">
+          <div class="node-card-main">
+            <span class="node-card-emoji">🔀</span>
+            <div class="node-card-text">
+              <div class="node-card-kicker">PR<span class="pr-status-chip pr-status-chip--open">open</span></div>
+              <div class="node-card-label">Merge feature/sliding-window</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="ds-label-sm">Merge (merged)</div>
+        <div class="node-card node-card--merge">
+          <div class="node-card-main">
+            <span class="node-card-emoji">🔀</span>
+            <div class="node-card-text">
+              <div class="node-card-kicker">PR<span class="pr-status-chip pr-status-chip--merged">merged</span></div>
+              <div class="node-card-label">Merge feature/sliding-window</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="ds-label-sm">Collapsed segment</div>
+        <div class="node-card node-card--segment">⋯ 12 commits</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ds-section">
+    <div class="ds-section-label">NEW — re-collapse chip</div>
+    <p class="ds-section-note">Expanding a collapsed segment replaces the "⋯ N commits" card with this slim chip at the top of the now-visible run — same dashed kind-code family, so it still reads as "this is a placeholder for a range," just inverted to an action instead of a summary.</p>
+    <div class="ds-row">
+      <div>
+        <div class="ds-label-sm">Chip alone</div>
+        <button type="button" class="segment-collapse-chip"><span class="segment-collapse-chip-caret">⌄</span>5 commits — collapse</button>
+      </div>
+      <div>
+        <div class="ds-label-sm">In context — heads an expanded run</div>
+        <div class="segment-expand-demo">
+          <button type="button" class="segment-collapse-chip"><span class="segment-collapse-chip-caret">⌄</span>5 commits — collapse</button>
+          <div class="node-card node-card--code">
+            <div class="node-card-top"><span class="commit-pill">⎇ fork/add-rate-limiting · a1b2c3d</span></div>
+            <div class="node-card-main">
+              <span class="node-card-emoji">🧩</span>
+              <div class="node-card-text">
+                <div class="node-card-kicker">Code</div>
+                <div class="node-card-label">Add limiter middleware skeleton</div>
+              </div>
+            </div>
+          </div>
+          <div class="node-card node-card--code">
+            <div class="node-card-top"><span class="commit-pill">⎇ fork/add-rate-limiting · 7f3e820</span></div>
+            <div class="node-card-main">
+              <span class="node-card-emoji">🧩</span>
+              <div class="node-card-text">
+                <div class="node-card-kicker">Code</div>
+                <div class="node-card-label">Add token-bucket algorithm</div>
+              </div>
+            </div>
+          </div>
+          <div class="node-card node-card--code">
+            <div class="node-card-top"><span class="commit-pill">⎇ fork/add-rate-limiting · 9c4d21e</span></div>
+            <div class="node-card-main">
+              <span class="node-card-emoji">🧩</span>
+              <div class="node-card-text">
+                <div class="node-card-kicker">Code</div>
+                <div class="node-card-label">Wire Redis token-bucket store</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ds-section">
+    <div class="ds-section-label">Map legend</div>
+    <p class="ds-section-note">Ported verbatim from <code style="font-family:var(--mono);">map-git-graph.html</code> — currently missing entirely from the shipped map. One row added (marked <span class="legend-new-tag">new</span>) documenting the re-collapse chip above.</p>
+    <div class="map-legend-static">
+      <div class="legend-row"><span class="legend-dot legend-dot--learn"></span>Learn — go deeper / ask AI</div>
+      <div class="legend-row"><span class="legend-dot legend-dot--plan"></span>Plan — synthesized implementation plan</div>
+      <div class="legend-row"><span class="legend-dot legend-dot--code"></span>Code — one agent run = one commit</div>
+      <div class="legend-row"><span class="legend-dot legend-dot--branch"></span>Branch — forks a new column, same row</div>
+      <div class="legend-row"><span class="legend-dot legend-dot--merge"></span>Merge — PR into a target column</div>
+      <div class="legend-row"><span class="legend-dot legend-dot--segment"></span>Collapsed commit chain</div>
+      <div class="legend-row">⌄&nbsp;&nbsp;Expanded run — click to re-collapse<span class="legend-new-tag">new</span></div>
+      <div class="legend-sep"></div>
+      <div class="legend-row"><span class="legend-line legend-line--lane"></span>Column rail</div>
+      <div class="legend-row"><span class="legend-line legend-line--learn"></span>Learn edge (curved, hangs below)</div>
+      <div class="legend-row"><span class="legend-line legend-line--fork"></span>Branch fork (horizontal, arrowhead)</div>
+      <div class="legend-row"><span class="legend-line legend-line--merge"></span>Merge edge (violet, arrowhead)</div>
+    </div>
+  </div>
+</body>
+</html>

@@ -37,6 +37,11 @@ describe('Dynamoose schema field coverage', () => {
       agentStatus: 'done',
       imported: true,
       runCostUsd: 0.03,
+      machineCostUsd: 0.0135,
+      prNumber: 42,
+      prUrl: 'https://github.com/acme/widgets/pull/42',
+      prError: 'forbidden',
+      okr: { objective: 'Ship the retry logic', keyResults: ['p99 latency < 200ms', 'zero flaky test failures'] },
     });
     const json = item.toJSON() as Record<string, unknown>;
     expect(json.commitSha).toBe('abc1234');
@@ -51,6 +56,11 @@ describe('Dynamoose schema field coverage', () => {
     expect(json.agentStatus).toBe('done');
     expect(json.imported).toBe(true);
     expect(json.runCostUsd).toBe(0.03);
+    expect(json.machineCostUsd).toBe(0.0135);
+    expect(json.prNumber).toBe(42);
+    expect(json.prUrl).toBe('https://github.com/acme/widgets/pull/42');
+    expect(json.prError).toBe('forbidden');
+    expect(json.okr).toEqual({ objective: 'Ship the retry logic', keyResults: ['p99 latency < 200ms', 'zero flaky test failures'] });
   });
 
   it('AgentRun model retains all fields', () => {
@@ -130,9 +140,11 @@ describe('Dynamoose schema field coverage', () => {
       gsi1pk: 'USER#u1',
       gsi1sk: 'UPDATED#2026-01-01T00:00:00.000Z',
       projectId: 'p1',
+      lastRunStatus: 'running',
     });
     const json = item.toJSON() as Record<string, unknown>;
     expect(json.projectId).toBe('p1');
+    expect(json.lastRunStatus).toBe('running');
   });
 
   it('GithubInstallation model retains all fields', () => {

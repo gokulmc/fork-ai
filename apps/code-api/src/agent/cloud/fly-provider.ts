@@ -55,6 +55,11 @@ export interface SandboxCreateOpts {
   sub?: string;
   sessionId?: string;
   nodeId?: string;
+  // Real boot-progress reporting — called at each provisioning boundary inside
+  // provisionInApp (machine provisioning → image pull/boot → agent starting)
+  // so a slow cloud boot shows real progress instead of a repeating canned
+  // heartbeat. Optional: mock/local callers and existing tests never set it.
+  onPhase?: (msg: string) => void;
 }
 
 export interface SandboxHandle {
@@ -178,6 +183,7 @@ export class FlyProvider {
   }
 
   private async provisionInApp(appName: string, opts: SandboxCreateOpts): Promise<SandboxHandle> {
+    opts.onPhase?.('Provisioning machine…');
     await this.allocateSandboxIps(appName);
 
     // Sized down-overridable because bom had no shared-2x/4096 capacity on the
@@ -218,6 +224,7 @@ export class FlyProvider {
 
     const machine = await this.createMachineWithRegionFallback(appName, opts.regions, config);
 
+    opts.onPhase?.('Booting sandbox (image pull, ~1 min)…');
     // Machine create auto-launches; /wait is the documented way to block until
     // it's actually up. The image is ~900MB, so a cold pull can exceed one 60s
     // wait window — retry the wait a few times before giving up.
@@ -234,6 +241,7 @@ export class FlyProvider {
     const baseUrl = `https://${appName}.fly.dev`;
     const vscodeUrl = `${baseUrl}/?tkn=${opts.env.VSCODE_TOKEN}`;
 
+    opts.onPhase?.('Starting agent…');
     // Poll the runner's own healthz through the public edge — this is also
     // the proof that edge routing (app → shared IPv4 → service → machine)
     // actually works, not just that the machine process is up.

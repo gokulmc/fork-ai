@@ -1,6 +1,7 @@
 import { HttpException, Injectable, InternalServerErrorException, Logger, UnprocessableEntityException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
+import type { DiffSummary } from '@/dynamo/dynamo.interfaces';
 import { LlmResponse, LlmSection, LlmUsage, CitationSource, OutlineNode, DocumentOutline } from './llm.types';
 import { ROOT_MODEL, BRANCH_DEFAULT_MODEL, SHARE_HOOK_MODEL, providerNameFor, ProviderName, supportsWebSearch, outputBudget, NON_STREAMING_MAX_TOKENS } from './models';
 import { LlmProvider } from './providers/provider.types';
@@ -640,6 +641,42 @@ You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase 
       });
     }
     return { rawText, usage };
+  }
+
+  // Cheap (haiku), best-effort labeling for a CODE node's map card — the
+  // done-path's own truncation of the raw commit message reads poorly ("feat:
+  // Scaffold CLI with Commander," cut mid-sentence). Reuses extractMeta (the
+  // same regex-based extractor the streaming meta-detection above uses)
+  // instead of the full parseJson/callJson pipeline, since this response has
+  // no "sections" array to satisfy LlmResponse's shape. Throws on any failure
+  // (network, truncation, unparseable) — nodes.service.ts's done-path catches
+  // it and falls back to the commit-message truncation, so a flaky call here
+  // never blocks the commit.
+  async generateCodeMeta(
+    instruction: string,
+    commitMessage: string,
+    diffSummary: DiffSummary,
+    model: string,
+  ): Promise<{ title: string; emoji: string; lede: string }> {
+    const diffLine = `${diffSummary.filesChanged} file${diffSummary.filesChanged === 1 ? '' : 's'} changed, +${diffSummary.additions}/-${diffSummary.deletions}`;
+    const prompt = `You are labeling a coding agent's commit for a mind-map card.
+
+Instruction given to the agent: "${instruction}"
+Commit message: "${commitMessage}"
+Diff: ${diffLine}
+
+Return ONLY valid JSON, no prose, no markdown fences:
+{
+  "title": "<=5 words capturing what changed",
+  "emoji": "single emoji that best represents this change",
+  "lede": "one sentence (max 25 words) describing what the commit did"
+}`;
+
+    const { rawText, truncated } = await this.providerFor(model).complete(prompt, { model, maxTokens: 200, webSearch: false });
+    if (truncated) throw new Error('generateCodeMeta output truncated');
+    const meta = extractMeta(rawText);
+    if (!meta) throw new Error('generateCodeMeta returned no parseable title/emoji/lede');
+    return meta;
   }
 
   async getTrendingTopics(): Promise<string[]> {

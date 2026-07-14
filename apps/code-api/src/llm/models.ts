@@ -12,13 +12,10 @@ export type ModelAlias =
 
 export type ProviderName = 'anthropic' | 'gemini' | 'deepseek' | 'glm';
 
-// The model for root queries (kind QUERY) — not user-selectable. Everything
-// root-related keys off this single constant (the streaming path dispatches on
-// providerNameFor(ROOT_MODEL)), so swapping it back to a Claude id is enough to
-// move the whole root flow — including streaming — back to Anthropic.
-export const ROOT_MODEL = 'gemini-2.5-flash';
-
-const ALIAS_TO_ID: Record<ModelAlias, string> = {
+// Exported so call sites that need a specific tier outright (e.g. nodes.service.ts's
+// generateCodeMeta, always haiku regardless of dto.model) can reference it directly
+// instead of going through resolveBranchModel's alias-or-default logic.
+export const ALIAS_TO_ID: Record<ModelAlias, string> = {
   haiku: 'claude-haiku-4-5-20251001',
   sonnet: 'claude-sonnet-4-6',
   opus: 'claude-opus-4-8',
@@ -30,6 +27,13 @@ const ALIAS_TO_ID: Record<ModelAlias, string> = {
   glm: 'glm-5.2',
   'glm-air': 'glm-4.5-air',
 };
+
+// The model for root queries (kind QUERY) — not user-selectable. Everything
+// root-related keys off this single constant (the streaming path dispatches on
+// providerNameFor(ROOT_MODEL)), so swapping it to another alias's id is enough to
+// move the whole root flow — including streaming — to that provider (#213: root
+// queries moved to Claude Sonnet for answer-quality parity with the rest of the app).
+export const ROOT_MODEL = ALIAS_TO_ID.sonnet;
 
 // Default branch model when the client sends nothing / something invalid (cheapest Claude tier).
 export const BRANCH_DEFAULT_MODEL = ALIAS_TO_ID.haiku;

@@ -72,9 +72,13 @@ function groupByDay(events: UsageEvent[]): { date: string; isoDate: string; tota
 interface AccountButtonProps {
   creditBalance?: number | null;
   onCreditUpdated?: (newBalance: number) => void;
+  // WS-C: the session topbar's compact top-right cluster renders this inline
+  // (30px avatar, popover dropping down-left from it) instead of the
+  // Landing/History floating trigger (fixed bottom-left, popover above it).
+  inline?: boolean;
 }
 
-export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonProps) {
+export function AccountButton({ creditBalance, onCreditUpdated, inline = false }: AccountButtonProps) {
   const { data: session } = useSession();
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -338,67 +342,82 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
 
   return (
     <>
-      {/* Gear button */}
-      <button
-        ref={triggerRef}
-        onClick={() => setOpen(o => !o)}
-        style={{
-          position: 'fixed', bottom: 24, left: 24, zIndex: 60,
-          width: 36, height: 36, borderRadius: '50%',
-          background: '#ffffff', border: '1px solid rgba(10,10,10,0.15)',
-          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: '0 2px 8px rgba(10,10,10,0.08)',
-        }}
-        aria-label="Account"
-      >
-        <svg viewBox="0 0 24 24" width="15" height="15" stroke="#555" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="8" r="4"/>
-          <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
-        </svg>
-      </button>
+      {/* Gear button — wrapping div is only meaningfully positioned for the
+          inline (topbar) variant; the floating variant's fixed-position
+          button/popover are unaffected by their parent. */}
+      <div style={inline ? { position: 'relative', display: 'inline-flex' } : undefined}>
+        <button
+          ref={triggerRef}
+          onClick={() => setOpen(o => !o)}
+          style={inline ? {
+            width: 30, height: 30, borderRadius: '50%',
+            background: '#ffffff', border: '1px solid rgba(10,10,10,0.15)',
+            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          } : {
+            position: 'fixed', bottom: 24, left: 24, zIndex: 60,
+            width: 36, height: 36, borderRadius: '50%',
+            background: '#ffffff', border: '1px solid rgba(10,10,10,0.15)',
+            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: '0 2px 8px rgba(10,10,10,0.08)',
+          }}
+          aria-label="Account"
+        >
+          <svg viewBox="0 0 24 24" width="15" height="15" stroke="#555" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="8" r="4"/>
+            <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+          </svg>
+        </button>
 
-      {/* Popover backdrop */}
-      {open && <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 59 }} />}
+        {/* Popover backdrop */}
+        {open && <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 59 }} />}
 
-      {/* Popover */}
-      {open && (
-        <div ref={menuRef} style={{
-          position: 'fixed', bottom: 68, left: 24, zIndex: 60,
-          background: '#ffffff', border: '1px solid rgba(10,10,10,0.15)',
-          borderRadius: 6, padding: '14px 16px',
-          boxShadow: '0 4px 20px rgba(10,10,10,0.10)',
-          minWidth: 220,
-          fontFamily: "ui-monospace,'JetBrains Mono','SF Mono',Menlo,monospace",
-        }}>
-          <div style={{ fontSize: 11, color: '#0a0a0a', marginBottom: 6, letterSpacing: '0.02em', wordBreak: 'break-all' }}>
-            {email}
-          </div>
-          {balanceLabel && (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <span style={{ fontSize: 10, letterSpacing: '0.06em', color: hasCredit ? 'rgba(10,10,10,0.5)' : '#c0392b' }}>
-                {balanceLabel}
-              </span>
+        {/* Popover */}
+        {open && (
+          <div ref={menuRef} style={inline ? {
+            position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 60,
+            background: '#ffffff', border: '1px solid rgba(10,10,10,0.15)',
+            borderRadius: 6, padding: '14px 16px',
+            boxShadow: '0 4px 20px rgba(10,10,10,0.10)',
+            minWidth: 220,
+            fontFamily: "ui-monospace,'JetBrains Mono','SF Mono',Menlo,monospace",
+          } : {
+            position: 'fixed', bottom: 68, left: 24, zIndex: 60,
+            background: '#ffffff', border: '1px solid rgba(10,10,10,0.15)',
+            borderRadius: 6, padding: '14px 16px',
+            boxShadow: '0 4px 20px rgba(10,10,10,0.10)',
+            minWidth: 220,
+            fontFamily: "ui-monospace,'JetBrains Mono','SF Mono',Menlo,monospace",
+          }}>
+            <div style={{ fontSize: 11, color: '#0a0a0a', marginBottom: 6, letterSpacing: '0.02em', wordBreak: 'break-all' }}>
+              {email}
             </div>
-          )}
-          <div style={{ height: 1, background: 'rgba(10,10,10,0.08)', marginBottom: 10 }} />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <button onClick={openPersona} style={menuBtnStyle}>
-              Persona
-            </button>
-            <button onClick={openBilling} style={menuBtnStyle}>
-              Billing
-            </button>
-            {!isGoogle && (
-              <button onClick={() => { setOpen(false); setChangePwOpen(true); }} style={menuBtnStyle}>
-                Change password
-              </button>
+            {balanceLabel && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <span style={{ fontSize: 10, letterSpacing: '0.06em', color: hasCredit ? 'rgba(10,10,10,0.5)' : '#c0392b' }}>
+                  {balanceLabel}
+                </span>
+              </div>
             )}
-            <button onClick={() => void signOut()} style={{ ...menuBtnStyle, color: '#c0392b' }}>
-              Sign out
-            </button>
+            <div style={{ height: 1, background: 'rgba(10,10,10,0.08)', marginBottom: 10 }} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <button onClick={openPersona} style={menuBtnStyle}>
+                Persona
+              </button>
+              <button onClick={openBilling} style={menuBtnStyle}>
+                Billing
+              </button>
+              {!isGoogle && (
+                <button onClick={() => { setOpen(false); setChangePwOpen(true); }} style={menuBtnStyle}>
+                  Change password
+                </button>
+              )}
+              <button onClick={() => void signOut()} style={{ ...menuBtnStyle, color: '#c0392b' }}>
+                Sign out
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Change password overlay */}
       {changePwOpen && (

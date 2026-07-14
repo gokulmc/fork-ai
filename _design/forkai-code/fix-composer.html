@@ -1,0 +1,149 @@
+<!-- @dsCard group="Fix proposals" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>forkai-code — Fix: Composer</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body { padding: 56px 64px 120px; min-height: 100vh; }
+
+  .theme-toggle {
+    position: fixed; top: 20px; right: 24px; z-index: 100;
+    font-family: var(--sans); font-size: 12px; font-weight: 500;
+    padding: 7px 14px; border-radius: var(--radius);
+    border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink-2);
+    cursor: pointer; box-shadow: var(--shadow-1);
+    transition: background .12s, color .12s;
+  }
+  .theme-toggle:hover { background: var(--hover); color: var(--ink); }
+
+  .ds-brand { display: inline-flex; align-items: center; gap: 8px; font-family: var(--sans); font-weight: 600; font-size: 13px; letter-spacing: .02em; color: var(--ink-2); margin-bottom: 28px; }
+  .ds-brand .mark { width: 15px; height: 15px; border-radius: 4px; background: var(--ink); display: inline-block; }
+  .ds-page-title { font-family: var(--serif); font-weight: 400; font-size: 34px; letter-spacing: -0.02em; margin: 0 0 8px; color: var(--ink); }
+  .ds-page-sub { font-family: var(--sans); font-size: 13px; color: var(--ink-3); margin: 0 0 48px; max-width: 640px; line-height: 1.55; }
+  .ds-section { margin-bottom: 56px; }
+  .ds-section-label { font-family: var(--sans); font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 18px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+  .ds-section-note { font-family: var(--sans); font-size: 12px; color: var(--ink-3); margin: -10px 0 18px; }
+
+  /* ── Code composer — base, ported from components.html ─────
+     .code-composer-inner/-chips/-chip/-row/-attach-btn/-send-btn/
+     -textarea-demo are the shipped shell; everything below the
+     "NEW" divider is added by this fix. */
+  .composer-demo-shell { background: var(--sidebar, var(--panel)); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 28px; display: flex; justify-content: center; }
+  .code-composer-inner { pointer-events: all; max-width: 560px; width: 100%; display: flex; flex-direction: column; gap: 8px; background: var(--paper); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); box-shadow: var(--shadow-2); padding: 10px 10px 10px; }
+  .code-composer-chips, .code-composer-ask-context { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 2px; }
+  .code-composer-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 220px; padding: 3px 6px 3px 9px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; font-family: var(--mono); font-size: 11px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .code-composer-chip button { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 50%; border: none; background: transparent; color: var(--ink-3); cursor: pointer; padding: 0; font-size: 11px; line-height: 1; }
+  .code-composer-attach-btn { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 50%; background: var(--panel); color: var(--ink-2); cursor: pointer; font-size: 13px; }
+  .code-composer-textarea-demo { flex: 1; min-width: 0; font-family: var(--sans); font-size: 13.5px; color: var(--ink-3); padding: 5px 2px; }
+  /* NEW: the single text input is now its own full-width row above the
+     control row, rather than sharing a row with the attach/send buttons. */
+  .code-composer-textarea-demo--tall { width: 100%; min-height: 44px; padding: 9px 8px 4px; }
+
+  /* ── NEW: bottom control row — left cluster (attach + model + web),
+     right cluster (Ask ghost + Build/Go-deeper primary) ────────── */
+  .code-composer-row--controls { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .code-composer-row-left, .code-composer-row-right { display: flex; align-items: center; gap: 7px; }
+
+  .code-composer-pill { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--ink-2); font-family: var(--sans); font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+  .code-composer-pill:hover { background: var(--hover-strong); color: var(--ink); }
+  .code-composer-pill-caret { font-size: 9px; color: var(--ink-3); }
+  .code-composer-pill--on { background: var(--accent-soft); color: var(--ink); border-color: var(--line-strong); }
+
+  .code-composer-action-btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 15px; border-radius: 999px; font-family: var(--sans); font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .code-composer-action-btn--ghost { border: 1px solid var(--line-strong); background: transparent; color: var(--ink-2); }
+  .code-composer-action-btn--ghost:hover { background: var(--hover); color: var(--ink); }
+  .code-composer-action-btn--primary { border: 1px solid var(--ink); background: var(--ink); color: var(--bg); }
+  .code-composer-action-btn--primary:hover { opacity: .85; }
+
+  /* ── NEW: dismissable "asking about a commit" context badge ───── */
+  .code-composer-ask-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 7px 4px 11px; background: var(--kind-code-soft); border: 1px solid color-mix(in oklab, var(--kind-code) 35%, var(--line)); border-radius: 999px; font-family: var(--sans); font-size: 11.5px; font-weight: 500; color: var(--kind-code); }
+  .code-composer-ask-badge code { font-family: var(--mono); font-size: 11px; font-weight: 700; }
+  .code-composer-ask-badge button { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border-radius: 50%; border: none; background: transparent; color: currentColor; opacity: .7; cursor: pointer; padding: 0; font-size: 10px; line-height: 1; }
+  .code-composer-ask-badge button:hover { opacity: 1; background: var(--hover-strong); }
+
+  /* ── NEW: money-safety caption under each variant ──────────────── */
+  .code-composer-caption { font-family: var(--sans); font-size: 11.5px; color: var(--ink-3); margin: 12px 2px 0; line-height: 1.5; max-width: 560px; }
+  .code-composer-caption b { font-weight: 600; color: var(--ink-2); }
+  .code-composer-caption code { font-family: var(--mono); font-size: 10.5px; background: var(--commit-pill-bg); color: var(--commit-pill-ink); padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+  <button class="theme-toggle" onclick="const h=document.documentElement; h.setAttribute('data-theme', (h.getAttribute('data-theme')||'light')==='light'?'dark':'light');">Toggle theme</button>
+
+  <div class="ds-brand"><span class="mark"></span>fork ai code</div>
+  <h1 class="ds-page-title">Fix — Composer</h1>
+  <p class="ds-page-sub">WS-A. One unified bottom-docked instruction bar replaces today's single-send bar. A full-width text input sits above a control row: attach + model selector + web-search toggle on the left, Ask (ghost) + the context-appropriate primary action on the right. Which button is dark-filled (primary) — and therefore what plain Enter submits — changes with context; ⌘/Ctrl+Enter always reaches the other one.</p>
+
+  <div class="ds-section">
+    <div class="ds-section-label">(a) Default — Build primary</div>
+    <div class="composer-demo-shell">
+      <div class="code-composer-inner">
+        <div class="code-composer-chips">
+          <span class="code-composer-chip">rate-limit.middleware.ts<button type="button" aria-label="Remove">×</button></span>
+        </div>
+        <div class="code-composer-textarea-demo code-composer-textarea-demo--tall">Describe what the agent should build…</div>
+        <div class="code-composer-row--controls">
+          <div class="code-composer-row-left">
+            <button type="button" class="code-composer-attach-btn" title="Attach files">📎</button>
+            <button type="button" class="code-composer-pill">🤖 Claude Sonnet <span class="code-composer-pill-caret">▾</span></button>
+            <button type="button" class="code-composer-pill">🔍 Web</button>
+          </div>
+          <div class="code-composer-row-right">
+            <button type="button" class="code-composer-action-btn code-composer-action-btn--ghost">Ask</button>
+            <button type="button" class="code-composer-action-btn code-composer-action-btn--primary">Build <span aria-hidden="true">↑</span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="code-composer-caption">Enter → <b>Build</b>, a paid sandbox run. ⌘/Ctrl+Enter (or the Ask button) → <b>Ask</b>, a free LLM call with no sandbox spend.</p>
+  </div>
+
+  <div class="ds-section">
+    <div class="ds-section-label">(b) Ask variant — asking about a commit, Ask primary</div>
+    <div class="composer-demo-shell">
+      <div class="code-composer-inner">
+        <div class="code-composer-ask-context">
+          <span class="code-composer-ask-badge">Asking about <code>b6537cd</code><button type="button" aria-label="Stop asking about this commit">✕</button></span>
+        </div>
+        <div class="code-composer-textarea-demo code-composer-textarea-demo--tall">Ask a question about this commit…</div>
+        <div class="code-composer-row--controls">
+          <div class="code-composer-row-left">
+            <button type="button" class="code-composer-attach-btn" title="Attach files">📎</button>
+            <button type="button" class="code-composer-pill">🤖 Claude Sonnet <span class="code-composer-pill-caret">▾</span></button>
+            <button type="button" class="code-composer-pill">🔍 Web</button>
+          </div>
+          <div class="code-composer-row-right">
+            <button type="button" class="code-composer-action-btn code-composer-action-btn--ghost">Build <span aria-hidden="true">↑</span></button>
+            <button type="button" class="code-composer-action-btn code-composer-action-btn--primary">Ask</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="code-composer-caption">Enter → <b>Ask</b>, free — answers from <code>b6537cd</code>, no sandbox spend. ⌘/Ctrl+Enter → <b>Build</b> if you want a new paid run instead. The ✕ clears the commit context without losing what you typed.</p>
+  </div>
+
+  <div class="ds-section">
+    <div class="ds-section-label">(c) Research node — no sandbox, Go deeper / Ask</div>
+    <div class="composer-demo-shell">
+      <div class="code-composer-inner">
+        <div class="code-composer-textarea-demo code-composer-textarea-demo--tall">Ask a question, or go deeper on this section…</div>
+        <div class="code-composer-row--controls">
+          <div class="code-composer-row-left">
+            <button type="button" class="code-composer-attach-btn" title="Attach files">📎</button>
+            <button type="button" class="code-composer-pill">🤖 Claude Sonnet <span class="code-composer-pill-caret">▾</span></button>
+            <button type="button" class="code-composer-pill code-composer-pill--on">🔍 Web</button>
+          </div>
+          <div class="code-composer-row-right">
+            <button type="button" class="code-composer-action-btn code-composer-action-btn--ghost">Ask</button>
+            <button type="button" class="code-composer-action-btn code-composer-action-btn--primary">Go deeper</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="code-composer-caption">A research (learn) node has no sandbox to spawn — <b>Go deeper</b> and <b>Ask</b> are both free LLM calls, so Enter is safe either way. Model and web-search still apply to the branch call.</p>
+  </div>
+</body>
+</html>

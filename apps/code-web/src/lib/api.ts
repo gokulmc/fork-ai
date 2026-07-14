@@ -39,10 +39,15 @@ export interface ApiNode {
   workspaceExpiresAt?: string;
   mergeFromNodeId?: string;
   prStatus?: 'open' | 'merged';
+  prNumber?: number;
+  prUrl?: string;
+  prError?: 'app_not_enabled' | 'forbidden' | 'exists' | 'no_diff' | 'failed';
   pushed?: boolean;
   pushError?: string;
   budgetExceeded?: boolean;
   runCostUsd?: number;
+  machineCostUsd?: number;
+  okr?: { objective: string; keyResults: string[] };
 }
 
 export interface ApiAnnotation {
@@ -82,6 +87,11 @@ export interface SessionSummary {
   // bare (non-project) session.
   repoRef?: { owner: string; repo: string; url: string; provider: string };
   branchCount?: number;
+  // Status of the session's most recent CODE run — drives the History
+  // Continue rail's status dot + action (see HistoryBubbles.tsx). Absent on
+  // older sessions written before the field existed, and on research-only
+  // sessions with no CODE node; both fall back to the neutral done/Open state.
+  lastRunStatus?: 'running' | 'done' | 'error';
 }
 
 export interface FullSession extends SessionSummary {
@@ -122,10 +132,15 @@ export function toForkNode(n: ApiNode): ForkNode {
     workspaceExpiresAt: n.workspaceExpiresAt,
     mergeFromNodeId: n.mergeFromNodeId,
     prStatus: n.prStatus,
+    prNumber: n.prNumber,
+    prUrl: n.prUrl,
+    prError: n.prError,
     pushed: n.pushed,
     pushError: n.pushError,
     budgetExceeded: n.budgetExceeded,
     runCostUsd: n.runCostUsd,
+    machineCostUsd: n.machineCostUsd,
+    okr: n.okr,
   };
 }
 
@@ -553,6 +568,21 @@ export function deleteNode(
   });
 }
 
+// Generic node PATCH — currently only used to save the BRANCH OKR editor
+// (#220). Omit `okr` entirely to leave it unchanged; NEVER send `okr: null`
+// (the backend's updateNode does not null-strip — see root CLAUDE.md).
+export function updateNode(
+  idToken: string,
+  sessionId: string,
+  nodeId: string,
+  updates: { okr?: { objective: string; keyResults: string[] } },
+): Promise<ApiNode> {
+  return apiFetch<ApiNode>(`/sessions/${sessionId}/nodes/${nodeId}`, idToken, {
+    method: 'PATCH',
+    body: JSON.stringify(updates),
+  });
+}
+
 export interface CreateMixNodePayload {
   parentNodeId: string;
   sourceNodeIds: string[];
@@ -578,7 +608,7 @@ export function createMixNode(
 export function createBranchNode(
   idToken: string,
   sessionId: string,
-  payload: { parentNodeId: string; branchName: string },
+  payload: { parentNodeId: string; title: string },
 ): Promise<ApiNode> {
   return apiFetch<ApiNode>(`/sessions/${sessionId}/nodes/branch`, idToken, {
     method: 'POST',
@@ -759,6 +789,15 @@ export function linkGithubInstallation(idToken: string, installationId: string):
     method: 'POST',
     body: JSON.stringify({ installationId }),
   });
+}
+
+// Plain unauthenticated browser navigation (`GET /github/app/install` redirects
+// straight to github.com) — not an apiFetch call, since the backend route needs
+// no bearer token. Used by PrPane's "Connect GitHub App" action (prError
+// app_not_enabled/forbidden) to reach the same install flow /github/setup's
+// callback page expects.
+export function githubAppInstallUrl(): string {
+  return `${base()}/github/app/install`;
 }
 
 // ── Root query into an existing (empty) project session ────────────────────

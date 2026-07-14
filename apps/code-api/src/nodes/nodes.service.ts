@@ -3,9 +3,9 @@ import { Inject, Injectable, Logger, NotFoundException, BadRequestException } fr
 import { ConfigService } from '@nestjs/config';
 import { ulid } from 'ulid';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
-import type { NodeItem, AgentRunItem, RepoRef } from '@/dynamo/dynamo.interfaces';
+import type { NodeItem, AgentRunItem, RepoRef, ProjectItem } from '@/dynamo/dynamo.interfaces';
 import { LlmService, friendlyLlmError } from '@/llm/llm.service';
-import { resolveBranchModel, priceFor, CLOUD_CODE_MODEL_ID, PLAN_MODEL_ID } from '@/llm/models';
+import { resolveBranchModel, priceFor, CLOUD_CODE_MODEL_ID, PLAN_MODEL_ID, ALIAS_TO_ID } from '@/llm/models';
 import { NodeKind } from '@/llm/llm.types';
 import { SessionsService } from '@/sessions/sessions.service';
 import { UsersService } from '@/users/users.service';
@@ -399,6 +399,30 @@ export class NodesService {
     return branchName;
   }
 
+  // Eagerly creates the real GitHub ref for a freshly-forked branch node (#216)
+  // — best-effort, NEVER throws, so a create-ref failure can never abort the
+  // branch creation itself, nor (for the auto-branch call site) the CODE run
+  // it's a part of. Only attempted when the project is a real (non-mock)
+  // GitHub repo AND the parent commit was itself actually pushed there — an
+  // unpushed parent's sha doesn't exist on the remote yet, so GitHub would
+  // just 422 "Object does not exist" (which createBranchRef already degrades
+  // to 'skipped' for, but there's no point making the call at all).
+  private async tryEagerBranchPush(
+    sub: string,
+    project: ProjectItem | null,
+    parentNode: NodeItem,
+    branchName: string,
+  ): Promise<Partial<Pick<NodeItem, 'pushed'>>> {
+    if (project?.repoRef.provider !== 'github' || parentNode.pushed !== true || !parentNode.commitSha) return {};
+    try {
+      const result = await this.githubApp.createBranchRef(sub, project.repoRef.owner, project.repoRef.repo, branchName, parentNode.commitSha);
+      return result === 'created' || result === 'exists' ? { pushed: true } : {};
+    } catch (err) {
+      this.logger.warn(`createBranchRef threw for ${project.repoRef.owner}/${project.repoRef.repo}@${branchName} — leaving branch node unpushed: ${String(err)}`);
+      return {};
+    }
+  }
+
   async createBranchNode(sub: string, sessionId: string, dto: CreateBranchNodeDto): Promise<NodeItem> {
     const session = await this.sessions.getSession(sub, sessionId);
     const nodeById = new Map(session.nodes.map((n) => [n.nodeId, n]));
@@ -413,14 +437,11 @@ export class NodesService {
       throw new BadRequestException('Parent CODE node has no commit to fork from');
     }
 
-    const existingNames = new Set(
-      session.nodes
-        .filter((n) => n.kind === 'BRANCH' && n.branchName)
-        .map((n) => n.branchName as string),
-    );
-    if (existingNames.has(dto.branchName)) {
-      throw new BadRequestException(`Branch name "${dto.branchName}" already exists in this session`);
-    }
+    const existingNames = new Set(session.nodes.map((n) => n.branchName).filter((b): b is string => !!b));
+    const branchName = this.slugifyBranchName(dto.title, existingNames);
+
+    const project = session.projectId ? await this.db.getProject(sub, session.projectId) : null;
+    const pushedField = await this.tryEagerBranchPush(sub, project, parentNode, branchName);
 
     const nodeId = ulid();
     const now = new Date().toISOString();
@@ -431,7 +452,7 @@ export class NodesService {
       nodeId,
       parentId: dto.parentNodeId,
       kind: 'BRANCH',
-      title: dto.branchName,
+      title: dto.title,
       emoji: null,
       query: `Fork from ${parentNode.commitSha.slice(0, 7)}`,
       lede: '',
@@ -439,8 +460,9 @@ export class NodesService {
       fromSection: null,
       fromText: null,
       createdAt: now,
-      branchName: dto.branchName,
+      branchName,
       commitSha: parentNode.commitSha,
+      ...pushedField,
     };
 
     await this.db.putNode(node);
@@ -505,6 +527,41 @@ export class NodesService {
     const now = new Date().toISOString();
     const title = `PR: ${sourceBranch} → ${targetBranch}`;
 
+    // Real GitHub PR (ADR-0002/0005 extension, WS-E) — only attempted when the
+    // project is a real github repo AND both ends were actually pushed there;
+    // a mock/github-mock/new-project repo or an unpushed commit has nothing on
+    // GitHub to open a PR against, so no attempt is made and BOTH prNumber/prUrl
+    // and prError stay absent (a pure internal MERGE node, unchanged). Once an
+    // attempt IS made, the outcome is recorded on the node so the frontend can
+    // render distinct states: success sets prNumber/prUrl; every failure sets
+    // prError instead. Any failure (typed result, null token, or a thrown
+    // error) degrades to internal-only and is logged — it never 500s.
+    let prFields: Partial<Pick<NodeItem, 'prNumber' | 'prUrl' | 'prError'>> = {};
+    const project = session.projectId ? await this.db.getProject(sub, session.projectId) : null;
+    if (project?.repoRef.provider === 'github' && sourceNode.pushed === true && targetTip.pushed === true) {
+      try {
+        const result = await this.githubApp.createPullRequest(sub, project.repoRef.owner, project.repoRef.repo, {
+          head: sourceBranch,
+          base: targetBranch,
+          title,
+          body: `Opened automatically by forkai code (${sourceNode.commitSha!.slice(0, 7)} → ${targetBranch}).`,
+        });
+        if (result && 'number' in result) {
+          prFields = { prNumber: result.number, prUrl: result.url };
+        } else if (result) {
+          prFields = { prError: result.error };
+          this.logger.warn(`GitHub PR create degraded to internal-only for ${project.repoRef.owner}/${project.repoRef.repo} (${sourceBranch} → ${targetBranch}): ${result.error}`);
+        } else {
+          // null ⇒ no installation token (App not installed/configured for this owner).
+          prFields = { prError: 'app_not_enabled' };
+          this.logger.warn(`GitHub PR create found no App installation for ${project.repoRef.owner}/${project.repoRef.repo} — recording app_not_enabled`);
+        }
+      } catch (err) {
+        prFields = { prError: 'failed' };
+        this.logger.warn(`GitHub PR create threw for ${project.repoRef.owner}/${project.repoRef.repo} — degrading to internal-only: ${String(err)}`);
+      }
+    }
+
     const node: NodeItem = {
       PK: `SESSION#${sessionId}`,
       SK: `NODE#${nodeId}`,
@@ -522,6 +579,7 @@ export class NodesService {
       branchName: targetBranch,
       mergeFromNodeId: sourceNode.nodeId,
       prStatus: 'open',
+      ...prFields,
     };
 
     await this.db.putNode(node);
@@ -557,6 +615,22 @@ export class NodesService {
     const sourceLaneNode = sourceNode ? this.findLaneBranchName(nodeById, sourceNode.nodeId) : null;
     const sourceBranch = sourceLaneNode?.branchName ?? 'source';
     const targetBranch = mergeNode.branchName!;
+
+    // Real GitHub merge (ADR-0002/0005 extension, WS-E) — only when createPrNode
+    // actually opened one (mergeNode.prNumber set); an internal-only PR has
+    // nothing to merge on GitHub. Never blocks the internal merge-commit below
+    // — any failure here is logged and the app-side record still lands.
+    if (mergeNode.prNumber !== undefined && session.projectId) {
+      try {
+        const project = await this.db.getProject(sub, session.projectId);
+        if (project?.repoRef.provider === 'github') {
+          const merged = await this.githubApp.mergePullRequest(sub, project.repoRef.owner, project.repoRef.repo, mergeNode.prNumber);
+          if (!merged) this.logger.warn(`GitHub PR #${mergeNode.prNumber} merge failed for ${project.repoRef.owner}/${project.repoRef.repo} — internal merge-commit still recorded`);
+        }
+      } catch (err) {
+        this.logger.warn(`GitHub PR merge threw for node ${nodeId} — degrading to internal-only: ${String(err)}`);
+      }
+    }
 
     const commitNodeId = ulid();
     const commitSha = randomBytes(20).toString('hex');
@@ -751,6 +825,7 @@ export class NodesService {
           const branchNodeId = ulid();
           const branchNow = new Date().toISOString();
           const newBranchName = this.slugifyBranchName(dto.instruction, existingBranchNames);
+          const pushedField = await this.tryEagerBranchPush(sub, project, parentNode, newBranchName);
           autoBranchNode = {
             PK: `SESSION#${sessionId}`,
             SK: `NODE#${branchNodeId}`,
@@ -767,6 +842,7 @@ export class NodesService {
             createdAt: branchNow,
             branchName: newBranchName,
             commitSha: parentNode.commitSha,
+            ...pushedField,
           };
           await this.db.putNode(autoBranchNode);
           nodeById.set(branchNodeId, autoBranchNode);
@@ -789,9 +865,18 @@ export class NodesService {
       const branchName = chain.branchNode?.branchName ?? chain.planNode?.branchName ?? project?.repoRef.defaultBranch ?? 'main';
       const baseCommitSha = parentNode.commitSha ?? null;
 
+      // Tracks the cloud sandbox's REAL boot progress (provisioning → image
+      // pull → starting agent), updated via ctx.onPhase below — the heartbeat
+      // timer (further down) reads this on every tick. Mock/local runners never
+      // call onPhase, so their heartbeat just stays on this generic default.
+      let latestPhase = 'Working…';
+
       const ctx: AgentRunContext = {
         instruction: dto.instruction,
         planDoc: chain.planNode ? planDocOf(chain.planNode) : null,
+        // The rail's BRANCH node (if any) carries the OKR a user set on the
+        // fork point (#220) — fed to the agent alongside the plan doc.
+        okr: chain.branchNode?.okr ?? null,
         branchName,
         baseCommitSha,
         repoRef: project?.repoRef ?? null,
@@ -809,6 +894,7 @@ export class NodesService {
         sub,
         sessionId,
         maxBudgetUsd,
+        onPhase: (msg) => { latestPhase = msg; },
       };
 
       const now = new Date().toISOString();
@@ -842,8 +928,13 @@ export class NodesService {
       };
 
       // Persist BEFORE any SSE event — a refresh mid-run must restore a real node,
-      // not drop back to nothing.
-      await Promise.all([this.db.putNode(node), this.db.putAgentRun(agentRun)]);
+      // not drop back to nothing. Denormalize the run status onto the session
+      // (History "Continue" rail) in the same write — mirrors node.agentStatus.
+      await Promise.all([
+        this.db.putNode(node),
+        this.db.putAgentRun(agentRun),
+        this.db.updateSessionMeta(sub, sessionId, { lastRunStatus: 'running' }),
+      ]);
       emit({ type: 'init', node });
 
       // MockAgentRunner (and any future non-streaming runner) awaits a full LLM
@@ -855,10 +946,10 @@ export class NodesService {
       // (0, 1, 2, ... below), so the frontend can always tell a heartbeat apart
       // from a real event. Cleared on the first real yield (in the loop) and
       // again in `finally` as a leak-proof backstop for a runner that throws
-      // before ever yielding.
-      const heartbeatMessages = ['Agent is working…', 'Reading the repository…', 'Planning the change…'];
+      // before ever yielding. Each tick emits `latestPhase` (above) — real
+      // cloud boot progress when the runner reports it via ctx.onPhase, or the
+      // one generic default for a mock/local run that never calls it.
       let heartbeatSeq = -1;
-      let heartbeatIdx = 0;
       const heartbeatTimer = setInterval(() => {
         emit({
           type: 'agent-event',
@@ -866,7 +957,7 @@ export class NodesService {
             seq: heartbeatSeq--,
             ts: new Date().toISOString(),
             kind: 'text',
-            payload: heartbeatMessages[heartbeatIdx++ % heartbeatMessages.length],
+            payload: latestPhase,
           },
         });
       }, 3000);
@@ -894,6 +985,7 @@ export class NodesService {
         await Promise.all([
           this.db.updateNode(sessionId, nodeId, { agentStatus: 'error' }),
           this.db.updateAgentRun(sessionId, nodeId, { status: 'error', events: serializeEventsCapped(events), updatedAt: new Date().toISOString() }),
+          this.db.updateSessionMeta(sub, sessionId, { lastRunStatus: 'error' }),
         ]);
         if (isCloud) await this.releaseHoldOnFailure(sub, sessionId, nodeId, model);
         emit({ type: 'error', message: friendlyLlmError(err as Error) });
@@ -907,11 +999,26 @@ export class NodesService {
       // when the runner itself doesn't supply a real one.
       const commitSha = final.commitSha ?? randomBytes(20).toString('hex');
 
-      // No extra LLM call for title/lede — a simple truncation of the commit
-      // message is enough for the map card and breadcrumb. Trim trailing
+      // Fallback title/lede — a simple truncation of the commit message — used
+      // whenever generateCodeMeta below fails or is unavailable. Trim trailing
       // punctuation the word cut leaves behind ("feat: Scaffold CLI with Commander,").
-      const title = final.commitMessage.split(/\s+/).filter(Boolean).slice(0, 5).join(' ').replace(/[,;:.]+$/, '') || node.title;
-      const lede = final.commitMessage.length > 140 ? `${final.commitMessage.slice(0, 140)}…` : final.commitMessage;
+      const fallbackTitle = final.commitMessage.split(/\s+/).filter(Boolean).slice(0, 5).join(' ').replace(/[,;:.]+$/, '') || node.title;
+      const fallbackLede = final.commitMessage.length > 140 ? `${final.commitMessage.slice(0, 140)}…` : final.commitMessage;
+
+      // LLM-generated title/emoji/lede (haiku — cheap) reads far better on the
+      // map card than the raw commit-message truncation. Never let a flaky call
+      // here break the commit — any error falls back to the truncation above.
+      let title = fallbackTitle;
+      let lede = fallbackLede;
+      let emoji: string | undefined;
+      try {
+        const meta = await this.llm.generateCodeMeta(dto.instruction, final.commitMessage, final.diffSummary, ALIAS_TO_ID.haiku);
+        title = meta.title;
+        lede = meta.lede;
+        emoji = meta.emoji;
+      } catch (err) {
+        this.logger.warn(`generateCodeMeta failed for node ${nodeId} — falling back to commit-message truncation: ${String(err)}`);
+      }
 
       // Hoisted above the billing ternary so BOTH the cloud (reconcileHold) and
       // mock (billUsage) paths get a persisted per-commit cost on the node —
@@ -928,6 +1035,7 @@ export class NodesService {
           diffSummary: final.diffSummary,
           agentStatus: 'done',
           runCostUsd: runCost,
+          ...(emoji ? { emoji } : {}),
           ...(final.workspace
             ? { workspace: final.workspace, ...(final.workspaceExpiresAt ? { workspaceExpiresAt: final.workspaceExpiresAt } : {}) }
             : {}),
@@ -945,6 +1053,7 @@ export class NodesService {
           diffSummary: final.diffSummary,
           updatedAt: new Date().toISOString(),
         }),
+        this.db.updateSessionMeta(sub, sessionId, { lastRunStatus: 'done' }),
       ]);
       await Promise.all([
         this.sessions.touchUpdatedAt(sub, sessionId),
@@ -970,6 +1079,7 @@ export class NodesService {
           agentStatus: 'done',
           commitSha,
           runCostUsd: runCost,
+          ...(emoji ? { emoji } : {}),
           ...(final.workspace
             ? { workspace: final.workspace, ...(final.workspaceExpiresAt ? { workspaceExpiresAt: final.workspaceExpiresAt } : {}) }
             : {}),
@@ -1002,9 +1112,12 @@ export class NodesService {
     const node = await this.db.getNode(sessionId, nodeId);
     if (!node) throw new NotFoundException(`Node ${nodeId} not found`);
 
-    const updates: Partial<Pick<NodeItem, 'title' | 'starred'>> = {};
+    const updates: Partial<Pick<NodeItem, 'title' | 'starred' | 'okr'>> = {};
     if (dto.title !== undefined) updates.title = dto.title;
     if (dto.starred !== undefined) updates.starred = dto.starred;
+    // Omitted (not sent at all) leaves okr unchanged — there is no clear path
+    // (updateNode does not null-strip; see root CLAUDE.md's Dynamoose note).
+    if (dto.okr !== undefined) updates.okr = dto.okr;
     if (!Object.keys(updates).length) return;
 
     await this.db.updateNode(sessionId, nodeId, updates);

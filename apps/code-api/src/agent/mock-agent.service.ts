@@ -11,6 +11,11 @@ import type { AgentEvent } from './agent-run.util';
 export interface AgentRunContext {
   instruction: string;
   planDoc: string | null;
+  // Structured objective/key-results (#220) — sourced from the rail's BRANCH
+  // node (see NodesService.createCodeNodeStreaming's findRailChain read),
+  // formatted into an "Objective:" prompt section by every runner alongside
+  // planDoc/planSection. Absent/null when the branch node has no okr set.
+  okr?: { objective: string; keyResults: string[] } | null;
   branchName: string;
   baseCommitSha: string | null;
   repoRef: RepoRef | null;
@@ -30,6 +35,12 @@ export interface AgentRunContext {
   sub?: string;
   sessionId?: string;
   maxBudgetUsd?: number;
+  // Real boot-progress reporting (cloud only) — threaded down to
+  // CloudAgentRunner → FlyProvider.create, called at each real provisioning
+  // boundary so nodes.service.ts's heartbeat can show actual progress instead
+  // of a repeating canned message. Mock/local runners never call it, so their
+  // heartbeat stays on its single generic default (see nodes.service.ts).
+  onPhase?: (msg: string) => void;
   // Where a real (local/cloud) runner finds or creates its working copy — the
   // mock ignores all of it. cloneUrl/localPath are set from a real project's
   // repoRef (nodes.service.ts's resolveRunRepo) or, dev-only, straight from
@@ -97,6 +108,9 @@ export class MockAgentService {
   private buildPrompt(ctx: AgentRunContext): string {
     const repo = ctx.repoRef ? `${ctx.repoRef.owner}/${ctx.repoRef.repo}` : 'an unspecified repository';
     const planSection = ctx.planDoc ? `\n\nPlan context:\n${ctx.planDoc}` : '';
+    const okrSection = ctx.okr
+      ? `\n\nObjective: ${ctx.okr.objective}\nKey results:\n${ctx.okr.keyResults.map((kr) => `- ${kr}`).join('\n')}`
+      : '';
     const priorCommits = ctx.ancestorCodeSummaries.length
       ? `\n\nPrior commits on this branch (most recent first):\n${ctx.ancestorCodeSummaries
           .map((c) => `- "${c.commitMessage}" (${c.filePaths.join(', ') || 'no files recorded'}, +${c.additions}/-${c.deletions})`)
@@ -109,7 +123,7 @@ export class MockAgentService {
       ? `\n\n${ctx.attachments.map((a) => `--- Attached file: ${a.name} ---\n\`\`\`\n${a.content}\n\`\`\``).join('\n\n')}`
       : '';
 
-    return `You are simulating a coding agent working in repo ${repo} on branch "${ctx.branchName}". Task: ${ctx.instruction}.${planSection}${priorCommits}${toolsSection}${attachmentsSection}
+    return `You are simulating a coding agent working in repo ${repo} on branch "${ctx.branchName}". Task: ${ctx.instruction}.${planSection}${okrSection}${priorCommits}${toolsSection}${attachmentsSection}
 
 Return ONLY valid JSON, no prose, no markdown fences. Shape:
 {

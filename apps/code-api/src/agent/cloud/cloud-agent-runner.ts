@@ -139,6 +139,9 @@ export class CloudAgentRunner implements AgentRunner {
         // in-machine runner hands it only to the claude process. RUN_TOKEN and
         // VSCODE_TOKEN are per-run and low-value, so machine env is fine.
         env: { RUN_TOKEN: runToken, VSCODE_TOKEN: vscodeToken, IS_SANDBOX: '1' },
+        // Real boot-progress (WS-F) — forwarded straight through to
+        // FlyProvider.provisionInApp's onPhase? calls.
+        onPhase: ctx.onPhase,
       });
 
       const res = await fetch(`${sandbox.baseUrl}/__forkai/run`, {
@@ -306,6 +309,9 @@ export class CloudAgentRunner implements AgentRunner {
   // leaves a clean tree and the run silently reports sha === baseSha.
   private buildInstruction(ctx: AgentRunContext): string {
     const planSection = ctx.planDoc ? `\n\nPlan context:\n${ctx.planDoc}` : '';
-    return `${ctx.instruction}${planSection}\n\nWork only inside this repository checkout. Do NOT run \`git commit\`, \`git push\`, or change git config — the harness commits your changes after you finish.`;
+    const okrSection = ctx.okr
+      ? `\n\nObjective: ${ctx.okr.objective}\nKey results:\n${ctx.okr.keyResults.map((kr) => `- ${kr}`).join('\n')}`
+      : '';
+    return `${ctx.instruction}${planSection}${okrSection}\n\nWork only inside this repository checkout. Do NOT run \`git commit\`, \`git push\`, or change git config — the harness commits your changes after you finish.`;
   }
 }

@@ -63,6 +63,26 @@ describe('FlyProvider.create', () => {
     expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/__forkai/healthz'))).toBe(true);
   });
 
+  // WS-F: real boot-phase reporting — nodes.service.ts's heartbeat reads these
+  // via ctx.onPhase instead of rotating a fixed 3-message list.
+  it('reports the three real boot phases via onPhase, in order, before their respective boundary calls', async () => {
+    mockRoutes();
+    const phases: string[] = [];
+
+    await provider.create({ runId: 'run12', image: 'img', regions: ['sin'], env: {}, onPhase: (msg) => phases.push(msg) });
+
+    expect(phases).toEqual([
+      'Provisioning machine…',
+      'Booting sandbox (image pull, ~1 min)…',
+      'Starting agent…',
+    ]);
+  });
+
+  it('never throws when onPhase is omitted (optional, existing callers unaffected)', async () => {
+    mockRoutes();
+    await expect(provider.create({ runId: 'run13', image: 'img', regions: ['sin'], env: {} })).resolves.toBeDefined();
+  });
+
   it('creates the machine with exactly one service (8080 → 80/443), never a second vscode service', async () => {
     mockRoutes();
 

@@ -1,0 +1,121 @@
+<!-- @dsCard group="Round 2" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>forkai-code — Round 2: Composer</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body { padding: 56px 64px 120px; min-height: 100vh; }
+
+  .theme-toggle {
+    position: fixed; top: 20px; right: 24px; z-index: 100;
+    font-family: var(--sans); font-size: 12px; font-weight: 500;
+    padding: 7px 14px; border-radius: var(--radius);
+    border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink-2);
+    cursor: pointer; box-shadow: var(--shadow-1);
+  }
+  .theme-toggle:hover { background: var(--hover); color: var(--ink); }
+
+  .ds-brand { display: inline-flex; align-items: center; gap: 8px; font-family: var(--sans); font-weight: 600; font-size: 13px; letter-spacing: .02em; color: var(--ink-2); margin-bottom: 28px; }
+  .ds-brand .mark { width: 15px; height: 15px; border-radius: 4px; background: var(--ink); display: inline-block; }
+  .ds-page-title { font-family: var(--serif); font-weight: 400; font-size: 34px; letter-spacing: -0.02em; margin: 0 0 8px; color: var(--ink); }
+  .ds-page-sub { font-family: var(--sans); font-size: 13px; color: var(--ink-3); margin: 0 0 40px; max-width: 700px; line-height: 1.55; }
+  .ds-section { margin-bottom: 56px; }
+  .ds-section-label { font-family: var(--sans); font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 18px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+  .ds-section-note { font-family: var(--sans); font-size: 12px; color: var(--ink-3); margin: -10px 0 20px; max-width: 700px; line-height: 1.5; }
+
+  /* ── Mock workspace pane — proves the composer matches the 760px
+     session content column exactly (not a narrower inset card, not a
+     full-viewport-bleed bar). Dashed outline + label so it reads as
+     a simulated pane boundary, not real chrome. ─────────────────── */
+  .mock-viewport { position: relative; border: 1px dashed var(--line-strong); border-radius: var(--radius-lg); height: 620px; overflow-y: auto; background: var(--bg); }
+  .mock-viewport-tag { position: sticky; top: 10px; float: right; margin-right: 12px; font-family: var(--sans); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); background: var(--paper); border: 1px solid var(--line-strong); border-radius: 999px; padding: 2px 8px; z-index: 3; }
+
+  .workspace-inner-demo { max-width: 760px; margin: 0 auto; padding: 40px 40px 0; min-height: 100%; display: flex; flex-direction: column; box-sizing: border-box; }
+
+  .demo-section { margin-bottom: 26px; }
+  .demo-section h3 { font-family: var(--serif); font-weight: 500; font-size: 17px; color: var(--ink); margin: 0 0 8px; }
+  .demo-section p { font-family: var(--sans); font-size: 13.5px; line-height: 1.6; color: var(--ink-2); margin: 0; }
+
+  /* ws-instruction-card — Round 2: the left accent was --kind-code (blue);
+     now a neutral grey, matching the monotonic node/pill system. */
+  .ws-instruction-card { font-family: var(--serif); font-size: clamp(17px, 1.8vw, 19px); line-height: 1.5; color: var(--ink); margin: 4px 0 0; padding: 13px 17px; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--ink-3); border-radius: var(--radius); letter-spacing: -0.005em; }
+  .ws-instruction-card code { font-family: var(--mono); font-size: 0.75em; background: var(--commit-pill-bg); color: var(--commit-pill-ink); padding: 1px 6px; border-radius: 4px; }
+
+  /* ── Code composer — Round 2: flatter card (was --line-strong /
+     --shadow-2), same 760px width match, same sticky-bottom dock. ── */
+  .code-composer { position: sticky; bottom: 0; margin-top: auto; z-index: 2; padding: 20px 40px 20px; background: linear-gradient(to bottom, transparent, var(--bg) 45%); }
+  .code-composer-inner { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-1); padding: 10px 10px; }
+  .code-composer-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 2px; }
+  .code-composer-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 220px; padding: 3px 6px 3px 9px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; font-family: var(--mono); font-size: 11px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .code-composer-chip button { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 50%; border: none; background: transparent; color: var(--ink-3); cursor: pointer; padding: 0; font-size: 11px; line-height: 1; }
+  .code-composer-chip button:hover { background: var(--line); color: var(--ink); }
+  .code-composer-textarea-demo { width: 100%; min-height: 40px; box-sizing: border-box; font-family: var(--sans); font-size: 13.5px; color: var(--ink); line-height: 1.45; padding: 5px 2px; }
+
+  /* Bottom control row — attach + model + web on the left, ghost Ask +
+     primary Build on the right — unified sizes/baselines. */
+  .code-composer-row--controls { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .code-composer-row-left, .code-composer-row-right { display: flex; align-items: center; gap: 7px; }
+  .code-composer-attach-btn { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line); background: var(--panel); color: var(--ink-2); cursor: pointer; font-size: 13px; }
+  .code-composer-attach-btn:hover { background: var(--hover); }
+  .code-composer-pill { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--ink-2); font-family: var(--sans); font-size: 12px; font-weight: 500; cursor: pointer; }
+  .code-composer-pill:hover { background: var(--hover-strong); color: var(--ink); }
+  .code-composer-pill-caret { font-size: 9px; color: var(--ink-3); }
+  .code-composer-action-btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 15px; border-radius: 999px; font-family: var(--sans); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+  .code-composer-action-btn--ghost { border: 1px solid var(--line-strong); background: transparent; color: var(--ink-2); }
+  .code-composer-action-btn--ghost:hover { background: var(--hover); color: var(--ink); }
+  .code-composer-action-btn--primary { border: 1px solid var(--ink); background: var(--ink); color: var(--bg); }
+  .code-composer-action-btn--primary:hover { opacity: .85; }
+</style>
+</head>
+<body>
+  <button class="theme-toggle" onclick="const h=document.documentElement; h.setAttribute('data-theme', (h.getAttribute('data-theme')||'light')==='light'?'dark':'light');">Toggle theme</button>
+
+  <div class="ds-brand"><span class="mark"></span>fork ai code</div>
+  <h1 class="ds-page-title">Round 2 — Composer</h1>
+  <p class="ds-page-sub">The composer becomes a full-content-width, bottom-docked bar matching the 760px session column — not a narrow inset card, and not a full-viewport-bleed bar either. Flatter card treatment (reduced border/shadow). The control row unifies font sizes/baselines across attach · model pill · Web toggle on the left and ghost Ask / primary Build on the right. The <code style="font-family: var(--mono);">.ws-instruction-card</code> above it drops its colored left accent for grey. (WS-K · #212 / #210 / #217)</p>
+
+  <div class="ds-section">
+    <div class="ds-section-label">Composer docked below session content</div>
+    <p class="ds-section-note">Simulated workspace pane (dashed outline) — the composer's card shares the exact same 760px max-width as the content column above it, both centered in the same pane.</p>
+    <div class="mock-viewport">
+      <span class="mock-viewport-tag">simulated pane</span>
+      <div class="workspace-inner-demo">
+        <div class="demo-section">
+          <h3>🧩 Add limiter middleware skeleton</h3>
+          <p>Added a basic rate-limit middleware keyed by API key, backed by an in-memory Map. Works for a single instance but won't persist across restarts or scale across multiple API instances.</p>
+        </div>
+        <div class="demo-section">
+          <h3>🧩 Wire Redis token-bucket store</h3>
+          <p>Swapped the in-memory Map for a Redis-backed token-bucket implementation using an atomic EVAL script, so limits persist across restarts and stay consistent across every running instance.</p>
+        </div>
+
+        <div class="ds-section-label" style="margin: 4px 0 10px;">Next instruction</div>
+        <p class="ws-instruction-card">Add a per-key override so admin API keys skip the limiter entirely…</p>
+
+        <div class="code-composer">
+          <div class="code-composer-inner">
+            <div class="code-composer-chips">
+              <span class="code-composer-chip">rate-limit.middleware.ts<button type="button" aria-label="Remove">×</button></span>
+            </div>
+            <div class="code-composer-textarea-demo">Add a per-key override so admin API keys skip the limiter entirely…</div>
+            <div class="code-composer-row--controls">
+              <div class="code-composer-row-left">
+                <button type="button" class="code-composer-attach-btn" title="Attach files">📎</button>
+                <span class="code-composer-pill">🤖 Claude Sonnet<span class="code-composer-pill-caret">▾</span></span>
+                <button type="button" class="code-composer-pill">🔍 Web</button>
+              </div>
+              <div class="code-composer-row-right">
+                <button type="button" class="code-composer-action-btn code-composer-action-btn--ghost">Ask</button>
+                <button type="button" class="code-composer-action-btn code-composer-action-btn--primary">Build ↑</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

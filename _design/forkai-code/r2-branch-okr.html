@@ -1,0 +1,158 @@
+<!-- @dsCard group="Round 2" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>forkai-code — Round 2: Branch OKR</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body { padding: 56px 64px 120px; min-height: 100vh; }
+
+  .theme-toggle {
+    position: fixed; top: 20px; right: 24px; z-index: 100;
+    font-family: var(--sans); font-size: 12px; font-weight: 500;
+    padding: 7px 14px; border-radius: var(--radius);
+    border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink-2);
+    cursor: pointer; box-shadow: var(--shadow-1);
+  }
+  .theme-toggle:hover { background: var(--hover); color: var(--ink); }
+
+  .ds-brand { display: inline-flex; align-items: center; gap: 8px; font-family: var(--sans); font-weight: 600; font-size: 13px; letter-spacing: .02em; color: var(--ink-2); margin-bottom: 28px; }
+  .ds-brand .mark { width: 15px; height: 15px; border-radius: 4px; background: var(--ink); display: inline-block; }
+  .ds-page-title { font-family: var(--serif); font-weight: 400; font-size: 34px; letter-spacing: -0.02em; margin: 0 0 8px; color: var(--ink); }
+  .ds-page-sub { font-family: var(--sans); font-size: 13px; color: var(--ink-3); margin: 0 0 48px; max-width: 700px; line-height: 1.55; }
+  .ds-section { margin-bottom: 56px; }
+  .ds-section-label { font-family: var(--sans); font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 18px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+  .ds-section-note { font-family: var(--sans); font-size: 12px; color: var(--ink-3); margin: -10px 0 20px; max-width: 640px; line-height: 1.5; }
+  .ds-row { display: flex; flex-wrap: wrap; gap: 32px; align-items: flex-start; }
+  .ds-label-sm { font-family: var(--sans); font-size: 10.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 10px; }
+
+  /* ── Existing BRANCH pane chrome — kept, re-greyed to match Round 2 ── */
+  .agent-pane--reduced { max-width: 480px; }
+  .ws-meta { display: flex; align-items: center; gap: 8px; font-family: var(--sans); font-size: 12px; color: var(--ink-3); margin-bottom: 16px; flex-wrap: wrap; }
+  .pill { border: 1px solid var(--line); border-radius: 4px; padding: 2px 8px; background: var(--paper); display: inline-flex; align-items: center; gap: 5px; font-family: var(--sans); font-size: 12px; font-weight: 500; }
+  .pill-kind--branch { border-color: var(--line-strong); color: var(--ink-2); }
+  .commit-pill { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 11.5px; font-weight: 500; padding: 3px 10px; border-radius: 999px; background: var(--commit-pill-bg); color: var(--commit-pill-ink); border: 1px solid var(--commit-pill-border); }
+  .ws-instruction-card { font-family: var(--serif); font-size: 17px; line-height: 1.5; color: var(--ink); margin: 0 0 4px; padding: 13px 17px; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--ink-3); border-radius: var(--radius); letter-spacing: -0.005em; }
+  .ws-instruction-card code { font-family: var(--mono); font-size: 0.75em; background: var(--commit-pill-bg); color: var(--commit-pill-ink); padding: 1px 6px; border-radius: 4px; }
+  .proj-btn-primary { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 16px; background: var(--ink); color: var(--bg); border: 1px solid var(--ink); border-radius: var(--radius); font-family: var(--sans); font-size: 13px; font-weight: 600; cursor: pointer; margin-top: 18px; }
+  .proj-btn-primary:hover { opacity: .85; }
+
+  /* ── OKR editor — the BRANCH pane's new dead-space content ──────
+     Progressive: an Objective field first; Key Results only once an
+     objective exists. */
+  .okr-editor { border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--panel); padding: 16px 18px; margin: 20px 0 4px; }
+  .okr-editor-label { font-family: var(--sans); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; display: flex; align-items: center; gap: 6px; }
+  .okr-field-label { display: block; font-family: var(--sans); font-size: 10.5px; font-weight: 600; letter-spacing: .03em; color: var(--ink-3); margin-bottom: 7px; }
+  .okr-objective-input { width: 100%; box-sizing: border-box; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 13px; line-height: 1.5; padding: 9px 11px; resize: none; outline: none; }
+  .okr-objective-input:focus { border-color: var(--ink-3); }
+
+  .okr-kr-section { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+  .okr-kr-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .okr-kr-bullet { flex-shrink: 0; width: 18px; height: 18px; border-radius: 4px; background: var(--accent-soft); color: var(--ink-2); font-family: var(--sans); font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .okr-kr-input { flex: 1; min-width: 0; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 12.5px; padding: 7px 10px; outline: none; }
+  .okr-kr-input:focus { border-color: var(--ink-3); }
+  .okr-kr-delete { flex-shrink: 0; width: 24px; height: 24px; border-radius: 50%; border: none; background: transparent; color: var(--ink-3); cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center; padding: 0; }
+  .okr-kr-delete:hover { background: var(--hover); color: var(--ink); }
+  .okr-kr-add { display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; padding: 6px 12px; border: 1px dashed var(--line-strong); border-radius: 999px; background: transparent; color: var(--ink-2); font-family: var(--sans); font-size: 12px; font-weight: 500; cursor: pointer; }
+  .okr-kr-add:hover { background: var(--hover); color: var(--ink); border-style: solid; }
+
+  .okr-editor--empty { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .okr-empty-text { font-family: var(--sans); font-size: 12.5px; color: var(--ink-3); line-height: 1.45; }
+  .okr-empty-btn { flex-shrink: 0; padding: 7px 14px; border-radius: var(--radius); border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 12px; font-weight: 600; cursor: pointer; }
+  .okr-empty-btn:hover { background: var(--hover); }
+
+  /* ── Map surfacing — the objective + KR count on a grey BRANCH card ── */
+  .node-card { width: 220px; background: var(--paper); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); box-shadow: var(--shadow-1); padding: 11px 14px; font-family: var(--sans); box-sizing: border-box; }
+  .node-card-top { margin-bottom: 8px; }
+  .node-card-main { display: flex; align-items: center; gap: 7px; }
+  .node-card-emoji { font-size: 17px; line-height: 1; flex-shrink: 0; font-family: "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui,sans-serif; }
+  .node-card-kind { font-size: 10.5px; font-weight: 600; letter-spacing: .02em; color: var(--ink-3); }
+  .node-card-label { font-size: 12.5px; font-weight: 500; color: var(--ink); line-height: 1.3; margin-top: 7px; }
+  .node-card-objective { font-size: 11px; color: var(--ink-3); line-height: 1.4; margin-top: 5px; }
+  .okr-chip { display: inline-flex; align-items: center; gap: 4px; font-family: var(--sans); font-size: 10px; font-weight: 600; color: var(--ink-2); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; margin-top: 8px; }
+</style>
+</head>
+<body>
+  <button class="theme-toggle" onclick="const h=document.documentElement; h.setAttribute('data-theme', (h.getAttribute('data-theme')||'light')==='light'?'dark':'light');">Toggle theme</button>
+
+  <div class="ds-brand"><span class="mark"></span>fork ai code</div>
+  <h1 class="ds-page-title">Round 2 — Branch OKR</h1>
+  <p class="ds-page-sub">A structured Objective + Key Results editor fills the BRANCH pane's dead space below "Forked from". Objective comes first; Key Results only appear once one exists (progressive disclosure). Once set, the objective and a KR-count chip surface directly on the map node so the OKR is visible without opening the pane. (WS-B · #220)</p>
+
+  <div class="ds-section">
+    <div class="ds-section-label">Branch pane — with objective set</div>
+    <div class="agent-pane agent-pane--reduced">
+      <div class="ws-meta">
+        <span class="pill pill-kind--branch">⑂ Branch</span>
+        <span class="commit-pill">⎇ feature/sliding-window · d41f7b2</span>
+      </div>
+      <p class="ws-instruction-card">Forked from <code>d41f7b2</code></p>
+
+      <div class="okr-editor">
+        <div class="okr-editor-label">🎯 Branch objective</div>
+        <label class="okr-field-label" for="okr-obj">Objective</label>
+        <textarea id="okr-obj" class="okr-objective-input" rows="2">Ship a sliding-window rate limiter that survives a multi-instance rollout without dropping legitimate requests.</textarea>
+
+        <div class="okr-kr-section">
+          <label class="okr-field-label">Key results</label>
+          <div class="okr-kr-row">
+            <span class="okr-kr-bullet">1</span>
+            <input class="okr-kr-input" type="text" value="p99 limiter check adds &lt;5ms under load" />
+            <button class="okr-kr-delete" aria-label="Remove key result">×</button>
+          </div>
+          <div class="okr-kr-row">
+            <span class="okr-kr-bullet">2</span>
+            <input class="okr-kr-input" type="text" value="Zero false-positive 429s in the canary rollout" />
+            <button class="okr-kr-delete" aria-label="Remove key result">×</button>
+          </div>
+          <button class="okr-kr-add">＋ Add key result</button>
+        </div>
+      </div>
+
+      <button class="proj-btn-primary">🧩 Implement</button>
+    </div>
+  </div>
+
+  <div class="ds-section">
+    <div class="ds-section-label">Empty state</div>
+    <p class="ds-section-note">Before an objective is set, Key Results are hidden entirely — one clear next action.</p>
+    <div class="okr-editor okr-editor--empty" style="max-width: 480px;">
+      <span class="okr-empty-text">🎯 No objective set for this branch yet.</span>
+      <button class="okr-empty-btn">+ Set objective</button>
+    </div>
+  </div>
+
+  <div class="ds-section">
+    <div class="ds-section-label">Surfaced on the map node</div>
+    <p class="ds-section-note">The objective becomes a subtitle line; the KR count becomes a small 🎯 chip — both grey, matching the Round 2 node-card system.</p>
+    <div class="ds-row">
+      <div>
+        <div class="ds-label-sm">Branch card — with OKR</div>
+        <div class="node-card">
+          <div class="node-card-top"><span class="commit-pill">⎇ feature/sliding-window · d41f7b2</span></div>
+          <div class="node-card-main">
+            <span class="node-card-emoji">⑂</span>
+            <span class="node-card-kind">Branch</span>
+          </div>
+          <div class="node-card-label">Fork: feature/sliding-window</div>
+          <div class="node-card-objective">Ship a sliding-window limiter that survives multi-instance rollout.</div>
+          <span class="okr-chip">🎯 2 KRs</span>
+        </div>
+      </div>
+      <div>
+        <div class="ds-label-sm">Branch card — no OKR set</div>
+        <div class="node-card">
+          <div class="node-card-top"><span class="commit-pill">⎇ feature/sliding-window · d41f7b2</span></div>
+          <div class="node-card-main">
+            <span class="node-card-emoji">⑂</span>
+            <span class="node-card-kind">Branch</span>
+          </div>
+          <div class="node-card-label">Fork: feature/sliding-window</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

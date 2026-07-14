@@ -69,7 +69,16 @@ export function collapseSegments(
     if (interior.length <= COLLAPSE_INTERIOR_THRESHOLD) return;
 
     const segId = `seg:${interior[0].id}`;
-    if (expandedSegIds.has(segId)) return; // user expanded this segment — leave it fully visible
+    const meta: SegMeta = { count: interior.length, hiddenIds: interior.map((n) => n.id) };
+
+    // User expanded this segment — leave the interior fully visible in
+    // displayNodes, but still publish its segMeta (keyed by the same segId,
+    // hiddenIds[0] pointing at the now-visible first interior node) so a
+    // caller can render a re-collapse chip at the head of the expanded run.
+    if (expandedSegIds.has(segId)) {
+      segMeta[segId] = meta;
+      return;
+    }
 
     const first = chain[0];
     const last = chain[chain.length - 1];
@@ -92,7 +101,7 @@ export function collapseSegments(
       imported: true,
       branchName: first.branchName,
     };
-    segMeta[segId] = { count: interior.length, hiddenIds: interior.map((n) => n.id) };
+    segMeta[segId] = meta;
   });
 
   return { displayNodes, segMeta };

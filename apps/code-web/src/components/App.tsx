@@ -206,6 +206,7 @@ import { NewProjectModal, synthesizeNewRepoRef } from './NewProjectModal';
 import { ProjectStart } from './ProjectStart';
 import { AgentLogPane } from './AgentLogPane';
 import { PrPane } from './PrPane';
+import { BranchPopup } from './BranchPopup';
 import { CodeComposer, type CodeComposerHandle, type ComposerAttachment } from './CodeComposer';
 import {
   Search, Bookmark, ChevronRight, Sparkles, CornerDownRight, Hash,
@@ -231,7 +232,7 @@ const TWEAK_DEFAULTS = {
   answerStyle: 'verbose' as const,
   maxSections: 6,
   webSearch: false,
-  branchModel: 'gemini-flash-lite' as const,
+  branchModel: 'haiku' as const,
   environment: 'cloud' as const,
 };
 
@@ -422,6 +423,10 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   // overlay's Confirm button fires confirmPr.
   const [prSourceId, setPrSourceId] = useState<string | null>(null);
   const [prTargetId, setPrTargetId] = useState<string | null>(null);
+  // Guided empty-state's "Create a branch" action (WS-E state a) — its own
+  // BranchPopup anchor, separate from MindMap's/AgentLogPane's own local
+  // popup state since it opens off a button inside the PR overlay itself.
+  const [prGuideBranchRect, setPrGuideBranchRect] = useState<{ left: number; top: number; width: number; height: number; bottom: number } | null>(null);
   const [prSubmitting, setPrSubmitting] = useState(false);
   const [prConfirmError, setPrConfirmError] = useState<string | null>(null);
 
@@ -1632,21 +1637,28 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
 
   // ── Branch: fork a new lane off a CODE node's commit pill ─────────────────
 
-  const forkBranch = useCallback(async (nodeId: string, branchName: string) => {
+  // `title` is a human description ("Try a sliding-window algorithm"), not a
+  // git-ref-safe name — the server slugifies it into the real branchName
+  // (`fork/<slug>`, deduped) and that's what's stored as the node's title too
+  // (see nodes.service.ts's createBranchNode). The optimistic node below
+  // derives a client-side preview slug for its commit pill; it's overwritten
+  // by the real branchName once the API responds.
+  const forkBranch = useCallback(async (nodeId: string, title: string) => {
     const sid = sessionIdRef.current;
     if (!sid || !idToken) return;
     const parent = nodes[nodeId];
     if (!parent) return;
 
+    const previewSlug = `fork/${title.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/g, '') || 'plan'}`;
     const tempId = uid();
     setNodes(prev => ({
       ...prev,
       [tempId]: {
         id: tempId,
         parentId: nodeId,
-        title: `Fork: ${branchName}`,
+        title,
         kind: 'BRANCH',
-        query: branchName,
+        query: title,
         emoji: null,
         lede: '',
         sections: [],
@@ -1654,7 +1666,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         fromText: null,
         createdAt: Date.now(),
         loading: true,
-        branchName,
+        branchName: previewSlug,
       },
     }));
     setActiveId(tempId);
@@ -1662,7 +1674,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     setLoadingNodes(prev => new Set(prev).add(tempId));
 
     try {
-      const apiNode = await createBranchNode(idToken, sid, { parentNodeId: nodeId, branchName });
+      const apiNode = await createBranchNode(idToken, sid, { parentNodeId: nodeId, title });
       const realNode = toForkNode(apiNode);
       setNodes(prev => {
         const next = { ...prev };
@@ -1833,6 +1845,14 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     void submitCodeNode(node.query, [], nodeId);
   }, [nodes, submitCodeNode]);
 
+  // AgentLogPane's OKR editor (#220) already PATCHes the backend itself — this
+  // just mirrors the confirmed value into local state (optimistic, matching
+  // persistHighlight's pattern) so the map card's objective/KR-count chip
+  // updates without a reload.
+  const handleOkrChange = useCallback((nodeId: string, okr: NonNullable<ForkNode['okr']>) => {
+    setNodes(prev => (prev[nodeId] ? { ...prev, [nodeId]: { ...prev[nodeId], okr } } : prev));
+  }, []);
+
   // AgentLogPane polls the persisted AgentRun on a mid-run refresh (no SSE to
   // resume into) and calls this once it resolves — patch in what the 'done'/
   // 'error' SSE event would have applied, since that event never reached this tab.
@@ -1855,9 +1875,12 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     });
   }, []);
 
-  // "Ask about this commit" on a CODE node's AgentLogPane — spawns an ASK node
-  // with no highlight selection, so the commit message stands in as the anchor
-  // text (the ASK route requires non-empty highlightText).
+  // The composer's "Ask" action — spawns an ASK node with no highlight
+  // selection, so the anchor text falls back to the node's own content (the
+  // commit message on a CODE node, else its title) since the ASK route
+  // requires non-empty highlightText. Generic enough to serve both the CODE
+  // variant ("ask about this commit") and the research variant ("ask about
+  // this node") — see CodeComposer.tsx's onAsk prop.
   const askAboutCommit = useCallback(async (nodeId: string, question: string, reuseNodeId?: string) => {
     const sid = sessionIdRef.current;
     if (!sid || !idToken) return;
@@ -2426,27 +2449,69 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     () => new Set([activeId, ...mixerSelectedIds].filter((id): id is string => !!id)),
     [activeId, mixerSelectedIds],
   );
-  const { displayNodes } = useMemo(
+  const { displayNodes, segMeta } = useMemo(
     () => collapseSegments(nodes, expandedSegIds, segProtectedIds),
     [nodes, expandedSegIds, segProtectedIds],
   );
+  // Re-collapse (#205) — the mirror of onMapSelect's expand-on-click: drops
+  // segId back out of expandedSegIds so collapseSegments folds its chain back
+  // into the placeholder card on the next render.
+  const onCollapseSegment = useCallback((segId: string) => {
+    setExpandedSegIds(prev => {
+      if (!prev.has(segId)) return prev;
+      const next = new Set(prev);
+      next.delete(segId);
+      return next;
+    });
+  }, []);
 
   const active = activeId ? nodes[activeId] : null;
   // The mixer/plan base node is always the current activeId (fixed for the
   // duration of a select-mode session — selecting nodes doesn't change activeId).
   const showPlan = !!idToken && canBePlanBase(active);
-  // PR needs at least two branches (distinct branchName values) to merge
-  // between — every rail node that carries one contributes, so this is a
-  // simple distinct-count rather than needing to filter by rail kind first.
-  const showPr = useMemo(() => {
-    if (!idToken) return false;
-    const branchNames = new Set(Object.values(nodes).map(n => n.branchName).filter((b): b is string => !!b));
-    return branchNames.size >= 2;
-  }, [idToken, nodes]);
+  // The PR entry point is always discoverable for an authed user (WS-E) — it
+  // no longer hides behind an eligibility check; instead the overlay itself
+  // renders a guided empty state when unavailable (see the mixer-overlay--pr
+  // block below).
+  const showPr = !!idToken;
+  // One entry per distinct branchName, with whether ANY node on it is a
+  // confirmed cloud push (pushed === true) or a KNOWN failed/pending one
+  // (pushed === false) — undefined (mock runs, or a push never attempted)
+  // reads as "not disqualifying" rather than "not ready", since a mock/demo
+  // project has no separate push step to wait on at all.
+  const prBranches = useMemo(() => {
+    const byBranch = new Map<string, ForkNode[]>();
+    Object.values(nodes).forEach(n => {
+      if (!n.branchName) return;
+      (byBranch.get(n.branchName) ?? byBranch.set(n.branchName, []).get(n.branchName)!).push(n);
+    });
+    return [...byBranch.entries()].map(([name, ns]) => ({
+      name,
+      pushed: ns.some(n => n.pushed === true),
+      needsPush: ns.some(n => n.pushed === false),
+      latest: ns.reduce((a, b) => (b.createdAt > a.createdAt ? b : a)),
+    }));
+  }, [nodes]);
+  const prEligible = prBranches.length >= 2 && prBranches.filter(b => !b.needsPush).length >= 2;
+  const prBranchNeedingPush = prBranches.find(b => b.needsPush) ?? null;
+  // Fork source for the guided empty state's "Create a branch" action — the
+  // active node if it already has a commit, else the most recent commit
+  // anywhere in the tree (there's no single "current" branch to default to
+  // from a bare overlay button).
+  const bestForkSource = useMemo(() => {
+    if (active?.commitSha) return active;
+    return Object.values(nodes).filter(n => n.commitSha).sort((a, b) => b.createdAt - a.createdAt)[0] ?? null;
+  }, [active, nodes]);
   // MERGE never spawns via the bottom composer (canSpawn(MERGE,'CODE') is true
   // per node-grammar.ts, but the merge commit is only ever produced
   // deterministically by mergeOpenPr — see PrPane's own Merge button).
   const showComposer = !!active && active.kind !== 'MERGE' && canSpawn(active.kind, 'CODE');
+  // Research nodes (QUERY/DEEPER/ASK/MIX — the only kinds canSpawn(kind,'CODE')
+  // excludes) have no sandbox to spawn, but still get the same docked bar in
+  // its Go-deeper/Ask shape (fix-composer.html variant c) instead of the old
+  // per-section-only "Go deeper" button being the sole entry point.
+  const showComposerResearch = !!active && !showComposer && LEARN_KINDS.has(active.kind)
+    && !active.loading && !active.error && active.sections.length > 0;
   // A from-scratch project's root is a BRANCH node the LLM answer streams
   // into (D3) — once it has sections (or is mid-stream), it renders like a
   // normal learn node instead of the empty-BRANCH AgentLogPane stub.
@@ -2619,8 +2684,6 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
             setProjectStartDismissed(true);
           }}
         />
-        <AccountButton creditBalance={creditBalance} onCreditUpdated={setCreditBalance} />
-        <TweaksPanel tweaks={tweaks} setTweak={setTweak} fontPairOptions={FONT_PAIR_OPTIONS} userEmail={authSession?.user?.email ?? ''} userName={authSession?.user?.name ?? ''} />
       </>
     );
   }
@@ -2630,7 +2693,6 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   return (
     <>
       {persistentBrand}
-      <AccountButton creditBalance={creditBalance} onCreditUpdated={setCreditBalance} />
     <div className="app" ref={appRef} data-map-open={mapOpen ? '1' : undefined}>
       <header className="topbar">
         <div className="crumbs">
@@ -2673,6 +2735,11 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
               {(annotations.length + highlightsList.length) > 0 && <span className="badge">{annotations.length + highlightsList.length}</span>}
             </button>
           )}
+          {/* WS-C: account access relocated here (compact avatar, inline popover)
+              from the floating bottom-left trigger — logout stays reachable
+              in-session. Dark theme is still product-disabled (ThemeScript /
+              useTweaks force 'light'), so no theme toggle is added here yet. */}
+          {idToken && <AccountButton inline creditBalance={creditBalance} onCreditUpdated={setCreditBalance} />}
         </div>
       </header>
 
@@ -2680,6 +2747,8 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         {Object.keys(nodes).length > 0 ? (
           <MindMap
             nodes={displayNodes}
+            segMeta={segMeta}
+            onCollapseSegment={onCollapseSegment}
             rootId={rootId}
             activeId={activeId}
             onSelect={onMapSelect}
@@ -2710,7 +2779,45 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         {/* ── PR overlay — separate two-step flow, own overlay shell ───── */}
         {selectMode === 'pr' && (
           <div className="mixer-overlay mixer-overlay--pr">
-            {!prSourceId ? (
+            {!prSourceId && !prEligible ? (
+              // (a) Unavailable — guided, not disabled: explains the
+              // requirement inline with the concrete next-step action(s).
+              <div className="pr-guide-panel">
+                <p className="pr-pane-guide-text">
+                  Open a pull request — {prBranches.length < 2 ? 'needs a second branch, both pushed.' : 'push your branches first.'}
+                </p>
+                <div className="pr-pane-guide-actions">
+                  {prBranchNeedingPush && (
+                    <button
+                      type="button"
+                      className="pr-guide-btn"
+                      onClick={() => {
+                        setActiveId(prBranchNeedingPush.latest.id);
+                        exitMixer();
+                        scrollWsTop();
+                        // Deferred: composerRef still points at whatever rendered for the
+                        // PREVIOUS activeId until this click's setActiveId commits — a bare
+                        // synchronous .focus() here could hit a stale/null ref.
+                        setTimeout(() => composerRef.current?.focus(), 0);
+                      }}
+                    >
+                      Push this branch
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="pr-guide-btn"
+                    disabled={!bestForkSource}
+                    onClick={e => {
+                      const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                      setPrGuideBranchRect({ left: r.left, top: r.top, width: r.width, height: r.height, bottom: r.bottom });
+                    }}
+                  >
+                    Create a branch
+                  </button>
+                </div>
+              </div>
+            ) : !prSourceId ? (
               <p className="mixer-hint"><GitMerge size={13} className="ic" /> Select the commit to merge (source)</p>
             ) : !prTargetId ? (
               <p className="mixer-hint"><GitMerge size={13} className="ic" /> Click any node on the target branch</p>
@@ -2723,12 +2830,20 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
                 <div className="pr-confirm-actions">
                   <button className="mm-mixer-btn" onClick={() => setPrTargetId(null)}>Back</button>
                   <button className="mixer-spawn-btn pr-confirm-btn" disabled={prSubmitting} onClick={() => void confirmPr()}>
-                    {prSubmitting ? <span className="spinner" style={{ width: 11, height: 11 }} /> : <><GitMerge size={13} /> Confirm</>}
+                    {prSubmitting ? <span className="spinner" style={{ width: 11, height: 11 }} /> : <><GitMerge size={13} /> Create pull request</>}
                   </button>
                 </div>
               </div>
             )}
           </div>
+        )}
+        {prGuideBranchRect && bestForkSource && (
+          <BranchPopup
+            rect={prGuideBranchRect}
+            fromSha={(bestForkSource.commitSha ?? '').slice(0, 7) || '—'}
+            onSubmit={name => { void forkBranch(bestForkSource.id, name); setPrGuideBranchRect(null); exitMixer(); }}
+            onClose={() => setPrGuideBranchRect(null)}
+          />
         )}
 
         {/* ── Mixer/Plan overlay — floats over the mind map ─────────────── */}
@@ -2801,7 +2916,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       />
 
       <section className="workspace" ref={wsRef}>
-        <div className={`workspace-inner${showComposer ? ' workspace-inner--composer' : ''}`} ref={wsInnerRef}>
+        <div className="workspace-inner" ref={wsInnerRef}>
           {active && (active.kind === 'CODE' || (active.kind === 'BRANCH' && !branchHasContent)) && sessionId && (
             <AgentLogPane
               node={active}
@@ -2810,11 +2925,10 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
               idToken={idToken}
               sessionId={sessionId}
               onImplement={() => composerRef.current?.focus()}
-              onAskAboutCommit={q => askAboutCommit(active.id, q)}
-              askLoading={askCommitLoading}
               onRunResolved={handleRunResolved}
               onRetryRun={onRetryRun}
               onForkBranch={forkBranch}
+              onOkrChange={handleOkrChange}
             />
           )}
           {active && active.kind === 'MERGE' && (
@@ -2905,7 +3019,19 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
                     Implement/Continue trigger) — canSpawn still gates it explicitly
                     so this stays correct if that ever changes. */}
                 {!active.loading && !active.error && canSpawn(active.kind, 'CODE') && (
-                  <button className="pill pill-code-cta" onClick={() => composerRef.current?.focus()}>
+                  <button
+                    className="pill pill-code-cta"
+                    onClick={() => {
+                      // A PLAN has a concrete implementation plan to act on — spawn the
+                      // CODE run directly instead of just focusing the composer (which
+                      // submitCodeNode already auto-selects/scrolls to, showing the
+                      // running state). BRANCH (and every other kind that reaches here)
+                      // still just focuses the composer — there's no single canonical
+                      // instruction to auto-run for those.
+                      if (active.kind === 'PLAN') void submitCodeNode('Implement this plan.', []);
+                      else composerRef.current?.focus();
+                    }}
+                  >
                     <Code size={12} className="ic" /> Implement
                   </button>
                 )}
@@ -2990,14 +3116,29 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
               ) : null}
             </>
           )}
+          {(showComposer || showComposerResearch) && active && (
+            <CodeComposer
+              ref={composerRef}
+              variant={showComposer ? 'code' : 'research'}
+              onBuild={(instruction, attachments) => void submitCodeNode(instruction, attachments)}
+              buildDisabled={codeSubmitLoading}
+              onAsk={q => askAboutCommit(active.id, q)}
+              askDisabled={showComposer ? !active.commitSha : false}
+              askLoading={askCommitLoading}
+              onDeeper={() => {
+                const last = active.sections[active.sections.length - 1];
+                if (last) void expandSectionAsChild(active.id, last);
+              }}
+              deeperDisabled={sectionLoading !== null}
+              deeperLoading={!!active.sections.length && sectionLoading === active.sections[active.sections.length - 1].id}
+              model={tweaks.branchModel}
+              onModelChange={v => setTweak('branchModel', v)}
+              webSearch={tweaks.webSearch}
+              onWebSearchChange={v => setTweak('webSearch', v)}
+              webSearchDisabled={showComposer}
+            />
+          )}
         </div>
-        {showComposer && (
-          <CodeComposer
-            ref={composerRef}
-            onSubmit={(instruction, attachments) => void submitCodeNode(instruction, attachments)}
-            disabled={codeSubmitLoading}
-          />
-        )}
       </section>
 
       {isNarrow && Object.keys(nodes).length > 0 && (
@@ -3058,14 +3199,6 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         onJump={id => { setActiveId(id); scrollWsTop(); setDrawerOpen(false); }}
         onRemoveHighlight={removeHighlight}
         onRemoveCallout={removeAnnotation}
-      />
-
-      <TweaksPanel
-        tweaks={tweaks}
-        setTweak={setTweak}
-        fontPairOptions={FONT_PAIR_OPTIONS}
-        userEmail={authSession?.user?.email ?? ''}
-        userName={authSession?.user?.name ?? ''}
       />
     </div>
     </>

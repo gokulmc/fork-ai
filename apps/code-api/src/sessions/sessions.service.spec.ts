@@ -759,6 +759,24 @@ describe('SessionsService', () => {
       expect(result[0].repoRef).toBeUndefined();
       expect(result[0].branchCount).toBeUndefined();
     });
+
+    it('surfaces lastRunStatus from the SessionMeta row (History Continue rail)', async () => {
+      mockDb.listSessionMeta.mockResolvedValue([{ ...sessionMeta, lastRunStatus: 'running' }]);
+      mockDb.queryHighlights.mockResolvedValue([]);
+
+      const result = await service.list(SUB);
+
+      expect(result[0].lastRunStatus).toBe('running');
+    });
+
+    it('leaves lastRunStatus undefined for a session that never had a CODE run', async () => {
+      mockDb.listSessionMeta.mockResolvedValue([sessionMeta]); // no lastRunStatus
+      mockDb.queryHighlights.mockResolvedValue([]);
+
+      const result = await service.list(SUB);
+
+      expect(result[0].lastRunStatus).toBeUndefined();
+    });
   });
 
   describe('getSession', () => {
@@ -777,6 +795,15 @@ describe('SessionsService', () => {
       expect(result.annotations).toHaveLength(1);
       expect(result.highlights).toHaveLength(1);
       expect(result.highlightCount).toBe(1);
+    });
+
+    it('surfaces lastRunStatus from the SessionMeta row', async () => {
+      mockDb.getSessionMeta.mockResolvedValue({ ...sessionMeta, lastRunStatus: 'done' });
+      mockDb.queryNodes.mockResolvedValue([]);
+      mockDb.queryAnnotations.mockResolvedValue([]);
+      mockDb.queryHighlights.mockResolvedValue([]);
+      const result = await service.getSession(SUB, SESSION_ID);
+      expect(result.lastRunStatus).toBe('done');
     });
 
     it('warns only when the loaded session crosses the multi-page size threshold', async () => {

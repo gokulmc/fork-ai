@@ -217,26 +217,17 @@ export function TweakColor({
 
 const PAD = 16;
 
-// Branch-model choices (Claude / Gemini / DeepSeek / GLM). Shared by the Model dropdown
-// and the status chip so the name stays in sync. `cost` is the actual average cost
-// multiplier relative to Claude Haiku (1×) — measured from real branch-call billing
-// history (ASK/DEEPER/MIX usage events), not a list-price estimate, since real prompts
-// per model don't carry the same token volume. Re-derive periodically as usage grows;
-// glm/glm-air were computed from very small samples (n=3 / n=7) and may shift.
-const MODEL_OPTIONS: { value: Tweaks['branchModel']; label: string; cost: string; note?: string }[] = [
+// Branch-model choices — Claude only (#213: Gemini/DeepSeek/GLM removed).
+// Shared by the Model dropdown and the status chip so the name stays in sync.
+// `cost` is the actual average cost multiplier relative to Claude Haiku (1×)
+// — measured from real branch-call billing history (ASK/DEEPER/MIX usage
+// events), not a list-price estimate, since real prompts per model don't
+// carry the same token volume.
+export const MODEL_OPTIONS: { value: Tweaks['branchModel']; label: string; cost: string; note?: string }[] = [
   { value: 'haiku', label: 'Claude Haiku', cost: '1×' },
   { value: 'sonnet', label: 'Claude Sonnet', cost: '5×' },
   { value: 'opus', label: 'Claude Opus', cost: '40×' },
-  { value: 'gemini-flash-lite', label: 'Gemini 2.5 Flash-Lite', cost: '0.04×' },
-  { value: 'gemini-flash', label: 'Gemini 2.5 Flash', cost: '0.2×' },
-  { value: 'gemini-pro', label: 'Gemini 2.5 Pro', cost: '1×' },
-  { value: 'deepseek-flash', label: 'DeepSeek V4 Flash', cost: '0.03×', note: '2x peak' },
-  { value: 'deepseek-pro', label: 'DeepSeek V4 Pro', cost: '0.3×', note: '2x peak' },
-  { value: 'glm-air', label: 'GLM 4.5 Air', cost: '0.07×' },
-  { value: 'glm', label: 'GLM 5.2', cost: '1×', note: 'slow' },
 ];
-const modelLabel = (v: string) => MODEL_OPTIONS.find(o => o.value === v)?.label ?? v;
-
 interface TweaksPanelProps {
   tweaks: Tweaks;
   setTweak: SetTweak;
@@ -316,27 +307,19 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, 
 
   return (
     <>
-      {/* Floating status chips + trigger (both hidden once the panel is open) */}
+      {/* Floating trigger (hidden once the panel is open) — the model/web-search
+          status chips that used to float above it moved into the composer's own
+          control row (see CodeComposer.tsx); this settings gear now only covers
+          theme/density/font/maxSections, so it no longer needs a status readout. */}
       {!open && (
-        <>
-          <div className="twk-status" aria-hidden="true">
-            <span className="twk-status-pill">
-              {tweaks.answerStyle === 'verbose' ? '📝 Verbose' : '📑 Sectioned'}
-            </span>
-            <span className="twk-status-pill">🤖 {modelLabel(tweaks.branchModel)}</span>
-            <span className={`twk-status-pill ${tweaks.branchModel.startsWith('deepseek') ? 'twk-status-off' : (tweaks.webSearch ? 'twk-status-on' : 'twk-status-off')}`}>
-              🔍 Web {tweaks.branchModel.startsWith('deepseek') ? 'n/a' : (tweaks.webSearch ? 'on' : 'off')}
-            </span>
-          </div>
-          <button
-            className="twk-trigger"
-            onClick={() => setOpen(true)}
-            title="Tweaks"
-            aria-label="Open tweaks panel"
-          >
-            ⚙
-          </button>
-        </>
+        <button
+          className="twk-trigger"
+          onClick={() => setOpen(true)}
+          title="Tweaks"
+          aria-label="Open tweaks panel"
+        >
+          ⚙
+        </button>
       )}
 
       {open && (
@@ -393,19 +376,14 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, 
               options={MODEL_OPTIONS.map(o => ({ value: o.value, label: `${o.label} · ${o.cost}${o.note ? ` · ${o.note}` : ''}` }))}
               onChange={v => setTweak('branchModel', v as Tweaks['branchModel'])}
             />
-            <p className="twk-note">Model for Go Deeper &amp; Ask AI (Claude, Gemini or DeepSeek). The ×N is the measured average cost relative to Claude Haiku (1×). DeepSeek prices are 2x during its peak hours (1-4am &amp; 6-10am UTC).</p>
+            <p className="twk-note">Model for Go Deeper &amp; Ask AI. The ×N is the measured average cost relative to Claude Haiku (1×).</p>
             <TweakRadio
               label="Web search"
               value={tweaks.webSearch ? 'on' : 'off'}
               options={[{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }]}
               onChange={v => setTweak('webSearch', v === 'on')}
-              disabled={tweaks.branchModel.startsWith('deepseek')}
             />
-            <p className="twk-note">
-              {tweaks.branchModel.startsWith('deepseek')
-                ? 'DeepSeek models don’t support web search.'
-                : 'Web search queries are costlier than normal LLM calls. Keep them off at most times.'}
-            </p>
+            <p className="twk-note">Web search queries are costlier than normal LLM calls. Keep them off at most times.</p>
             <TweakSection label="Coding agent" />
             <TweakRadio
               label="Environment"
@@ -696,7 +674,7 @@ function HowToContent() {
         <li style={li}><strong>Density</strong> — Cozy or Compact (affects spacing and font sizes)</li>
         <li style={li}><strong>Font pairing</strong> — change the heading and body typeface</li>
         <li style={li}><strong>Max sections</strong> — 4 to 8 sections per answer</li>
-        <li style={li}><strong>Model</strong> — Claude (Haiku/Sonnet/Opus), Gemini (2.5 Flash-Lite/Flash/Pro), DeepSeek (V4 Flash/Pro), or GLM (4.5 Air/5.2) for Go Deeper &amp; Ask AI. The ×N shows measured average cost vs Claude Haiku. DeepSeek is 2x during its peak hours (1-4am &amp; 6-10am UTC) and has no web search.</li>
+        <li style={li}><strong>Model</strong> — Claude Haiku, Sonnet, or Opus for Go Deeper &amp; Ask AI. The ×N shows measured average cost vs Claude Haiku.</li>
         <li style={li}><strong>Web search</strong> — On or Off (see above)</li>
       </ul>
 

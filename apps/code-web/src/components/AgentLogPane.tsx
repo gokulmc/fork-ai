@@ -1,11 +1,11 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import type { ForkNode } from '@/lib/types';
-import { getAgentRun, ApiError, type AgentEvent, type AgentRun, type Project } from '@/lib/api';
+import { getAgentRun, updateNode, ApiError, type AgentEvent, type AgentRun, type Project } from '@/lib/api';
 import { modelDisplayName } from '@/lib/utils';
 import { kindLabel } from '@/lib/kindLabels';
 import { BranchPopup } from './BranchPopup';
-import { Code, GitBranch, ArrowUpRight, Sparkles, AlertCircle } from './Icons';
+import { Code, GitBranch, ArrowUpRight, AlertCircle } from './Icons';
 
 interface AgentLogPaneProps {
   node: ForkNode; // kind CODE or BRANCH
@@ -13,20 +13,103 @@ interface AgentLogPaneProps {
   project: Project | null;
   idToken: string;
   sessionId: string;
-  onImplement: () => void; // "Implement" (BRANCH) / "Continue" (CODE, once its own run is done) — focuses the bottom composer
-  onAskAboutCommit: (question: string) => void; // CODE only
-  askLoading: boolean;
+  onImplement: () => void; // "Implement" (BRANCH) / "Continue" (CODE, once its own run is done, or to recover an expired workspace) — focuses the bottom composer
   onRunResolved?: (nodeId: string, run: AgentRun) => void; // mid-run poll (see effect below) reached 'done'/'error'
   onRetryRun?: (nodeId: string) => void; // CODE only — re-run a failed agent run in place
-  onForkBranch?: (fromNodeId: string, branchName: string) => void; // opens BranchPopup off the commit pill
+  onForkBranch?: (fromNodeId: string, title: string) => void; // opens BranchPopup off the commit pill
+  onOkrChange?: (nodeId: string, okr: NonNullable<ForkNode['okr']>) => void; // BRANCH only — OKR editor save (#220)
+}
+
+// Progressive Objective → Key Results editor for the BRANCH pane's dead space
+// (#220). `key={node.id}` at the call site remounts this on every branch
+// switch so local draft state never leaks between nodes. Saves are
+// optimistic (onOkrChange fires immediately, matching App.tsx's
+// persistHighlight pattern) — a failed PATCH shows an inline error but
+// doesn't roll back the optimistic UI, since the OKR is low-stakes and the
+// user can just retry by editing again.
+function OkrEditor({ node, idToken, sessionId, onOkrChange }: {
+  node: ForkNode;
+  idToken: string;
+  sessionId: string;
+  onOkrChange?: (nodeId: string, okr: NonNullable<ForkNode['okr']>) => void;
+}) {
+  const [editing, setEditing] = useState(!!node.okr);
+  const [objective, setObjective] = useState(node.okr?.objective ?? '');
+  const [keyResults, setKeyResults] = useState<string[]>(node.okr?.keyResults ?? []);
+  const [error, setError] = useState<string | null>(null);
+  const lastSavedObjective = useRef(node.okr?.objective ?? '');
+
+  function save(nextObjective: string, nextKeyResults: string[]) {
+    const trimmed = nextObjective.trim();
+    if (!trimmed) return; // objective required — nothing to persist yet
+    const okr = { objective: trimmed, keyResults: nextKeyResults.map(k => k.trim()).filter(Boolean) };
+    lastSavedObjective.current = trimmed;
+    onOkrChange?.(node.id, okr); // optimistic — map card updates immediately
+    setError(null);
+    updateNode(idToken, sessionId, node.id, { okr }).catch(() => setError('Could not save — try again'));
+  }
+
+  if (!editing) {
+    return (
+      <div className="okr-editor okr-editor--empty">
+        <span className="okr-empty-text">🎯 No objective set for this branch yet.</span>
+        <button type="button" className="okr-empty-btn" onClick={() => setEditing(true)}>+ Set objective</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="okr-editor">
+      <div className="okr-editor-label">🎯 Branch objective</div>
+      <label className="okr-field-label" htmlFor={`okr-objective-${node.id}`}>Objective</label>
+      <textarea
+        id={`okr-objective-${node.id}`}
+        className="okr-objective-input"
+        rows={2}
+        value={objective}
+        placeholder="What is this branch trying to achieve?"
+        onChange={e => setObjective(e.target.value)}
+        onBlur={() => { if (objective.trim() !== lastSavedObjective.current) save(objective, keyResults); }}
+      />
+      {!objective.trim() && <p className="okr-validation">Objective is required to save.</p>}
+      {error && <p className="okr-validation okr-validation--error">{error}</p>}
+
+      <div className="okr-kr-section">
+        <label className="okr-field-label">Key results</label>
+        {keyResults.map((kr, i) => (
+          <div className="okr-kr-row" key={i}>
+            <span className="okr-kr-bullet">{i + 1}</span>
+            <input
+              className="okr-kr-input"
+              type="text"
+              value={kr}
+              onChange={e => setKeyResults(prev => prev.map((v, j) => (j === i ? e.target.value : v)))}
+              onBlur={() => save(objective, keyResults)}
+            />
+            <button
+              type="button"
+              className="okr-kr-delete"
+              aria-label="Remove key result"
+              onClick={() => {
+                const next = keyResults.filter((_, j) => j !== i);
+                setKeyResults(next);
+                save(objective, next);
+              }}
+            >×</button>
+          </div>
+        ))}
+        <button type="button" className="okr-kr-add" onClick={() => setKeyResults(prev => [...prev, ''])}>
+          ＋ Add key result
+        </button>
+      </div>
+    </div>
+  );
 }
 
 interface PillRect { left: number; top: number; width: number; height: number; bottom: number; }
 
-// Sub-cent runs must never print as "$0.00" (reads as free/broken); zero or
-// unset costs are omitted entirely rather than showing a misleading "$0.00".
-function formatRunCost(usd: number | undefined): string | null {
-  if (!usd) return null;
+// Sub-cent amounts must never print as "$0.00" (reads as free/broken).
+function formatUsd(usd: number): string {
   if (usd < 0.01) return '< $0.01';
   return `$${usd.toFixed(2)}`;
 }
@@ -101,54 +184,48 @@ function humanizeToolCall(payload: unknown): { human: string; raw: string } | nu
   return null;
 }
 
-function LogLine({ event }: { event: AgentEvent }) {
+// One-line step row (dot + bold verb + muted detail), replacing the old
+// two-line tool_call/tool_result pair — see fix-agent-timeline.html.
+function TimelineStep({ event }: { event: AgentEvent }) {
   if (event.kind === 'truncated') {
     const p = event.payload as Record<string, unknown> | undefined;
     const msg = p && typeof p === 'object' && 'message' in p ? String(p.message) : 'earlier output omitted';
     return <div className="log-line log-line--truncated">··· {msg} ···</div>;
   }
-  if (event.kind === 'tool_call') {
-    const parsed = humanizeToolCall(event.payload);
-    if (parsed) {
-      return (
-        <div className="log-line log-line--tool_call">
-          <div>→ {parsed.human}</div>
+  const parsed = humanizeToolCall(event.payload);
+  if (parsed) {
+    return (
+      <div className="timeline-step">
+        <span className="timeline-step-dot" />
+        <div className="timeline-step-body">
+          <span className="timeline-step-verb">{parsed.human}</span>
           <details className="log-line-raw">
             <summary>raw</summary>
             <pre>{parsed.raw}</pre>
           </details>
         </div>
-      );
-    }
-    return <div className="log-line log-line--tool_call">→ {payloadText(event.payload)}</div>;
+      </div>
+    );
   }
-  // file_edit/terminal events carry serialized args JSON as their payload
-  // (full file bodies inline) — humanize those the same way as tool_call so
-  // the log reads as actions, not escaped JSON.
-  if ((event.kind === 'file_edit' || event.kind === 'terminal' || event.kind === 'text') && typeof event.payload === 'string' && event.payload.trimStart().startsWith('{')) {
-    const parsed = humanizeToolCall(event.payload);
-    if (parsed) {
-      return (
-        <div className="log-line log-line--tool_call">
-          <div>→ {parsed.human}</div>
-          <details className="log-line-raw">
-            <summary>raw</summary>
-            <pre>{parsed.raw}</pre>
-          </details>
-        </div>
-      );
-    }
-  }
-  return <div className={`log-line log-line--${event.kind}`}>{payloadText(event.payload)}</div>;
+  const isTerminal = event.kind === 'terminal' && typeof event.payload === 'string';
+  return (
+    <div className="timeline-step">
+      <span className="timeline-step-dot" />
+      <div className="timeline-step-body">
+        {isTerminal ? <div className="log-line log-line--terminal">{event.payload as string}</div> : payloadText(event.payload)}
+      </div>
+    </div>
+  );
 }
 
-export function AgentLogPane({ node, events, project, idToken, sessionId, onImplement, onAskAboutCommit, askLoading, onRunResolved, onRetryRun, onForkBranch }: AgentLogPaneProps) {
+export function AgentLogPane({ node, events, project, idToken, sessionId, onImplement, onRunResolved, onRetryRun, onForkBranch, onOkrChange }: AgentLogPaneProps) {
   const logRef = useRef<HTMLDivElement>(null);
   const [fetchedEvents, setFetchedEvents] = useState<AgentEvent[] | null>(null);
   const [fetchLoading, setFetchLoading] = useState(false);
   const [fetchError, setFetchError] = useState(false);
-  const [askQ, setAskQ] = useState('');
   const [branchPopupRect, setBranchPopupRect] = useState<PillRect | null>(null);
+  const [logExpanded, setLogExpanded] = useState(false);
+  const [costOpen, setCostOpen] = useState(false);
 
   const hasLiveLog = !!events?.length;
   const log = hasLiveLog ? events! : (fetchedEvents ?? []);
@@ -156,11 +233,27 @@ export function AgentLogPane({ node, events, project, idToken, sessionId, onImpl
   // the page reads as real provenance, not a failed/empty run, for those.
   const hasRun = node.agentStatus === 'running' || node.agentStatus === 'done' || node.agentStatus === 'error';
 
-  // If nothing streamed into this session (e.g. a page reload landed on an
-  // already-finished CODE node), fetch the persisted AgentRun once.
+  // Heartbeat/boot-phase events (seq<0, descending) are a live SSE-only signal —
+  // never persisted (see nodes.service.ts) — so they only ever appear in the
+  // live `events` prop, never in a fetched/polled log. Real steps (seq>=0)
+  // render as the timeline; the latest heartbeat (if any) replaces in place as
+  // one status line instead of appending a growing pile of "Working…" rows.
+  const steps = log.filter(e => e.seq >= 0);
+  const latestHeartbeat = [...log].reverse().find(e => e.seq < 0);
+
+  // A run that failed before producing a single real step never got past
+  // provisioning/boot — there's no log or diff to show, so the status line
+  // itself carries the reason (see fix-failure-states.html's boot-failure case).
+  const isBootFailure = node.agentStatus === 'error' && steps.length === 0;
+
+  // Reset transcript-fetch state AND the disclosure's expanded/collapsed state
+  // when the active node changes — AgentLogPane isn't remounted on node switch
+  // (same JSX slot in App.tsx), so local state must be reset explicitly.
   useEffect(() => {
     setFetchedEvents(null);
     setFetchError(false);
+    setLogExpanded(false);
+    setCostOpen(false);
     if (node.kind !== 'CODE' || hasLiveLog) return;
     if (node.agentStatus !== 'done' && node.agentStatus !== 'error') return;
     let cancelled = false;
@@ -215,7 +308,8 @@ export function AgentLogPane({ node, events, project, idToken, sessionId, onImpl
           <span className="pill pill-kind pill-kind--branch"><GitBranch size={12} className="ic" /> {kindLabel('BRANCH')}</span>
           {node.branchName && <span className="commit-pill">⎇ {node.branchName}{shortSha ? ` · ${shortSha}` : ''}</span>}
         </div>
-        <p className="ws-instruction">Forked from <code>{shortSha ?? '—'}</code></p>
+        <p className="ws-instruction-card">Forked from <code>{shortSha ?? '—'}</code></p>
+        <OkrEditor key={node.id} node={node} idToken={idToken} sessionId={sessionId} onOkrChange={onOkrChange} />
         <button className="proj-btn-primary" onClick={onImplement}>
           <Code size={13} /> Implement
         </button>
@@ -223,8 +317,20 @@ export function AgentLogPane({ node, events, project, idToken, sessionId, onImpl
     );
   }
 
-  const costLabel = formatRunCost(node.runCostUsd);
   const canForkFromPill = !!onForkBranch && !!node.commitSha;
+  const workspaceActive = node.workspace?.kind === 'cloud' && !!node.workspaceExpiresAt && Date.now() < new Date(node.workspaceExpiresAt).getTime();
+  const workspaceExpired = node.workspace?.kind === 'cloud' && !workspaceActive;
+  const hasCost = hasRun && !!node.runCostUsd;
+  const totalKnown = node.machineCostUsd != null;
+  // A workspace that has already expired (the sweep that bills machineCostUsd
+  // fires ~20min after it goes cold — see types.ts) but still shows no
+  // machineCostUsd is a genuine gap, not "still accruing": the sweep either
+  // hasn't run yet for an unrelated reason or lost the bill. Don't blind-
+  // assert machineCostUsd! for it — show the total as AI-only, no provisional
+  // "+", and suppress the accruing note (#211).
+  const machineCostLost = workspaceExpired && !totalKnown;
+  const totalCost = (node.runCostUsd ?? 0) + (node.machineCostUsd ?? 0);
+  const diffFilesCount = node.diffSummary?.filesChanged;
 
   return (
     <div className="agent-pane">
@@ -251,15 +357,18 @@ export function AgentLogPane({ node, events, project, idToken, sessionId, onImpl
         )}
         {node.model && <span className="pill">✳ {modelDisplayName(node.model)}</span>}
         {hasRun ? (
-          <span className="agent-status">
+          <span className={`agent-status${node.agentStatus === 'error' ? ' agent-status--error' : ''}`}>
             <span className={`status-dot status-dot--${node.agentStatus}`} />
-            {node.agentStatus}
+            {isBootFailure ? 'Sandbox failed to start' : node.agentStatus}
           </span>
         ) : (
           // No agent run happened here — imported history and a merge commit
           // are real provenance, not a failed/missing run, so the status slot
           // gets an honest neutral chip instead of a misleading green dot.
           <span className="mock-tag">{node.imported ? 'imported' : 'merge'}</span>
+        )}
+        {isBootFailure && onRetryRun && (
+          <button className="timeline-retry-btn" onClick={() => onRetryRun(node.id)}>↻ Retry</button>
         )}
         {node.agentStatus !== 'running' && (
           <button className="pill pill-code-cta" onClick={onImplement}>
@@ -276,20 +385,37 @@ export function AgentLogPane({ node, events, project, idToken, sessionId, onImpl
         />
       )}
 
-      {/* Selectable so a highlight over the instruction or the agent log can
-          spawn an Ask AI branch (Phase G) — the diff summary and footer below
-          stay outside, matching the rest of the workspace's select-body-only rule.
-          Split into two wrappers (both tagged sectionId="agentlog") so the diff
-          summary — the review artifact — can render between the instruction and
-          the log, which is comparatively supporting detail. */}
+      {/* Selectable so a highlight over the instruction or the diff summary can
+          spawn an Ask AI branch (Phase G) — both tagged sectionId="agentlog".
+          The tool-call transcript itself is transient run detail, not
+          highlightable source text, so it stays outside this wrapper. */}
       <div data-section-id="agentlog" className="agent-log-selectable">
-        <p className="ws-instruction">{node.query || node.commitMessage || '—'}</p>
+        <p className="ws-instruction-card">{node.query || node.commitMessage || '—'}</p>
       </div>
 
+      {/* Once a run is done, the transcript collapses behind a disclosure and
+          the diff summary is promoted to the visual "hero" — the point of a
+          finished run is the result, not the blow-by-blow. Still-running or
+          still-erroring nodes keep the transcript expanded (it IS the point,
+          there). */}
+      {node.agentStatus === 'done' && steps.length > 0 && (
+        <button
+          type="button"
+          className="timeline-disclosure"
+          aria-expanded={logExpanded}
+          onClick={() => setLogExpanded(o => !o)}
+        >
+          <span className="timeline-disclosure-caret">{logExpanded ? '▾' : '▸'}</span> Activity
+          <span className="timeline-disclosure-count">
+            ({steps.length} step{steps.length === 1 ? '' : 's'}{diffFilesCount ? ` · ${diffFilesCount} file${diffFilesCount === 1 ? '' : 's'}` : ''})
+          </span>
+        </button>
+      )}
+
       {node.diffSummary ? (
-        <>
+        <div data-section-id="agentlog" className="agent-log-selectable">
           <div className="ws-block-label">Diff summary</div>
-          <div className="diff-summary">
+          <div className={`diff-summary${node.agentStatus === 'done' ? ' diff-summary--hero' : ''}`}>
             <div className="diff-summary-head">
               {node.diffSummary.filesChanged} file{node.diffSummary.filesChanged === 1 ? '' : 's'} changed,{' '}
               <span className="diff-add-text">+{node.diffSummary.additions}</span>{' '}
@@ -308,7 +434,7 @@ export function AgentLogPane({ node, events, project, idToken, sessionId, onImpl
               ))}
             </ul>
           </div>
-        </>
+        </div>
       ) : !hasRun ? (
         <>
           <div className="ws-block-label">{node.imported ? 'Imported from GitHub' : 'Merge commit'}</div>
@@ -316,35 +442,42 @@ export function AgentLogPane({ node, events, project, idToken, sessionId, onImpl
         </>
       ) : null}
 
-      {/* No-run nodes (imported/merge) never had a log — an empty "Agent log"
-          panel here was the empty-page complaint this pass fixes. */}
-      {hasRun && (
-        <div data-section-id="agentlog" className="agent-log-selectable">
-          <div className="ws-block-label">Agent log</div>
-          <div className="term-panel" ref={logRef}>
-            {log.length === 0 && fetchLoading && <div className="log-line log-line--text agent-log-shimmer">Loading run…</div>}
-            {log.length === 0 && !fetchLoading && node.agentStatus === 'running' && (
-              <div className="log-line log-line--text agent-log-shimmer">Starting…</div>
-            )}
-            {log.length === 0 && !fetchLoading && node.agentStatus !== 'running' && fetchError && (
-              <div className="log-line log-line--text agent-log-error-note">Couldn&rsquo;t load this run.</div>
-            )}
-            {log.map(e => <LogLine key={e.seq} event={e} />)}
-          </div>
-        </div>
+      {/* No-run nodes (imported/merge) never had a log; a boot failure has none
+          to show either. A finished run hides its transcript behind the
+          disclosure above unless the user expands it. */}
+      {hasRun && !isBootFailure && (node.agentStatus !== 'done' || logExpanded) && (
+        <div className="ws-block-label">Agent log</div>
       )}
-
-      {/* Outside the selectable wrapper — an interactive control, not source text
-          to branch from, matching the diff summary/footer convention above. */}
-      {node.agentStatus === 'error' && (
-        <div className="ws-error">
-          <AlertCircle size={16} className="ic" />
-          <span>{node.error || 'The agent run failed.'}</span>
-          {onRetryRun && (
-            <button className="ws-error-btn" onClick={() => onRetryRun(node.id)}>Retry</button>
+      {hasRun && !isBootFailure && (node.agentStatus !== 'done' || logExpanded) && (
+        <div className="term-panel" ref={logRef}>
+          {steps.length === 0 && fetchLoading && <div className="log-line log-line--text agent-log-shimmer">Loading run…</div>}
+          {steps.length === 0 && !fetchLoading && node.agentStatus === 'running' && !latestHeartbeat && (
+            <div className="log-line log-line--text agent-log-shimmer">Starting…</div>
+          )}
+          {steps.length === 0 && !fetchLoading && node.agentStatus !== 'running' && fetchError && (
+            <div className="log-line log-line--text agent-log-error-note">Couldn&rsquo;t load this run.</div>
+          )}
+          {steps.map(e => <TimelineStep key={e.seq} event={e} />)}
+          {node.agentStatus === 'running' && latestHeartbeat && (
+            <div className="timeline-working" aria-live="polite">
+              <span className="timeline-working-dot" />{payloadText(latestHeartbeat.payload)}
+            </div>
+          )}
+          {node.agentStatus === 'error' && (
+            <div className="timeline-step timeline-step--error">
+              <span className="timeline-step-dot timeline-step-dot--error" />
+              <div className="timeline-step-body">
+                <span className="timeline-step-verb">Run failed</span>
+                <div className="timeline-step-error-panel">
+                  <span className="timeline-step-error-reason">{node.error || 'The agent run failed.'}</span>
+                  {onRetryRun && <button className="timeline-retry-btn" onClick={() => onRetryRun(node.id)}>↻ Retry</button>}
+                </div>
+              </div>
+            </div>
           )}
         </div>
       )}
+
       {node.budgetExceeded && (
         <div className="ws-error ws-error--muted">
           <AlertCircle size={16} className="ic" />
@@ -361,53 +494,45 @@ export function AgentLogPane({ node, events, project, idToken, sessionId, onImpl
             {/* Only mock/synthesized repos get the "mock" tag — a real 'github'
                 repo's commitSha/url are genuine, so the link should read as real. */}
             {project.repoRef.provider !== 'github' && <span className="mock-tag">mock</span>}
-            {node.pushed === true && <span className="ws-pushed ws-pushed--yes">Pushed ✓</span>}
+            {node.pushed === true && <span className="state-chip state-chip--pushed"><span className="status-dot" />Pushed ✓</span>}
             {node.pushed === false && (
-              <span className="ws-pushed ws-pushed--no" title={node.pushError}>commit only in sandbox</span>
+              <span className="state-chip state-chip--sandbox-only" title={node.pushError}><span className="status-dot" />commit only in sandbox</span>
             )}
           </>
         )}
-        {hasRun && costLabel && <span className="ws-footer-note">compute ≈ {costLabel}</span>}
         {/* Evaluated at render, not on a re-render tick — a link that's just
             past its expiry when clicked simply 404s on the sandbox (harmless,
             already-torn-down machine), so staleness between renders is fine. */}
-        {node.workspace?.kind === 'cloud' && (
-          node.workspaceExpiresAt && Date.now() < new Date(node.workspaceExpiresAt).getTime() ? (
-            <a className="gh-btn" href={node.workspace.vscodeUrl} target="_blank" rel="noopener noreferrer">
-              Open workspace <ArrowUpRight size={12} />
-            </a>
-          ) : (
-            <span className="mock-tag">workspace expired</span>
-          )
+        {workspaceActive && node.workspace?.kind === 'cloud' && (
+          <a className="state-chip state-chip--ws-active" href={node.workspace.vscodeUrl} target="_blank" rel="noopener noreferrer">
+            <span className="status-dot" />Workspace active
+          </a>
         )}
+        {workspaceExpired && <span className="state-chip state-chip--ws-expired">🕐 Workspace expired</span>}
         {/* Electron wiring (openInEditor) is Phase B — for now the local path
             is informational only. */}
         {node.workspace?.kind === 'local' && <span className="ws-footer-note">{node.workspace.path}</span>}
-      </div>
 
-      {node.agentStatus !== 'running' && (
-        <div className="agent-ask-row">
-          <input
-            className="agent-ask-input"
-            type="text"
-            placeholder="Ask about this commit…"
-            value={askQ}
-            onChange={e => setAskQ(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter' && askQ.trim() && !askLoading) {
-                onAskAboutCommit(askQ.trim());
-                setAskQ('');
-              }
-            }}
-          />
-          <button
-            className="agent-ask-btn"
-            disabled={!askQ.trim() || askLoading}
-            onClick={() => { onAskAboutCommit(askQ.trim()); setAskQ(''); }}
-          >
-            {askLoading ? <span className="spinner" style={{ width: 11, height: 11 }} /> : <Sparkles size={13} />}
-          </button>
-        </div>
+        {hasCost && (
+          <div className="cost-total-wrap">
+            <div className={`cost-total-group${costOpen ? ' cost-total-group--open' : ''}`}>
+              <button type="button" className="cost-total" aria-expanded={costOpen} onClick={() => setCostOpen(o => !o)}>
+                ≈ {totalKnown || machineCostLost ? formatUsd(totalCost) : `${formatUsd(node.runCostUsd!)}+`}
+              </button>
+              <div className="cost-popover" role="tooltip">
+                <div className="cost-popover-row"><span>AI{node.model ? ` (${modelDisplayName(node.model)})` : ''}</span><span>{formatUsd(node.runCostUsd!)}</span></div>
+                <div className="cost-popover-row"><span>Compute</span><span>{totalKnown ? formatUsd(node.machineCostUsd!) : machineCostLost ? 'n/a' : 'accruing…'}</span></div>
+              </div>
+            </div>
+            {!totalKnown && !machineCostLost && <span className="cost-note">compute still accruing</span>}
+          </div>
+        )}
+      </div>
+      {workspaceExpired && (
+        <p className="ws-footer-note ws-footer-note--wide">
+          Continuing starts a fresh sandbox from this commit — nothing you&rsquo;ve built is lost.{' '}
+          <button type="button" className="ws-footer-note-action" onClick={onImplement}>Continue →</button>
+        </p>
       )}
     </div>
   );
