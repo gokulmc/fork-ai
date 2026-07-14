@@ -184,6 +184,43 @@ export class GithubAppService {
     return true;
   }
 
+  // Eagerly creates the real GitHub ref for a forked branch (#216) — so a
+  // fork/branch node exists as a real remote branch as soon as it's created,
+  // rather than only appearing on GitHub the first time a CODE run pushes to
+  // it. Mirrors createPullRequest's never-throw, typed-outcome convention:
+  // 'created'/'exists' both mean the ref is there; 'skipped' covers every
+  // reason it isn't (unconfigured App, no installation, parent sha not on the
+  // remote yet, or any other failure) — the caller degrades to an
+  // internal-only branch node exactly as before this landed.
+  async createBranchRef(
+    sub: string,
+    owner: string,
+    repo: string,
+    branch: string,
+    sha: string,
+  ): Promise<'created' | 'exists' | 'skipped'> {
+    const token = await this.mintInstallationToken(sub, owner, repo);
+    if (!token) return 'skipped';
+
+    const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/git/refs`, {
+      method: 'POST',
+      headers: { ...this.installationHeaders(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ref: `refs/heads/${branch}`, sha }),
+    });
+    if (res.ok) return 'created';
+
+    const body = (await res.json().catch(() => ({}))) as { message?: string };
+    if (res.status === 422 && /reference already exists/i.test(body.message ?? '')) {
+      return 'exists';
+    }
+    if (res.status === 422 && /object does not exist/i.test(body.message ?? '')) {
+      this.logger.warn(`createBranchRef: base sha ${sha.slice(0, 7)} not found on remote for ${owner}/${repo}@${branch} — skipping`);
+      return 'skipped';
+    }
+    this.logger.warn(`createBranchRef failed for ${owner}/${repo}@${branch}: ${res.status} ${JSON.stringify(body)}`);
+    return 'skipped';
+  }
+
   private appHeaders(): Record<string, string> {
     return {
       Authorization: `Bearer ${this.appJwt()}`,

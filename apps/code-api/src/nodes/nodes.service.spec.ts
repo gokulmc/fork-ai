@@ -55,6 +55,7 @@ const mockGithubApp = {
   mintInstallationToken: jest.fn(),
   createPullRequest: jest.fn(),
   mergePullRequest: jest.fn(),
+  createBranchRef: jest.fn(),
 };
 
 const agentRunner = {
@@ -328,6 +329,25 @@ describe('NodesService', () => {
       mockSessions.getSession.mockResolvedValue(fullSession);
       mockDb.getNode.mockResolvedValue(null);
       await expect(service.updateNode(SUB, SESSION_ID, 'n1', { title: 'x' })).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('sets okr when provided (#220)', async () => {
+      mockSessions.getSession.mockResolvedValue(fullSession);
+      mockDb.getNode.mockResolvedValue({ nodeId: 'n1', title: 'Old' });
+      mockDb.updateNode.mockResolvedValue(undefined);
+      const okr = { objective: 'Ship the retry logic', keyResults: ['p99 < 200ms'] };
+      await service.updateNode(SUB, SESSION_ID, 'n1', { okr });
+      expect(mockDb.updateNode).toHaveBeenCalledWith(SESSION_ID, 'n1', { okr });
+    });
+
+    it('leaves okr unchanged when the field is simply omitted from the DTO', async () => {
+      mockSessions.getSession.mockResolvedValue(fullSession);
+      mockDb.getNode.mockResolvedValue({ nodeId: 'n1', title: 'Old', okr: { objective: 'Existing', keyResults: [] } });
+      mockDb.updateNode.mockResolvedValue(undefined);
+      await service.updateNode(SUB, SESSION_ID, 'n1', { title: 'New title' });
+      expect(mockDb.updateNode).toHaveBeenCalledWith(SESSION_ID, 'n1', { title: 'New title' });
+      const updates = mockDb.updateNode.mock.calls[0][2] as Record<string, unknown>;
+      expect('okr' in updates).toBe(false);
     });
   });
 
@@ -644,23 +664,38 @@ describe('NodesService', () => {
 
   describe('createBranchNode', () => {
     const codeParent = { ...parentNode, kind: 'CODE', commitSha: 'abcdef1234567890' };
-    const dto = { parentNodeId: PARENT_NODE_ID, branchName: 'feature/retry-logic' };
+    const dto = { parentNodeId: PARENT_NODE_ID, title: 'Retry logic' };
 
     beforeEach(() => {
       mockDb.putNode.mockResolvedValue(undefined);
       mockDb.incrementProjectBranchCount.mockResolvedValue(undefined);
+      mockDb.getProject.mockResolvedValue(null);
       mockSessions.touchUpdatedAt.mockResolvedValue(undefined);
       mockSessions.incrementNodeCount.mockResolvedValue(undefined);
     });
 
-    it('creates a BRANCH node forking from the parent CODE node commit', async () => {
+    it('creates a BRANCH node forking from the parent CODE node commit, slugifying the title (#219)', async () => {
       mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [codeParent] });
       const result = await service.createBranchNode(SUB, SESSION_ID, dto);
       expect(result.kind).toBe('BRANCH');
-      expect(result.branchName).toBe('feature/retry-logic');
+      expect(result.title).toBe('Retry logic');
+      expect(result.branchName).toBe('fork/retry-logic');
       expect(result.commitSha).toBe('abcdef1234567890');
       expect(result.parentId).toBe(PARENT_NODE_ID);
       expect(result.query).toBe('Fork from abcdef1');
+    });
+
+    it('dedupes a duplicate title into a -2 slug instead of rejecting it (#219)', async () => {
+      mockSessions.getSession.mockResolvedValue({
+        ...fullSession,
+        nodes: [
+          codeParent,
+          { nodeId: '01HZEXIST', parentId: PARENT_NODE_ID, kind: 'BRANCH', branchName: 'fork/retry-logic', title: 'Retry logic', query: 'x', sections: [] },
+        ],
+      });
+      const result = await service.createBranchNode(SUB, SESSION_ID, dto);
+      expect(result.branchName).toBe('fork/retry-logic-2');
+      expect(result.title).toBe('Retry logic');
     });
 
     it('bumps the project branchCount by 1 when the session belongs to a Project', async () => {
@@ -685,20 +720,84 @@ describe('NodesService', () => {
       await expect(service.createBranchNode(SUB, SESSION_ID, dto)).rejects.toBeInstanceOf(BadRequestException);
     });
 
-    it('rejects a duplicate branch name within the session', async () => {
-      mockSessions.getSession.mockResolvedValue({
-        ...fullSession,
-        nodes: [
-          codeParent,
-          { nodeId: '01HZEXIST', parentId: PARENT_NODE_ID, kind: 'BRANCH', branchName: 'feature/retry-logic', title: 'x', query: 'x' },
-        ],
-      });
-      await expect(service.createBranchNode(SUB, SESSION_ID, dto)).rejects.toBeInstanceOf(BadRequestException);
-    });
-
     it('throws NotFoundException when parent node does not exist', async () => {
       mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [] });
       await expect(service.createBranchNode(SUB, SESSION_ID, dto)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    describe('eager branch push (#216)', () => {
+      const githubProject = { projectId: 'proj-1', repoRef: { provider: 'github', owner: 'acme', repo: 'widgets', defaultBranch: 'main', url: 'https://github.com/acme/widgets' }, plugins: [] };
+      const pushedCodeParent = { ...codeParent, pushed: true };
+
+      it('creates the real ref and marks the branch node pushed:true when createBranchRef reports "created"', async () => {
+        mockSessions.getSession.mockResolvedValue({ ...fullSession, projectId: 'proj-1', nodes: [pushedCodeParent] });
+        mockDb.getProject.mockResolvedValue(githubProject);
+        mockGithubApp.createBranchRef.mockResolvedValue('created');
+
+        const result = await service.createBranchNode(SUB, SESSION_ID, dto);
+
+        expect(mockGithubApp.createBranchRef).toHaveBeenCalledWith(SUB, 'acme', 'widgets', 'fork/retry-logic', 'abcdef1234567890');
+        expect(result.pushed).toBe(true);
+      });
+
+      it('marks pushed:true when createBranchRef reports "exists"', async () => {
+        mockSessions.getSession.mockResolvedValue({ ...fullSession, projectId: 'proj-1', nodes: [pushedCodeParent] });
+        mockDb.getProject.mockResolvedValue(githubProject);
+        mockGithubApp.createBranchRef.mockResolvedValue('exists');
+
+        const result = await service.createBranchNode(SUB, SESSION_ID, dto);
+
+        expect(result.pushed).toBe(true);
+      });
+
+      it('leaves pushed unset when createBranchRef reports "skipped"', async () => {
+        mockSessions.getSession.mockResolvedValue({ ...fullSession, projectId: 'proj-1', nodes: [pushedCodeParent] });
+        mockDb.getProject.mockResolvedValue(githubProject);
+        mockGithubApp.createBranchRef.mockResolvedValue('skipped');
+
+        const result = await service.createBranchNode(SUB, SESSION_ID, dto);
+
+        expect(result.pushed).toBeUndefined();
+      });
+
+      it('never attempts a ref for a github-mock repo', async () => {
+        mockSessions.getSession.mockResolvedValue({ ...fullSession, projectId: 'proj-1', nodes: [pushedCodeParent] });
+        mockDb.getProject.mockResolvedValue({ ...githubProject, repoRef: { ...githubProject.repoRef, provider: 'github-mock' } });
+
+        const result = await service.createBranchNode(SUB, SESSION_ID, dto);
+
+        expect(mockGithubApp.createBranchRef).not.toHaveBeenCalled();
+        expect(result.pushed).toBeUndefined();
+      });
+
+      it('never attempts a ref when the parent commit was not itself pushed', async () => {
+        mockSessions.getSession.mockResolvedValue({ ...fullSession, projectId: 'proj-1', nodes: [codeParent] }); // no pushed:true
+        mockDb.getProject.mockResolvedValue(githubProject);
+
+        const result = await service.createBranchNode(SUB, SESSION_ID, dto);
+
+        expect(mockGithubApp.createBranchRef).not.toHaveBeenCalled();
+        expect(result.pushed).toBeUndefined();
+      });
+
+      it('never attempts a ref for a bare (non-project) session', async () => {
+        mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [pushedCodeParent] });
+
+        const result = await service.createBranchNode(SUB, SESSION_ID, dto);
+
+        expect(mockGithubApp.createBranchRef).not.toHaveBeenCalled();
+        expect(result.pushed).toBeUndefined();
+      });
+
+      it('never throws — a createBranchRef failure just leaves the node unpushed', async () => {
+        mockSessions.getSession.mockResolvedValue({ ...fullSession, projectId: 'proj-1', nodes: [pushedCodeParent] });
+        mockDb.getProject.mockResolvedValue(githubProject);
+        mockGithubApp.createBranchRef.mockRejectedValue(new Error('GitHub API down'));
+
+        const result = await service.createBranchNode(SUB, SESSION_ID, dto);
+        expect(result.kind).toBe('BRANCH');
+        expect(result.pushed).toBeUndefined();
+      });
     });
   });
 
@@ -1345,6 +1444,24 @@ describe('NodesService', () => {
       expect(ctxArg.branchName).toBe('feature/manual');
     });
 
+    it("feeds the rail's BRANCH node okr onto ctx.okr (#220)", async () => {
+      const okr = { objective: 'Ship the retry logic', keyResults: ['p99 < 200ms', 'no flaky tests'] };
+      const branchNode = {
+        nodeId: 'branch-1', parentId: 'plan-1', kind: 'BRANCH', branchName: 'feature/manual',
+        commitSha: 'branch-sha', title: 'branch', query: 'q', okr,
+      };
+      mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [planNode, branchNode] });
+      await service.createCodeNodeStreaming(SUB, SESSION_ID, { ...dto, parentNodeId: 'branch-1' }, jest.fn());
+      const ctxArg = agentRunner.run.mock.calls[0][0];
+      expect(ctxArg.okr).toEqual(okr);
+    });
+
+    it('sets ctx.okr to null when the rail has no BRANCH node (or the BRANCH node has none)', async () => {
+      await service.createCodeNodeStreaming(SUB, SESSION_ID, dto, jest.fn());
+      const ctxArg = agentRunner.run.mock.calls[0][0];
+      expect(ctxArg.okr).toBeNull();
+    });
+
     it('bills usage with the runner result token counts and CODE kind', async () => {
       await service.createCodeNodeStreaming(SUB, SESSION_ID, dto, jest.fn());
       expect(mockUsers.billUsage).toHaveBeenCalledWith(SUB, 500, 300, 'CODE', SESSION_ID, expect.any(String), BRANCH_DEFAULT_MODEL);
@@ -1573,6 +1690,46 @@ describe('NodesService', () => {
 
         expect(received.some((e) => e.type === 'branch-init')).toBe(false);
         expect(received[0].type).toBe('init');
+      });
+
+      describe('eager branch push on the auto-branch fork (#216)', () => {
+        const githubProject = { projectId: 'proj-1', repoRef: { provider: 'github', owner: 'acme', repo: 'widgets', defaultBranch: 'main', url: 'https://github.com/acme/widgets' }, plugins: [] };
+        const pushedCodeParent = { ...codeParent, pushed: true };
+
+        it('marks the auto-branch node pushed:true when createBranchRef succeeds', async () => {
+          mockSessions.getSession.mockResolvedValue({ ...fullSession, projectId: 'proj-1', nodes: [planNode, pushedCodeParent, childOf('done')] });
+          mockDb.getProject.mockResolvedValue(githubProject);
+          mockGithubApp.createBranchRef.mockResolvedValue('created');
+          const received: Array<{ type: string; node?: { pushed?: boolean } }> = [];
+
+          await service.createCodeNodeStreaming(SUB, SESSION_ID, codeDto, (d) => received.push(d as typeof received[number]));
+
+          expect(mockGithubApp.createBranchRef).toHaveBeenCalledWith(SUB, 'acme', 'widgets', expect.any(String), codeParent.commitSha);
+          expect(received[0].type).toBe('branch-init');
+          expect(received[0].node!.pushed).toBe(true);
+        });
+
+        it('leaves the auto-branch node unpushed (never throws) when createBranchRef fails or is skipped', async () => {
+          mockSessions.getSession.mockResolvedValue({ ...fullSession, projectId: 'proj-1', nodes: [planNode, pushedCodeParent, childOf('done')] });
+          mockDb.getProject.mockResolvedValue(githubProject);
+          mockGithubApp.createBranchRef.mockRejectedValue(new Error('GitHub API down'));
+          const received: Array<{ type: string; node?: { pushed?: boolean } }> = [];
+
+          await expect(
+            service.createCodeNodeStreaming(SUB, SESSION_ID, codeDto, (d) => received.push(d as typeof received[number])),
+          ).resolves.toBeUndefined();
+
+          expect(received[0].node!.pushed).toBeUndefined();
+        });
+
+        it('never attempts a ref when the CODE parent was not itself pushed', async () => {
+          mockSessions.getSession.mockResolvedValue({ ...fullSession, projectId: 'proj-1', nodes: [planNode, codeParent, childOf('done')] }); // no pushed:true
+          mockDb.getProject.mockResolvedValue(githubProject);
+
+          await service.createCodeNodeStreaming(SUB, SESSION_ID, codeDto, jest.fn());
+
+          expect(mockGithubApp.createBranchRef).not.toHaveBeenCalled();
+        });
       });
     });
 

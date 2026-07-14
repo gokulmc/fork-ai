@@ -232,7 +232,7 @@ const TWEAK_DEFAULTS = {
   answerStyle: 'verbose' as const,
   maxSections: 6,
   webSearch: false,
-  branchModel: 'gemini-flash-lite' as const,
+  branchModel: 'haiku' as const,
   environment: 'cloud' as const,
 };
 
@@ -1637,21 +1637,28 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
 
   // ── Branch: fork a new lane off a CODE node's commit pill ─────────────────
 
-  const forkBranch = useCallback(async (nodeId: string, branchName: string) => {
+  // `title` is a human description ("Try a sliding-window algorithm"), not a
+  // git-ref-safe name — the server slugifies it into the real branchName
+  // (`fork/<slug>`, deduped) and that's what's stored as the node's title too
+  // (see nodes.service.ts's createBranchNode). The optimistic node below
+  // derives a client-side preview slug for its commit pill; it's overwritten
+  // by the real branchName once the API responds.
+  const forkBranch = useCallback(async (nodeId: string, title: string) => {
     const sid = sessionIdRef.current;
     if (!sid || !idToken) return;
     const parent = nodes[nodeId];
     if (!parent) return;
 
+    const previewSlug = `fork/${title.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/g, '') || 'plan'}`;
     const tempId = uid();
     setNodes(prev => ({
       ...prev,
       [tempId]: {
         id: tempId,
         parentId: nodeId,
-        title: `Fork: ${branchName}`,
+        title,
         kind: 'BRANCH',
-        query: branchName,
+        query: title,
         emoji: null,
         lede: '',
         sections: [],
@@ -1659,7 +1666,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         fromText: null,
         createdAt: Date.now(),
         loading: true,
-        branchName,
+        branchName: previewSlug,
       },
     }));
     setActiveId(tempId);
@@ -1667,7 +1674,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     setLoadingNodes(prev => new Set(prev).add(tempId));
 
     try {
-      const apiNode = await createBranchNode(idToken, sid, { parentNodeId: nodeId, branchName });
+      const apiNode = await createBranchNode(idToken, sid, { parentNodeId: nodeId, title });
       const realNode = toForkNode(apiNode);
       setNodes(prev => {
         const next = { ...prev };
@@ -1837,6 +1844,14 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     if (!node) return;
     void submitCodeNode(node.query, [], nodeId);
   }, [nodes, submitCodeNode]);
+
+  // AgentLogPane's OKR editor (#220) already PATCHes the backend itself — this
+  // just mirrors the confirmed value into local state (optimistic, matching
+  // persistHighlight's pattern) so the map card's objective/KR-count chip
+  // updates without a reload.
+  const handleOkrChange = useCallback((nodeId: string, okr: NonNullable<ForkNode['okr']>) => {
+    setNodes(prev => (prev[nodeId] ? { ...prev, [nodeId]: { ...prev[nodeId], okr } } : prev));
+  }, []);
 
   // AgentLogPane polls the persisted AgentRun on a mid-run refresh (no SSE to
   // resume into) and calls this once it resolves — patch in what the 'done'/
@@ -2669,8 +2684,6 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
             setProjectStartDismissed(true);
           }}
         />
-        <AccountButton creditBalance={creditBalance} onCreditUpdated={setCreditBalance} />
-        <TweaksPanel tweaks={tweaks} setTweak={setTweak} fontPairOptions={FONT_PAIR_OPTIONS} userEmail={authSession?.user?.email ?? ''} userName={authSession?.user?.name ?? ''} />
       </>
     );
   }
@@ -2680,7 +2693,6 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   return (
     <>
       {persistentBrand}
-      <AccountButton creditBalance={creditBalance} onCreditUpdated={setCreditBalance} />
     <div className="app" ref={appRef} data-map-open={mapOpen ? '1' : undefined}>
       <header className="topbar">
         <div className="crumbs">
@@ -2723,6 +2735,11 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
               {(annotations.length + highlightsList.length) > 0 && <span className="badge">{annotations.length + highlightsList.length}</span>}
             </button>
           )}
+          {/* WS-C: account access relocated here (compact avatar, inline popover)
+              from the floating bottom-left trigger — logout stays reachable
+              in-session. Dark theme is still product-disabled (ThemeScript /
+              useTweaks force 'light'), so no theme toggle is added here yet. */}
+          {idToken && <AccountButton inline creditBalance={creditBalance} onCreditUpdated={setCreditBalance} />}
         </div>
       </header>
 
@@ -2911,6 +2928,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
               onRunResolved={handleRunResolved}
               onRetryRun={onRetryRun}
               onForkBranch={forkBranch}
+              onOkrChange={handleOkrChange}
             />
           )}
           {active && active.kind === 'MERGE' && (
@@ -3001,7 +3019,19 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
                     Implement/Continue trigger) — canSpawn still gates it explicitly
                     so this stays correct if that ever changes. */}
                 {!active.loading && !active.error && canSpawn(active.kind, 'CODE') && (
-                  <button className="pill pill-code-cta" onClick={() => composerRef.current?.focus()}>
+                  <button
+                    className="pill pill-code-cta"
+                    onClick={() => {
+                      // A PLAN has a concrete implementation plan to act on — spawn the
+                      // CODE run directly instead of just focusing the composer (which
+                      // submitCodeNode already auto-selects/scrolls to, showing the
+                      // running state). BRANCH (and every other kind that reaches here)
+                      // still just focuses the composer — there's no single canonical
+                      // instruction to auto-run for those.
+                      if (active.kind === 'PLAN') void submitCodeNode('Implement this plan.', []);
+                      else composerRef.current?.focus();
+                    }}
+                  >
                     <Code size={12} className="ic" /> Implement
                   </button>
                 )}
@@ -3105,7 +3135,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
               onModelChange={v => setTweak('branchModel', v)}
               webSearch={tweaks.webSearch}
               onWebSearchChange={v => setTweak('webSearch', v)}
-              webSearchDisabled={tweaks.branchModel.startsWith('deepseek') || showComposer}
+              webSearchDisabled={showComposer}
             />
           )}
         </div>
@@ -3169,14 +3199,6 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         onJump={id => { setActiveId(id); scrollWsTop(); setDrawerOpen(false); }}
         onRemoveHighlight={removeHighlight}
         onRemoveCallout={removeAnnotation}
-      />
-
-      <TweaksPanel
-        tweaks={tweaks}
-        setTweak={setTweak}
-        fontPairOptions={FONT_PAIR_OPTIONS}
-        userEmail={authSession?.user?.email ?? ''}
-        userName={authSession?.user?.name ?? ''}
       />
     </div>
     </>

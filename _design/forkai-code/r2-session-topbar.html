@@ -1,0 +1,114 @@
+<!-- @dsCard group="Round 2" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>forkai-code — Round 2: Session topbar</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body { padding: 56px 64px 120px; min-height: 100vh; }
+
+  .theme-toggle {
+    position: fixed; top: 20px; right: 24px; z-index: 100;
+    font-family: var(--sans); font-size: 12px; font-weight: 500;
+    padding: 7px 14px; border-radius: var(--radius);
+    border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink-2);
+    cursor: pointer; box-shadow: var(--shadow-1);
+  }
+  .theme-toggle:hover { background: var(--hover); color: var(--ink); }
+
+  .ds-brand { display: inline-flex; align-items: center; gap: 8px; font-family: var(--sans); font-weight: 600; font-size: 13px; letter-spacing: .02em; color: var(--ink-2); margin-bottom: 28px; }
+  .ds-brand .mark { width: 15px; height: 15px; border-radius: 4px; background: var(--ink); display: inline-block; }
+  .ds-page-title { font-family: var(--serif); font-weight: 400; font-size: 34px; letter-spacing: -0.02em; margin: 0 0 8px; color: var(--ink); }
+  .ds-page-sub { font-family: var(--sans); font-size: 13px; color: var(--ink-3); margin: 0 0 48px; max-width: 700px; line-height: 1.55; }
+  .ds-section { margin-bottom: 56px; }
+  .ds-section-label { font-family: var(--sans); font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 18px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+  .ds-section-note { font-family: var(--sans); font-size: 12px; color: var(--ink-3); margin: -10px 0 20px; max-width: 680px; line-height: 1.5; }
+
+  /* ── Session shell mock — the whole in-session chrome, relocated ── */
+  .session-shell { border: 1px solid var(--line-strong); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow-1); }
+
+  .session-topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 18px; border-bottom: 1px solid var(--line); background: var(--paper); }
+  .session-topbar-brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .session-topbar-brand .mark { width: 16px; height: 16px; border-radius: 4px; background: var(--ink); display: inline-block; flex-shrink: 0; }
+  .session-breadcrumb { display: flex; align-items: center; gap: 7px; font-family: var(--sans); font-size: 12.5px; min-width: 0; overflow: hidden; }
+  .session-breadcrumb a { color: var(--ink-3); text-decoration: none; flex-shrink: 0; }
+  .session-breadcrumb a:hover { color: var(--ink-2); }
+  .crumb-sep { color: var(--ink-3); flex-shrink: 0; }
+  .crumb-current { color: var(--ink); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Compact top-right cluster — theme + account, out of the canvas corners. */
+  .session-topbar-cluster { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .session-cluster-btn { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line); background: var(--panel); color: var(--ink-2); font-size: 13px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+  .session-cluster-btn:hover { background: var(--hover); color: var(--ink); }
+  .session-avatar { width: 30px; height: 30px; border-radius: 50%; background: var(--panel); border: 1px solid var(--line); display: inline-flex; align-items: center; justify-content: center; font-family: var(--sans); font-size: 11.5px; font-weight: 600; color: var(--ink-2); }
+
+  /* Map/Read — top-center segmented control, docked under the topbar (not
+     a floating pill stranded mid-canvas or overlapping the composer). */
+  .session-view-toggle-dock { display: flex; justify-content: center; padding: 10px 0; border-bottom: 1px solid var(--line); background: var(--bg); }
+  .map-read-toggle { display: inline-flex; padding: 3px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); gap: 2px; }
+  .mrt-seg { border: none; background: transparent; color: var(--ink-3); font-family: var(--sans); font-size: 12px; font-weight: 600; padding: 6px 18px; border-radius: 999px; cursor: pointer; }
+  .mrt-seg:hover { color: var(--ink-2); }
+  .mrt-seg--active { background: var(--paper); color: var(--ink); box-shadow: var(--shadow-1); }
+
+  /* Canvas mock — proves the corners are now empty. */
+  .session-canvas-mock { position: relative; height: 360px; background: var(--bg); background-image: radial-gradient(var(--line) 1px, transparent 1px); background-size: 22px 22px; display: flex; align-items: center; justify-content: center; }
+  .canvas-removed-marker { position: absolute; display: flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px dashed var(--line-strong); border-radius: 999px; font-family: var(--sans); font-size: 10.5px; color: var(--ink-3); background: var(--paper); opacity: .8; }
+  .canvas-removed-marker--tl { top: 16px; left: 16px; }
+  .canvas-removed-marker--tr { top: 16px; right: 16px; }
+  .removed-x { color: var(--ink-3); font-weight: 700; }
+  .canvas-mock-node { font-family: var(--sans); font-size: 12.5px; font-weight: 500; color: var(--ink); background: var(--paper); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); box-shadow: var(--shadow-1); padding: 10px 16px; }
+
+  .side-note { display: flex; gap: 10px; align-items: flex-start; max-width: 620px; margin-top: 18px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; font-family: var(--sans); font-size: 12px; color: var(--ink-2); line-height: 1.5; }
+  .side-note-ic { flex-shrink: 0; font-size: 14px; }
+</style>
+</head>
+<body>
+  <button class="theme-toggle" onclick="const h=document.documentElement; h.setAttribute('data-theme', (h.getAttribute('data-theme')||'light')==='light'?'dark':'light');">Toggle theme</button>
+
+  <div class="ds-brand"><span class="mark"></span>fork ai code</div>
+  <h1 class="ds-page-title">Round 2 — Session topbar</h1>
+  <p class="ds-page-sub">The in-session chrome moves out of the floating canvas corners into fixed bars: a topbar (brand/breadcrumb left, a compact account + theme cluster right), and a top-center Map/Read segmented control docked directly under it — never a floating pill that strands mid-canvas or drifts over the composer. (WS-C · #215 / #209 / #210)</p>
+
+  <div class="ds-section">
+    <div class="ds-section-label">Session chrome — relocated</div>
+    <p class="ds-section-note">Simulated in-session view. The dashed markers show where the floating profile dot and ⚙ tweaks trigger used to sit in the canvas corners — both are gone from the canvas now; they live in the topbar cluster instead.</p>
+
+    <div class="session-shell">
+      <div class="session-topbar">
+        <div class="session-topbar-brand">
+          <span class="mark"></span>
+          <span class="session-breadcrumb">
+            <a href="#">forkai-code core</a>
+            <span class="crumb-sep">/</span>
+            <span class="crumb-current">Add rate limiting to the API</span>
+          </span>
+        </div>
+        <div class="session-topbar-cluster">
+          <button class="session-cluster-btn" title="Theme">☀</button>
+          <span class="session-avatar">GM</span>
+        </div>
+      </div>
+
+      <div class="session-view-toggle-dock">
+        <div class="map-read-toggle">
+          <button class="mrt-seg mrt-seg--active">Map</button>
+          <button class="mrt-seg">Read</button>
+        </div>
+      </div>
+
+      <div class="session-canvas-mock">
+        <span class="canvas-removed-marker canvas-removed-marker--tl"><span class="removed-x">✕</span> profile dot — removed</span>
+        <span class="canvas-removed-marker canvas-removed-marker--tr"><span class="removed-x">✕</span> ⚙ tweaks trigger — removed</span>
+        <span class="canvas-mock-node">🧩 Wire Redis token-bucket store</span>
+      </div>
+    </div>
+
+    <div class="side-note">
+      <span class="side-note-ic">📌</span>
+      <span>Both triggers now live in the top-right cluster next to the breadcrumb — they no longer float over map content, and the Map/Read toggle is docked in its own row so it can never overlap the bottom-docked composer either.</span>
+    </div>
+  </div>
+</body>
+</html>

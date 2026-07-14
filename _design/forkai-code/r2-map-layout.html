@@ -1,0 +1,274 @@
+<!-- @dsCard group="Round 2" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>forkai-code — Round 2: Map layout</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  html, body { height: 100%; }
+  body { overflow: hidden; display: flex; flex-direction: column; }
+
+  .theme-toggle {
+    position: fixed; top: 20px; right: 24px; z-index: 100;
+    font-family: var(--sans); font-size: 12px; font-weight: 500;
+    padding: 7px 14px; border-radius: var(--radius);
+    border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink-2);
+    cursor: pointer; box-shadow: var(--shadow-1);
+  }
+  .theme-toggle:hover { background: var(--hover); color: var(--ink); }
+
+  .page-head { padding: 22px 32px 16px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
+  .ds-brand { display: inline-flex; align-items: center; gap: 8px; font-family: var(--sans); font-weight: 600; font-size: 13px; letter-spacing: .02em; color: var(--ink-2); margin-bottom: 14px; }
+  .ds-brand .mark { width: 15px; height: 15px; border-radius: 4px; background: var(--ink); display: inline-block; }
+  .page-title { font-family: var(--serif); font-weight: 400; font-size: 28px; letter-spacing: -0.02em; margin: 0 0 6px; color: var(--ink); }
+  .page-sub { font-family: var(--sans); font-size: 12.5px; color: var(--ink-3); margin: 0; max-width: 880px; line-height: 1.5; }
+
+  .map-wrap { position: relative; flex: 1; overflow: auto; background: var(--bg); }
+  .map-svg { display: block; }
+
+  /* ── Grey node cards — Round 2 (same shell as r2-grey-nodes.html) ── */
+  .node-card { width: 196px; background: var(--paper); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); box-shadow: var(--shadow-1); padding: 9px 12px; font-family: var(--sans); box-sizing: border-box; }
+  .node-card--learn { background: #fafafa; width: 176px; padding: 8px 11px; }
+  [data-theme="dark"] .node-card--learn { background: #1c1c1c; }
+  .node-card-top { margin-bottom: 6px; }
+  .node-card-main { display: flex; align-items: center; gap: 6px; }
+  .node-card-emoji { font-size: 15px; line-height: 1; flex-shrink: 0; font-family: "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui,sans-serif; }
+  .node-card-kind { font-size: 9.5px; font-weight: 600; letter-spacing: .02em; color: var(--ink-3); display: inline-flex; align-items: center; gap: 4px; }
+  .node-card-label { font-size: 11.5px; font-weight: 500; color: var(--ink); line-height: 1.28; margin-top: 5px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .commit-pill { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 9.5px; font-weight: 500; padding: 2px 7px; border-radius: 999px; background: var(--commit-pill-bg); color: var(--commit-pill-ink); border: 1px solid var(--commit-pill-border); }
+  .pr-status-chip { font-family: var(--sans); font-size: 7.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 1px 5px; border-radius: 999px; line-height: 1.5; }
+  .pr-status-chip--open { color: var(--ink-2); border: 1px solid var(--line-strong); }
+
+  .edge-learn { fill: none; stroke: var(--ink-3); stroke-opacity: .45; stroke-width: 1.25; }
+  .edge-lane { fill: none; stroke: var(--lane-line); stroke-width: 1.75; }
+  .edge-fork { fill: none; stroke: var(--kind-branch); stroke-opacity: .85; stroke-width: 1.75; }
+  .edge-merge { fill: none; stroke: var(--kind-merge); stroke-opacity: .85; stroke-width: 1.75; }
+  .lane-rail { stroke: var(--lane-line); stroke-width: 1; stroke-dasharray: 2 4; }
+  .lane-label { font-family: var(--mono); font-size: 10.5px; fill: var(--ink-3); }
+  .layout-annot { font-family: var(--sans); font-size: 11px; font-weight: 600; fill: var(--ink-2); }
+  .layout-annot-sub { font-family: var(--sans); font-size: 10px; fill: var(--ink-3); }
+
+  /* Inline in the page head (not floated over the canvas) so it can never
+     overlap the distributed Learn-node rows the map is demonstrating. */
+  .map-legend { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 6px 18px; font-family: var(--sans); font-size: 11.5px; color: var(--ink-2); }
+  .legend-row { display: flex; align-items: center; gap: 7px; }
+  .legend-dot { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; background: var(--ink-3); }
+  .legend-line { width: 18px; height: 0; border-top: 2px solid; flex-shrink: 0; }
+  .legend-line--lane { border-top-style: dashed; border-top-color: var(--lane-line); }
+  .legend-line--learn { border-top-style: solid; border-top-color: var(--ink-3); opacity: .6; }
+  .legend-line--fork { border-top-style: solid; border-top-color: var(--kind-branch); }
+  .legend-line--merge { border-top-style: solid; border-top-color: var(--kind-merge); }
+</style>
+</head>
+<body>
+  <button class="theme-toggle" onclick="const h=document.documentElement; h.setAttribute('data-theme', (h.getAttribute('data-theme')||'light')==='light'?'dark':'light');">Toggle theme</button>
+
+  <div class="page-head">
+    <div class="ds-brand"><span class="mark"></span>fork ai code</div>
+    <h1 class="page-title">Round 2 — Distributed learn-node layout</h1>
+    <p class="page-sub">Updates the git-graph column allocator's rule for hanging (Learn) nodes: instead of a single lane offset to the right of an anchor, a code node's Learn children are <b>spread and centered</b> under that node's own x, offset straight down — visually distinct from the trunk's strict vertical fall, and no longer competing for the same right-hand space forks use. CODE still falls straight down its column (parent x = child x); BRANCH still forks to a new column at the SAME row as its fork commit, with a strict horizontal arrow. Edges stay colored (branch = green, fork; merge = violet); nodes are grey (Round 2). This documents the spec for <code style="font-family: var(--mono);">layoutGitGraph.ts</code>'s hang-placement function. (WS-M · #221)</p>
+    <div class="map-legend">
+      <div class="legend-row"><span class="legend-dot"></span>Learn — go deeper / ask AI</div>
+      <div class="legend-row"><span class="legend-dot"></span>Code — one agent run = one commit</div>
+      <div class="legend-row"><span class="legend-dot"></span>Branch / Merge</div>
+      <div class="legend-row"><span class="legend-line legend-line--lane"></span>Column rail</div>
+      <div class="legend-row"><span class="legend-line legend-line--learn"></span>Learn edge (curved, spreads below)</div>
+      <div class="legend-row"><span class="legend-line legend-line--fork"></span>Branch fork (horizontal, arrowhead)</div>
+      <div class="legend-row"><span class="legend-line legend-line--merge"></span>Merge edge (violet, arrowhead)</div>
+    </div>
+  </div>
+
+  <div class="map-wrap">
+    <svg class="map-svg" id="mapSvg" xmlns="http://www.w3.org/2000/svg"></svg>
+  </div>
+
+<script>
+/* ============================================================
+   Sample data — a trunk CODE commit with 3 Learn children (proves
+   "distributed", not just 1-2), a BRANCH fork to a new column at
+   the SAME row, a branch-column CODE commit with 2 Learn children,
+   and a MERGE riding back onto the trunk column, pulled down to
+   align with its source commit's row. Mirrors the real ForkNode
+   shape (kind/parentId/mergeFromNodeId) plus commit/branch.
+   ============================================================ */
+const nodes = [
+  { id: 'root',    kind: 'QUERY',  parentId: null,    title: 'Add rate limiting to the API',    emoji: '💬' },
+  { id: 'code1',   kind: 'CODE',   parentId: 'root',   title: 'Add limiter middleware skeleton', emoji: '🧩', commit: 'a1b2c3d', branch: 'main' },
+  { id: 'lc1',     kind: 'DEEPER', parentId: 'code1',  title: 'Token bucket vs sliding window',  emoji: '📎' },
+  { id: 'lc2',     kind: 'ASK',    parentId: 'code1',  title: 'Why per-key overrides',           emoji: '💬' },
+  { id: 'lc3',     kind: 'DEEPER', parentId: 'code1',  title: 'Redis vs in-memory state',        emoji: '📎' },
+  { id: 'code2',   kind: 'CODE',   parentId: 'code1',  title: 'Wire Redis token-bucket store',   emoji: '🧩', commit: '9c4d21e', branch: 'main' },
+  { id: 'branch1', kind: 'BRANCH', parentId: 'code2',  title: 'Fork: feature/sliding-window',    emoji: '⑂', commit: 'd41f7b2', branch: 'feature/sliding-window' },
+  { id: 'code3',   kind: 'CODE',   parentId: 'branch1',title: 'Swap to sliding-window algorithm',emoji: '🧩', commit: '77bcf10', branch: 'feature/sliding-window' },
+  { id: 'lc4',     kind: 'ASK',    parentId: 'code3',  title: 'Complexity tradeoffs',            emoji: '💬' },
+  { id: 'lc5',     kind: 'DEEPER', parentId: 'code3',  title: 'Edge cases at window boundary',   emoji: '📎' },
+  { id: 'code4',   kind: 'CODE',   parentId: 'code3',  title: 'Add feature-flag rollout guard',  emoji: '🧩', commit: '2b8e991', branch: 'feature/sliding-window' },
+  { id: 'merge1',  kind: 'MERGE',  parentId: 'code2',  title: 'Merge feature/sliding-window',    emoji: '',   branch: 'main', mergeFromNodeId: 'code4', prStatus: 'open' },
+];
+
+const RAIL = new Set(['PLAN', 'CODE', 'BRANCH', 'MERGE']);
+const CARD_W = 196, CARD_H = 66, CARD_H_PILL = 106, HANG_W = 176, HANG_H = 66;
+const ROW_GAP = 170;        // baseline vertical gap between same-column rail nodes
+const HANG_ROW_H = 130;     // vertical step down to a Learn row
+const HANG_SPACING = 200;   // horizontal gap between centered Learn siblings
+const COL_X = [360, 700];   // trunk / branch column centers
+
+const byId = new Map(nodes.map(n => [n.id, n]));
+const childMap = {};
+nodes.forEach(n => { childMap[n.id] = []; });
+nodes.forEach(n => { if (n.parentId) childMap[n.parentId].push(n.id); });
+const isRail = id => RAIL.has(byId.get(id).kind);
+// hangChildMap: for a rail node, only its non-rail (Learn) children.
+const hangChildMap = {};
+Object.keys(childMap).forEach(id => { hangChildMap[id] = isRail(id) ? childMap[id].filter(k => !isRail(k)) : []; });
+function hangDepth(id) {
+  const kids = hangChildMap[id] || [];
+  if (!kids.length) return 0;
+  return 1 + Math.max(...kids.map(hangDepth));
+}
+// Elastic row advance — a deep/wide Learn cluster under a node pushes the
+// NEXT same-column rail node further down so it never overlaps the cluster.
+function rowAdvance(id) { return Math.max(ROW_GAP, hangDepth(id) * HANG_ROW_H + CARD_H + 40); }
+
+// Rule: Learn children are spread evenly and CENTERED on their anchor's own
+// x, one row below — never a single lane offset to one side. Deeper Learn
+// grandchildren center recursively under their own immediate parent.
+const pos = {};
+function placeHangCentered(anchorId) {
+  const kids = hangChildMap[anchorId] || [];
+  if (!kids.length) return;
+  const a = pos[anchorId];
+  const totalW = (kids.length - 1) * HANG_SPACING;
+  kids.forEach((k, i) => {
+    pos[k] = { x: a.x - totalW / 2 + i * HANG_SPACING, y: a.y + HANG_ROW_H };
+    placeHangCentered(k);
+  });
+}
+
+// Rail placement — CODE continues its parent's column at the same x (rule:
+// commits fall straight down); BRANCH allocates a new column at the SAME
+// row as its fork commit (rule: fork is a same-row horizontal jump); MERGE
+// rides its target column, then gets pulled down (post-pass) to align with
+// its source node's row for a clean near-horizontal second-parent edge.
+pos['root']    = { x: COL_X[0], y: 30 };
+pos['code1']   = { x: COL_X[0], y: pos['root'].y + rowAdvance('root') };
+placeHangCentered('code1');
+pos['code2']   = { x: COL_X[0], y: pos['code1'].y + rowAdvance('code1') };
+pos['branch1'] = { x: COL_X[1], y: pos['code2'].y };
+pos['code3']   = { x: COL_X[1], y: pos['branch1'].y + rowAdvance('branch1') };
+placeHangCentered('code3');
+pos['code4']   = { x: COL_X[1], y: pos['code3'].y + rowAdvance('code3') };
+const mergeRailY = pos['code2'].y + rowAdvance('code2');
+pos['merge1']  = { x: COL_X[0], y: Math.max(mergeRailY, pos['code4'].y) };
+
+const colTrunk = ['root', 'code1', 'code2', 'merge1'];
+const colBranch = ['branch1', 'code3', 'code4'];
+
+/* ---------------- render ---------------- */
+const SVGNS = 'http://www.w3.org/2000/svg';
+const svg = document.getElementById('mapSvg');
+
+function dims(n) {
+  if (n.kind === 'CODE' || n.kind === 'BRANCH') return [CARD_W, CARD_H_PILL];
+  if (RAIL.has(n.kind) || n.kind === 'QUERY') return [CARD_W, CARD_H];
+  return [HANG_W, HANG_H];
+}
+function el(tag, attrs) { const e = document.createElementNS(SVGNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; }
+function straightV(x, y1, y2) { return `M ${x} ${y1} L ${x} ${y2}`; }
+function vcurve(x1, y1, x2, y2) { const my = (y1 + y2) / 2; return `M ${x1} ${y1} C ${x1} ${my}, ${x2} ${my}, ${x2} ${y2}`; }
+
+let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+for (const n of nodes) {
+  const [w, h] = dims(n);
+  const p = pos[n.id];
+  minX = Math.min(minX, p.x - w / 2); maxX = Math.max(maxX, p.x + w / 2);
+  minY = Math.min(minY, p.y - h / 2); maxY = Math.max(maxY, p.y + h / 2);
+}
+const PAD = 56;
+const vb = { x: minX - PAD, y: minY - PAD - 30, w: maxX - minX + PAD * 2, h: maxY - minY + PAD * 2 + 30 };
+svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+svg.setAttribute('width', Math.max(vb.w, 1180));
+svg.setAttribute('height', vb.h);
+
+const defs = el('defs', {});
+const arrowBranch = el('marker', { id: 'arrow-branch', viewBox: '0 0 8 8', refX: '8', refY: '4', markerWidth: '8', markerHeight: '8', markerUnits: 'userSpaceOnUse', orient: 'auto' });
+arrowBranch.appendChild(el('path', { d: 'M 0 0 L 8 4 L 0 8 z', fill: 'var(--kind-branch)' }));
+defs.appendChild(arrowBranch);
+const arrowMerge = el('marker', { id: 'arrow-merge', viewBox: '0 0 8 8', refX: '8', refY: '4', markerWidth: '8', markerHeight: '8', markerUnits: 'userSpaceOnUse', orient: 'auto' });
+arrowMerge.appendChild(el('path', { d: 'M 0 0 L 8 4 L 0 8 z', fill: 'var(--kind-merge)' }));
+defs.appendChild(arrowMerge);
+svg.appendChild(defs);
+
+// column rails + branch-name labels
+[colTrunk, colBranch].forEach(ids => {
+  const x = pos[ids[0]].x;
+  const railStartY = pos[ids[0]].y - CARD_H / 2 - 24;
+  const railEndY = pos[ids[ids.length - 1]].y + CARD_H / 2 + 24;
+  svg.appendChild(el('line', { class: 'lane-rail', x1: x, y1: railStartY, x2: x, y2: railEndY }));
+  const label = el('text', { class: 'lane-label', x: x - CARD_W / 2, y: railStartY - 10 });
+  label.textContent = byId.get(ids.find(id => byId.get(id).branch)).branch;
+  svg.appendChild(label);
+});
+
+function edge(a, b, cls, path, extraAttrs) { svg.appendChild(el('path', { class: cls, d: path(pos[a.id], pos[b.id]), ...(extraAttrs || {}) })); }
+for (const n of nodes) {
+  if (n.parentId === null) continue;
+  const parent = byId.get(n.parentId);
+  const [pw, ph] = dims(parent), [nw, nh] = dims(n);
+  const isFork = n.kind === 'BRANCH';
+  const isLane = !isFork && n.kind === 'CODE' && RAIL.has(parent.kind);
+  if (isLane) {
+    edge(parent, n, 'edge-lane', (a, b) => straightV(a.x, a.y + ph / 2, b.y - nh / 2));
+  } else if (isFork) {
+    edge(parent, n, 'edge-fork', (a, b) => `M ${a.x + pw / 2} ${a.y} L ${b.x - nw / 2} ${a.y}`, { 'marker-end': 'url(#arrow-branch)' });
+  } else {
+    edge(parent, n, 'edge-learn', (a, b) => vcurve(a.x, a.y + ph / 2, b.x, b.y - nh / 2));
+  }
+}
+for (const n of nodes) {
+  if (n.kind !== 'MERGE' || !n.mergeFromNodeId) continue;
+  const src = byId.get(n.mergeFromNodeId);
+  const [sw] = dims(src), [mw] = dims(n);
+  const sp = pos[src.id], mp = pos[n.id];
+  const d = mp.x >= sp.x ? `M ${sp.x + sw / 2} ${sp.y} L ${mp.x - mw / 2} ${mp.y}` : `M ${sp.x - sw / 2} ${sp.y} L ${mp.x + mw / 2} ${mp.y}`;
+  svg.appendChild(el('path', { class: 'edge-merge', d, 'marker-end': 'url(#arrow-merge)' }));
+}
+
+function cardHTML(n) {
+  const kicker = n.kind === 'QUERY' ? 'Query' : (n.kind === 'DEEPER' || n.kind === 'ASK') ? 'Learn' : n.kind === 'MERGE' ? 'PR' : n.kind.charAt(0) + n.kind.slice(1).toLowerCase();
+  const statusChip = n.kind === 'MERGE' ? `<span class="pr-status-chip pr-status-chip--open">${n.prStatus}</span>` : '';
+  const pill = (n.kind === 'CODE' || n.kind === 'BRANCH') ? `<div class="node-card-top"><span class="commit-pill">⎇ ${n.branch} · ${n.commit}</span></div>` : '';
+  const learnCls = (n.kind === 'DEEPER' || n.kind === 'ASK') ? ' node-card--learn' : '';
+  return `<div class="node-card${learnCls}">${pill}<div class="node-card-main"><span class="node-card-emoji">${n.emoji || ''}</span><span class="node-card-kind">${kicker}${statusChip}</span></div><div class="node-card-label">${n.title}</div></div>`;
+}
+for (const n of nodes) {
+  const [w, h] = dims(n);
+  const p = pos[n.id];
+  const g = el('g', { transform: `translate(${p.x - w / 2} ${p.y - h / 2})` });
+  const fo = el('foreignObject', { width: w, height: h });
+  fo.innerHTML = cardHTML(n);
+  g.appendChild(fo);
+  svg.appendChild(g);
+}
+
+// Annotations — call out the three rules being demonstrated.
+function annot(x, y, line1, line2) {
+  const t1 = el('text', { class: 'layout-annot', x, y });
+  t1.textContent = line1;
+  svg.appendChild(t1);
+  if (line2) {
+    const t2 = el('text', { class: 'layout-annot-sub', x, y: y + 15 });
+    t2.textContent = line2;
+    svg.appendChild(t2);
+  }
+}
+// Positioned in the clear space to the right of the Learn row / rail
+// segments they describe, so they never sit on top of a card or curve.
+annot(pos['lc3'].x + HANG_W / 2 + 16, pos['lc2'].y - 6, '↓ spread + centered under code1', 'not a single right-hand lane');
+annot(pos['branch1'].x + CARD_W / 2 + 14, pos['branch1'].y - 6, '→ new column, same row', 'straight horizontal fork');
+annot(pos['root'].x + CARD_W / 2 + 14, (pos['root'].y + pos['code1'].y) / 2, '↓ trunk falls straight down', 'same x as its parent commit');
+</script>
+</body>
+</html>

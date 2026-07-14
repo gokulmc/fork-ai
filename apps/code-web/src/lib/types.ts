@@ -71,6 +71,10 @@ export interface ForkNode {
   // cost footer).
   runCostUsd?: number;
   machineCostUsd?: number;
+  // Structured objective/key-results (#220) — fed into the agent prompt on
+  // every CODE run down this rail. Absent until set via the OKR editor
+  // (PATCH omits the field entirely to leave it unchanged — never send null).
+  okr?: { objective: string; keyResults: string[] };
 }
 
 export type NodeKind = ForkNode['kind'];
@@ -110,7 +114,7 @@ export interface Tweaks {
   answerStyle: 'sectioned' | 'verbose';
   maxSections: number;
   webSearch: boolean;
-  branchModel: 'haiku' | 'sonnet' | 'opus' | 'gemini-pro' | 'gemini-flash' | 'gemini-flash-lite' | 'deepseek-pro' | 'deepseek-flash' | 'glm' | 'glm-air';
+  branchModel: 'haiku' | 'sonnet' | 'opus';
   environment: 'cloud' | 'demo';
 }
 

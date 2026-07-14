@@ -182,16 +182,23 @@ function rowAdvance(hangChildMap: Record<string, string[]>, parentId: string): n
 }
 
 // Places every DESCENDANT of `anchorId` (not anchorId itself, which is already
-// positioned) BELOW it, spread horizontally and LEFT-ALIGNED at the anchor's
-// own x + a side-lane offset (depth -> y, siblings -> x) — exactly layoutTree()'s
-// place() geometry, transposed. One-sided clearance (left-aligned, not centered):
-// a rail anchor's column is shared with every other node stacked in it, and
-// centering (like the plain layoutTree()) would push siblings both left and
-// right, competing with the column's own downward commits on the same axis.
-// The side-lane offset (NODE_W + HANG_GAP_X) keeps the whole hang strictly to
-// the right of the anchor's column, clear of the column's own straight-down
-// growth. Used for the learn (DEEPER/ASK/MIX) subtrees that hang off a rail
-// node once its column position is final.
+// positioned) BELOW it, spread horizontally in a side lane offset from the
+// anchor's own x (depth -> y, siblings -> x). The side-lane BASE offset
+// (NODE_W + HANG_GAP_X) keeps the whole hang strictly to the right of the
+// anchor's column, clear of the column's own straight-down growth — that part
+// is NOT layoutTree()'s geometry (which centers a hang under the anchor's own
+// x, spreading both left and right of it) since the anchor's column continues
+// downward and possibly has sibling rail columns to its left.
+//
+// WITHIN that right-side lane, each parent is centered over the horizontal
+// span its own subtree occupies (`leftCol + rows[id] / 2`, the same
+// `topRow + rows/2` idea layoutTree().place() uses) rather than left-justified
+// to `leftCol` — so multiple Learn children under one anchor spread out and
+// center as a group instead of stacking in a single left-justified column
+// (WS-M / #221; see map-git-graph's distributed-layout spec). The subtree's
+// total reserved width (`rows[anchorId] * (NODE_W+SIBLING_GAP)`) is unchanged
+// by this — only where nodes sit WITHIN that reserved span — so the column-
+// stacking pass's `colHang` reserve (`hangRows()`-derived) still clears it.
 function placeHangingSubtreeV(
   childMap: Record<string, string[]>,
   anchorId: string,
@@ -213,7 +220,7 @@ function placeHangingSubtreeV(
   function place(id: string, depth: number, leftCol: number) {
     if (depth > 0) {
       pos[id] = {
-        x: anchor.x + NODE_W + HANG_GAP_X + leftCol * (NODE_W + SIBLING_GAP),
+        x: anchor.x + NODE_W + HANG_GAP_X + (leftCol + rows[id] / 2) * (NODE_W + SIBLING_GAP),
         y: anchor.y + depth * (NODE_H + DEPTH_GAP),
       };
     }

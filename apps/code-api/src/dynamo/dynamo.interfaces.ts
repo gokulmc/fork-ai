@@ -192,6 +192,11 @@ export interface NodeItem {
   // = no installation token (App not installed/configured); the rest mirror
   // GithubAppService.createPullRequest's typed failure reasons.
   prError?: 'app_not_enabled' | 'forbidden' | 'exists' | 'no_diff' | 'failed';
+  // Structured objective/key-results (#220) — settable on any node (e.g. a PLAN
+  // or BRANCH), fed into every CODE agent run's prompt whose rail passes
+  // through it (see NodesService.createCodeNodeStreaming, which reads it off
+  // findRailChain's branchNode). Absent until the user sets one via PATCH.
+  okr?: { objective: string; keyResults: string[] };
 }
 
 export interface AnnotationItem {

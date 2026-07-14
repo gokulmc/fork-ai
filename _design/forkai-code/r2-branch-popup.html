@@ -1,0 +1,104 @@
+<!-- @dsCard group="Round 2" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>forkai-code — Round 2: Branch popup</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body { padding: 56px 64px 120px; min-height: 100vh; }
+
+  .theme-toggle {
+    position: fixed; top: 20px; right: 24px; z-index: 100;
+    font-family: var(--sans); font-size: 12px; font-weight: 500;
+    padding: 7px 14px; border-radius: var(--radius);
+    border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink-2);
+    cursor: pointer; box-shadow: var(--shadow-1);
+  }
+  .theme-toggle:hover { background: var(--hover); color: var(--ink); }
+
+  .ds-brand { display: inline-flex; align-items: center; gap: 8px; font-family: var(--sans); font-weight: 600; font-size: 13px; letter-spacing: .02em; color: var(--ink-2); margin-bottom: 28px; }
+  .ds-brand .mark { width: 15px; height: 15px; border-radius: 4px; background: var(--ink); display: inline-block; }
+  .ds-page-title { font-family: var(--serif); font-weight: 400; font-size: 34px; letter-spacing: -0.02em; margin: 0 0 8px; color: var(--ink); }
+  .ds-page-sub { font-family: var(--sans); font-size: 13px; color: var(--ink-3); margin: 0 0 48px; max-width: 700px; line-height: 1.55; }
+  .ds-section { margin-bottom: 56px; }
+  .ds-section-label { font-family: var(--sans); font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 18px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+  .ds-section-note { font-family: var(--sans); font-size: 12px; color: var(--ink-3); margin: -10px 0 20px; max-width: 640px; line-height: 1.5; }
+  .ds-row { display: flex; flex-wrap: wrap; gap: 48px; align-items: flex-start; }
+  .ds-label-sm { font-family: var(--sans); font-size: 10.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 10px; }
+
+  .commit-pill { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 11.5px; font-weight: 500; padding: 3px 10px; border-radius: 999px; background: var(--commit-pill-bg); color: var(--commit-pill-ink); border: 1px solid var(--commit-pill-border); }
+  .commit-pill--open { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+
+  /* ── Branch popup — Round 2 ───────────────────────────────────
+     The input now collects a human TITLE ("what is this branch
+     for?"), not the literal git branch name — a derived, live slug
+     preview underneath shows what will actually be created,
+     including how a name collision resolves. */
+  .branch-popup { position: relative; width: 300px; background: var(--paper); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); box-shadow: var(--shadow-2); padding: 18px; margin-top: 12px; }
+  .branch-popup::before { content: ""; position: absolute; top: -7px; left: 28px; width: 12px; height: 12px; background: var(--paper); border-left: 1px solid var(--line-strong); border-top: 1px solid var(--line-strong); transform: rotate(45deg); }
+  .branch-popup-header { font-family: var(--sans); font-size: 13.5px; font-weight: 600; color: var(--ink); margin-bottom: 14px; }
+  .branch-popup-header code { font-family: var(--mono); font-size: 12px; font-weight: 500; background: var(--commit-pill-bg); color: var(--commit-pill-ink); padding: 1px 6px; border-radius: 4px; }
+  .branch-popup-label { display: block; font-family: var(--sans); font-size: 10.5px; font-weight: 600; letter-spacing: .03em; color: var(--ink-3); margin-bottom: 7px; }
+  .branch-popup-input { width: 100%; height: 34px; padding: 0 11px; margin-bottom: 10px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--panel); color: var(--ink); font-family: var(--sans); font-size: 13px; outline: none; box-sizing: border-box; }
+  .branch-popup-input:focus { border-color: var(--ink-3); background: var(--paper); }
+  .branch-popup-input::placeholder { color: var(--ink-3); }
+
+  .branch-popup-slug-preview { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; padding: 8px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+  .slug-preview-label { font-family: var(--sans); font-size: 10.5px; color: var(--ink-3); flex-shrink: 0; }
+  .slug-preview-arrow { color: var(--ink-3); flex-shrink: 0; font-size: 11px; }
+  .slug-preview-value { font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--commit-pill-ink); background: var(--commit-pill-bg); padding: 2px 8px; border-radius: 4px; border: 1px solid var(--commit-pill-border); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .branch-popup-btn { width: 100%; height: 34px; border: 1px solid var(--ink); border-radius: var(--radius); background: var(--ink); color: var(--bg); font-family: var(--sans); font-size: 12.5px; font-weight: 600; cursor: pointer; transition: opacity .15s; }
+  .branch-popup-btn:hover { opacity: .85; }
+  .branch-popup-hint { font-family: var(--sans); font-size: 11px; color: var(--ink-3); margin: 10px 0 0; line-height: 1.4; }
+</style>
+</head>
+<body>
+  <button class="theme-toggle" onclick="const h=document.documentElement; h.setAttribute('data-theme', (h.getAttribute('data-theme')||'light')==='light'?'dark':'light');">Toggle theme</button>
+
+  <div class="ds-brand"><span class="mark"></span>fork ai code</div>
+  <h1 class="ds-page-title">Round 2 — Branch popup</h1>
+  <p class="ds-page-sub">The Fork-branch popup now asks for a human title ("what is this branch for?") instead of the raw git branch name, then derives and previews the actual <code style="font-family: var(--mono);">fork/…</code> slug live underneath — including how a name collision resolves with a numeric suffix. (WS-K/#218 + #219)</p>
+
+  <div class="ds-section">
+    <div class="ds-section-label">Fork-branch popup</div>
+    <p class="ds-section-note">Opens anchored below a code node's commit pill, same as before — only the form inside changed.</p>
+    <div class="ds-row">
+      <div>
+        <div class="ds-label-sm">Default derivation</div>
+        <span class="commit-pill commit-pill--open">⎇ main · 37ffa3a</span>
+        <div class="branch-popup">
+          <div class="branch-popup-header">Fork from <code>37ffa3a</code></div>
+          <label class="branch-popup-label" for="branch-title-1">What is this branch for?</label>
+          <input id="branch-title-1" class="branch-popup-input" type="text" placeholder="e.g. Try a sliding-window algorithm" value="My cool branch" />
+          <div class="branch-popup-slug-preview">
+            <span class="slug-preview-label">Creates</span>
+            <span class="slug-preview-arrow">→</span>
+            <span class="slug-preview-value">fork/my-cool-branch</span>
+          </div>
+          <button class="branch-popup-btn">Fork branch</button>
+          <p class="branch-popup-hint">Creates a new branch at this commit and starts a new lane on the map.</p>
+        </div>
+      </div>
+      <div>
+        <div class="ds-label-sm">Collision → numeric suffix</div>
+        <span class="commit-pill commit-pill--open">⎇ main · 37ffa3a</span>
+        <div class="branch-popup">
+          <div class="branch-popup-header">Fork from <code>37ffa3a</code></div>
+          <label class="branch-popup-label" for="branch-title-2">What is this branch for?</label>
+          <input id="branch-title-2" class="branch-popup-input" type="text" placeholder="e.g. Try a sliding-window algorithm" value="My cool branch" />
+          <div class="branch-popup-slug-preview">
+            <span class="slug-preview-label">Creates</span>
+            <span class="slug-preview-arrow">→</span>
+            <span class="slug-preview-value">fork/my-cool-branch-2</span>
+          </div>
+          <button class="branch-popup-btn">Fork branch</button>
+          <p class="branch-popup-hint"><code style="font-family: var(--mono); background: var(--commit-pill-bg); color: var(--commit-pill-ink); padding: 1px 6px; border-radius: 4px;">fork/my-cool-branch</code> already exists on this project — the slug gets a numeric suffix.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

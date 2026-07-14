@@ -4,6 +4,12 @@ import type { Tweaks } from '@/lib/types';
 
 const STORAGE_KEY = 'forkai-code.tweaks';
 
+// Claude-only models (#213) — a returning user may still have a pre-Round-2
+// value (e.g. 'gemini-flash-lite') persisted from before Gemini/DeepSeek/GLM
+// were removed. Clamp it here rather than at every read site, or it shows as
+// a blank model chip and — worse — still gets sent as `model` on branch calls.
+const CLAUDE_MODELS: ReadonlySet<Tweaks['branchModel']> = new Set(['haiku', 'sonnet', 'opus']);
+
 function loadFromStorage(defaults: Tweaks): Tweaks {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -12,6 +18,7 @@ function loadFromStorage(defaults: Tweaks): Tweaks {
     // Dark is disabled until the full dark theme ships — a previously stored
     // 'dark' preference is intentionally ignored here, not migrated away.
     if (merged.theme === 'dark') merged.theme = 'light';
+    if (!CLAUDE_MODELS.has(merged.branchModel)) merged.branchModel = 'haiku';
     return merged;
   } catch {
     return defaults;

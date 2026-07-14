@@ -19,6 +19,12 @@ const PILL_H = 22;
 // column, sitting just above the (now-expanded) first interior commit.
 const COLLAPSE_CHIP_H = 24;
 const COLLAPSE_CHIP_GAP = 8;
+// Extra height a BRANCH card with an OKR set grows DOWNWARD by, to fit the
+// objective subtitle + 🎯 KR-count chip below the title (#220). Unlike PILL_H
+// this doesn't need layoutGitGraph.ts to know about it either — it's well
+// inside RAIL_ROW_GAP's slack (162px) below the node's own row, so it can't
+// collide with whatever continues that BRANCH's column next.
+const OKR_H = 34;
 
 // A bracket tracing only the top-right rounded-corner (chamfer) arc of the
 // pill — drawn bold/accent on nodes that have been read (see globals.css).
@@ -47,7 +53,7 @@ interface MindMapProps {
   activeId: string | null;
   onSelect: (id: string) => void;
   onContextMenu?: (id: string, x: number, y: number) => void;
-  onForkBranch?: (nodeId: string, branchName: string) => void;
+  onForkBranch?: (nodeId: string, title: string) => void;
   loadingIds?: Set<string>;
   readIds?: Set<string>;
   // Mixer/Plan select-mode props — selection mechanics (base/selected/onSelect)
@@ -505,8 +511,9 @@ export function MindMap({
             // shouldn't grow to fit a pill they don't render). A segment placeholder
             // never grows — it has no kicker/icon/commit-pill (see collapseSegments.ts).
             const hasPill = !isSegment && (n.kind === 'CODE' || n.kind === 'BRANCH' || (n.kind === 'PLAN' && !!n.branchName));
+            const hasOkr = !isSegment && n.kind === 'BRANCH' && !!n.okr;
             const boxY = hasPill ? -PILL_H : 0;
-            const boxH = hasPill ? NODE_H + PILL_H : NODE_H;
+            const boxH = (hasPill ? NODE_H + PILL_H : NODE_H) + (hasOkr ? OKR_H : 0);
             const commitShaShort = n.kind === 'CODE'
               ? (n.commitSha ? n.commitSha.slice(0, 7) : '—')
               : n.kind === 'PLAN'
@@ -600,19 +607,29 @@ export function MindMap({
                               ? <span className="mm-emoji">{n.emoji}</span>
                               : <NodeIcon size={16} />}
                           </div>
-                          <div className="mm-card-text">
-                            <div className="mm-kicker">
-                              {kicker}
-                              {n.kind === 'MERGE' && n.prStatus && (
-                                <span className={`mm-pr-status mm-pr-status--${n.prStatus}`}>{n.prStatus}</span>
-                              )}
-                              {isFailed && <span className="mm-node-error-dot" title="Run failed" />}
-                            </div>
-                            <div className="mm-label" title={n.title || 'Untitled'}>{n.title || 'Untitled'}</div>
+                          {/* Round 2 (WS-T): kind demoted to a small grey label inline
+                              beside the icon — no longer a separate colored ALL-CAPS
+                              line. Still carried in title/aria-label for a11y. */}
+                          <div className="mm-kicker" title={kicker} aria-label={kicker}>
+                            {kicker}
+                            {n.kind === 'MERGE' && n.prStatus && (
+                              <span className={`mm-pr-status mm-pr-status--${n.prStatus}`}>{n.prStatus}</span>
+                            )}
+                            {isFailed && <span className="mm-node-error-dot" title="Run failed" />}
                           </div>
                           {n.sources?.length ? <span className="mm-search-badge">🔍</span> : null}
                           {n.kind === 'MIX' ? <span className="mm-mix-badge"><Filter size={11} /></span> : null}
                         </div>
+                        <div className="mm-label" title={n.title || 'Untitled'}>{n.title || 'Untitled'}</div>
+                        {/* Surface the OKR on the map card itself (#220) — objective as
+                            a subtitle, KR count as a small 🎯 chip — so it's visible
+                            without opening the pane. hasOkr also grows boxH (OKR_H). */}
+                        {hasOkr && n.okr && (
+                          <>
+                            <div className="mm-node-objective" title={n.okr.objective}>{n.okr.objective}</div>
+                            <span className="mm-okr-chip">🎯 {n.okr.keyResults.length} KR{n.okr.keyResults.length === 1 ? '' : 's'}</span>
+                          </>
+                        )}
                       </div>
                     )}
                   </foreignObject>

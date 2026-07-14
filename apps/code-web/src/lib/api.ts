@@ -47,6 +47,7 @@ export interface ApiNode {
   budgetExceeded?: boolean;
   runCostUsd?: number;
   machineCostUsd?: number;
+  okr?: { objective: string; keyResults: string[] };
 }
 
 export interface ApiAnnotation {
@@ -139,6 +140,7 @@ export function toForkNode(n: ApiNode): ForkNode {
     budgetExceeded: n.budgetExceeded,
     runCostUsd: n.runCostUsd,
     machineCostUsd: n.machineCostUsd,
+    okr: n.okr,
   };
 }
 
@@ -566,6 +568,21 @@ export function deleteNode(
   });
 }
 
+// Generic node PATCH — currently only used to save the BRANCH OKR editor
+// (#220). Omit `okr` entirely to leave it unchanged; NEVER send `okr: null`
+// (the backend's updateNode does not null-strip — see root CLAUDE.md).
+export function updateNode(
+  idToken: string,
+  sessionId: string,
+  nodeId: string,
+  updates: { okr?: { objective: string; keyResults: string[] } },
+): Promise<ApiNode> {
+  return apiFetch<ApiNode>(`/sessions/${sessionId}/nodes/${nodeId}`, idToken, {
+    method: 'PATCH',
+    body: JSON.stringify(updates),
+  });
+}
+
 export interface CreateMixNodePayload {
   parentNodeId: string;
   sourceNodeIds: string[];
@@ -591,7 +608,7 @@ export function createMixNode(
 export function createBranchNode(
   idToken: string,
   sessionId: string,
-  payload: { parentNodeId: string; branchName: string },
+  payload: { parentNodeId: string; title: string },
 ): Promise<ApiNode> {
   return apiFetch<ApiNode>(`/sessions/${sessionId}/nodes/branch`, idToken, {
     method: 'POST',

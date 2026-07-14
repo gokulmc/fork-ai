@@ -48,6 +48,16 @@
   --kind-merge: #7d5fb3;
   --kind-merge-soft: #f1edf8;
 
+  /* ── forkai-code Round 2: neutral node tokens ───────────────
+     Kind no longer tints node/pill/chip surfaces (WS-T grey theme) — --kind-*
+     above is now used ONLY for branch/merge map EDGES + arrowheads + legend
+     edge-lines. These alias already theme-aware neutrals, so no separate
+     dark-mode block is needed. */
+  --node-ink: var(--ink-3);
+  --node-border: var(--line-strong);
+  --node-soft: var(--panel);
+  --node-fill: var(--ink-3);
+
   /* ── forkai-code: commit pill ───────────────────────────────
      Neutral mono chip — deliberately NOT tinted by kind, since the
      same pill format sits on both code and branch cards. */
@@ -847,7 +857,7 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 .continue-card-status-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 9px; border-top: 1px solid var(--line); margin-top: auto; }
 .continue-card-status { display: inline-flex; align-items: center; gap: 6px; font-family: var(--sans); font-size: 11px; font-weight: 600; color: var(--ink-2); text-transform: capitalize; }
 .continue-card-status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-.continue-card-status-dot--running { background: var(--kind-code); animation: railPulse 1.1s ease-in-out infinite; }
+.continue-card-status-dot--running { background: var(--node-fill); animation: railPulse 1.1s ease-in-out infinite; }
 .continue-card-status-dot--done { background: var(--diff-add); }
 .continue-card-status-dot--failed { background: var(--diff-del); }
 .continue-card-action { font-family: var(--sans); font-size: 11px; font-weight: 700; color: var(--ink); flex-shrink: 0; }
@@ -1362,26 +1372,24 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 [data-theme="dark"] .mm-node.starred .pill-star { stroke: #c8c8c8; }
 [data-theme="dark"] .mm-node.starred.active .pill-star { stroke: #3a3a3a; }
 
-/* Git-graph rail cards (PLAN/CODE/BRANCH) — a subtle kind-tinted border and
-   kicker colour, layered on top of the existing depth-based fill so learn
-   cards (data-depth only) are visually unchanged. */
-.mm-node[data-kind="PLAN"] .pill { stroke: color-mix(in oklab, var(--kind-plan) 40%, var(--line-strong)); }
-.mm-node[data-kind="CODE"] .pill { stroke: color-mix(in oklab, var(--kind-code) 40%, var(--line-strong)); }
-.mm-node[data-kind="BRANCH"] .pill { stroke: color-mix(in oklab, var(--kind-branch) 40%, var(--line-strong)); }
-.mm-node[data-kind="MERGE"] .pill { stroke: color-mix(in oklab, var(--kind-merge) 40%, var(--line-strong)); }
-.mm-node[data-kind="PLAN"] .mm-kicker { color: var(--kind-plan); }
-.mm-node[data-kind="CODE"] .mm-kicker { color: var(--kind-code); }
-.mm-node[data-kind="BRANCH"] .mm-kicker { color: var(--kind-branch); }
-.mm-node[data-kind="MERGE"] .mm-kicker { color: var(--kind-merge); }
+/* Git-graph rail cards (PLAN/CODE/BRANCH/MERGE) — Round 2: every card shares
+   the same neutral border regardless of kind (WS-T grey theme). The commit
+   pill (rail kinds only) is what distinguishes a rail node from a learn node
+   now that colour is gone — see the demoted .mm-kicker below. */
+.mm-node[data-kind="PLAN"] .pill,
+.mm-node[data-kind="CODE"] .pill,
+.mm-node[data-kind="BRANCH"] .pill,
+.mm-node[data-kind="MERGE"] .pill { stroke: var(--node-border); }
 
-/* PR flow (Phase F) — target-column highlight, step 2 of the two-step select */
-.mm-node--pr-target .pill { stroke: var(--kind-merge) !important; stroke-width: 2; stroke-dasharray: none; }
+/* PR flow (Phase F) — target-column highlight, step 2 of the two-step select.
+   Grey ink ring (same language as .mm-node.active), not a kind colour swap. */
+.mm-node--pr-target .pill { stroke: var(--ink) !important; stroke-width: 2; stroke-dasharray: none; }
 .mm-pr-status {
   font-family: var(--sans); font-size: 9px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
   padding: 1px 6px; border-radius: 999px; line-height: 1.5;
 }
-.mm-pr-status--open { color: var(--kind-merge); border: 1px solid color-mix(in oklab, var(--kind-merge) 50%, var(--line)); }
-.mm-pr-status--merged { color: #fff; background: var(--kind-merge); }
+.mm-pr-status--open { color: var(--ink-2); border: 1px solid var(--line-strong); }
+.mm-pr-status--merged { color: var(--bg); background: var(--node-fill); }
 
 /* Failed run (WS-FAIL b) — a state layered on the CODE kind's own border/
    kicker (error accent replaces the kind accent), not a fifth kind: the card
@@ -1393,8 +1401,8 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 /* Collapsed commit-chain segment (repo-import full history — see
    lib/collapseSegments.ts): a slimmer dashed pill with just a centered
    "⋯ N commits" label, no kicker/icon/commit-pill. */
-.mm-node--segment .pill { fill: var(--kind-code-soft); stroke: var(--kind-code); stroke-width: 1; stroke-dasharray: 3 3; }
-.mm-node--segment.active .pill { fill: var(--kind-code) !important; stroke: var(--kind-code) !important; }
+.mm-node--segment .pill { fill: var(--node-soft); stroke: var(--node-border); stroke-width: 1; stroke-dasharray: 3 3; }
+.mm-node--segment.active .pill { fill: var(--node-fill) !important; stroke: var(--node-fill) !important; }
 .mm-card--segment { display: flex; align-items: center; justify-content: center; height: 100%; text-align: center; }
 .mm-seg-label { font-size: 11.5px; font-weight: 500; color: var(--ink-3); font-family: var(--sans); }
 .mm-node--segment.active .mm-seg-label { color: var(--bg); }
@@ -1405,11 +1413,11 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 .mm-segment-collapse-chip {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 5px 13px 5px 10px;
-  background: var(--kind-code-soft); border: 1px dashed var(--kind-code); border-radius: 999px;
-  font-family: var(--sans); font-size: 10.5px; font-weight: 600; color: var(--kind-code);
+  background: var(--node-soft); border: 1px dashed var(--node-border); border-radius: 999px;
+  font-family: var(--sans); font-size: 10.5px; font-weight: 600; color: var(--node-ink);
   cursor: pointer; white-space: nowrap; pointer-events: auto;
 }
-.mm-segment-collapse-chip:hover { background: color-mix(in oklab, var(--kind-code) 14%, var(--kind-code-soft)); }
+.mm-segment-collapse-chip:hover { background: var(--hover-strong); }
 .mm-segment-collapse-chip-caret { font-size: 9px; }
 
 /* Map legend — corner-anchored reference for the git-graph vocabulary, only
@@ -1426,11 +1434,11 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 .mm-legend-sep { height: 1px; background: var(--line); margin: 2px 0; }
 .mm-legend-dot { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
 .mm-legend-dot--learn { background: var(--ink-3); }
-.mm-legend-dot--plan { background: var(--kind-plan); }
-.mm-legend-dot--code { background: var(--kind-code); }
-.mm-legend-dot--branch { background: var(--kind-branch); }
-.mm-legend-dot--merge { background: var(--kind-merge); }
-.mm-legend-dot--segment { background: var(--kind-code-soft); border: 1px dashed var(--kind-code); }
+.mm-legend-dot--plan { background: var(--node-ink); }
+.mm-legend-dot--code { background: var(--node-ink); }
+.mm-legend-dot--branch { background: var(--node-ink); }
+.mm-legend-dot--merge { background: var(--node-ink); }
+.mm-legend-dot--segment { background: var(--node-soft); border: 1px dashed var(--node-border); }
 .mm-legend-line { width: 18px; height: 0; border-top: 2px solid; flex-shrink: 0; }
 .mm-legend-line--lane { border-top-style: dashed; border-top-color: var(--lane-line); }
 .mm-legend-line--learn { border-top-style: solid; border-top-color: var(--ink-3); opacity: .6; }
@@ -1479,15 +1487,26 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 }
 .mm-card-ic svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.75; fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .mm-emoji { font-size: 20px; line-height: 1; display: inline-block; font-family: "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui,sans-serif; font-variant-emoji: emoji; }
-.mm-card-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.mm-kicker { display: flex; align-items: center; gap: 6px; font-size: 9px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Round 2 (WS-T): kind label sits inline beside the icon, small + grey — not
+   uppercase/letter-spaced like the old separate kicker line. flex:1/min-width:0
+   lets it ellipsis while the search/mix badges (margin-left:auto) stay pinned
+   right of it within .mm-card-main. */
+.mm-kicker { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 600; letter-spacing: 0.02em; color: var(--ink-3); line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mm-label { font-size: 12.5px; font-weight: 500; color: var(--ink); line-height: 1.22; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
+/* BRANCH card OKR surfacing (#220) — objective subtitle + 🎯 KR-count chip,
+   sized to fit within OKR_H's reserved extra card height (MindMap.tsx). */
+.mm-node-objective { font-size: 10.5px; color: var(--ink-3); line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mm-okr-chip { align-self: flex-start; display: inline-flex; align-items: center; gap: 3px; font-family: var(--sans); font-size: 9.5px; font-weight: 600; color: var(--ink-2); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; }
 .mm-node.active .mm-card-ic { color: var(--bg); }
 .mm-node.active .mm-kicker { color: var(--bg); opacity: 0.6; }
 .mm-node.active .mm-label { color: var(--bg); }
+.mm-node.active .mm-node-objective { color: var(--bg); opacity: 0.7; }
+.mm-node.active .mm-okr-chip { color: var(--bg); background: transparent; border-color: color-mix(in oklab, var(--bg) 45%, transparent); }
 [data-theme="dark"] .mm-node.active .mm-card-ic { color: #1c1c1c; }
 [data-theme="dark"] .mm-node.active .mm-kicker { color: #1c1c1c; opacity: 0.65; }
 [data-theme="dark"] .mm-node.active .mm-label { color: #1c1c1c; }
+[data-theme="dark"] .mm-node.active .mm-node-objective { color: #1c1c1c; opacity: 0.75; }
+[data-theme="dark"] .mm-node.active .mm-okr-chip { color: #1c1c1c; border-color: color-mix(in oklab, #1c1c1c 45%, transparent); }
 
 .mm-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--ink-3); font-family: var(--sans); font-size: 12px; pointer-events: none; }
 
@@ -1522,15 +1541,19 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
   bottom: 0;
   margin-top: auto;
   z-index: 2;
-  padding: 20px var(--content-pad-x) 20px;
+  /* Round 2 (WS-K): no horizontal padding here — .workspace-inner already
+     insets by --content-pad-x, so a second helping made the composer a
+     narrower inset card instead of matching the 760px content column. */
+  padding: 20px 0;
   padding-bottom: max(20px, env(safe-area-inset-bottom));
   background: linear-gradient(to bottom, transparent, var(--bg) 45%);
 }
 .code-composer-inner {
   max-width: 760px; margin: 0 auto;
   display: flex; flex-direction: column; gap: 8px;
-  background: var(--paper); border: 1px solid var(--line-strong);
-  border-radius: var(--radius-lg); box-shadow: var(--shadow-2);
+  /* Round 2 (WS-K): flatter card — was --line-strong / --shadow-2. */
+  background: var(--paper); border: 1px solid var(--line);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-1);
   padding: 10px 10px;
 }
 .code-composer-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 2px; }
@@ -1906,16 +1929,24 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 
 /* ============================================================
    Branch popup — opened from a CODE node's commit pill (MindMap.tsx)
+   Round 2 (WS-K/#218 + WS-B/#219): the input collects a human TITLE, not the
+   literal git branch name, with a live derived-slug preview underneath.
    ============================================================ */
-.branch-popup { position: fixed; z-index: 70; width: 268px; background: var(--paper); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); box-shadow: var(--shadow-2); padding: 16px; animation: hlIn .18s cubic-bezier(.2,.7,.2,1) both; }
-.branch-popup-header { font-family: var(--sans); font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 12px; }
+.branch-popup { position: fixed; z-index: 70; width: 300px; background: var(--paper); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); box-shadow: var(--shadow-2); padding: 18px; animation: hlIn .18s cubic-bezier(.2,.7,.2,1) both; }
+.branch-popup-header { font-family: var(--sans); font-size: 13.5px; font-weight: 600; color: var(--ink); margin-bottom: 14px; }
 .branch-popup-header code { font-family: var(--mono); font-size: 12px; font-weight: 500; background: var(--commit-pill-bg); color: var(--commit-pill-ink); padding: 1px 6px; border-radius: 4px; }
-.branch-popup-input { width: 100%; height: 32px; padding: 0 10px; margin-bottom: 10px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--panel); color: var(--ink); font-family: var(--mono); font-size: 12.5px; outline: none; box-sizing: border-box; }
+.branch-popup-label { display: block; font-family: var(--sans); font-size: 10.5px; font-weight: 600; letter-spacing: .03em; color: var(--ink-3); margin-bottom: 7px; }
+.branch-popup-input { width: 100%; height: 34px; padding: 0 11px; margin-bottom: 10px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--panel); color: var(--ink); font-family: var(--sans); font-size: 13px; outline: none; box-sizing: border-box; }
 .branch-popup-input:focus { border-color: var(--ink-3); background: var(--paper); }
-.branch-popup-btn { width: 100%; height: 32px; border: 1px solid var(--ink); border-radius: var(--radius); background: var(--ink); color: var(--bg); font-family: var(--sans); font-size: 12.5px; font-weight: 600; cursor: pointer; transition: opacity .15s; }
+.branch-popup-input::placeholder { color: var(--ink-3); }
+.branch-popup-slug-preview { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; padding: 8px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+.slug-preview-label { font-family: var(--sans); font-size: 10.5px; color: var(--ink-3); flex-shrink: 0; }
+.slug-preview-arrow { color: var(--ink-3); flex-shrink: 0; font-size: 11px; }
+.slug-preview-value { font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--commit-pill-ink); background: var(--commit-pill-bg); padding: 2px 8px; border-radius: 4px; border: 1px solid var(--commit-pill-border); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+.branch-popup-btn { width: 100%; height: 34px; border: 1px solid var(--ink); border-radius: var(--radius); background: var(--ink); color: var(--bg); font-family: var(--sans); font-size: 12.5px; font-weight: 600; cursor: pointer; transition: opacity .15s; }
 .branch-popup-btn:hover:not(:disabled) { opacity: .85; }
 .branch-popup-btn:disabled { opacity: .4; cursor: not-allowed; }
-.branch-popup-hint { font-family: var(--sans); font-size: 11px; color: var(--ink-3); margin: 9px 0 0; line-height: 1.4; }
+.branch-popup-hint { font-family: var(--sans); font-size: 11px; color: var(--ink-3); margin: 10px 0 0; line-height: 1.4; }
 
 /* ============================================================
    Notes drawer
@@ -2159,8 +2190,9 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
 /* ============================================================
    Mobile / narrow viewports (phone + Capacitor app)
    Desktop layout is untouched above this breakpoint. The mind-map pane is
-   hidden behind the floating .mm-pill, which swaps it full-screen; topbar
-   actions collapse to icons. See App.tsx (useIsNarrow, mapOpen, MindMapPill).
+   hidden behind the docked .mrt-dock Map/Read toggle, which swaps it
+   full-screen; topbar actions collapse to icons. See App.tsx (useIsNarrow,
+   mapOpen, MindMapPill).
    ============================================================ */
 @media (max-width: 768px) {
   /* Lock the page to the viewport: only the workspace scrolls (internally), so the
@@ -2179,26 +2211,44 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
   .share-dl-dropdown { display: none !important; }
   .share-dl-mobile { display: inline-flex; }
 
-  /* Single column; the map and workspace share row 2 and are swapped by display.
-     100dvh (not 100vh) keeps the topbar + bottom pill inside the visible area as
-     the mobile browser / Capacitor toolbars expand and collapse. */
+  /* Single column; the map and workspace share row 3 (row 2 is the Map/Read
+     toggle dock, WS-C) and are swapped by display. 100dvh (not 100vh) keeps
+     the topbar + dock inside the visible area as the mobile browser /
+     Capacitor toolbars expand and collapse. */
   .app {
     /* minmax(0,1fr) — a plain 1fr track has min-width:auto = its content's
        min-content, so wide content (tables, long tokens) floored the column and
        bled past a narrow viewport. minmax(0,…) lets it shrink to the viewport. */
     grid-template-columns: minmax(0, 1fr);
-    /* Taller nav bar on mobile. */
-    grid-template-rows: calc(60px + env(safe-area-inset-top)) 1fr;
+    /* Taller nav bar on mobile; 46px middle row is the Map/Read toggle dock
+       (.mrt-dock — MindMapPill.tsx is only mounted once a session has nodes,
+       which is always true by the time this workspace grid renders). */
+    grid-template-rows: calc(60px + env(safe-area-inset-top)) 46px 1fr;
     height: 100dvh;
   }
+  .mrt-dock { grid-row: 2; grid-column: 1; }
   .mindmap-pane,
-  .workspace { grid-row: 2; grid-column: 1; min-width: 0; }
+  .workspace { grid-row: 3; grid-column: 1; min-width: 0; }
   /* overflow-y:auto silently promotes overflow-x to auto — clamp it so a slightly
      wide element can't create a horizontal scrollbar inside the content pane.
      touch-action: pan-y leaves only vertical scroll native and blocks pinch-zoom
      on the reading pane — zoom is reserved for the mind map alone. */
   .workspace { overflow-x: hidden; touch-action: pan-y; }
   .pane-divider { display: none; }
+
+  /* Top-center Map/Read segmented toggle (WS-C / r2-session-topbar.html) —
+     docked directly under the topbar as its own grid row, never a floating
+     pill that can strand mid-canvas or drift over the composer. */
+  .mrt-dock {
+    display: flex; align-items: center; justify-content: center;
+    border-bottom: 1px solid var(--line);
+    background: var(--bg);
+    z-index: 4;
+  }
+  .map-read-toggle { display: inline-flex; padding: 3px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); gap: 2px; }
+  .mrt-seg { display: inline-flex; align-items: center; gap: 5px; border: none; background: transparent; color: var(--ink-3); font-family: var(--sans); font-size: 12px; font-weight: 600; padding: 6px 16px; border-radius: 999px; cursor: pointer; }
+  .mrt-seg:hover { color: var(--ink-2); }
+  .mrt-seg--active { background: var(--paper); color: var(--ink); box-shadow: var(--shadow-1); }
 
   /* Mind map is a drawer that slides in over the content from the left. The
      transform is driven inline by JS (finger-tracking during the swipe; settles
@@ -2207,7 +2257,8 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
      it when fully open. */
   .mindmap-pane {
     position: fixed; left: 0; right: 0;
-    top: calc(60px + env(safe-area-inset-top)); bottom: 0;
+    /* Clears both the topbar and the 46px .mrt-dock row above. */
+    top: calc(60px + env(safe-area-inset-top) + 46px); bottom: 0;
     z-index: 5;
     transform: translateX(-100%);
     transition: transform .32s cubic-bezier(.4, 0, .2, 1);
@@ -2256,43 +2307,14 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
   .query-box input { min-width: 0; }
   .query-box .submit { padding: 0 16px; }
 
-  /* Floating liquid-glass "Mindmap" pill (thumb-reachable, above the map):
-     translucent, heavy backdrop blur + saturation, with a top sheen highlight. */
-  .mm-pill {
-    position: fixed; left: 50%; transform: translateX(-50%);
-    /* Must clear .code-composer's visible card, which sits (20px + safe-area)
-       above the viewport bottom and is itself ~98px tall since the WS-A dock
-       (10px+10px padding, a ~40px full-width textarea row, an 8px gap, a
-       ~30px control row) — top edge ~118px + safe-area above the bottom.
-       148px leaves a ~30px gap. Needs a real-device recheck if the composer's
-       rendered height drifts from this estimate. */
-    bottom: calc(env(safe-area-inset-bottom) + 148px);
-    z-index: 2147483646;
-    display: inline-flex; align-items: center; gap: 8px;
-    height: 44px; padding: 0 22px;
-    border-radius: 999px;
-    border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
-    background: transparent;
-    -webkit-backdrop-filter: blur(2px) saturate(180%);
-    backdrop-filter: blur(2px) saturate(180%);
-    color: var(--ink); font-family: var(--sans); font-size: 14px; font-weight: 500;
-    box-shadow: var(--shadow-2), inset 0 1px 0 color-mix(in srgb, #fff 45%, transparent);
-    cursor: pointer;
-  }
-  .mm-pill:active { transform: translateX(-50%) scale(0.97); }
-
-  /* Tweaks gear also sits on the composer's right edge at this width (no
-     mobile reposition otherwise) — same clearance as .mm-pill above, tucked
-     further right. */
-  .twk-trigger { right: 16px; bottom: calc(env(safe-area-inset-bottom) + 148px); }
-
-  /* Mixer on phones: the overlay owns the bottom strip — hide the floating
-     chrome that collides with it (Read pill, tweaks gear, account) and the
-     desktop-only keyboard hint. Cancel = the red × in the map toolbar. */
+  /* Mixer on phones: the overlay owns the bottom strip — hide the
+     desktop-only keyboard hint. Cancel = the red × in the map toolbar. The
+     Map/Read dock sits in its own grid row above the map/workspace (WS-C),
+     so it no longer needs hiding during the mixer overlay (which floats over
+     the BOTTOM of the map pane, not the top) — same for the account avatar,
+     which now lives in the topbar rather than floating over the canvas. */
   .mixer-shortcut-hint { display: none; }
   .mixer-overlay { bottom: calc(14px + env(safe-area-inset-bottom)); }
-  body:has(.mixer-overlay) .mm-pill,
-  body:has(.mixer-overlay) .twk-trigger { display: none; }
 
   /* Selection popup +20% on mobile (intrinsic sizes — a transform scale would be
      overridden by the hlIn animation's `to { scale(1) }`). Centred horizontally by JS. */
@@ -2305,7 +2327,7 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
      own the drag. Sits below the nav bar. */
   .mm-swipe-zone {
     position: fixed; left: 0; width: 24px;
-    top: calc(60px + env(safe-area-inset-top)); bottom: 0;
+    top: calc(60px + env(safe-area-inset-top) + 46px); bottom: 0;
     z-index: 6; touch-action: none;
   }
 
@@ -2446,8 +2468,9 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
 .mm-mixer-btn--active { color: #ef4444; border-color: #fecaca; background: #fef2f2; }
 .mm-mixer-btn--active:hover { color: #dc2626; background: #fee2e2; }
 
-/* Plan toolbar button — same shape as .mm-mixer-btn, tinted with --kind-plan
-   instead of the mixer's red when active. */
+/* Plan toolbar button — same shape as .mm-mixer-btn; Round 2: neutral grey
+   when active (was --kind-plan tinted — see WS-T), still distinct from the
+   mixer's red. */
 .mm-plan-btn {
   display: inline-flex; align-items: center; gap: 5px;
   height: 28px; padding: 0 10px;
@@ -2460,11 +2483,11 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
   pointer-events: all;
 }
 .mm-plan-btn:hover { background: var(--hover); color: var(--ink); }
-.mm-plan-btn--active { color: var(--kind-plan); border-color: color-mix(in oklab, var(--kind-plan) 45%, var(--line)); background: var(--kind-plan-soft); }
-.mm-plan-btn--active:hover { background: color-mix(in oklab, var(--kind-plan-soft) 70%, var(--hover)); }
+.mm-plan-btn--active { color: var(--ink); border-color: var(--line-strong); background: var(--accent-soft); }
+.mm-plan-btn--active:hover { background: color-mix(in oklab, var(--accent-soft) 70%, var(--hover)); }
 
-/* PR toolbar button (Phase F) — same shape as .mm-mixer-btn/.mm-plan-btn,
-   tinted with --kind-merge when active. */
+/* PR toolbar button (Phase F) — same shape as .mm-mixer-btn/.mm-plan-btn;
+   Round 2: neutral grey when active (was --kind-merge tinted — see WS-T). */
 .mm-pr-btn {
   display: inline-flex; align-items: center; gap: 5px;
   height: 28px; padding: 0 10px;
@@ -2477,8 +2500,8 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
   pointer-events: all;
 }
 .mm-pr-btn:hover { background: var(--hover); color: var(--ink); }
-.mm-pr-btn--active { color: var(--kind-merge); border-color: color-mix(in oklab, var(--kind-merge) 45%, var(--line)); background: var(--kind-merge-soft); }
-.mm-pr-btn--active:hover { background: color-mix(in oklab, var(--kind-merge-soft) 70%, var(--hover)); }
+.mm-pr-btn--active { color: var(--ink); border-color: var(--line-strong); background: var(--accent-soft); }
+.mm-pr-btn--active:hover { background: color-mix(in oklab, var(--accent-soft) 70%, var(--hover)); }
 /* Narrow mindmap pane (container query — fires when the pane itself is narrow,
    regardless of screen size; covers both the drag-slider case on desktop and mobile) */
 @container mindmap (max-width: 560px) {
@@ -2526,33 +2549,34 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
   transition: opacity 0.4s ease;
 }
 .mixer-overlay--collapsing { opacity: 0; pointer-events: none; }
-/* Plan mode reuses the same overlay markup, tinted with --kind-plan instead of
-   the mixer's neutral theme. */
+/* Plan mode reuses the same overlay markup — Round 2: grey, not tinted with
+   --kind-plan (WS-T). */
 .mixer-overlay--plan .mixer-hint,
 .mixer-overlay--plan .mixer-chips,
 .mixer-overlay--plan .mixer-question-row {
-  border-color: color-mix(in oklab, var(--kind-plan) 35%, var(--line));
+  border-color: var(--line-strong);
 }
-.mixer-overlay--plan .mixer-spawn-btn { background: var(--kind-plan); border-color: var(--kind-plan); }
+.mixer-overlay--plan .mixer-spawn-btn { background: var(--ink); border-color: var(--ink); }
 /* PR overlay (Phase F) — reuses the mixer-hint shell; the confirm step below
-   is its own row (no chips/question-input, just a preview line + two buttons). */
-.mixer-overlay--pr .mixer-hint { border-color: color-mix(in oklab, var(--kind-merge) 35%, var(--line)); }
+   is its own row (no chips/question-input, just a preview line + two buttons).
+   Round 2: grey, not tinted with --kind-merge (WS-T). */
+.mixer-overlay--pr .mixer-hint { border-color: var(--line-strong); }
 .pr-confirm-row {
   display: flex; flex-direction: column; gap: 8px;
   padding: 12px 14px;
-  background: var(--paper); border: 1px solid color-mix(in oklab, var(--kind-merge) 35%, var(--line));
+  background: var(--paper); border: 1px solid var(--line-strong);
   border-radius: 8px; box-shadow: var(--shadow-1);
 }
 .pr-confirm-text { font-family: var(--sans); font-size: 13px; color: var(--ink); }
-.pr-confirm-text strong { font-family: var(--mono); font-weight: 600; color: var(--kind-merge); }
+.pr-confirm-text strong { font-family: var(--mono); font-weight: 600; color: var(--ink); }
 .pr-confirm-actions { display: flex; gap: 6px; justify-content: flex-end; }
-.pr-confirm-btn { background: var(--kind-merge); border-color: var(--kind-merge); }
+.pr-confirm-btn { background: var(--ink); border-color: var(--ink); }
 
 /* (a) Unavailable — guided empty state inside the PR overlay shell, same
    card treatment as .pr-confirm-row above (see App.tsx's mixer-overlay--pr). */
 .pr-guide-panel {
   padding: 12px 14px;
-  background: var(--paper); border: 1px solid color-mix(in oklab, var(--kind-merge) 35%, var(--line));
+  background: var(--paper); border: 1px solid var(--line-strong);
   border-radius: 8px; box-shadow: var(--shadow-1);
 }
 .pr-guide-panel .pr-pane-guide-text { margin: 0 0 10px; }
@@ -2768,8 +2792,8 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
 /* ============================================================
    forkai-code Phase 4 — workspace Implement/Continue CTA pill
    ============================================================ */
-.ws-meta .pill-code-cta { border-color: var(--kind-code); color: var(--kind-code); cursor: pointer; font: inherit; transition: border-color .12s, background .12s, color .12s; }
-.ws-meta .pill-code-cta:hover { background: var(--kind-code); color: #fff; }
+.ws-meta .pill-code-cta { border-color: var(--line-strong); color: var(--ink-2); cursor: pointer; font: inherit; transition: border-color .12s, background .12s, color .12s; }
+.ws-meta .pill-code-cta:hover { background: var(--ink); color: var(--bg); }
 
 /* ============================================================
    forkai-code Phase 4 — Agent log pane (CODE/BRANCH workspace body)
@@ -2778,8 +2802,36 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
 .agent-pane .ws-meta { margin-bottom: 22px; }
 .agent-pane--reduced .proj-btn-primary { margin-top: 6px; }
 
-.pill-kind--code { border-color: color-mix(in oklab, var(--kind-code) 45%, var(--line)); color: var(--kind-code); }
-.pill-kind--branch { border-color: color-mix(in oklab, var(--kind-branch) 45%, var(--line)); color: var(--kind-branch); }
+/* ============================================================
+   OKR editor — BRANCH pane's dead space below "Forked from" (#220)
+   Progressive: an Objective field first; Key Results only shows a value once
+   typed, but the section (add button) is always there once editing.
+   ============================================================ */
+.okr-editor { border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--panel); padding: 16px 18px; margin: 20px 0 4px; }
+.okr-editor-label { font-family: var(--sans); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; display: flex; align-items: center; gap: 6px; }
+.okr-field-label { display: block; font-family: var(--sans); font-size: 10.5px; font-weight: 600; letter-spacing: .03em; color: var(--ink-3); margin-bottom: 7px; }
+.okr-objective-input { width: 100%; box-sizing: border-box; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 13px; line-height: 1.5; padding: 9px 11px; resize: none; outline: none; }
+.okr-objective-input:focus { border-color: var(--ink-3); }
+.okr-validation { font-family: var(--sans); font-size: 11px; color: var(--ink-3); margin: 6px 0 0; }
+.okr-validation--error { color: #c0392b; }
+
+.okr-kr-section { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+.okr-kr-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.okr-kr-bullet { flex-shrink: 0; width: 18px; height: 18px; border-radius: 4px; background: var(--accent-soft); color: var(--ink-2); font-family: var(--sans); font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.okr-kr-input { flex: 1; min-width: 0; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 12.5px; padding: 7px 10px; outline: none; }
+.okr-kr-input:focus { border-color: var(--ink-3); }
+.okr-kr-delete { flex-shrink: 0; width: 24px; height: 24px; border-radius: 50%; border: none; background: transparent; color: var(--ink-3); cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center; padding: 0; }
+.okr-kr-delete:hover { background: var(--hover); color: var(--ink); }
+.okr-kr-add { display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; padding: 6px 12px; border: 1px dashed var(--line-strong); border-radius: 999px; background: transparent; color: var(--ink-2); font-family: var(--sans); font-size: 12px; font-weight: 500; cursor: pointer; }
+.okr-kr-add:hover { background: var(--hover); color: var(--ink); border-style: solid; }
+
+.okr-editor--empty { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.okr-empty-text { font-family: var(--sans); font-size: 12.5px; color: var(--ink-3); line-height: 1.45; }
+.okr-empty-btn { flex-shrink: 0; padding: 7px 14px; border-radius: var(--radius); border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 12px; font-weight: 600; cursor: pointer; }
+.okr-empty-btn:hover { background: var(--hover); }
+
+.pill-kind--code { border-color: var(--line-strong); color: var(--ink-2); }
+.pill-kind--branch { border-color: var(--line-strong); color: var(--ink-2); }
 
 .commit-pill { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 11.5px; font-weight: 500; padding: 3px 10px; border-radius: 999px; background: var(--commit-pill-bg); color: var(--commit-pill-ink); border: 1px solid var(--commit-pill-border); }
 .commit-pill code { font-family: inherit; }
@@ -2789,16 +2841,16 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--diff-add); flex-shrink: 0; }
 .status-dot--done { background: var(--diff-add); }
 .status-dot--error { background: var(--diff-del); }
-.status-dot--running { background: var(--kind-code); animation: statusDotPulse 1.2s ease-in-out infinite; }
-@keyframes statusDotPulse { 0%, 100% { opacity: 1; box-shadow: 0 0 0 0 color-mix(in oklab, var(--kind-code) 45%, transparent); } 50% { opacity: 0.6; box-shadow: 0 0 0 4px transparent; } }
+.status-dot--running { background: var(--node-fill); animation: statusDotPulse 1.2s ease-in-out infinite; }
+@keyframes statusDotPulse { 0%, 100% { opacity: 1; box-shadow: 0 0 0 0 color-mix(in oklab, var(--node-fill) 45%, transparent); } 50% { opacity: 0.6; box-shadow: 0 0 0 4px transparent; } }
 
 /* Instruction — bordered "user message" card (was a plain border-left
-   paragraph) — same serif + kind-code accent language, now boxed so it reads
-   as a distinct message rather than blending into body prose. */
+   paragraph) — now boxed so it reads as a distinct message rather than
+   blending into body prose. Round 2: grey left border, not kind-tinted (WS-K). */
 .ws-instruction-card {
   font-family: var(--serif); font-size: clamp(17px, 1.8vw, 19px); line-height: 1.5;
   color: var(--ink); margin: 0 0 22px; padding: 13px 17px;
-  background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--kind-code);
+  background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--ink-3);
   border-radius: var(--radius); letter-spacing: -0.005em;
 }
 .ws-instruction-card code { font-family: var(--mono); font-size: 0.75em; background: var(--commit-pill-bg); color: var(--commit-pill-ink); padding: 1px 6px; border-radius: 4px; }
@@ -2832,7 +2884,7 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
    heartbeat rows with ONE line that updates in place (WS-F). */
 @keyframes timelinePulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
 .timeline-working { display: flex; align-items: center; gap: 9px; font-family: var(--sans); font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
-.timeline-working-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--kind-code); flex-shrink: 0; animation: timelinePulse 1.1s ease-in-out infinite; }
+.timeline-working-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--node-fill); flex-shrink: 0; animation: timelinePulse 1.1s ease-in-out infinite; }
 
 /* Failed step — red-accented row + reason panel + inline Retry (WS-FAIL a). */
 .timeline-step-dot--error { background: var(--diff-del); }
@@ -2867,7 +2919,7 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
 .gh-btn:hover { background: var(--hover); }
 .ws-footer-note { font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
 .ws-footer-note--wide { width: 100%; font-family: var(--sans); margin: 6px 0 22px; line-height: 1.5; }
-.ws-footer-note-action { font-family: var(--sans); color: var(--kind-code); font-weight: 600; background: none; border: none; padding: 0; cursor: pointer; text-decoration: none; }
+.ws-footer-note-action { font-family: var(--sans); color: var(--ink); font-weight: 600; background: none; border: none; padding: 0; cursor: pointer; text-decoration: none; }
 .ws-footer-note-action:hover { text-decoration: underline; }
 
 /* Provenance/state chips — push + workspace status, left cluster of the
@@ -2920,14 +2972,14 @@ a.state-chip:hover { background: var(--hover-strong); }
 /* ============================================================
    forkai-code Phase F — PR pane (MERGE node workspace body)
    ============================================================ */
-.pill-kind--merge { border-color: color-mix(in oklab, var(--kind-merge) 45%, var(--line)); color: var(--kind-merge); }
+.pill-kind--merge { border-color: var(--line-strong); color: var(--ink-2); }
 
 .pr-status-pill {
   font-family: var(--sans); font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
   padding: 2px 9px; border-radius: 999px; line-height: 1.6;
 }
-.pr-status-pill--open { color: var(--kind-merge); border: 1px solid color-mix(in oklab, var(--kind-merge) 50%, var(--line)); }
-.pr-status-pill--merged { color: #fff; background: var(--kind-merge); }
+.pr-status-pill--open { color: var(--ink-2); border: 1px solid var(--line-strong); }
+.pr-status-pill--merged { color: var(--bg); background: var(--node-fill); }
 
 .pr-branches-row { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; }
 .pr-branches-arrow { color: var(--ink-3); flex-shrink: 0; }
@@ -2935,7 +2987,7 @@ a.state-chip:hover { background: var(--hover-strong); }
 .pr-merge-btn {
   display: inline-flex; align-items: center; gap: 7px;
   height: 34px; padding: 0 16px;
-  background: var(--kind-merge); color: #fff; border: 1px solid var(--kind-merge); border-radius: var(--radius);
+  background: var(--ink); color: var(--bg); border: 1px solid var(--ink); border-radius: var(--radius);
   font-family: var(--sans); font-size: 13px; font-weight: 600; cursor: pointer;
   transition: opacity .15s;
 }
@@ -2950,10 +3002,10 @@ a.state-chip:hover { background: var(--hover-strong); }
 .pr-merged-row { display: inline-flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .pr-merged-badge {
   display: inline-flex; align-items: center; gap: 5px;
-  font-family: var(--sans); font-size: 12.5px; font-weight: 600; color: #fff;
-  background: var(--kind-merge); padding: 5px 12px; border-radius: 999px;
+  font-family: var(--sans); font-size: 12.5px; font-weight: 600; color: var(--bg);
+  background: var(--node-fill); padding: 5px 12px; border-radius: 999px;
 }
-.pr-merged-link { font-family: var(--sans); font-size: 12.5px; color: var(--kind-merge); text-decoration: underline; }
+.pr-merged-link { font-family: var(--sans); font-size: 12.5px; color: var(--ink-2); text-decoration: underline; }
 .pr-merged-link:hover { opacity: .8; }
 
 /* (a) Unavailable / (d) App not enabled — guided, not disabled: the entry

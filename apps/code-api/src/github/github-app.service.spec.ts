@@ -231,6 +231,56 @@ describe('GithubAppService', () => {
     });
   });
 
+  describe('createBranchRef', () => {
+    it('returns "skipped" (never throws) when no installation covers the owner', async () => {
+      mockDb.listGithubInstallations.mockResolvedValue([]);
+      await expect(service.createBranchRef(SUB, 'acme', 'widgets', 'fork/x', 'deadbeef')).resolves.toBe('skipped');
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('creates the ref and returns "created" on success, posting ref/sha', async () => {
+      mockDb.listGithubInstallations.mockResolvedValue([{ installationId: '42', accountLogin: 'acme' }]);
+      fetchSpy
+        .mockResolvedValueOnce(jsonResponse({ token: 'ghs_abc', expires_at: new Date(Date.now() + 3600_000).toISOString() }))
+        .mockResolvedValueOnce(jsonResponse({ ref: 'refs/heads/fork/x' }, { status: 201 }));
+
+      const result = await service.createBranchRef(SUB, 'acme', 'widgets', 'fork/x', 'deadbeef');
+
+      expect(result).toBe('created');
+      const [url, init] = fetchSpy.mock.calls[1] as [string, { method: string; body: string }];
+      expect(url).toBe('https://api.github.com/repos/acme/widgets/git/refs');
+      expect(init.method).toBe('POST');
+      expect(JSON.parse(init.body)).toEqual({ ref: 'refs/heads/fork/x', sha: 'deadbeef' });
+    });
+
+    it('returns "exists" when GitHub reports the ref already exists', async () => {
+      mockDb.listGithubInstallations.mockResolvedValue([{ installationId: '42', accountLogin: 'acme' }]);
+      fetchSpy
+        .mockResolvedValueOnce(jsonResponse({ token: 'ghs_abc', expires_at: new Date(Date.now() + 3600_000).toISOString() }))
+        .mockResolvedValueOnce(jsonResponse({ message: 'Reference already exists' }, { status: 422 }));
+
+      await expect(service.createBranchRef(SUB, 'acme', 'widgets', 'fork/x', 'deadbeef')).resolves.toBe('exists');
+    });
+
+    it('returns "skipped" when the base sha is not on the remote yet', async () => {
+      mockDb.listGithubInstallations.mockResolvedValue([{ installationId: '42', accountLogin: 'acme' }]);
+      fetchSpy
+        .mockResolvedValueOnce(jsonResponse({ token: 'ghs_abc', expires_at: new Date(Date.now() + 3600_000).toISOString() }))
+        .mockResolvedValueOnce(jsonResponse({ message: 'Object does not exist' }, { status: 422 }));
+
+      await expect(service.createBranchRef(SUB, 'acme', 'widgets', 'fork/x', 'deadbeef')).resolves.toBe('skipped');
+    });
+
+    it('returns "skipped" (not a throw) on any other failure', async () => {
+      mockDb.listGithubInstallations.mockResolvedValue([{ installationId: '42', accountLogin: 'acme' }]);
+      fetchSpy
+        .mockResolvedValueOnce(jsonResponse({ token: 'ghs_abc', expires_at: new Date(Date.now() + 3600_000).toISOString() }))
+        .mockResolvedValueOnce(jsonResponse({ message: 'Internal Server Error' }, { status: 500 }));
+
+      await expect(service.createBranchRef(SUB, 'acme', 'widgets', 'fork/x', 'deadbeef')).resolves.toBe('skipped');
+    });
+  });
+
   describe('mergePullRequest', () => {
     it('returns false (never throws) when no installation covers the owner', async () => {
       mockDb.listGithubInstallations.mockResolvedValue([]);

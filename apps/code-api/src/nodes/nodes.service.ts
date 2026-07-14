@@ -3,7 +3,7 @@ import { Inject, Injectable, Logger, NotFoundException, BadRequestException } fr
 import { ConfigService } from '@nestjs/config';
 import { ulid } from 'ulid';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
-import type { NodeItem, AgentRunItem, RepoRef } from '@/dynamo/dynamo.interfaces';
+import type { NodeItem, AgentRunItem, RepoRef, ProjectItem } from '@/dynamo/dynamo.interfaces';
 import { LlmService, friendlyLlmError } from '@/llm/llm.service';
 import { resolveBranchModel, priceFor, CLOUD_CODE_MODEL_ID, PLAN_MODEL_ID, ALIAS_TO_ID } from '@/llm/models';
 import { NodeKind } from '@/llm/llm.types';
@@ -399,6 +399,30 @@ export class NodesService {
     return branchName;
   }
 
+  // Eagerly creates the real GitHub ref for a freshly-forked branch node (#216)
+  // — best-effort, NEVER throws, so a create-ref failure can never abort the
+  // branch creation itself, nor (for the auto-branch call site) the CODE run
+  // it's a part of. Only attempted when the project is a real (non-mock)
+  // GitHub repo AND the parent commit was itself actually pushed there — an
+  // unpushed parent's sha doesn't exist on the remote yet, so GitHub would
+  // just 422 "Object does not exist" (which createBranchRef already degrades
+  // to 'skipped' for, but there's no point making the call at all).
+  private async tryEagerBranchPush(
+    sub: string,
+    project: ProjectItem | null,
+    parentNode: NodeItem,
+    branchName: string,
+  ): Promise<Partial<Pick<NodeItem, 'pushed'>>> {
+    if (project?.repoRef.provider !== 'github' || parentNode.pushed !== true || !parentNode.commitSha) return {};
+    try {
+      const result = await this.githubApp.createBranchRef(sub, project.repoRef.owner, project.repoRef.repo, branchName, parentNode.commitSha);
+      return result === 'created' || result === 'exists' ? { pushed: true } : {};
+    } catch (err) {
+      this.logger.warn(`createBranchRef threw for ${project.repoRef.owner}/${project.repoRef.repo}@${branchName} — leaving branch node unpushed: ${String(err)}`);
+      return {};
+    }
+  }
+
   async createBranchNode(sub: string, sessionId: string, dto: CreateBranchNodeDto): Promise<NodeItem> {
     const session = await this.sessions.getSession(sub, sessionId);
     const nodeById = new Map(session.nodes.map((n) => [n.nodeId, n]));
@@ -413,14 +437,11 @@ export class NodesService {
       throw new BadRequestException('Parent CODE node has no commit to fork from');
     }
 
-    const existingNames = new Set(
-      session.nodes
-        .filter((n) => n.kind === 'BRANCH' && n.branchName)
-        .map((n) => n.branchName as string),
-    );
-    if (existingNames.has(dto.branchName)) {
-      throw new BadRequestException(`Branch name "${dto.branchName}" already exists in this session`);
-    }
+    const existingNames = new Set(session.nodes.map((n) => n.branchName).filter((b): b is string => !!b));
+    const branchName = this.slugifyBranchName(dto.title, existingNames);
+
+    const project = session.projectId ? await this.db.getProject(sub, session.projectId) : null;
+    const pushedField = await this.tryEagerBranchPush(sub, project, parentNode, branchName);
 
     const nodeId = ulid();
     const now = new Date().toISOString();
@@ -431,7 +452,7 @@ export class NodesService {
       nodeId,
       parentId: dto.parentNodeId,
       kind: 'BRANCH',
-      title: dto.branchName,
+      title: dto.title,
       emoji: null,
       query: `Fork from ${parentNode.commitSha.slice(0, 7)}`,
       lede: '',
@@ -439,8 +460,9 @@ export class NodesService {
       fromSection: null,
       fromText: null,
       createdAt: now,
-      branchName: dto.branchName,
+      branchName,
       commitSha: parentNode.commitSha,
+      ...pushedField,
     };
 
     await this.db.putNode(node);
@@ -803,6 +825,7 @@ export class NodesService {
           const branchNodeId = ulid();
           const branchNow = new Date().toISOString();
           const newBranchName = this.slugifyBranchName(dto.instruction, existingBranchNames);
+          const pushedField = await this.tryEagerBranchPush(sub, project, parentNode, newBranchName);
           autoBranchNode = {
             PK: `SESSION#${sessionId}`,
             SK: `NODE#${branchNodeId}`,
@@ -819,6 +842,7 @@ export class NodesService {
             createdAt: branchNow,
             branchName: newBranchName,
             commitSha: parentNode.commitSha,
+            ...pushedField,
           };
           await this.db.putNode(autoBranchNode);
           nodeById.set(branchNodeId, autoBranchNode);
@@ -850,6 +874,9 @@ export class NodesService {
       const ctx: AgentRunContext = {
         instruction: dto.instruction,
         planDoc: chain.planNode ? planDocOf(chain.planNode) : null,
+        // The rail's BRANCH node (if any) carries the OKR a user set on the
+        // fork point (#220) — fed to the agent alongside the plan doc.
+        okr: chain.branchNode?.okr ?? null,
         branchName,
         baseCommitSha,
         repoRef: project?.repoRef ?? null,
@@ -1085,9 +1112,12 @@ export class NodesService {
     const node = await this.db.getNode(sessionId, nodeId);
     if (!node) throw new NotFoundException(`Node ${nodeId} not found`);
 
-    const updates: Partial<Pick<NodeItem, 'title' | 'starred'>> = {};
+    const updates: Partial<Pick<NodeItem, 'title' | 'starred' | 'okr'>> = {};
     if (dto.title !== undefined) updates.title = dto.title;
     if (dto.starred !== undefined) updates.starred = dto.starred;
+    // Omitted (not sent at all) leaves okr unchanged — there is no clear path
+    // (updateNode does not null-strip; see root CLAUDE.md's Dynamoose note).
+    if (dto.okr !== undefined) updates.okr = dto.okr;
     if (!Object.keys(updates).length) return;
 
     await this.db.updateNode(sessionId, nodeId, updates);

@@ -41,6 +41,7 @@ describe('Dynamoose schema field coverage', () => {
       prNumber: 42,
       prUrl: 'https://github.com/acme/widgets/pull/42',
       prError: 'forbidden',
+      okr: { objective: 'Ship the retry logic', keyResults: ['p99 latency < 200ms', 'zero flaky test failures'] },
     });
     const json = item.toJSON() as Record<string, unknown>;
     expect(json.commitSha).toBe('abc1234');
@@ -59,6 +60,7 @@ describe('Dynamoose schema field coverage', () => {
     expect(json.prNumber).toBe(42);
     expect(json.prUrl).toBe('https://github.com/acme/widgets/pull/42');
     expect(json.prError).toBe('forbidden');
+    expect(json.okr).toEqual({ objective: 'Ship the retry logic', keyResults: ['p99 latency < 200ms', 'zero flaky test failures'] });
   });
 
   it('AgentRun model retains all fields', () => {

@@ -197,6 +197,14 @@ export const NodeSchema = new dynamoose.Schema({
   budgetExceeded: { type: Boolean, required: false },
   runCostUsd: { type: Number, required: false },
   machineCostUsd: { type: Number, required: false },
+  okr: {
+    type: Object,
+    required: false,
+    schema: {
+      objective: String,
+      keyResults: { type: Array, schema: [String] },
+    },
+  },
 });
 
 export const AnnotationSchema = new dynamoose.Schema({

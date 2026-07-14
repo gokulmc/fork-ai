@@ -160,6 +160,25 @@ describe('MockAgentService', () => {
     expect(model).toBe('claude-haiku-4-5-20251001');
   });
 
+  it('appends an Objective/Key results section to the prompt when ctx.okr is set (#220)', async () => {
+    mockLlm.generateAgentTranscript.mockResolvedValue(sdkResult(validTranscript()));
+    await service.generate({
+      ...baseCtx,
+      okr: { objective: 'Ship the retry logic', keyResults: ['p99 < 200ms', 'no flaky tests'] },
+    });
+    const prompt = mockLlm.generateAgentTranscript.mock.calls[0][0] as string;
+    expect(prompt).toContain('Objective: Ship the retry logic');
+    expect(prompt).toContain('- p99 < 200ms');
+    expect(prompt).toContain('- no flaky tests');
+  });
+
+  it('omits the Objective section when ctx.okr is absent', async () => {
+    mockLlm.generateAgentTranscript.mockResolvedValue(sdkResult(validTranscript()));
+    await service.generate(baseCtx);
+    const prompt = mockLlm.generateAgentTranscript.mock.calls[0][0] as string;
+    expect(prompt).not.toContain('Objective:');
+  });
+
   it('names an unspecified repo and says no tools are enabled when repoRef/plugins are empty', async () => {
     mockLlm.generateAgentTranscript.mockResolvedValue(sdkResult(validTranscript()));
     await service.generate(baseCtx);

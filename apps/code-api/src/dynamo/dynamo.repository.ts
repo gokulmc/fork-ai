@@ -274,7 +274,7 @@ export class DynamoRepository {
   async updateNode(
     sessionId: string,
     nodeId: string,
-    updates: Partial<Pick<NodeItem, 'title' | 'lede' | 'emoji' | 'starred' | 'commitSha' | 'branchName' | 'commitMessage' | 'diffSummary' | 'agentStatus' | 'imported' | 'prStatus' | 'workspace' | 'workspaceExpiresAt' | 'pushed' | 'pushError' | 'budgetExceeded' | 'runCostUsd' | 'machineCostUsd' | 'prNumber' | 'prUrl' | 'prError'>>,
+    updates: Partial<Pick<NodeItem, 'title' | 'lede' | 'emoji' | 'starred' | 'commitSha' | 'branchName' | 'commitMessage' | 'diffSummary' | 'agentStatus' | 'imported' | 'prStatus' | 'workspace' | 'workspaceExpiresAt' | 'pushed' | 'pushError' | 'budgetExceeded' | 'runCostUsd' | 'machineCostUsd' | 'prNumber' | 'prUrl' | 'prError' | 'okr'>>,
   ): Promise<void> {
     await this.nodeModel.update(
       { PK: this.sessionPk(sessionId), SK: this.nodeSk(nodeId) },

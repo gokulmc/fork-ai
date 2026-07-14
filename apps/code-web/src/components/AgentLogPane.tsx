@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import type { ForkNode } from '@/lib/types';
-import { getAgentRun, ApiError, type AgentEvent, type AgentRun, type Project } from '@/lib/api';
+import { getAgentRun, updateNode, ApiError, type AgentEvent, type AgentRun, type Project } from '@/lib/api';
 import { modelDisplayName } from '@/lib/utils';
 import { kindLabel } from '@/lib/kindLabels';
 import { BranchPopup } from './BranchPopup';
@@ -16,7 +16,94 @@ interface AgentLogPaneProps {
   onImplement: () => void; // "Implement" (BRANCH) / "Continue" (CODE, once its own run is done, or to recover an expired workspace) — focuses the bottom composer
   onRunResolved?: (nodeId: string, run: AgentRun) => void; // mid-run poll (see effect below) reached 'done'/'error'
   onRetryRun?: (nodeId: string) => void; // CODE only — re-run a failed agent run in place
-  onForkBranch?: (fromNodeId: string, branchName: string) => void; // opens BranchPopup off the commit pill
+  onForkBranch?: (fromNodeId: string, title: string) => void; // opens BranchPopup off the commit pill
+  onOkrChange?: (nodeId: string, okr: NonNullable<ForkNode['okr']>) => void; // BRANCH only — OKR editor save (#220)
+}
+
+// Progressive Objective → Key Results editor for the BRANCH pane's dead space
+// (#220). `key={node.id}` at the call site remounts this on every branch
+// switch so local draft state never leaks between nodes. Saves are
+// optimistic (onOkrChange fires immediately, matching App.tsx's
+// persistHighlight pattern) — a failed PATCH shows an inline error but
+// doesn't roll back the optimistic UI, since the OKR is low-stakes and the
+// user can just retry by editing again.
+function OkrEditor({ node, idToken, sessionId, onOkrChange }: {
+  node: ForkNode;
+  idToken: string;
+  sessionId: string;
+  onOkrChange?: (nodeId: string, okr: NonNullable<ForkNode['okr']>) => void;
+}) {
+  const [editing, setEditing] = useState(!!node.okr);
+  const [objective, setObjective] = useState(node.okr?.objective ?? '');
+  const [keyResults, setKeyResults] = useState<string[]>(node.okr?.keyResults ?? []);
+  const [error, setError] = useState<string | null>(null);
+  const lastSavedObjective = useRef(node.okr?.objective ?? '');
+
+  function save(nextObjective: string, nextKeyResults: string[]) {
+    const trimmed = nextObjective.trim();
+    if (!trimmed) return; // objective required — nothing to persist yet
+    const okr = { objective: trimmed, keyResults: nextKeyResults.map(k => k.trim()).filter(Boolean) };
+    lastSavedObjective.current = trimmed;
+    onOkrChange?.(node.id, okr); // optimistic — map card updates immediately
+    setError(null);
+    updateNode(idToken, sessionId, node.id, { okr }).catch(() => setError('Could not save — try again'));
+  }
+
+  if (!editing) {
+    return (
+      <div className="okr-editor okr-editor--empty">
+        <span className="okr-empty-text">🎯 No objective set for this branch yet.</span>
+        <button type="button" className="okr-empty-btn" onClick={() => setEditing(true)}>+ Set objective</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="okr-editor">
+      <div className="okr-editor-label">🎯 Branch objective</div>
+      <label className="okr-field-label" htmlFor={`okr-objective-${node.id}`}>Objective</label>
+      <textarea
+        id={`okr-objective-${node.id}`}
+        className="okr-objective-input"
+        rows={2}
+        value={objective}
+        placeholder="What is this branch trying to achieve?"
+        onChange={e => setObjective(e.target.value)}
+        onBlur={() => { if (objective.trim() !== lastSavedObjective.current) save(objective, keyResults); }}
+      />
+      {!objective.trim() && <p className="okr-validation">Objective is required to save.</p>}
+      {error && <p className="okr-validation okr-validation--error">{error}</p>}
+
+      <div className="okr-kr-section">
+        <label className="okr-field-label">Key results</label>
+        {keyResults.map((kr, i) => (
+          <div className="okr-kr-row" key={i}>
+            <span className="okr-kr-bullet">{i + 1}</span>
+            <input
+              className="okr-kr-input"
+              type="text"
+              value={kr}
+              onChange={e => setKeyResults(prev => prev.map((v, j) => (j === i ? e.target.value : v)))}
+              onBlur={() => save(objective, keyResults)}
+            />
+            <button
+              type="button"
+              className="okr-kr-delete"
+              aria-label="Remove key result"
+              onClick={() => {
+                const next = keyResults.filter((_, j) => j !== i);
+                setKeyResults(next);
+                save(objective, next);
+              }}
+            >×</button>
+          </div>
+        ))}
+        <button type="button" className="okr-kr-add" onClick={() => setKeyResults(prev => [...prev, ''])}>
+          ＋ Add key result
+        </button>
+      </div>
+    </div>
+  );
 }
 
 interface PillRect { left: number; top: number; width: number; height: number; bottom: number; }
@@ -131,7 +218,7 @@ function TimelineStep({ event }: { event: AgentEvent }) {
   );
 }
 
-export function AgentLogPane({ node, events, project, idToken, sessionId, onImplement, onRunResolved, onRetryRun, onForkBranch }: AgentLogPaneProps) {
+export function AgentLogPane({ node, events, project, idToken, sessionId, onImplement, onRunResolved, onRetryRun, onForkBranch, onOkrChange }: AgentLogPaneProps) {
   const logRef = useRef<HTMLDivElement>(null);
   const [fetchedEvents, setFetchedEvents] = useState<AgentEvent[] | null>(null);
   const [fetchLoading, setFetchLoading] = useState(false);
@@ -222,6 +309,7 @@ export function AgentLogPane({ node, events, project, idToken, sessionId, onImpl
           {node.branchName && <span className="commit-pill">⎇ {node.branchName}{shortSha ? ` · ${shortSha}` : ''}</span>}
         </div>
         <p className="ws-instruction-card">Forked from <code>{shortSha ?? '—'}</code></p>
+        <OkrEditor key={node.id} node={node} idToken={idToken} sessionId={sessionId} onOkrChange={onOkrChange} />
         <button className="proj-btn-primary" onClick={onImplement}>
           <Code size={13} /> Implement
         </button>
@@ -234,6 +322,13 @@ export function AgentLogPane({ node, events, project, idToken, sessionId, onImpl
   const workspaceExpired = node.workspace?.kind === 'cloud' && !workspaceActive;
   const hasCost = hasRun && !!node.runCostUsd;
   const totalKnown = node.machineCostUsd != null;
+  // A workspace that has already expired (the sweep that bills machineCostUsd
+  // fires ~20min after it goes cold — see types.ts) but still shows no
+  // machineCostUsd is a genuine gap, not "still accruing": the sweep either
+  // hasn't run yet for an unrelated reason or lost the bill. Don't blind-
+  // assert machineCostUsd! for it — show the total as AI-only, no provisional
+  // "+", and suppress the accruing note (#211).
+  const machineCostLost = workspaceExpired && !totalKnown;
   const totalCost = (node.runCostUsd ?? 0) + (node.machineCostUsd ?? 0);
   const diffFilesCount = node.diffSummary?.filesChanged;
 
@@ -422,14 +517,14 @@ export function AgentLogPane({ node, events, project, idToken, sessionId, onImpl
           <div className="cost-total-wrap">
             <div className={`cost-total-group${costOpen ? ' cost-total-group--open' : ''}`}>
               <button type="button" className="cost-total" aria-expanded={costOpen} onClick={() => setCostOpen(o => !o)}>
-                ≈ {totalKnown ? formatUsd(totalCost) : `${formatUsd(node.runCostUsd!)}+`}
+                ≈ {totalKnown || machineCostLost ? formatUsd(totalCost) : `${formatUsd(node.runCostUsd!)}+`}
               </button>
               <div className="cost-popover" role="tooltip">
                 <div className="cost-popover-row"><span>AI{node.model ? ` (${modelDisplayName(node.model)})` : ''}</span><span>{formatUsd(node.runCostUsd!)}</span></div>
-                <div className="cost-popover-row"><span>Compute</span><span>{totalKnown ? formatUsd(node.machineCostUsd!) : 'accruing…'}</span></div>
+                <div className="cost-popover-row"><span>Compute</span><span>{totalKnown ? formatUsd(node.machineCostUsd!) : machineCostLost ? 'n/a' : 'accruing…'}</span></div>
               </div>
             </div>
-            {!totalKnown && <span className="cost-note">compute still accruing</span>}
+            {!totalKnown && !machineCostLost && <span className="cost-note">compute still accruing</span>}
           </div>
         )}
       </div>

@@ -1,0 +1,225 @@
+<!-- @dsCard group="Round 2" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>forkai-code — Round 2: Grey nodes</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body { padding: 56px 64px 120px; min-height: 100vh; }
+
+  .theme-toggle {
+    position: fixed; top: 20px; right: 24px; z-index: 100;
+    font-family: var(--sans); font-size: 12px; font-weight: 500;
+    padding: 7px 14px; border-radius: var(--radius);
+    border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink-2);
+    cursor: pointer; box-shadow: var(--shadow-1);
+    transition: background .12s, color .12s;
+  }
+  .theme-toggle:hover { background: var(--hover); color: var(--ink); }
+
+  .ds-brand { display: inline-flex; align-items: center; gap: 8px; font-family: var(--sans); font-weight: 600; font-size: 13px; letter-spacing: .02em; color: var(--ink-2); margin-bottom: 28px; }
+  .ds-brand .mark { width: 15px; height: 15px; border-radius: 4px; background: var(--ink); display: inline-block; }
+  .ds-page-title { font-family: var(--serif); font-weight: 400; font-size: 34px; letter-spacing: -0.02em; margin: 0 0 8px; color: var(--ink); }
+  .ds-page-sub { font-family: var(--sans); font-size: 13px; color: var(--ink-3); margin: 0 0 48px; max-width: 700px; line-height: 1.55; }
+  .ds-section { margin-bottom: 60px; }
+  .ds-section-label { font-family: var(--sans); font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 18px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+  .ds-section-note { font-family: var(--sans); font-size: 12px; color: var(--ink-3); margin: -10px 0 20px; max-width: 640px; line-height: 1.5; }
+  .ds-row { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+  .ds-label-sm { font-family: var(--sans); font-size: 10.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; }
+
+  /* ── Grey node card — Round 2 ────────────────────────────────
+     Kind glyph (icon/emoji) is the sole "logo" per kind. The old
+     stacked, per-kind-COLORED "PLAN / CODE / BRANCH" kicker line is
+     gone; the kind word now sits small + grey, INLINE next to the
+     icon, on the same row — never its own colored line. No border
+     tint by kind anymore either: every card is the same neutral
+     --line-strong border regardless of kind. The commit pill (rail
+     kinds only) is what actually distinguishes a rail node from a
+     learn node now that color is gone. */
+  .node-card { position: relative; width: 212px; background: var(--paper); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); box-shadow: var(--shadow-1); padding: 11px 14px; font-family: var(--sans); box-sizing: border-box; }
+  .node-card--learn { background: #fafafa; }
+  [data-theme="dark"] .node-card--learn { background: #1c1c1c; }
+  .node-card-top { margin-bottom: 8px; }
+  .node-card-main { display: flex; align-items: center; gap: 7px; }
+  .node-card-emoji { font-size: 17px; line-height: 1; flex-shrink: 0; font-family: "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui,sans-serif; }
+  .node-card-kind { font-size: 10.5px; font-weight: 600; letter-spacing: .02em; color: var(--ink-3); display: inline-flex; align-items: center; gap: 5px; }
+  .node-card-label { font-size: 12.5px; font-weight: 500; color: var(--ink); line-height: 1.32; margin-top: 7px; }
+
+  /* Grey selected/active — an ink ring + slightly deeper shadow, still
+     monotonic (no accent color introduced for "selected" either). */
+  .node-card--selected { border-color: var(--ink); box-shadow: 0 0 0 3px color-mix(in oklab, var(--ink) 14%, transparent), var(--shadow-2); }
+  [data-theme="dark"] .node-card--selected { box-shadow: 0 0 0 3px color-mix(in oklab, var(--ink) 22%, transparent), var(--shadow-2); }
+
+  /* Collapsed commit-chain segment — was tinted --kind-code-soft /
+     dashed --kind-code; now a neutral dashed panel, same shape. */
+  .node-card--segment { display: flex; align-items: center; justify-content: center; text-align: center; width: 200px; padding: 9px 10px; background: var(--panel); border: 1px dashed var(--line-strong); font-size: 11.5px; font-weight: 500; color: var(--ink-3); }
+
+  .commit-pill { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 10.5px; font-weight: 500; padding: 3px 9px; border-radius: 999px; background: var(--commit-pill-bg); color: var(--commit-pill-ink); border: 1px solid var(--commit-pill-border); }
+
+  /* Grey PR status chip — was colored (--kind-merge / white-on-merge);
+     now grey outline (open) / filled ink-3 (merged), same shape. */
+  .pr-status-chip { font-family: var(--sans); font-size: 8.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 1px 6px; border-radius: 999px; line-height: 1.5; }
+  .pr-status-chip--open { color: var(--ink-2); border: 1px solid var(--line-strong); }
+  .pr-status-chip--merged { color: var(--bg); background: var(--ink-3); }
+
+  /* ── Map legend — grey node dots, colored edge rows ─────────── */
+  .map-legend { display: inline-flex; flex-direction: column; gap: 7px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-2); padding: 14px 16px; font-family: var(--sans); font-size: 12px; color: var(--ink-2); }
+  .legend-row { display: flex; align-items: center; gap: 9px; }
+  .legend-sep { height: 1px; background: var(--line); margin: 3px 0; }
+  .legend-dot { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; background: var(--ink-3); }
+  .legend-dot--segment { background: var(--panel); border: 1px dashed var(--line-strong); }
+  .legend-line { width: 20px; height: 0; border-top: 2px solid; flex-shrink: 0; }
+  .legend-line--lane { border-top-style: dashed; border-top-color: var(--lane-line); }
+  .legend-line--learn { border-top-style: solid; border-top-color: var(--ink-3); opacity: .6; }
+  .legend-line--fork { border-top-style: solid; border-top-color: var(--kind-branch); }
+  .legend-line--merge { border-top-style: solid; border-top-color: var(--kind-merge); }
+
+  .side-note { display: flex; gap: 10px; align-items: flex-start; max-width: 420px; background: var(--kind-branch-soft); border: 1px solid color-mix(in oklab, var(--kind-branch) 35%, var(--line)); border-radius: var(--radius); padding: 12px 14px; font-family: var(--sans); font-size: 12px; color: var(--ink-2); line-height: 1.5; }
+  .side-note-ic { flex-shrink: 0; font-size: 14px; }
+</style>
+</head>
+<body>
+  <button class="theme-toggle" onclick="const h=document.documentElement; h.setAttribute('data-theme', (h.getAttribute('data-theme')||'light')==='light'?'dark':'light');">Toggle theme</button>
+
+  <div class="ds-brand"><span class="mark"></span>fork ai code</div>
+  <h1 class="ds-page-title">Round 2 — Grey nodes</h1>
+  <p class="ds-page-sub">Theme revert: node cards, buttons, overlays, and pills go monotonic grey — the kind's emoji/icon becomes the "logo," and the kicker is demoted to a small grey label sitting inline beside it instead of a separate colored ALL-CAPS line. Branch/merge <b>edges</b> on the map stay colored — this file proves the grey nodes still read clearly next to those colored lines. (WS-T · #214 / #222 / #224)</p>
+
+  <div class="ds-section">
+    <div class="ds-section-label">All kinds, side by side</div>
+    <p class="ds-section-note">Same card shell for every kind now — no per-kind border tint. Rail kinds (Plan / Code / Branch / Merge) carry a fixed icon glyph, never an LLM-chosen emoji; Query and Learn nodes do. The commit pill is the primary rail-vs-learn signal now that color is gone.</p>
+    <div class="ds-row">
+      <div>
+        <div class="ds-label-sm">Query (root)</div>
+        <div class="node-card">
+          <div class="node-card-main">
+            <span class="node-card-emoji">💬</span>
+            <span class="node-card-kind">Query</span>
+          </div>
+          <div class="node-card-label">Add rate limiting to the API</div>
+        </div>
+      </div>
+      <div>
+        <div class="ds-label-sm">Learn</div>
+        <div class="node-card node-card--learn">
+          <div class="node-card-main">
+            <span class="node-card-emoji">📎</span>
+            <span class="node-card-kind">Learn</span>
+          </div>
+          <div class="node-card-label">Token bucket vs sliding window</div>
+        </div>
+      </div>
+      <div>
+        <div class="ds-label-sm">Plan</div>
+        <div class="node-card">
+          <div class="node-card-main">
+            <span class="node-card-emoji">🗂</span>
+            <span class="node-card-kind">Plan</span>
+          </div>
+          <div class="node-card-label">Implementation plan</div>
+        </div>
+      </div>
+      <div>
+        <div class="ds-label-sm">Code (commit pill)</div>
+        <div class="node-card">
+          <div class="node-card-top"><span class="commit-pill">⎇ main · f0e91aa</span></div>
+          <div class="node-card-main">
+            <span class="node-card-emoji">🧩</span>
+            <span class="node-card-kind">Code</span>
+          </div>
+          <div class="node-card-label">Wire Redis token-bucket store</div>
+        </div>
+      </div>
+      <div>
+        <div class="ds-label-sm">Branch (fork @sha pill)</div>
+        <div class="node-card">
+          <div class="node-card-top"><span class="commit-pill">⎇ feature/sliding-window · d41f7b2</span></div>
+          <div class="node-card-main">
+            <span class="node-card-emoji">⑂</span>
+            <span class="node-card-kind">Branch</span>
+          </div>
+          <div class="node-card-label">Fork: feature/sliding-window</div>
+        </div>
+      </div>
+      <div>
+        <div class="ds-label-sm">Merge (open)</div>
+        <div class="node-card">
+          <div class="node-card-main">
+            <span class="node-card-emoji">🔀</span>
+            <span class="node-card-kind">PR<span class="pr-status-chip pr-status-chip--open">open</span></span>
+          </div>
+          <div class="node-card-label">Merge feature/sliding-window</div>
+        </div>
+      </div>
+      <div>
+        <div class="ds-label-sm">Merge (merged)</div>
+        <div class="node-card">
+          <div class="node-card-main">
+            <span class="node-card-emoji">🔀</span>
+            <span class="node-card-kind">PR<span class="pr-status-chip pr-status-chip--merged">merged</span></span>
+          </div>
+          <div class="node-card-label">Merge feature/sliding-window</div>
+        </div>
+      </div>
+      <div>
+        <div class="ds-label-sm">Collapsed segment</div>
+        <div class="node-card node-card--segment">⋯ 12 commits</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ds-section">
+    <div class="ds-section-label">Selected / active state</div>
+    <p class="ds-section-note">Selection is an ink ring, not a color swap — stays inside the monotonic system.</p>
+    <div class="ds-row">
+      <div>
+        <div class="ds-label-sm">Default</div>
+        <div class="node-card">
+          <div class="node-card-top"><span class="commit-pill">⎇ main · f0e91aa</span></div>
+          <div class="node-card-main">
+            <span class="node-card-emoji">🧩</span>
+            <span class="node-card-kind">Code</span>
+          </div>
+          <div class="node-card-label">Wire Redis token-bucket store</div>
+        </div>
+      </div>
+      <div>
+        <div class="ds-label-sm">Selected</div>
+        <div class="node-card node-card--selected">
+          <div class="node-card-top"><span class="commit-pill">⎇ main · f0e91aa</span></div>
+          <div class="node-card-main">
+            <span class="node-card-emoji">🧩</span>
+            <span class="node-card-kind">Code</span>
+          </div>
+          <div class="node-card-label">Wire Redis token-bucket store</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ds-section">
+    <div class="ds-section-label">Map legend — grey nodes, colored edges</div>
+    <div class="ds-row" style="align-items: flex-start;">
+      <div class="map-legend">
+        <div class="legend-row"><span class="legend-dot"></span>Learn — go deeper / ask AI</div>
+        <div class="legend-row"><span class="legend-dot"></span>Plan — synthesized implementation plan</div>
+        <div class="legend-row"><span class="legend-dot"></span>Code — one agent run = one commit</div>
+        <div class="legend-row"><span class="legend-dot"></span>Branch — forks a new column, same row</div>
+        <div class="legend-row"><span class="legend-dot"></span>Merge — PR into a target column</div>
+        <div class="legend-row"><span class="legend-dot legend-dot--segment"></span>Collapsed commit chain</div>
+        <div class="legend-sep"></div>
+        <div class="legend-row"><span class="legend-line legend-line--lane"></span>Column rail</div>
+        <div class="legend-row"><span class="legend-line legend-line--learn"></span>Learn edge (curved, hangs below)</div>
+        <div class="legend-row"><span class="legend-line legend-line--fork"></span>Branch fork (horizontal, arrowhead)</div>
+        <div class="legend-row"><span class="legend-line legend-line--merge"></span>Merge edge (violet, arrowhead)</div>
+      </div>
+      <div class="side-note">
+        <span class="side-note-ic">⑂</span>
+        <span>All five node-kind dots above are the same neutral grey — the map card itself (icon + inline kind label + pill) now carries the kind signal, not the legend dot. The four edge-line rows below the divider are unchanged from Round 1: <b>fork</b> stays <code style="font-family: var(--mono);">--kind-branch</code> green, <b>merge</b> stays <code style="font-family: var(--mono);">--kind-merge</code> violet. Edges are structural wayfinding on the map (which lane came from where) — grey nodes don't touch that.</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
