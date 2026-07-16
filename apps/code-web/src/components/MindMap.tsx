@@ -607,20 +607,25 @@ export function MindMap({
                               ? <span className="mm-emoji">{n.emoji}</span>
                               : <NodeIcon size={16} />}
                           </div>
-                          {/* Round 2 (WS-T): kind demoted to a small grey label inline
-                              beside the icon — no longer a separate colored ALL-CAPS
-                              line. Still carried in title/aria-label for a11y. */}
-                          <div className="mm-kicker" title={kicker} aria-label={kicker}>
-                            {kicker}
-                            {n.kind === 'MERGE' && n.prStatus && (
-                              <span className={`mm-pr-status mm-pr-status--${n.prStatus}`}>{n.prStatus}</span>
-                            )}
-                            {isFailed && <span className="mm-node-error-dot" title="Run failed" />}
+                          {/* Round 2 (WS-T): kind label is inline beside the icon, not a
+                              separate ALL-CAPS line. Kept inside .mm-card-text so the
+                              title's -webkit-line-clamp doesn't overflow the fixed card
+                              height (NODE_H=58) — a separate flex child would add its
+                              own row height and push 2-line titles past the foreignObject
+                              clip rect (#230). */}
+                          <div className="mm-card-text">
+                            <div className="mm-kicker" title={kicker} aria-label={kicker}>
+                              {kicker}
+                              {n.kind === 'MERGE' && n.prStatus && (
+                                <span className={`mm-pr-status mm-pr-status--${n.prStatus}`}>{n.prStatus}</span>
+                              )}
+                              {isFailed && <span className="mm-node-error-dot" title="Run failed" />}
+                            </div>
+                            <div className="mm-label" title={n.title || 'Untitled'}>{n.title || 'Untitled'}</div>
                           </div>
                           {n.sources?.length ? <span className="mm-search-badge">🔍</span> : null}
                           {n.kind === 'MIX' ? <span className="mm-mix-badge"><Filter size={11} /></span> : null}
                         </div>
-                        <div className="mm-label" title={n.title || 'Untitled'}>{n.title || 'Untitled'}</div>
                         {/* Surface the OKR on the map card itself (#220) — objective as
                             a subtitle, KR count as a small 🎯 chip — so it's visible
                             without opening the pane. hasOkr also grows boxH (OKR_H). */}

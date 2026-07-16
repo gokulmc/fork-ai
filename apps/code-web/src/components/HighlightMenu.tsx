@@ -37,7 +37,7 @@ const MENU_H = 46;
 
 export function HighlightMenu({ visible, rect, lastColors, onAction, onClose, askOnly }: HighlightMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
-  const [showColors, setShowColors] = useState(false);
+  const [showColors, setShowColors] = useState(true);
 
   const fg = lastColors.fg ?? null;
   const bg = lastColors.bg ?? '#fef08a';
@@ -55,7 +55,8 @@ export function HighlightMenu({ visible, rect, lastColors, onAction, onClose, as
   }, [rect.left, rect.top, rect.width, rect.height, rect.bottom]);
 
   useEffect(() => {
-    if (!visible) setShowColors(false);
+    if (visible) setShowColors(true);
+    else setShowColors(false);
   }, [visible]);
 
   useEffect(() => {

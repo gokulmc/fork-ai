@@ -1166,7 +1166,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       id: tempId,
       parentId: null,
       kind: 'QUERY',
-      title: '',
+      title: query.length > 60 ? query.slice(0, 60) + '…' : query,
       emoji: null,
       query,
       lede: '',
@@ -1207,7 +1207,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       // first question lands as its child, never a new root.
       parentId: rootIdRef.current,
       kind: 'QUERY',
-      title: '',
+      title: query.length > 60 ? query.slice(0, 60) + '…' : query,
       emoji: null,
       query,
       lede: '',

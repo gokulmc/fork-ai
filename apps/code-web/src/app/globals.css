@@ -68,7 +68,7 @@
   /* ── forkai-code: git-graph lanes ───────────────────────────
      Slightly stronger than --line since it's a structural rail,
      not a content divider. */
-  --lane-line: rgba(0, 0, 0, 0.13);
+  --lane-line: rgba(0, 0, 0, 0.18);
 
   /* ── forkai-code: diff colors ────────────────────────────────
      Desaturated — reads as "add/remove" without the saturated
@@ -125,7 +125,7 @@
   --commit-pill-ink: #c9c7bd;
   --commit-pill-border: rgba(255, 255, 255, 0.12);
 
-  --lane-line: rgba(255, 255, 255, 0.16);
+  --lane-line: rgba(255, 255, 255, 0.22);
 
   --diff-add: #7fbf9c;
   --diff-add-bg: #1c2925;
@@ -1487,11 +1487,15 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 }
 .mm-card-ic svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.75; fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .mm-emoji { font-size: 20px; line-height: 1; display: inline-block; font-family: "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui,sans-serif; font-variant-emoji: emoji; }
+/* Wraps kicker + label inside .mm-card-main so the title's -webkit-line-clamp
+   doesn't overflow the fixed card height (NODE_H=58). Restored after Round 2's
+   grey-theme refactor inadvertently pulled the label into a separate flex child
+   of .mm-card, which made a 2-line title push past the foreignObject clip (#230). */
+.mm-card-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 /* Round 2 (WS-T): kind label sits inline beside the icon, small + grey — not
-   uppercase/letter-spaced like the old separate kicker line. flex:1/min-width:0
-   lets it ellipsis while the search/mix badges (margin-left:auto) stay pinned
-   right of it within .mm-card-main. */
-.mm-kicker { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 600; letter-spacing: 0.02em; color: var(--ink-3); line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+   uppercase/letter-spaced like the old separate kicker line. Now inside
+   .mm-card-text (see above), not a direct child of .mm-card-main. */
+.mm-kicker { display: flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 600; letter-spacing: 0.02em; color: var(--ink-3); line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mm-label { font-size: 12.5px; font-weight: 500; color: var(--ink); line-height: 1.22; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
 /* BRANCH card OKR surfacing (#220) — objective subtitle + 🎯 KR-count chip,
    sized to fit within OKR_H's reserved extra card height (MindMap.tsx). */
@@ -1578,7 +1582,7 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
   width: 100%; min-height: 40px; box-sizing: border-box; resize: none;
   background: transparent; border: none; outline: none;
   font-family: var(--sans); font-size: 13.5px; color: var(--ink); line-height: 1.45;
-  padding: 7px 6px 3px;
+  padding: 8px 8px;
   overflow-y: auto;
 }
 .code-composer-textarea::placeholder { color: var(--ink-3); }
@@ -2242,7 +2246,12 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
   .mrt-dock {
     display: flex; align-items: center; justify-content: center;
     border-bottom: 1px solid var(--line);
-    background: var(--bg);
+    /* Glossy glass-morphism (WS-D / #225) — preserves the old mm-pill's
+       translucent sheen on the docked Map/Read toggle bar. */
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    -webkit-backdrop-filter: blur(6px) saturate(170%);
+    backdrop-filter: blur(6px) saturate(170%);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 50%, transparent);
     z-index: 4;
   }
   .map-read-toggle { display: inline-flex; padding: 3px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); gap: 2px; }

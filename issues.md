@@ -4,6 +4,16 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 > **Required step:** update this file in the **same commit** as any bug fix. See [CLAUDE.md → "Issue log (issues.md)"](CLAUDE.md). Format: one `###` entry per fix — Symptom / Cause / Fix, plus the commit SHA once committed.
 
+### forkai-code: composer textarea padding uneven (#228)
+- **Symptom:** Textarea padding was `7px 6px 3px` — top 7px, bottom 3px, sides 6px — making the input text visibly off-center vertically.
+- **Cause:** Asymmetric padding shorthand, probably a leftover from earlier composer tweaks.
+- **Fix:** Evened to `8px 8px`.
+
+### forkai-code: mind-map card title overflow past foreignObject clip (#230)
+- **Symptom:** 2-line titles pushed past the fixed card height (NODE_H=58) and were clipped by the foreignObject, hiding the second line entirely. Optimistic QUERY nodes showed empty titles before the stream delivered the real one.
+- **Cause:** Round 2's grey-theme refactor pulled `.mm-label` out of `.mm-card-main`'s flex into a direct child of `.mm-card`, adding a separate row height that overflowed the fixed box.
+- **Fix:** Re-wrapped kicker+label inside `.mm-card-text` (flex column, min-width:0) so `-webkit-line-clamp` is bounded by the card height. Optimistic QUERY node titles now truncate `query.slice(0,60)` instead of `''`.
+
 ---
 
 ### forkai-code: a single transient Fly API network blip killed an entire cloud agent run
