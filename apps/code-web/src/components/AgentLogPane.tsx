@@ -154,68 +154,167 @@ function firstStringArg(args: unknown): string | null {
   return null;
 }
 
-// A `tool_call` payload is sometimes a JSON-serialized `{ tool_name, args }`
-// object (as a string, or already parsed) rather than a plain human sentence.
-// Turn that into a short human-readable line, keeping the raw JSON available
-// for anyone who wants the full detail. Returns null for anything that isn't
-// this shape, so the caller can fall back to the plain raw rendering.
-function humanizeToolCall(payload: unknown): { human: string; raw: string } | null {
+// A `tool_call` payload is a JSON-serialized object — either `{ tool_name,
+// args }` (mock agent) or `{ name, inputSummary }` (LocalAgentRunner, via
+// claude-events.ts) — as a string, or already parsed. Splits it into a tool
+// name + a one-line arg summary for the Claude-Code-style "● Tool(arg)"
+// bullet. Returns null for anything that isn't this shape, so the caller can
+// fall back to treating the payload as a plain sentence.
+function humanizeToolCall(payload: unknown): { name: string; arg: string } | null {
   let obj: unknown = payload;
   if (typeof payload === 'string') {
     try { obj = JSON.parse(payload); } catch { return null; }
   }
   if (!obj || typeof obj !== 'object') return null;
   const rec = obj as Record<string, unknown>;
-  const raw = JSON.stringify(obj);
   if (typeof rec.tool_name === 'string') {
-    const toolName = rec.tool_name;
-    const arg = firstStringArg(rec.args) ?? '';
-    if (toolName === 'fs.writeFile') return { human: `Wrote ${arg}`, raw };
-    if (toolName === 'fs.readFile') return { human: `Read ${arg}`, raw };
-    if (toolName === 'exec.exec') return { human: `Ran: ${arg}`, raw };
-    return { human: `${toolName}(${arg})`, raw };
+    return { name: rec.tool_name, arg: firstStringArg(rec.args) ?? '' };
   }
-  // Persisted runs store just the args object (no tool_name wrapper) — infer
-  // the verb from the arg shape so fetched logs humanize the same as live ones.
+  if (typeof rec.name === 'string') {
+    return { name: rec.name, arg: firstStringArg(rec.inputSummary) ?? '' };
+  }
+  // Persisted runs store just the args object (no name wrapper) — infer the
+  // verb from the arg shape so fetched logs humanize the same as live ones.
   if (typeof rec.path === 'string') {
-    return { human: `${typeof rec.content === 'string' ? 'Wrote' : 'Read'} ${rec.path}`, raw };
+    return { name: typeof rec.content === 'string' ? 'Write' : 'Read', arg: rec.path };
   }
-  if (typeof rec.command === 'string') return { human: `Ran: ${rec.command}`, raw };
+  if (typeof rec.command === 'string') return { name: 'Bash', arg: rec.command };
   return null;
 }
 
-// One-line step row (dot + bold verb + muted detail), replacing the old
-// two-line tool_call/tool_result pair — see fix-agent-timeline.html.
-function TimelineStep({ event }: { event: AgentEvent }) {
-  if (event.kind === 'truncated') {
-    const p = event.payload as Record<string, unknown> | undefined;
-    const msg = p && typeof p === 'object' && 'message' in p ? String(p.message) : 'earlier output omitted';
-    return <div className="log-line log-line--truncated">··· {msg} ···</div>;
-  }
+// The mock agent's tool_call payloads are often a free first-person sentence
+// ("Reading package.json to check dependencies") rather than JSON — when
+// humanizeToolCall can't parse a structured shape, fall back to splitting off
+// the leading word as the "tool name" so the bullet still reads as
+// `Bold-word(rest of sentence)` instead of one long undifferentiated line.
+function toolCallLabel(event: AgentEvent): { name: string; arg: string } {
   const parsed = humanizeToolCall(event.payload);
-  if (parsed) {
-    return (
-      <div className="timeline-step">
-        <span className="timeline-step-dot" />
-        <div className="timeline-step-body">
-          <span className="timeline-step-verb">{parsed.human}</span>
-          <details className="log-line-raw">
-            <summary>raw</summary>
-            <pre>{parsed.raw}</pre>
-          </details>
-        </div>
-      </div>
-    );
-  }
-  const isTerminal = event.kind === 'terminal' && typeof event.payload === 'string';
+  if (parsed) return parsed;
+  const text = payloadText(event.payload).trim();
+  const spaceIdx = text.indexOf(' ');
+  if (spaceIdx > 0 && spaceIdx <= 24) return { name: text.slice(0, spaceIdx), arg: text.slice(spaceIdx + 1) };
+  return { name: 'Tool', arg: text };
+}
+
+function truncatedMessage(payload: unknown): string {
+  const p = payload as Record<string, unknown> | undefined;
+  return p && typeof p === 'object' && 'message' in p ? String(p.message) : 'earlier output omitted';
+}
+
+// Assistant prose — plain text, no markdown parsing (AgentLogPane is
+// intentionally not code-split with a markdown lib).
+function AssistantBubble({ text }: { text: string }) {
   return (
-    <div className="timeline-step">
-      <span className="timeline-step-dot" />
-      <div className="timeline-step-body">
-        {isTerminal ? <div className="log-line log-line--terminal">{event.payload as string}</div> : payloadText(event.payload)}
+    <div className="cc-msg cc-msg--assistant">
+      <div className="cc-msg-body">{text}</div>
+    </div>
+  );
+}
+
+// A `tool_result` / `terminal` / `file_edit` payload — collapsed to a
+// one-line summary by default (Claude-Code-style ⎿), click to expand the
+// full text. `indent` distinguishes a result paired under a preceding
+// tool_call (indented, branch glyph) from a standalone/unpaired one.
+function CollapsibleResult({ event, indent, expanded, onToggle }: {
+  event: AgentEvent; indent: boolean; expanded: boolean; onToggle: () => void;
+}) {
+  const text = payloadText(event.payload);
+  const nonEmptyLines = text.split('\n').filter(l => l.trim().length > 0);
+  const firstLine = nonEmptyLines[0] ?? text;
+  const extraLines = Math.max(0, nonEmptyLines.length - 1);
+  const truncatedFirst = firstLine.length > 140;
+  const hasMore = extraLines > 0 || truncatedFirst;
+  const summary = truncatedFirst ? `${firstLine.slice(0, 140)}…` : firstLine;
+  const suffix = extraLines > 0 ? `  +${extraLines} more line${extraLines === 1 ? '' : 's'}` : '';
+  const kindClass = event.kind === 'terminal' ? ' cc-tool-result--terminal' : '';
+  return (
+    <div className={`cc-tool-result${indent ? ' cc-tool-result--indent' : ''}${kindClass}`}>
+      {indent && <span className="cc-tool-result-branch">⎿</span>}
+      <div className="cc-tool-result-body">
+        {hasMore ? (
+          <button type="button" className="cc-tool-result-summary" onClick={onToggle} aria-expanded={expanded}>
+            <span className="cc-tool-result-caret">{expanded ? '▾' : '▸'}</span>
+            {expanded ? firstLine : `${summary}${suffix}`}
+          </button>
+        ) : (
+          <span className="cc-tool-result-summary cc-tool-result-summary--static">{summary || '(empty)'}</span>
+        )}
+        {expanded && <pre className="cc-tool-result-full">{text}</pre>}
       </div>
     </div>
   );
+}
+
+// "● ToolName(arg)" bullet, with its paired result (if any) rendered indented
+// beneath it.
+function ToolCallLine({ event, result, expanded, onToggle }: {
+  event: AgentEvent; result: AgentEvent | null; expanded: boolean; onToggle: () => void;
+}) {
+  const { name, arg } = toolCallLabel(event);
+  return (
+    <div className="cc-tool">
+      <div className="cc-tool-call">
+        <span className="cc-tool-bullet">●</span>
+        <span className="cc-tool-name">{name}</span>
+        {arg && <span className="cc-tool-args">({arg})</span>}
+      </div>
+      {result && <CollapsibleResult event={result} indent expanded={expanded} onToggle={onToggle} />}
+    </div>
+  );
+}
+
+interface CallGroup { call: AgentEvent; result: AgentEvent | null; }
+
+type TranscriptItem =
+  | { key: string; type: 'assistant'; text: string }
+  | { key: string; type: 'call'; group: CallGroup }
+  | { key: string; type: 'result'; event: AgentEvent }
+  | { key: string; type: 'truncated'; event: AgentEvent };
+
+// Threads the flat AgentEvent log into a chat-shaped structure: consecutive
+// `text` events merge into one assistant bubble; a `tool_result` / `terminal`
+// / `file_edit` event pairs with the most recently emitted unmatched
+// `tool_call` (there's no id on either side to match by — see root
+// CLAUDE.md's AgentEvent shape — so this is purely positional); anything
+// left over renders as its own standalone line.
+function buildTranscript(steps: AgentEvent[]): TranscriptItem[] {
+  const items: TranscriptItem[] = [];
+  let openCall: CallGroup | null = null;
+  let pendingText: { seq: number; parts: string[] } | null = null;
+
+  const flushText = () => {
+    if (pendingText) {
+      items.push({ key: `text-${pendingText.seq}`, type: 'assistant', text: pendingText.parts.join('\n\n') });
+      pendingText = null;
+    }
+  };
+
+  for (const event of steps) {
+    if (event.kind === 'text') {
+      const text = payloadText(event.payload).trim();
+      if (!text) continue;
+      if (pendingText) pendingText.parts.push(text);
+      else pendingText = { seq: event.seq, parts: [text] };
+      continue;
+    }
+    flushText();
+    if (event.kind === 'truncated') {
+      items.push({ key: `trunc-${event.seq}`, type: 'truncated', event });
+      openCall = null;
+      continue;
+    }
+    if (event.kind === 'tool_call') {
+      const group: CallGroup = { call: event, result: null };
+      items.push({ key: `call-${event.seq}`, type: 'call', group });
+      openCall = group;
+      continue;
+    }
+    // tool_result | terminal | file_edit — pair to the last open call, else standalone
+    if (openCall && !openCall.result) openCall.result = event;
+    else items.push({ key: `result-${event.seq}`, type: 'result', event });
+  }
+  flushText();
+  return items;
 }
 
 export function AgentLogPane({ node, events, project, idToken, sessionId, onImplement, onRunResolved, onRetryRun, onForkBranch, onOkrChange }: AgentLogPaneProps) {
@@ -226,6 +325,7 @@ export function AgentLogPane({ node, events, project, idToken, sessionId, onImpl
   const [branchPopupRect, setBranchPopupRect] = useState<PillRect | null>(null);
   const [logExpanded, setLogExpanded] = useState(false);
   const [costOpen, setCostOpen] = useState(false);
+  const [expandedResults, setExpandedResults] = useState<Set<number>>(new Set());
 
   const hasLiveLog = !!events?.length;
   const log = hasLiveLog ? events! : (fetchedEvents ?? []);
@@ -240,6 +340,17 @@ export function AgentLogPane({ node, events, project, idToken, sessionId, onImpl
   // one status line instead of appending a growing pile of "Working…" rows.
   const steps = log.filter(e => e.seq >= 0);
   const latestHeartbeat = [...log].reverse().find(e => e.seq < 0);
+  // "M tools" in the transcript footer counts every action-taking event kind,
+  // not just literal tool_call — terminal/file_edit are tool invocations too.
+  const toolCount = steps.filter(e => e.kind === 'tool_call' || e.kind === 'terminal' || e.kind === 'file_edit').length;
+
+  function toggleResult(seq: number) {
+    setExpandedResults(prev => {
+      const next = new Set(prev);
+      if (next.has(seq)) next.delete(seq); else next.add(seq);
+      return next;
+    });
+  }
 
   // A run that failed before producing a single real step never got past
   // provisioning/boot — there's no log or diff to show, so the status line
@@ -254,6 +365,7 @@ export function AgentLogPane({ node, events, project, idToken, sessionId, onImpl
     setFetchError(false);
     setLogExpanded(false);
     setCostOpen(false);
+    setExpandedResults(new Set());
     if (node.kind !== 'CODE' || hasLiveLog) return;
     if (node.agentStatus !== 'done' && node.agentStatus !== 'error') return;
     let cancelled = false;
@@ -390,7 +502,7 @@ export function AgentLogPane({ node, events, project, idToken, sessionId, onImpl
           The tool-call transcript itself is transient run detail, not
           highlightable source text, so it stays outside this wrapper. */}
       <div data-section-id="agentlog" className="agent-log-selectable">
-        <p className="ws-instruction-card">{node.query || node.commitMessage || '—'}</p>
+        <p className="ws-instruction-card cc-msg--user">{node.query || node.commitMessage || '—'}</p>
       </div>
 
       {/* Once a run is done, the transcript collapses behind a disclosure and
@@ -449,7 +561,7 @@ export function AgentLogPane({ node, events, project, idToken, sessionId, onImpl
         <div className="ws-block-label">Agent log</div>
       )}
       {hasRun && !isBootFailure && (node.agentStatus !== 'done' || logExpanded) && (
-        <div className="term-panel" ref={logRef}>
+        <div className="term-panel cc-transcript" ref={logRef}>
           {steps.length === 0 && fetchLoading && <div className="log-line log-line--text agent-log-shimmer">Loading run…</div>}
           {steps.length === 0 && !fetchLoading && node.agentStatus === 'running' && !latestHeartbeat && (
             <div className="log-line log-line--text agent-log-shimmer">Starting…</div>
@@ -457,7 +569,33 @@ export function AgentLogPane({ node, events, project, idToken, sessionId, onImpl
           {steps.length === 0 && !fetchLoading && node.agentStatus !== 'running' && fetchError && (
             <div className="log-line log-line--text agent-log-error-note">Couldn&rsquo;t load this run.</div>
           )}
-          {steps.map(e => <TimelineStep key={e.seq} event={e} />)}
+          {buildTranscript(steps).map(item => {
+            if (item.type === 'assistant') return <AssistantBubble key={item.key} text={item.text} />;
+            if (item.type === 'truncated') {
+              return <div key={item.key} className="log-line log-line--truncated">··· {truncatedMessage(item.event.payload)} ···</div>;
+            }
+            if (item.type === 'call') {
+              const { call, result } = item.group;
+              return (
+                <ToolCallLine
+                  key={item.key}
+                  event={call}
+                  result={result}
+                  expanded={result ? expandedResults.has(result.seq) : false}
+                  onToggle={() => result && toggleResult(result.seq)}
+                />
+              );
+            }
+            return (
+              <CollapsibleResult
+                key={item.key}
+                event={item.event}
+                indent={false}
+                expanded={expandedResults.has(item.event.seq)}
+                onToggle={() => toggleResult(item.event.seq)}
+              />
+            );
+          })}
           {node.agentStatus === 'running' && latestHeartbeat && (
             <div className="timeline-working" aria-live="polite">
               <span className="timeline-working-dot" />{payloadText(latestHeartbeat.payload)}
@@ -473,6 +611,12 @@ export function AgentLogPane({ node, events, project, idToken, sessionId, onImpl
                   {onRetryRun && <button className="timeline-retry-btn" onClick={() => onRetryRun(node.id)}>↻ Retry</button>}
                 </div>
               </div>
+            </div>
+          )}
+          {steps.length > 0 && (
+            <div className="cc-transcript-footer">
+              ↳ {steps.length} step{steps.length === 1 ? '' : 's'} · {toolCount} tool{toolCount === 1 ? '' : 's'}
+              {hasCost && ` · ${totalKnown || machineCostLost ? formatUsd(totalCost) : `${formatUsd(node.runCostUsd!)}+`}`}
             </div>
           )}
         </div>
