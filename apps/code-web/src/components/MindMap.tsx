@@ -660,15 +660,22 @@ export function MindMap({
                           </div>
                           {n.sources?.length ? <span className="mm-search-badge">🔍</span> : null}
                           {n.kind === 'MIX' ? <span className="mm-mix-badge"><Filter size={11} /></span> : null}
-                          {n.kind === 'BRANCH' && onToggleBranchCollapse && (() => {
+                          {(isRoot || n.kind === 'CODE' || n.kind === 'BRANCH') && onToggleBranchCollapse && (() => {
                             const branchCollapsed = collapsedBranchIds?.has(n.id) ?? false;
                             const hidden = hiddenBranchCounts?.[n.id] ?? 0;
+                            // Only offer the minimiser when there's a learn/plan subtree to
+                            // hide (when already collapsed, keep it so the user can expand).
+                            const hasCollapsible = branchCollapsed || (childMap[n.id] ?? []).some(cid => {
+                              const k = nodes[cid]?.kind;
+                              return k === 'QUERY' || k === 'DEEPER' || k === 'ASK' || k === 'MIX' || k === 'PLAN';
+                            });
+                            if (!hasCollapsible) return null;
                             return (
                               <button
                                 type="button"
                                 className={`mm-collapse-dot${branchCollapsed ? ' mm-collapse-dot--active' : ''}`}
-                                title={branchCollapsed ? `Show ${hidden} hidden node${hidden === 1 ? '' : 's'}` : 'Collapse learn + plan'}
-                                aria-label={branchCollapsed ? 'Expand branch subtree' : 'Collapse branch subtree'}
+                                title={branchCollapsed ? `Show ${hidden} hidden node${hidden === 1 ? '' : 's'}` : 'Minimise learn + plan nodes'}
+                                aria-label={branchCollapsed ? 'Expand subtree' : 'Minimise subtree'}
                                 onClick={e => { e.stopPropagation(); onToggleBranchCollapse(n.id); }}
                               >
                                 {branchCollapsed && hidden > 0 ? hidden : ''}

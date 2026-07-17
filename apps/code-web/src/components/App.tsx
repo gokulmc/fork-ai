@@ -2484,7 +2484,9 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
 
       collapsedBranchIds.forEach((branchId) => {
         const branch = base[branchId];
-        if (!branch || branch.kind !== 'BRANCH') return;
+        // Any node can be minimised (root/CODE/BRANCH) — the walk below prunes
+        // its learn+plan subtree and keeps the rail intact regardless of kind.
+        if (!branch) return;
         const toDelete = new Set<string>();
         const reparent = new Set<string>();
         // Walk down from the branch: prune the learn+plan chain, and reparent
