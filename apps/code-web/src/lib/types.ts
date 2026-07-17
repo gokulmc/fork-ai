@@ -39,6 +39,9 @@ export interface ForkNode {
   commitSha?: string;
   branchName?: string;
   commitMessage?: string;
+  // Full agent-run summary (multi-sentence prose) — commitMessage is its first
+  // line; rendered at the top of the CODE node's pane. Set at run done.
+  runSummary?: string;
   diffSummary?: DiffSummary;
   agentStatus?: 'running' | 'done' | 'error';
   imported?: boolean;

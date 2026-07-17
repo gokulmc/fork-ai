@@ -297,6 +297,26 @@ function buildLearnOnlyNodes(nodes: Record<string, ForkNode>, rootId: string): R
   return out;
 }
 
+// Walks a node's parent chain to find the nearest BRANCH ancestor's column —
+// used to re-home a CODE node built from a PLAN under the branch its plan's
+// underlying learn subtree hung off, rather than the PLAN's own side column
+// (the PLAN opened that column purely because ITS parent was a learn node —
+// see placeRail's `!parentIsRail` branch — which has no visual relationship
+// to where the CODE conceptually belongs). Undefined if no BRANCH ancestor
+// exists (e.g. a rail-root repo import with no BRANCH above the PLAN).
+function nearestBranchCol(
+  nodes: Record<string, ForkNode>,
+  colOf: Record<string, number>,
+  startId: string,
+): number | undefined {
+  let cur: string | undefined = startId;
+  while (cur) {
+    if (nodes[cur]?.kind === 'BRANCH') return colOf[cur];
+    cur = nodes[cur]?.parentId ?? undefined;
+  }
+  return undefined;
+}
+
 // Git-graph layout — PLAN/CODE/BRANCH/MERGE ride vertical columns (1 column =
 // 1 git branch, commits flow downward); learn (QUERY/DEEPER/ASK/MIX) subtrees
 // hang BELOW their anchor, in a side lane offset to the right so they never
@@ -421,6 +441,12 @@ export function layoutGitGraph(nodes: Record<string, ForkNode>, rootId: string):
     } else if (!parentIsRail) {
       col = allocateColumn();
       y = Math.max(learnMaxY + RAIL_START_GAP, pos[parentId].y + rowAdvance(hangChildMap, parentId));
+    } else if (nodes[id].kind === 'CODE' && nodes[parentId].kind === 'PLAN') {
+      // Re-home under the nearest BRANCH ancestor's column instead of the
+      // PLAN's own column — the edge below still connects PLAN -> CODE
+      // (parentId untouched), just routed cross-column.
+      col = nearestBranchCol(nodes, colOf, parentId) ?? colOf[parentId];
+      y = pos[parentId].y + rowAdvance(hangChildMap, parentId);
     } else {
       col = colOf[parentId];
       y = pos[parentId].y + rowAdvance(hangChildMap, parentId);

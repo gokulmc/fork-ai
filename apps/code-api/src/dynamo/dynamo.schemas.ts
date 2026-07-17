@@ -168,6 +168,7 @@ export const NodeSchema = new dynamoose.Schema({
   commitSha: { type: String, required: false },
   branchName: { type: String, required: false },
   commitMessage: { type: String, required: false },
+  runSummary: { type: String, required: false },
   diffSummary: { type: Object, required: false, schema: DIFF_SUMMARY_SCHEMA },
   agentStatus: { type: String, required: false },
   imported: { type: Boolean, required: false },

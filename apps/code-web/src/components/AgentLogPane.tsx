@@ -505,6 +505,17 @@ export function AgentLogPane({ node, events, project, idToken, sessionId, onImpl
         <p className="ws-instruction-card cc-msg--user">{node.query || node.commitMessage || '—'}</p>
       </div>
 
+      {/* The agent's own prose summary of what it did — surfaced at the top of a
+          finished run's pane, above the diff/transcript detail. Selectable so an
+          Ask-AI branch can spawn from a highlight over it (sectionId="agentlog",
+          mirroring the instruction card above). */}
+      {node.agentStatus === 'done' && node.runSummary && (
+        <div data-section-id="agentlog" className="agent-log-selectable">
+          <div className="ws-block-label">Summary</div>
+          <p className="run-summary">{node.runSummary}</p>
+        </div>
+      )}
+
       {/* Once a run is done, the transcript collapses behind a disclosure and
           the diff summary is promoted to the visual "hero" — the point of a
           finished run is the result, not the blow-by-blow. Still-running or

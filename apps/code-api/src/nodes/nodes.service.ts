@@ -1049,6 +1049,7 @@ export class NodesService {
           diffSummary: final.diffSummary,
           agentStatus: 'done',
           runCostUsd: runCost,
+          ...(final.runSummary ? { runSummary: final.runSummary } : {}),
           ...(emoji ? { emoji } : {}),
           ...(final.workspace
             ? { workspace: final.workspace, ...(final.workspaceExpiresAt ? { workspaceExpiresAt: final.workspaceExpiresAt } : {}) }
@@ -1093,6 +1094,7 @@ export class NodesService {
           agentStatus: 'done',
           commitSha,
           runCostUsd: runCost,
+          ...(final.runSummary ? { runSummary: final.runSummary } : {}),
           ...(emoji ? { emoji } : {}),
           ...(final.workspace
             ? { workspace: final.workspace, ...(final.workspaceExpiresAt ? { workspaceExpiresAt: final.workspaceExpiresAt } : {}) }

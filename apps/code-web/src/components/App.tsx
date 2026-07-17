@@ -376,6 +376,10 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   // fresh session always opens with long import chains folded away. See
   // lib/collapseSegments.ts.
   const [expandedSegIds, setExpandedSegIds] = useState<Set<string>>(new Set());
+  // Branch nodes whose learn+plan subtree the user has collapsed away, so the
+  // map jumps straight from the BRANCH to its next CODE node. Per-session view
+  // preference, persisted to localStorage. See the displayNodes memo below.
+  const [collapsedBranchIds, setCollapsedBranchIds] = useState<Set<string>>(new Set());
   // Start in loading state if hash or localStorage session present — prevents landing flash on refresh
   const [loadingRoot, setLoadingRoot] = useState(() => {
     if (typeof window === 'undefined') return false;
@@ -871,6 +875,20 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     if (!sessionId) return;
     try { localStorage.setItem(`fork.ai.collapsed.${sessionId}`, JSON.stringify([...expandedSegIds])); } catch { /* quota */ }
   }, [expandedSegIds, sessionId]);
+
+  // Restore which BRANCH subtrees the user collapsed (reset on session switch).
+  useEffect(() => {
+    if (!sessionId) { setCollapsedBranchIds(new Set()); return; }
+    try {
+      const raw = localStorage.getItem(`fork.ai.collapsed-branches.${sessionId}`);
+      setCollapsedBranchIds(new Set(raw ? (JSON.parse(raw) as string[]) : []));
+    } catch { setCollapsedBranchIds(new Set()); }
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    try { localStorage.setItem(`fork.ai.collapsed-branches.${sessionId}`, JSON.stringify([...collapsedBranchIds])); } catch { /* quota */ }
+  }, [collapsedBranchIds, sessionId]);
 
   // Mark a node "read" once it has stayed the active node for ≥5s (debounced).
   useEffect(() => {
@@ -2455,10 +2473,47 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     () => new Set([activeId, ...mixerSelectedIds].filter((id): id is string => !!id)),
     [activeId, mixerSelectedIds],
   );
-  const { displayNodes, segMeta } = useMemo(
-    () => collapseSegments(nodes, expandedSegIds, segProtectedIds),
-    [nodes, expandedSegIds, segProtectedIds],
-  );
+  const { displayNodes, segMeta, hiddenBranchCounts } = useMemo(() => {
+    const { displayNodes: base, segMeta } = collapseSegments(nodes, expandedSegIds, segProtectedIds);
+    const displayNodes: Record<string, ForkNode> = { ...base };
+    const hiddenBranchCounts: Record<string, number> = {};
+
+    if (collapsedBranchIds.size) {
+      const childMap: Record<string, string[]> = {};
+      Object.values(base).forEach((n) => { if (n.parentId) (childMap[n.parentId] ??= []).push(n.id); });
+
+      collapsedBranchIds.forEach((branchId) => {
+        const branch = base[branchId];
+        if (!branch || branch.kind !== 'BRANCH') return;
+        const toDelete = new Set<string>();
+        const reparent = new Set<string>();
+        // Walk down from the branch: prune the learn+plan chain, and reparent
+        // the first rail node (CODE/BRANCH/MERGE) reached onto the branch so the
+        // rail below stays intact (mirrors collapseSegments.ts tail-reparent).
+        const queue = [...(childMap[branchId] ?? [])];
+        while (queue.length) {
+          const id = queue.shift()!;
+          const node = base[id];
+          if (!node) continue;
+          if (LEARN_KINDS.has(node.kind) || node.kind === 'PLAN') {
+            toDelete.add(id);
+            queue.push(...(childMap[id] ?? []));
+          } else {
+            reparent.add(id); // rail node — keep it, stop descending
+          }
+        }
+        if (!toDelete.size) return;
+        toDelete.forEach((id) => { delete displayNodes[id]; });
+        reparent.forEach((id) => {
+          const n = displayNodes[id];
+          if (n) displayNodes[id] = { ...n, parentId: branchId };
+        });
+        hiddenBranchCounts[branchId] = toDelete.size;
+      });
+    }
+
+    return { displayNodes, segMeta, hiddenBranchCounts };
+  }, [nodes, expandedSegIds, segProtectedIds, collapsedBranchIds]);
   // Re-collapse (#205) — the mirror of onMapSelect's expand-on-click: drops
   // segId back out of expandedSegIds so collapseSegments folds its chain back
   // into the placeholder card on the next render.
@@ -2467,6 +2522,15 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       if (!prev.has(segId)) return prev;
       const next = new Set(prev);
       next.delete(segId);
+      return next;
+    });
+  }, []);
+
+  const toggleBranchCollapse = useCallback((nodeId: string) => {
+    setCollapsedBranchIds(prev => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) next.delete(nodeId);
+      else next.add(nodeId);
       return next;
     });
   }, []);
@@ -2755,6 +2819,9 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
             nodes={displayNodes}
             segMeta={segMeta}
             onCollapseSegment={onCollapseSegment}
+            collapsedBranchIds={collapsedBranchIds}
+            hiddenBranchCounts={hiddenBranchCounts}
+            onToggleBranchCollapse={toggleBranchCollapse}
             rootId={rootId}
             activeId={activeId}
             onSelect={onMapSelect}

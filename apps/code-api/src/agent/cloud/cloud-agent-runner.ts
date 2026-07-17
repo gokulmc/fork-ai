@@ -240,6 +240,7 @@ export class CloudAgentRunner implements AgentRunner {
         workspaceExpiresAt = new Date(Date.now() + this.cfg.ttlMinutes * 60_000).toISOString();
         const final: AgentRunFinal = {
           commitMessage: firstLine(resultText) || ctx.instruction.slice(0, 72),
+          runSummary: resultText.trim() || undefined,
           commitSha: runnerResult.sha,
           diffSummary: runnerResult.diffSummary,
           inputTokens,

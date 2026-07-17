@@ -256,6 +256,53 @@ describe('DynamoRepository', () => {
     });
   });
 
+  describe('updateNode', () => {
+    it('wraps updates in an uppercase $SET (mirrors updateSessionMeta)', async () => {
+      node.mock.update.mockResolvedValue({});
+      await repo.updateNode(SESSION_ID, NODE_ID, { title: 'New title' });
+      expect(node.mock.update).toHaveBeenCalledWith(
+        { PK: `SESSION#${SESSION_ID}`, SK: `NODE#${NODE_ID}` },
+        { $SET: { title: 'New title' } },
+      );
+    });
+
+    // REGRESSION: PATCH /sessions/:id/nodes/:nodeId with an `okr` body 500'd
+    // with `TypeMismatch: Expected okr to be of type object, instead found
+    // type OkrDto`. class-validator's `@Type(() => OkrDto)` hands
+    // NodesService.updateNode an OkrDto *class instance*, not a plain
+    // object; Dynamoose's Object-type checker does a strict constructor
+    // check on nested Object attributes and rejects anything that isn't
+    // `Object`, even with the exact right shape. updateNode must strip the
+    // DTO prototype (JSON round-trip) before handing the value to Dynamoose.
+    it('strips a class-instance prototype off nested Object fields (okr) before calling Dynamoose', async () => {
+      node.mock.update.mockResolvedValue({});
+      class OkrDto {
+        objective = 'Ship the retry logic';
+        keyResults = ['p99 < 200ms', 'zero flaky tests'];
+      }
+      const okrInstance = new OkrDto();
+      expect(okrInstance.constructor.name).toBe('OkrDto'); // sanity: not a plain object
+
+      await repo.updateNode(SESSION_ID, NODE_ID, { okr: okrInstance as never });
+
+      const [, updateArg] = node.mock.update.mock.calls[0];
+      expect(updateArg.$SET.okr.constructor.name).toBe('Object');
+      expect(updateArg.$SET.okr).toEqual({
+        objective: 'Ship the retry logic',
+        keyResults: ['p99 < 200ms', 'zero flaky tests'],
+      });
+    });
+
+    it('leaves starred updates working unchanged', async () => {
+      node.mock.update.mockResolvedValue({});
+      await repo.updateNode(SESSION_ID, NODE_ID, { starred: true });
+      expect(node.mock.update).toHaveBeenCalledWith(
+        { PK: `SESSION#${SESSION_ID}`, SK: `NODE#${NODE_ID}` },
+        { $SET: { starred: true } },
+      );
+    });
+  });
+
   describe('putProject / getProject / listProjects', () => {
     const PROJECT_ID = 'proj-1';
 

@@ -4,6 +4,11 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 > **Required step:** update this file in the **same commit** as any bug fix. See [CLAUDE.md → "Issue log (issues.md)"](CLAUDE.md). Format: one `###` entry per fix — Symptom / Cause / Fix, plus the commit SHA once committed.
 
+### forkai-code: branch OKR save failed with "Could not save — try again"
+- **Symptom:** Setting an Objective + Key Results on a BRANCH node's OKR editor always failed with the red "Could not save — try again"; the objective/KRs never persisted. The PATCH `/sessions/:id/nodes/:nodeId` returned 500.
+- **Cause:** NOT a missing DTO field / schema Map (all correctly declared). class-validator's `@Type(() => OkrDto)` on `UpdateNodeDto.okr` deserialises the incoming JSON into an **OkrDto class instance**, not a plain object. Dynamoose's Object-type checker does a strict `constructor.name === 'Object'` check on nested Object-typed attributes and threw `TypeMismatch: Expected okr to be of type object, instead found type OkrDto` inside `DynamoRepository.updateNode`'s raw `nodeModel.update(key, updates)`.
+- **Fix:** In `dynamo.repository.ts` `updateNode`, strip the DTO prototype with a `JSON.parse(JSON.stringify(updates))` round-trip and set via an explicit uppercase `$SET` (mirroring `updateSessionMeta`). Added `dynamo.repository.spec.ts` tests for the `$SET` shape + the OkrDto-instance regression.
+
 ### forkai-code: composer textarea padding uneven (#228)
 - **Symptom:** Textarea padding was `7px 6px 3px` — top 7px, bottom 3px, sides 6px — making the input text visibly off-center vertically.
 - **Cause:** Asymmetric padding shorthand, probably a leftover from earlier composer tweaks.

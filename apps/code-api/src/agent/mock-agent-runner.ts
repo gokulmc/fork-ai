@@ -25,6 +25,7 @@ export class MockAgentRunner implements AgentRunner {
     }
     const final: AgentRunFinal = {
       commitMessage: result.commitMessage,
+      runSummary: result.runSummary,
       commitSha: null, // no real git backend yet — the caller fabricates one
       diffSummary: result.diffSummary,
       inputTokens: result.inputTokens,

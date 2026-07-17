@@ -30,6 +30,7 @@ export interface ApiNode {
   commitSha?: string;
   branchName?: string;
   commitMessage?: string;
+  runSummary?: string;
   diffSummary?: DiffSummary;
   agentStatus?: 'running' | 'done' | 'error';
   imported?: boolean;
@@ -125,6 +126,7 @@ export function toForkNode(n: ApiNode): ForkNode {
     commitSha: n.commitSha,
     branchName: n.branchName,
     commitMessage: n.commitMessage,
+    runSummary: n.runSummary,
     diffSummary: n.diffSummary,
     agentStatus: n.agentStatus,
     imported: n.imported,

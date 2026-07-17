@@ -49,6 +49,11 @@ interface MindMapProps {
   // card already in `nodes`.
   segMeta?: Record<string, SegMeta>;
   onCollapseSegment?: (segId: string) => void;
+  // Per-session collapse of a BRANCH's learn+plan subtree (App.tsx owns the
+  // pruning in displayNodes — this just drives the toggle dot on the card).
+  collapsedBranchIds?: Set<string>;
+  hiddenBranchCounts?: Record<string, number>;
+  onToggleBranchCollapse?: (id: string) => void;
   rootId: string;
   activeId: string | null;
   onSelect: (id: string) => void;
@@ -84,6 +89,9 @@ export function MindMap({
   nodes,
   segMeta,
   onCollapseSegment,
+  collapsedBranchIds,
+  hiddenBranchCounts,
+  onToggleBranchCollapse,
   rootId,
   activeId,
   onSelect,
@@ -335,7 +343,14 @@ export function MindMap({
       if (!a || !b) return;
       const cKind = nodes[cid]?.kind, pKind = nodes[pid]?.kind;
       const isFork = cKind === 'BRANCH';
-      const isLane = !isFork && cKind === 'CODE' && (pKind === 'PLAN' || pKind === 'CODE' || pKind === 'BRANCH' || pKind === 'MERGE');
+      // A PLAN->CODE edge only stays a same-column lane when the CODE actually
+      // landed in the PLAN's column. layoutGitGraph now re-homes a CODE built
+      // from a PLAN under its nearest BRANCH ancestor's column instead (see
+      // placeRail there), so most PLAN->CODE edges cross columns and need the
+      // cross-column bézier below, same geometry as a learn edge.
+      const sameCol = colOf[pid] === undefined || colOf[cid] === undefined || colOf[pid] === colOf[cid];
+      const isLane = !isFork && cKind === 'CODE'
+        && (pKind === 'CODE' || pKind === 'BRANCH' || pKind === 'MERGE' || (pKind === 'PLAN' && sameCol));
       if (isLane) {
         const x = a.x + NODE_W / 2;
         edges.push({ pid, cid, kind: 'lane', d: `M ${x} ${a.y + NODE_H} L ${x} ${b.y}` });
@@ -625,6 +640,21 @@ export function MindMap({
                           </div>
                           {n.sources?.length ? <span className="mm-search-badge">🔍</span> : null}
                           {n.kind === 'MIX' ? <span className="mm-mix-badge"><Filter size={11} /></span> : null}
+                          {n.kind === 'BRANCH' && onToggleBranchCollapse && (() => {
+                            const branchCollapsed = collapsedBranchIds?.has(n.id) ?? false;
+                            const hidden = hiddenBranchCounts?.[n.id] ?? 0;
+                            return (
+                              <button
+                                type="button"
+                                className={`mm-collapse-dot${branchCollapsed ? ' mm-collapse-dot--active' : ''}`}
+                                title={branchCollapsed ? `Show ${hidden} hidden node${hidden === 1 ? '' : 's'}` : 'Collapse learn + plan'}
+                                aria-label={branchCollapsed ? 'Expand branch subtree' : 'Collapse branch subtree'}
+                                onClick={e => { e.stopPropagation(); onToggleBranchCollapse(n.id); }}
+                              >
+                                {branchCollapsed && hidden > 0 ? hidden : ''}
+                              </button>
+                            );
+                          })()}
                         </div>
                         {/* Surface the OKR on the map card itself (#220) — objective as
                             a subtitle, KR count as a small 🎯 chip — so it's visible

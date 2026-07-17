@@ -8,6 +8,11 @@ import type { AgentRunContext } from './mock-agent.service';
 // (agent.module.ts), not a call-site change.
 export interface AgentRunFinal {
   commitMessage: string;
+  // The agent's full final result message (Claude Code's `result` text) — a
+  // multi-sentence prose summary of the work carried out. `commitMessage` is
+  // just its first line; this is the whole thing, surfaced at the top of the
+  // CODE node's pane. Undefined only when the runner produced no result text.
+  runSummary?: string;
   commitSha: string | null;      // null ⇒ caller fabricates (mock path only)
   diffSummary: DiffSummary;
   inputTokens: number;

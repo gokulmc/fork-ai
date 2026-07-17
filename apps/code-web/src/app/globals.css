@@ -2645,6 +2645,26 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
   pointer-events: none;
 }
 
+/* Collapse dot — folds a BRANCH's learn+plan subtree so the map jumps straight
+   to its next CODE node. Sits at the card's right edge; must keep pointer-events
+   so its click reaches the button before the node-select handler on the <g>. */
+.mm-collapse-dot {
+  margin-left: auto; flex-shrink: 0;
+  width: 14px; height: 14px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 999px; cursor: pointer;
+  background: transparent; color: var(--ink-3);
+  border: 1.5px solid var(--commit-pill-border);
+  font-family: var(--mono); font-size: 8px; font-weight: 600; line-height: 1;
+  pointer-events: auto;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.mm-collapse-dot:hover { background: var(--hover-strong); border-color: var(--ink-3); }
+.mm-collapse-dot--active {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+  min-width: 14px; width: auto; padding: 0 3px;
+}
+
 /* Mixer overlay — floats at bottom of mind map */
 .mixer-overlay {
   position: absolute;
@@ -2976,6 +2996,16 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
 
 .ws-block-label { font-family: var(--sans); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 12px; }
 
+/* Post-run work summary — a subtle card sitting above the diff/transcript, so a
+   finished run leads with "what got done" in prose. Theme tokens throughout so
+   it reads in both light and dark. */
+.run-summary {
+  font-family: var(--serif); font-size: clamp(15px, 1.5vw, 16px); line-height: 1.65;
+  color: var(--ink); margin: 0 0 24px; padding: 14px 17px;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); white-space: pre-wrap;
+}
+
 .term-panel { background: var(--term-bg); border: 1px solid var(--term-line); border-radius: var(--radius); padding: 16px 18px; display: flex; flex-direction: column; gap: 9px; max-height: 480px; overflow-y: auto; margin-bottom: 36px; }
 .log-line { font-family: var(--mono); font-size: 12.5px; line-height: 1.55; color: var(--term-ink); }
 .log-line--text { font-family: var(--sans); font-size: 13px; }
@@ -3024,11 +3054,24 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
    conversation: the user's instruction (styled via .cc-msg--user, layered on
    .ws-instruction-card above), assistant prose bubbles, "● Tool(arg)" call
    bullets, and indented "⎿" results collapsed by default (buildTranscript in
-   AgentLogPane.tsx). Reuses the --term-* tokens so dark mode is free. */
-.cc-transcript { gap: 14px; padding: 18px 20px; }
+   AgentLogPane.tsx). Modelled on the Claude Code VS Code extension panel —
+   always a dark terminal surface, regardless of the app's light/dark theme —
+   so the --term-* tokens are forced here rather than inherited from
+   [data-theme]. .term-panel reads the same vars (same DOM element), so the
+   whole panel + nested blocks pick up the dark surface automatically. */
+.cc-transcript {
+  --term-bg: #1b1b19;
+  --term-ink: #d8d6cd;
+  --term-ink-dim: #837f74;
+  --term-line: rgba(255, 255, 255, 0.08);
+  background: var(--term-bg);
+  border-radius: var(--radius-sm);
+  gap: 10px;
+  padding: 18px 20px;
+}
 
 .cc-msg { margin: 0; }
-.cc-msg-body { font-family: var(--sans); font-size: 13.5px; line-height: 1.65; color: var(--term-ink); white-space: pre-wrap; }
+.cc-msg-body { font-family: var(--sans); font-size: 13.5px; line-height: 1.5; color: var(--term-ink); white-space: pre-wrap; }
 
 /* Layered onto .ws-instruction-card (not a replacement) so the BRANCH pane's
    own use of that class is untouched — only the CODE pane adds this modifier. */
@@ -3036,7 +3079,7 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
 
 .cc-tool { display: flex; flex-direction: column; gap: 4px; }
 .cc-tool-call { display: flex; align-items: baseline; gap: 7px; font-family: var(--mono); font-size: 12.5px; }
-.cc-tool-bullet { color: var(--accent); font-size: 11px; flex-shrink: 0; }
+.cc-tool-bullet { color: #d08770; font-size: 11px; flex-shrink: 0; }
 .cc-tool-name { font-weight: 700; color: var(--term-ink); }
 .cc-tool-args { color: var(--term-ink-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -3050,6 +3093,11 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
 .cc-tool-result-caret { font-size: 9px; flex-shrink: 0; color: var(--ink-3); }
 .cc-tool-result-full { margin: 4px 0 0; padding: 8px 10px; background: rgba(0,0,0,.055); border: 1px solid var(--term-line); border-radius: 4px; font-size: 11px; color: var(--term-ink); white-space: pre-wrap; word-break: break-word; }
 [data-theme="dark"] .cc-tool-result-full { background: rgba(255,255,255,.045); }
+/* .cc-transcript forces a dark surface even in the light app theme, so the
+   nested insets need the light-on-dark variant unconditionally here (the
+   [data-theme="dark"] rules above still cover non-transcript uses). */
+.cc-transcript .cc-tool-result-full,
+.cc-transcript .log-line--terminal { background: rgba(255,255,255,.045); }
 .cc-tool-result--terminal .cc-tool-result-summary,
 .cc-tool-result--terminal .cc-tool-result-full { color: var(--term-ink); }
 

@@ -52,6 +52,9 @@ export interface AgentRunContext {
 
 export interface AgentRunResult {
   commitMessage: string;
+  // Multi-sentence prose summary of the work carried out — the mock's stand-in
+  // for a real runner's final result message (see AgentRunFinal.runSummary).
+  runSummary: string;
   diffSummary: DiffSummary;
   events: AgentEvent[];
   inputTokens: number;
@@ -66,6 +69,7 @@ const REAL_EVENT_KINDS = new Set<AgentEvent['kind']>(['text', 'tool_call', 'tool
 
 interface ParsedTranscript {
   commitMessage: string;
+  runSummary: string;
   diffSummary: DiffSummary;
   events: Array<{ kind: AgentEvent['kind']; payload: string }>;
 }
@@ -90,6 +94,7 @@ export class MockAgentService {
         const parsed = this.parseAndValidate(rawText);
         return {
           commitMessage: parsed.commitMessage,
+          runSummary: parsed.runSummary,
           diffSummary: parsed.diffSummary,
           events: parsed.events.map((e, i) => ({ seq: i, ts: new Date().toISOString(), kind: e.kind, payload: e.payload })),
           inputTokens: usage.inputTokens,
@@ -128,6 +133,7 @@ export class MockAgentService {
 Return ONLY valid JSON, no prose, no markdown fences. Shape:
 {
   "commitMessage": "a realistic, concise git commit message for the change",
+  "runSummary": "a 2-4 sentence, first-person past-tense summary of the work you carried out — what you changed and why, which files/areas, and how you verified it. Plain prose, no bullet points, no markdown.",
   "diffSummary": {
     "filesChanged": <number>,
     "additions": <number>,
@@ -155,6 +161,13 @@ Produce between 20 and 35 events forming a plausible transcript of the agent's w
     if (typeof parsed.commitMessage !== 'string' || !parsed.commitMessage.trim()) {
       throw new Error('missing or empty commitMessage');
     }
+
+    // Fall back to the commit message rather than reject — a mock run without a
+    // paragraph summary is degraded, not invalid.
+    const runSummary =
+      typeof parsed.runSummary === 'string' && parsed.runSummary.trim()
+        ? parsed.runSummary.trim()
+        : parsed.commitMessage.trim();
 
     const diffRaw = parsed.diffSummary as Record<string, unknown> | undefined;
     if (!diffRaw || !Array.isArray(diffRaw.files)) {
@@ -193,6 +206,6 @@ Produce between 20 and 35 events forming a plausible transcript of the agent's w
       return { kind: ev.kind as AgentEvent['kind'], payload: ev.payload };
     });
 
-    return { commitMessage: parsed.commitMessage, diffSummary, events };
+    return { commitMessage: parsed.commitMessage, runSummary, diffSummary, events };
   }
 }
