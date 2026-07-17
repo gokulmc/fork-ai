@@ -1116,6 +1116,7 @@ export class NodesService {
       // writes, the done-block's own writes) must still release the reserve
       // for cloud — reconcileStaleHolds is only a 30-minute crash-net backstop,
       // not the primary release path for an in-process failure.
+      this.logger.error(`CODE stream setup failed for node ${nodeId} (env=${dto.environment ?? 'default'}): ${String(err)}`, (err as Error)?.stack);
       if (isCloud) await this.releaseHoldOnFailure(sub, sessionId, nodeId, model);
       throw err;
     }
