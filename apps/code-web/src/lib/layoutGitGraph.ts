@@ -521,6 +521,37 @@ export function layoutGitGraph(nodes: Record<string, ForkNode>, rootId: string):
     if (isRail(id) && id !== rootId && hangChildMap[id]?.length) placeHangs(hangChildMap, id, pos);
   });
 
+  // 4.5) Re-home a CODE built from a PLAN under the column of the BRANCH it was
+  // planned in (the user's mental model: "the code node after plan should be
+  // directly under the new branch"). The mixer spawns a PLAN off a LEARN node
+  // (which itself hangs beneath a BRANCH), so the PLAN is laid out by the
+  // learn-hang machinery and its CODE child — a rail node with a rail (PLAN)
+  // parent — is reached by NEITHER placeRail's recursion NOR placeHangs, and
+  // lands in placeOrphans' fallback strip. placeRail's nearestBranchCol path
+  // (which was meant to handle exactly this) therefore never runs for it. Fix
+  // it here, after step 4, where every column + position is final: move the
+  // CODE into the branch column and stack its y below the PLAN. Only the CODE's
+  // location moves — its parentId is untouched, so the edge still routes
+  // PLAN -> CODE (cross-column bézier, since the columns now differ).
+  Object.keys(nodes).forEach(id => {
+    // Only orphaned CODE-from-PLAN nodes need this: one already placed by
+    // placeRail (its PLAN parent was on the rail) has a column + position and
+    // was homed by placeRail's own nearestBranchCol branch — re-moving it here
+    // would double-push it into colNodeIds and re-reserve its y.
+    if (nodes[id].kind !== 'CODE' || colOf[id] !== undefined) return;
+    const planId = nodes[id].parentId;
+    if (!planId || nodes[planId]?.kind !== 'PLAN') return;
+    const branchCol = nearestBranchCol(nodes, colOf, planId);
+    if (branchCol === undefined) return;
+    const colIds = colNodeIds[branchCol];
+    const colX = colIds?.length ? pos[colIds[0]]?.x : undefined;
+    const planPos = pos[planId];
+    if (colX === undefined || !planPos) return;
+    pos[id] = { x: colX, y: reserveY(branchCol, planPos.y + RAIL_ROW_GAP) };
+    colOf[id] = branchCol;
+    colNodeIds[branchCol].push(id);
+  });
+
   // 5) Column rail lines — one per non-empty column, spanning its first to last node.
   const laneRails = colNodeIds
     .filter(ids => ids.length > 0)
