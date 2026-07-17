@@ -25,9 +25,11 @@ import {
 // the /__forkai/run body — the preview being public only exposes the same
 // surface Fly's public edge already did.
 
-// Matches infra/sandbox-image/runner.mjs — the one public port (openvscode is
-// reverse-proxied through it, see fly-provider.ts's RUNNER_PORT note).
-const RUNNER_PORT = 8080;
+// Our runner.mjs's port INSIDE a Blaxel sandbox. NOT 8080: Blaxel's own
+// sandbox-api owns 8080 (the SDK's control channel), so the Blaxel image
+// (infra/sandbox-image-blaxel) runs runner.mjs on 8081 via RUNNER_PORT, and the
+// public preview + healthz target 8081. (Fly keeps runner.mjs on 8080.)
+const RUNNER_PORT = 8081;
 // Fixed preview name per sandbox — one sandbox serves exactly one preview.
 const PREVIEW_NAME = 'forkai';
 

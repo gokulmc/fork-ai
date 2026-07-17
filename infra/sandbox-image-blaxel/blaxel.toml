@@ -1,0 +1,14 @@
+type = "sandbox"
+name = "forkai-sbx-base"
+
+[runtime]
+generation = "mk3"
+memory = 4096
+
+# Our runner.mjs — the port BlaxelProvider creates a public preview against
+# (baseUrl for /__forkai/run + the openvscode UI). sandbox-api's 8080 is the
+# platform's own control channel and is NOT declared here (Blaxel manages it).
+[[runtime.ports]]
+name = "runner"
+target = 8081
+protocol = "HTTP"

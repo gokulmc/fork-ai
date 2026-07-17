@@ -126,22 +126,29 @@ Blaxel is a parallel billed-cloud runner offered alongside Fly. A user picks it
 in the TweaksPanel (Environment → "Cloud (Blaxel)"); the frontend sends
 `environment: 'blaxel'`. It reuses the whole `CloudAgentRunner` loop via an
 injected `BlaxelProvider` (`apps/code-api/src/agent/cloud/blaxel-provider.ts`,
-built on the `@blaxel/core` SDK) — same `/__forkai/run` + `/__forkai/healthz`
-contract, so the **same `infra/sandbox-image`** runs inside it. It differs from
-Fly in exactly two ways: US/EU-only regions (no Asia), and **split billing** —
-active compute at `BLAXEL_ACTIVE_MINUTE_RATE_USD`, idle standby at the
-near-zero `BLAXEL_STANDBY_GB_SECOND_RATE_USD` (see `billBlaxelMachineUsage`).
+built on the `@blaxel/core` SDK) — same `runner.mjs` and same `/__forkai/run` +
+`/__forkai/healthz` contract. It differs from Fly in three ways: US/EU-only
+regions (no Asia); **split billing** — active compute at
+`BLAXEL_ACTIVE_MINUTE_RATE_USD`, idle standby at the near-zero
+`BLAXEL_STANDBY_GB_SECOND_RATE_USD` (see `billBlaxelMachineUsage`); and a
+**different image** — a Blaxel sandbox bundles Blaxel's own `sandbox-api`
+control binary on port 8080 (what the SDK talks to), so `runner.mjs` moves to
+**8081** (`RUNNER_PORT`) and the preview targets 8081. Hence a separate image
+dir, `infra/sandbox-image-blaxel/` (Fly's `runner.mjs` is the single source; the
+Blaxel image copies it in and adds `sandbox-api` + a dual-process entrypoint —
+see that dir's README).
 
 The runner registers **only when `BLAXEL_API_TOKEN` + `BLAXEL_WORKSPACE` +
 `BLAXEL_SANDBOX_IMAGE` are all set** — otherwise `resolve('blaxel')` 400s, the
 same gating as Fly. So this can ship inert and be turned on later.
 
-1. **Push the sandbox image to Blaxel** (same Dockerfile, different registry):
+1. **Build + push the Blaxel sandbox image** (Blaxel builds it remotely — no
+   local Docker needed):
    ```bash
-   cd infra/sandbox-image
-   bl login                       # authenticates the bl CLI to your workspace
-   # Build + push the runner image to Blaxel's registry, then set the resulting
-   # ref as BLAXEL_SANDBOX_IMAGE. (bl's image push flow — see `bl --help`.)
+   cd infra/sandbox-image-blaxel
+   bl login                       # or BL_API_KEY + BL_WORKSPACE in the env
+   sh build.sh                    # copies runner.mjs in, `bl push`, prints the ref
+   # → set the printed ref (e.g. sandbox/forkai-sbx-base:latest) as BLAXEL_SANDBOX_IMAGE
    ```
    ⚠️ **Same invisible failure mode as Fly (step 2):** an un-pushed `runner.mjs`
    change silently runs the old code. There are now **two** registries holding
