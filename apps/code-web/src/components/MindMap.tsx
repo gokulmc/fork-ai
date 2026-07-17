@@ -746,8 +746,20 @@ export function MindMap({
 // of the zoom controls and the mixer/PR overlay's bottom-center strip) per
 // map-git-graph.html's spec — a reference, not a dominant chrome element.
 function MapLegend() {
+  const [open, setOpen] = useState(false);
+  if (!open) {
+    return (
+      <button type="button" className="mm-legend-toggle" onClick={() => setOpen(true)} title="Show legend" aria-label="Show map legend">
+        <Map size={13} /> Legend
+      </button>
+    );
+  }
   return (
     <div className="mm-legend">
+      <div className="mm-legend-head">
+        <span className="mm-legend-title">Legend</span>
+        <button type="button" className="mm-legend-close" onClick={() => setOpen(false)} title="Hide legend" aria-label="Hide legend"><X size={12} /></button>
+      </div>
       <div className="mm-legend-row"><span className="mm-legend-dot mm-legend-dot--learn" />Learn — go deeper / ask AI</div>
       <div className="mm-legend-row"><span className="mm-legend-dot mm-legend-dot--plan" />Plan — synthesized implementation plan</div>
       <div className="mm-legend-row"><span className="mm-legend-dot mm-legend-dot--code" />Code — one agent run = one commit</div>

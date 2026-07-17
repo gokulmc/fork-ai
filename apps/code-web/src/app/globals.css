@@ -1500,8 +1500,28 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
   background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius);
   box-shadow: var(--shadow-2); padding: 12px 14px;
   font-family: var(--sans); font-size: 11px; color: var(--ink-2);
-  pointer-events: none;
+  pointer-events: auto;
 }
+/* Collapsed state — a small pill that expands the legend popup. */
+.mm-legend-toggle {
+  position: absolute; left: 16px; bottom: 16px; z-index: 5;
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--paper); border: 1px solid var(--line); border-radius: 999px;
+  box-shadow: var(--shadow-2); padding: 6px 11px;
+  font-family: var(--sans); font-size: 11px; font-weight: 500; color: var(--ink-2);
+  cursor: pointer; pointer-events: auto;
+}
+.mm-legend-toggle:hover { background: var(--hover); color: var(--ink); }
+.mm-legend-toggle svg { stroke: currentColor; }
+.mm-legend-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 2px; }
+.mm-legend-title { font-weight: 600; color: var(--ink); font-size: 11.5px; }
+.mm-legend-close {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 5px;
+  background: none; border: none; color: var(--ink-3); cursor: pointer; pointer-events: auto;
+}
+.mm-legend-close:hover { background: var(--hover); color: var(--ink); }
+.mm-legend-close svg { stroke: currentColor; }
 .mm-legend-row { display: flex; align-items: center; gap: 8px; }
 .mm-legend-sep { height: 1px; background: var(--line); margin: 2px 0; }
 .mm-legend-dot { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
@@ -1521,12 +1541,9 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 /* Narrow mindmap pane — same container-query breakpoint the toolbar buttons
    collapse at (see .mm-mixer-btn etc.); the legend is reference chrome, not
    core functionality, so it's the first thing to go on a cramped pane. */
-@container mindmap (max-width: 560px) {
-  .mm-legend { display: none; }
-}
-@media (max-width: 640px) {
-  .mm-legend { display: none; }
-}
+/* The legend is now a collapsed-by-default popup (a small "Legend" pill), so it
+   no longer needs to be hidden on cramped panes — it already takes almost no
+   space until the user expands it. */
 
 .mm-fo { pointer-events: none; overflow: hidden; }
 /* Column layout so CODE/BRANCH cards can stack a commit-pill row (.mm-card-top)
