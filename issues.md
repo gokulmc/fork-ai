@@ -4,6 +4,11 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 > **Required step:** update this file in the **same commit** as any bug fix. See [CLAUDE.md → "Issue log (issues.md)"](CLAUDE.md). Format: one `###` entry per fix — Symptom / Cause / Fix, plus the commit SHA once committed.
 
+### forkai-code: map render crashed ("reading 'x'") when a learn node hung off a plan-CODE
+- **Symptom:** A Next.js runtime error — `Cannot read properties of undefined (reading 'x')` in `layoutGitGraph` — after asking a follow-up (Go deeper / Ask) off a CODE node that was itself built from a PLAN. Took down the whole mind-map render.
+- **Cause:** A CODE built from a PLAN is positioned in a post-pass (step 4.5) that runs AFTER the shared learn-hang sweep (step 4). If that CODE already had a learn child, the step-4 sweep called `placeHangingSubtreeV` with the CODE as anchor before its `pos` existed → `anchor.x` on `undefined`.
+- **Fix:** `placeHangingSubtreeV` bails when the anchor has no `pos` yet; the post-pass, after positioning the plan-CODE, re-runs `placeHangs` for it so its learn subtree is placed with a valid anchor. Also hardened `laneRails` to skip any column member without a `pos`.
+
 ### forkai-code: building a CODE from a PLAN before the plan finished ran an empty query
 - **Symptom:** Building the implementation ("implement the plan") right after creating a PLAN produced a failed/empty run — the CODE node showed "Sandbox Failed To Start". The plan-derived build in the demo hit this every time.
 - **Cause:** The Build action on a PLAN node was only gated on `codeSubmitLoading`, not on the PLAN still streaming. `planDocOf()` builds the agent's plan context from `planNode.sections`; a PLAN that hasn't finished ("Planning…") has no sections yet, so the agent got an empty plan — an empty query — which the mock run then failed on.

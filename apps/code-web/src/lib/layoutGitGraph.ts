@@ -246,6 +246,11 @@ function placeHangingSubtreeV(
   topIds.forEach(leaves);
 
   const anchor = pos[anchorId];
+  // The anchor may not be placed yet — a CODE built from a PLAN is positioned
+  // in a post-pass that runs AFTER the shared placeHangs sweep (step 4), so if
+  // it already has a learn child, that sweep reaches this hang before the anchor
+  // has a pos. Skip here; the post-pass re-runs placeHangs once it's placed.
+  if (!anchor) return;
   function place(id: string, depth: number, leftCol: number) {
     // Center the NODE (not its left edge) over its subtree's span — the
     // placement then never overflows the hangWidthSide() reserve, which the
@@ -533,10 +538,18 @@ export function layoutGitGraph(nodes: Record<string, ForkNode>, rootId: string):
     pos[id] = { x: colX, y: reserveY(branchCol!, planPos.y + RAIL_ROW_GAP) };
     colOf[id] = branchCol!;
     colNodeIds[branchCol!].push(id);
+    // Now that this CODE has a pos, place any learn subtree hanging off it — the
+    // shared step-4 sweep ran before this post-pass and skipped it (no anchor).
+    if (hangChildMap[id]?.length) placeHangs(hangChildMap, id, pos);
   });
 
   // 5) Column rail lines — one per non-empty column, spanning its first to last node.
+  // Guard against a column member without a pos: during an optimistic mid-run
+  // re-render a node can be in colNodeIds a tick before its pos is assigned, and
+  // an unguarded pos[id].x here throws "Cannot read properties of undefined
+  // (reading 'x')" and takes down the whole map render.
   const laneRails = colNodeIds
+    .map(ids => ids.filter(id => pos[id]))
     .filter(ids => ids.length > 0)
     .map(ids => ({
       x: pos[ids[0]].x + NODE_W / 2,
