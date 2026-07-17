@@ -343,14 +343,16 @@ export function MindMap({
       if (!a || !b) return;
       const cKind = nodes[cid]?.kind, pKind = nodes[pid]?.kind;
       const isFork = cKind === 'BRANCH';
-      // A PLAN->CODE edge only stays a same-column lane when the CODE actually
-      // landed in the PLAN's column. layoutGitGraph now re-homes a CODE built
-      // from a PLAN under its nearest BRANCH ancestor's column instead (see
-      // placeRail there), so most PLAN->CODE edges cross columns and need the
-      // cross-column bézier below, same geometry as a learn edge.
-      const sameCol = colOf[pid] === undefined || colOf[cid] === undefined || colOf[pid] === colOf[cid];
-      const isLane = !isFork && cKind === 'CODE'
-        && (pKind === 'CODE' || pKind === 'BRANCH' || pKind === 'MERGE' || (pKind === 'PLAN' && sameCol));
+      // A "lane" is a straight vertical drop within one column, so it's only
+      // valid when parent and child actually share an x. A CODE continuing its
+      // rail parent (CODE/BRANCH/MERGE) does. A PLAN->CODE does NOT once the
+      // CODE is re-homed to its branch column (layoutGitGraph step 4.5) — and
+      // colOf[plan] can even be undefined for a hang-placed PLAN — so it falls
+      // through to the cross-column bézier below (same geometry as a learn edge),
+      // keeping the visible link PLAN -> CODE.
+      const sameX = Math.abs(a.x - b.x) < 1;
+      const isLane = !isFork && cKind === 'CODE' && sameX
+        && (pKind === 'CODE' || pKind === 'BRANCH' || pKind === 'MERGE' || pKind === 'PLAN');
       if (isLane) {
         const x = a.x + NODE_W / 2;
         edges.push({ pid, cid, kind: 'lane', d: `M ${x} ${a.y + NODE_H} L ${x} ${b.y}` });

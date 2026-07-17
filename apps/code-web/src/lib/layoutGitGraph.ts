@@ -297,26 +297,6 @@ function buildLearnOnlyNodes(nodes: Record<string, ForkNode>, rootId: string): R
   return out;
 }
 
-// Walks a node's parent chain to find the nearest BRANCH ancestor's column —
-// used to re-home a CODE node built from a PLAN under the branch its plan's
-// underlying learn subtree hung off, rather than the PLAN's own side column
-// (the PLAN opened that column purely because ITS parent was a learn node —
-// see placeRail's `!parentIsRail` branch — which has no visual relationship
-// to where the CODE conceptually belongs). Undefined if no BRANCH ancestor
-// exists (e.g. a rail-root repo import with no BRANCH above the PLAN).
-function nearestBranchCol(
-  nodes: Record<string, ForkNode>,
-  colOf: Record<string, number>,
-  startId: string,
-): number | undefined {
-  let cur: string | undefined = startId;
-  while (cur) {
-    if (nodes[cur]?.kind === 'BRANCH') return colOf[cur];
-    cur = nodes[cur]?.parentId ?? undefined;
-  }
-  return undefined;
-}
-
 // Git-graph layout — PLAN/CODE/BRANCH/MERGE ride vertical columns (1 column =
 // 1 git branch, commits flow downward); learn (QUERY/DEEPER/ASK/MIX) subtrees
 // hang BELOW their anchor, in a side lane offset to the right so they never
@@ -441,13 +421,10 @@ export function layoutGitGraph(nodes: Record<string, ForkNode>, rootId: string):
     } else if (!parentIsRail) {
       col = allocateColumn();
       y = Math.max(learnMaxY + RAIL_START_GAP, pos[parentId].y + rowAdvance(hangChildMap, parentId));
-    } else if (nodes[id].kind === 'CODE' && nodes[parentId].kind === 'PLAN') {
-      // Re-home under the nearest BRANCH ancestor's column instead of the
-      // PLAN's own column — the edge below still connects PLAN -> CODE
-      // (parentId untouched), just routed cross-column.
-      col = nearestBranchCol(nodes, colOf, parentId) ?? colOf[parentId];
-      y = pos[parentId].y + rowAdvance(hangChildMap, parentId);
     } else {
+      // A CODE child of a rail parent — including a PLAN — continues the
+      // parent's own column, directly below it. A plan's implementation
+      // therefore hangs off the PLAN node, not the branch it was planned in.
       col = colOf[parentId];
       y = pos[parentId].y + rowAdvance(hangChildMap, parentId);
     }
@@ -521,35 +498,41 @@ export function layoutGitGraph(nodes: Record<string, ForkNode>, rootId: string):
     if (isRail(id) && id !== rootId && hangChildMap[id]?.length) placeHangs(hangChildMap, id, pos);
   });
 
-  // 4.5) Re-home a CODE built from a PLAN under the column of the BRANCH it was
-  // planned in (the user's mental model: "the code node after plan should be
-  // directly under the new branch"). The mixer spawns a PLAN off a LEARN node
-  // (which itself hangs beneath a BRANCH), so the PLAN is laid out by the
-  // learn-hang machinery and its CODE child — a rail node with a rail (PLAN)
-  // parent — is reached by NEITHER placeRail's recursion NOR placeHangs, and
-  // lands in placeOrphans' fallback strip. placeRail's nearestBranchCol path
-  // (which was meant to handle exactly this) therefore never runs for it. Fix
-  // it here, after step 4, where every column + position is final: move the
-  // CODE into the branch column and stack its y below the PLAN. Only the CODE's
-  // location moves — its parentId is untouched, so the edge still routes
-  // PLAN -> CODE (cross-column bézier, since the columns now differ).
+  // 4.5) Place a CODE built from a PLAN directly under the column of the BRANCH
+  // it was planned in ("directly under the new branch"), stacked below the
+  // PLAN, with the PLAN -> CODE edge kept as the link. The mixer spawns a PLAN
+  // off a LEARN node (which itself hangs beneath a BRANCH), so the PLAN is laid
+  // out by the learn-hang machinery — it has NO column (colOf[plan] is
+  // undefined) — and its CODE child is reached by neither placeRail nor
+  // placeHangs, landing in placeOrphans' fallback strip. Anchoring to the PLAN's
+  // (nonexistent) column is what left the CODE orphaned; anchor to the nearest
+  // BRANCH ancestor instead — a branch is always placed by placeRail, so its
+  // column + x are final by here. Only the CODE's location moves; its parentId
+  // is untouched, so the edge still routes PLAN -> CODE (a cross-column bézier,
+  // since the columns differ — see MindMap's edge builder).
+  const nearestBranchCol = (startId: string): number | undefined => {
+    let cur: string | undefined = startId;
+    while (cur) {
+      if (nodes[cur]?.kind === 'BRANCH') return colOf[cur];
+      cur = nodes[cur]?.parentId ?? undefined;
+    }
+    return undefined;
+  };
   Object.keys(nodes).forEach(id => {
-    // Only orphaned CODE-from-PLAN nodes need this: one already placed by
-    // placeRail (its PLAN parent was on the rail) has a column + position and
-    // was homed by placeRail's own nearestBranchCol branch — re-moving it here
-    // would double-push it into colNodeIds and re-reserve its y.
+    // Only an orphaned CODE-from-PLAN needs this: one already placed by
+    // placeRail (its PLAN parent was itself on the rail) has a column + position;
+    // re-moving it would double-push it into colNodeIds and re-reserve its y.
     if (nodes[id].kind !== 'CODE' || colOf[id] !== undefined) return;
     const planId = nodes[id].parentId;
     if (!planId || nodes[planId]?.kind !== 'PLAN') return;
-    const branchCol = nearestBranchCol(nodes, colOf, planId);
-    if (branchCol === undefined) return;
-    const colIds = colNodeIds[branchCol];
-    const colX = colIds?.length ? pos[colIds[0]]?.x : undefined;
+    const branchCol = nearestBranchCol(planId);
     const planPos = pos[planId];
+    const colIds = branchCol !== undefined ? colNodeIds[branchCol] : undefined;
+    const colX = colIds?.length ? pos[colIds[0]]?.x : undefined;
     if (colX === undefined || !planPos) return;
-    pos[id] = { x: colX, y: reserveY(branchCol, planPos.y + RAIL_ROW_GAP) };
-    colOf[id] = branchCol;
-    colNodeIds[branchCol].push(id);
+    pos[id] = { x: colX, y: reserveY(branchCol!, planPos.y + RAIL_ROW_GAP) };
+    colOf[id] = branchCol!;
+    colNodeIds[branchCol!].push(id);
   });
 
   // 5) Column rail lines — one per non-empty column, spanning its first to last node.
