@@ -3202,7 +3202,10 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
                 variant={showComposer ? 'code' : 'research'}
                 idToken={idToken}
                 onBuild={(instruction, attachments) => void submitCodeNode(instruction, attachments)}
-                buildDisabled={codeSubmitLoading}
+                // Don't let a build fire while the active node is still streaming — a
+                // PLAN that hasn't finished has no sections yet, so planDocOf() would
+                // hand the agent an empty plan ("implement the plan" with no plan).
+                buildDisabled={codeSubmitLoading || active.loading}
                 onAsk={(q, attachments) => askAboutCommit(active.id, q, attachments)}
                 askDisabled={showComposer ? !active.commitSha : false}
                 askLoading={askCommitLoading}

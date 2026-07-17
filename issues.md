@@ -4,6 +4,11 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 > **Required step:** update this file in the **same commit** as any bug fix. See [CLAUDE.md → "Issue log (issues.md)"](CLAUDE.md). Format: one `###` entry per fix — Symptom / Cause / Fix, plus the commit SHA once committed.
 
+### forkai-code: building a CODE from a PLAN before the plan finished ran an empty query
+- **Symptom:** Building the implementation ("implement the plan") right after creating a PLAN produced a failed/empty run — the CODE node showed "Sandbox Failed To Start". The plan-derived build in the demo hit this every time.
+- **Cause:** The Build action on a PLAN node was only gated on `codeSubmitLoading`, not on the PLAN still streaming. `planDocOf()` builds the agent's plan context from `planNode.sections`; a PLAN that hasn't finished ("Planning…") has no sections yet, so the agent got an empty plan — an empty query — which the mock run then failed on.
+- **Fix:** Frontend — disable Build while the active node is still loading (`buildDisabled = codeSubmitLoading || active.loading`), so you can't build off an unfinished plan (this also makes Playwright's `.click()` wait for the plan to be ready). Backend backstop — `createCodeNodeStreaming` rejects a CODE build whose parent is a PLAN with no sections (`BadRequestException`, "plan is still being generated").
+
 ### forkai-code: CODE-from-PLAN drifted to under the PLAN / orphan strip and its edge broke
 - **Symptom:** The CODE node built from a PLAN was supposed to sit directly under the BRANCH it was planned in, linked from the PLAN. Instead it kept reverting — after a run/re-render it slid back under the PLAN, and in some states landed in the orphan fallback strip (x=0) with a broken/absent connecting edge.
 - **Cause:** A post-pass anchored the CODE to the PLAN's own column (`colOf[planId]`). But a mixer-spawned PLAN hangs off a LEARN node and is laid out by the hang machinery, which never assigns a column — so `colOf[planId]` is `undefined`, the post-pass bailed, and the CODE fell through to `placeOrphans`. Separately, MindMap's lane/bézier edge test keyed off `colOf` (`colOf[pid] === undefined → sameCol → lane`), so a PLAN→CODE edge became a vertical lane at the PLAN's x that didn't reach a CODE placed elsewhere.

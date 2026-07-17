@@ -787,6 +787,15 @@ export class NodesService {
     }
     assertKindAllowed(parentNode.kind as NodeKind, 'CODE');
 
+    // A CODE built from a PLAN reads the plan's content (planDocOf → its
+    // sections). If the PLAN hasn't finished streaming it has no sections yet,
+    // so building now would hand the agent an empty plan ("implement the plan"
+    // with no plan) — reject rather than run an empty query. The frontend also
+    // disables Build until the PLAN settles; this is the backstop.
+    if (parentNode.kind === 'PLAN' && !parentNode.sections?.length) {
+      throw new BadRequestException('The plan is still being generated — wait for it to finish before building.');
+    }
+
     // Resolve BEFORE any write below (auto-branch or the CODE node itself) —
     // an invalid/unavailable environment must 400 cleanly, never leave an
     // orphaned 'running' node (or a stray auto-branch fork) behind it. The
