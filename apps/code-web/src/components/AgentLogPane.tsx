@@ -211,12 +211,24 @@ function AssistantBubble({ text }: { text: string }) {
   );
 }
 
+// Whether a result payload has more than its one-line summary worth showing —
+// drives both the standalone toggle and the header-driven toggle on a tool card.
+function resultExpandable(event: AgentEvent): boolean {
+  const text = payloadText(event.payload);
+  const nonEmpty = text.split('\n').filter(l => l.trim().length > 0);
+  const first = nonEmpty[0] ?? text;
+  return nonEmpty.length > 1 || first.length > 140;
+}
+
 // A `tool_result` / `terminal` / `file_edit` payload — collapsed to a
-// one-line summary by default (Claude-Code-style ⎿), click to expand the
-// full text. `indent` distinguishes a result paired under a preceding
-// tool_call (indented, branch glyph) from a standalone/unpaired one.
-function CollapsibleResult({ event, indent, expanded, onToggle }: {
-  event: AgentEvent; indent: boolean; expanded: boolean; onToggle: () => void;
+// one-line summary by default (Claude-Code-style ⎿), expand to see the full
+// text. `indent` distinguishes a result paired under a preceding tool_call
+// (indented, branch glyph) from a standalone/unpaired one. When `headerDriven`
+// is set, the parent tool card's header is the toggle (so no inline button
+// here) — matching the Claude Code VS Code extension, where clicking the tool
+// row expands its output.
+function CollapsibleResult({ event, indent, expanded, onToggle, headerDriven = false }: {
+  event: AgentEvent; indent: boolean; expanded: boolean; onToggle: () => void; headerDriven?: boolean;
 }) {
   const text = payloadText(event.payload);
   const nonEmptyLines = text.split('\n').filter(l => l.trim().length > 0);
@@ -231,34 +243,43 @@ function CollapsibleResult({ event, indent, expanded, onToggle }: {
     <div className={`cc-tool-result${indent ? ' cc-tool-result--indent' : ''}${kindClass}`}>
       {indent && <span className="cc-tool-result-branch">⎿</span>}
       <div className="cc-tool-result-body">
-        {hasMore ? (
+        {hasMore && !headerDriven ? (
           <button type="button" className="cc-tool-result-summary" onClick={onToggle} aria-expanded={expanded}>
             <span className="cc-tool-result-caret">{expanded ? '▾' : '▸'}</span>
             {expanded ? firstLine : `${summary}${suffix}`}
           </button>
         ) : (
-          <span className="cc-tool-result-summary cc-tool-result-summary--static">{summary || '(empty)'}</span>
+          <span className="cc-tool-result-summary cc-tool-result-summary--static">
+            {expanded && hasMore ? firstLine : `${summary}${suffix}` || '(empty)'}
+          </span>
         )}
-        {expanded && <pre className="cc-tool-result-full">{text}</pre>}
+        {expanded && hasMore && <pre className="cc-tool-result-full">{text}</pre>}
       </div>
     </div>
   );
 }
 
 // "● ToolName(arg)" bullet, with its paired result (if any) rendered indented
-// beneath it.
+// beneath it. When the result has expandable content the whole header row is
+// the toggle (chevron + click), so a Bash/Read/Edit card opens its output
+// inline — the Claude Code VS Code extension pattern.
 function ToolCallLine({ event, result, expanded, onToggle }: {
   event: AgentEvent; result: AgentEvent | null; expanded: boolean; onToggle: () => void;
 }) {
   const { name, arg } = toolCallLabel(event);
+  const expandable = !!result && resultExpandable(result);
   return (
-    <div className="cc-tool">
-      <div className="cc-tool-call">
+    <div className={`cc-tool${expandable ? ' cc-tool--toggle' : ''}`}>
+      <div
+        className={`cc-tool-call${expandable ? ' cc-tool-call--clickable' : ''}`}
+        {...(expandable ? { role: 'button' as const, tabIndex: 0, 'aria-expanded': expanded, onClick: onToggle } : {})}
+      >
         <span className="cc-tool-bullet">●</span>
         <span className="cc-tool-name">{name}</span>
         {arg && <span className="cc-tool-args">({arg})</span>}
+        {expandable && <span className="cc-tool-caret">{expanded ? '▾' : '▸'}</span>}
       </div>
-      {result && <CollapsibleResult event={result} indent expanded={expanded} onToggle={onToggle} />}
+      {result && <CollapsibleResult event={result} indent expanded={expanded} onToggle={onToggle} headerDriven={expandable} />}
     </div>
   );
 }
@@ -268,19 +289,22 @@ interface CallGroup { call: AgentEvent; result: AgentEvent | null; }
 type TranscriptItem =
   | { key: string; type: 'assistant'; text: string }
   | { key: string; type: 'call'; group: CallGroup }
-  | { key: string; type: 'result'; event: AgentEvent }
+  | { key: string; type: 'resultGroup'; events: AgentEvent[] }
   | { key: string; type: 'truncated'; event: AgentEvent };
 
 // Threads the flat AgentEvent log into a chat-shaped structure: consecutive
 // `text` events merge into one assistant bubble; a `tool_result` / `terminal`
 // / `file_edit` event pairs with the most recently emitted unmatched
 // `tool_call` (there's no id on either side to match by — see root
-// CLAUDE.md's AgentEvent shape — so this is purely positional); anything
-// left over renders as its own standalone line.
+// CLAUDE.md's AgentEvent shape — so this is purely positional); any remaining
+// unpaired results are coalesced — a run of consecutive standalone results
+// becomes ONE card (broken by assistant narration / a tool_call / truncation)
+// so a burst of file writes reads as a single block, not a stack of boxes.
 function buildTranscript(steps: AgentEvent[]): TranscriptItem[] {
   const items: TranscriptItem[] = [];
   let openCall: CallGroup | null = null;
   let pendingText: { seq: number; parts: string[] } | null = null;
+  let pendingResults: AgentEvent[] | null = null;
 
   const flushText = () => {
     if (pendingText) {
@@ -288,32 +312,43 @@ function buildTranscript(steps: AgentEvent[]): TranscriptItem[] {
       pendingText = null;
     }
   };
+  const flushResults = () => {
+    if (pendingResults) {
+      items.push({ key: `rgroup-${pendingResults[0].seq}`, type: 'resultGroup', events: pendingResults });
+      pendingResults = null;
+    }
+  };
 
   for (const event of steps) {
     if (event.kind === 'text') {
       const text = payloadText(event.payload).trim();
       if (!text) continue;
+      flushResults();
       if (pendingText) pendingText.parts.push(text);
       else pendingText = { seq: event.seq, parts: [text] };
       continue;
     }
     flushText();
     if (event.kind === 'truncated') {
+      flushResults();
       items.push({ key: `trunc-${event.seq}`, type: 'truncated', event });
       openCall = null;
       continue;
     }
     if (event.kind === 'tool_call') {
+      flushResults();
       const group: CallGroup = { call: event, result: null };
       items.push({ key: `call-${event.seq}`, type: 'call', group });
       openCall = group;
       continue;
     }
-    // tool_result | terminal | file_edit — pair to the last open call, else standalone
+    // tool_result | terminal | file_edit — pair to the last open call, else
+    // accumulate into the current run of standalone results.
     if (openCall && !openCall.result) openCall.result = event;
-    else items.push({ key: `result-${event.seq}`, type: 'result', event });
+    else (pendingResults ??= []).push(event);
   }
   flushText();
+  flushResults();
   return items;
 }
 
@@ -598,13 +633,17 @@ export function AgentLogPane({ node, events, project, idToken, sessionId, onImpl
               );
             }
             return (
-              <CollapsibleResult
-                key={item.key}
-                event={item.event}
-                indent={false}
-                expanded={expandedResults.has(item.event.seq)}
-                onToggle={() => toggleResult(item.event.seq)}
-              />
+              <div key={item.key} className="cc-result-group">
+                {item.events.map(ev => (
+                  <CollapsibleResult
+                    key={ev.seq}
+                    event={ev}
+                    indent={false}
+                    expanded={expandedResults.has(ev.seq)}
+                    onToggle={() => toggleResult(ev.seq)}
+                  />
+                ))}
+              </div>
             );
           })}
           {node.agentStatus === 'running' && latestHeartbeat && (

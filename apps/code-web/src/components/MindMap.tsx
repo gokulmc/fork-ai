@@ -405,6 +405,23 @@ export function MindMap({
     return GitBranch;
   }
 
+  // Single-letter kind marker shown in the card's top-right corner (replaces the
+  // verbose "Commit"/"Root"/… kicker word). Root wins over kind.
+  function cornerLetter(kind: ForkNode['kind'], isRoot: boolean): string {
+    if (isRoot) return 'R';
+    switch (kind) {
+      case 'CODE': return 'C';
+      case 'BRANCH': return 'B';
+      case 'PLAN': return 'P';
+      case 'MERGE': return 'M';
+      case 'QUERY': return 'Q';
+      case 'DEEPER': return 'D';
+      case 'ASK': return 'A';
+      case 'MIX': return 'X';
+      default: return '';
+    }
+  }
+
   const nodeCount = Object.keys(nodes).length;
 
   // Re-collapse chips (#205): a segMeta entry whose segId is NOT itself in
@@ -601,6 +618,11 @@ export function MindMap({
                       </div>
                     ) : (
                       <div className="mm-card">
+                        {cornerLetter(n.kind, isRoot) && (
+                          <span className="mm-corner-badge" title={kicker} aria-label={kicker}>
+                            {cornerLetter(n.kind, isRoot)}
+                          </span>
+                        )}
                         {hasPill && n.branchName && (
                           <div className="mm-card-top">
                             <span
@@ -629,13 +651,17 @@ export function MindMap({
                               own row height and push 2-line titles past the foreignObject
                               clip rect (#230). */}
                           <div className="mm-card-text">
-                            <div className="mm-kicker" title={kicker} aria-label={kicker}>
-                              {kicker}
-                              {n.kind === 'MERGE' && n.prStatus && (
-                                <span className={`mm-pr-status mm-pr-status--${n.prStatus}`}>{n.prStatus}</span>
-                              )}
-                              {isFailed && <span className="mm-node-error-dot" title="Run failed" />}
-                            </div>
+                            {/* Kicker word replaced by the top-right corner letter badge
+                                (.mm-corner-badge). This row now only carries the MERGE
+                                PR-status chip / failure dot when present. */}
+                            {((n.kind === 'MERGE' && n.prStatus) || isFailed) && (
+                              <div className="mm-kicker">
+                                {n.kind === 'MERGE' && n.prStatus && (
+                                  <span className={`mm-pr-status mm-pr-status--${n.prStatus}`}>{n.prStatus}</span>
+                                )}
+                                {isFailed && <span className="mm-node-error-dot" title="Run failed" />}
+                              </div>
+                            )}
                             <div className="mm-label" title={n.title || 'Untitled'}>{n.title || 'Untitled'}</div>
                           </div>
                           {n.sources?.length ? <span className="mm-search-badge">🔍</span> : null}
