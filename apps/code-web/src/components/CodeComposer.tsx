@@ -240,11 +240,18 @@ export const CodeComposer = forwardRef<CodeComposerHandle, CodeComposerProps>(fu
               onChange={e => { handleFiles(e.target.files); e.target.value = ''; }}
             />
             <label className="code-composer-pill code-composer-pill--select" title="Model for this branch">
-              🤖
+              {/* The <select> is a transparent overlay filling the whole pill so a
+                  click anywhere on it opens the dropdown — a content-sized select
+                  wedged between the emoji and caret only opened when you hit that
+                  tiny middle strip. The visible face (pointer-events: none) shows
+                  the emoji + current model + caret on top. */}
               <select value={model} onChange={e => onModelChange(e.target.value as Tweaks['branchModel'])} aria-label="Model">
                 {MODEL_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
-              <span className="code-composer-pill-caret">▾</span>
+              <span className="code-composer-pill-face" aria-hidden="true">
+                🤖 {MODEL_OPTIONS.find(o => o.value === model)?.label ?? model}
+                <span className="code-composer-pill-caret">▾</span>
+              </span>
             </label>
             <button
               type="button"

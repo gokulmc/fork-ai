@@ -4,6 +4,11 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 > **Required step:** update this file in the **same commit** as any bug fix. See [CLAUDE.md → "Issue log (issues.md)"](CLAUDE.md). Format: one `###` entry per fix — Symptom / Cause / Fix, plus the commit SHA once committed.
 
+### forkai-code: composer model selector felt "not working" — only a tiny strip was clickable
+- **Symptom:** Clicking the 🤖 model pill in the code composer often did nothing — the dropdown wouldn't open.
+- **Cause:** The native `<select>` was content-sized and wedged between the hardcoded 🤖 emoji and a separate ▾ caret span. Only a direct click on that narrow middle strip opened it; clicking the emoji or the caret (which look like part of the control) missed.
+- **Fix:** Make the `<select>` a transparent overlay filling the whole pill (`position:absolute; inset:0`) so a click anywhere opens it, with the visible face (emoji + current model label + caret) on top at `pointer-events:none`. Matches TweaksPanel's full-width TweakSelect behavior.
+
 ### forkai-code: WebKit/Safari piled every mind-map card's text in the top-left corner
 - **Symptom:** In Safari/WebKit, all node card text (titles, badges, OKR chips) rendered stacked at the SVG origin (top-left of the map) instead of at each node's position. Chrome/Firefox were fine.
 - **Cause:** The corner-letter badge added `position: relative` to `.mm-card`. WebKit paints a positioned descendant of a `<foreignObject>` (inside a transformed `<g>`) relative to the SVG viewport origin, not the foreignObject — so every positioned card collapsed to the top-left (the same class of bug as the animation note in root CLAUDE.md).
