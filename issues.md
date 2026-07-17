@@ -4,6 +4,11 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 > **Required step:** update this file in the **same commit** as any bug fix. See [CLAUDE.md → "Issue log (issues.md)"](CLAUDE.md). Format: one `###` entry per fix — Symptom / Cause / Fix, plus the commit SHA once committed.
 
+### forkai-code: deleting a project on the history page did nothing in Safari/WebKit
+- **Symptom:** On the Projects/History page, confirming a project delete did nothing in Safari — no request fired, the card stayed. Worked in Chrome.
+- **Cause:** WebKit doesn't focus a `<button>` on click. The confirm group disarms via `onBlur` (`setConfirmingId(null)`), and the Cancel button is `autoFocus`ed. Clicking "confirm" in Safari blurred Cancel with `relatedTarget=null` (the clicked button never took focus) → the group's onBlur disarmed and unmounted the confirm button **before** its `onClick` ran, so `onDeleteSession` never fired. Chrome focuses the clicked button, keeping `relatedTarget` inside the group.
+- **Fix:** `onMouseDown={e => e.preventDefault()}` on the confirm Yes/No buttons so the click doesn't move focus — no premature blur, and the onClick fires. Verified delete now sends `204` and persists in both WebKit and Chromium.
+
 ### forkai-code: composer model selector felt "not working" — only a tiny strip was clickable
 - **Symptom:** Clicking the 🤖 model pill in the code composer often did nothing — the dropdown wouldn't open.
 - **Cause:** The native `<select>` was content-sized and wedged between the hardcoded 🤖 emoji and a separate ▾ caret span. Only a direct click on that narrow middle strip opened it; clicking the emoji or the caret (which look like part of the control) missed.

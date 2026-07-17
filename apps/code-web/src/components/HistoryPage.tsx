@@ -137,6 +137,12 @@ export function HistoryPage({ sessions, loading, onLoadSession, onDeleteSession,
                                 className="project-card-confirm-btn project-card-confirm-yes"
                                 aria-label="Confirm delete"
                                 title="Confirm delete"
+                                // preventDefault the mousedown so the click doesn't move focus:
+                                // Safari/WebKit doesn't focus a <button> on click, so clicking
+                                // this blurred the autofocused Cancel with relatedTarget=null,
+                                // firing the group's onBlur → setConfirmingId(null) → this button
+                                // unmounted before its onClick ran, so delete never fired.
+                                onMouseDown={e => e.preventDefault()}
                                 onClick={e => {
                                   e.stopPropagation();
                                   setConfirmingId(null);
@@ -154,6 +160,7 @@ export function HistoryPage({ sessions, loading, onLoadSession, onDeleteSession,
                                 // onBlur-outside-click handler above can fire, and means a stray
                                 // Enter keypress cancels rather than deletes.
                                 autoFocus
+                                onMouseDown={e => e.preventDefault()}
                                 onClick={e => { e.stopPropagation(); setConfirmingId(null); }}
                               >
                                 <X size={13} />
