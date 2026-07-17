@@ -81,14 +81,17 @@ export class MockAgentService {
   constructor(private readonly llm: LlmService) {}
 
   // One real LLM call simulates a full agent run's transcript. Malformed JSON
-  // gets one retry; a deterministic LlmService failure (e.g. a length-limit
-  // cut-off) is not retried, matching callJson's truncation handling.
+  // gets two retries (three attempts total); a deterministic LlmService failure
+  // (e.g. a length-limit cut-off) is not retried, matching callJson's
+  // truncation handling — the event-count cap in buildPrompt keeps a
+  // plan-context transcript comfortably under NON_STREAMING_MAX_TOKENS so it
+  // doesn't truncate in the first place.
   async generate(ctx: AgentRunContext): Promise<AgentRunResult> {
     const prompt = this.buildPrompt(ctx);
     const model = ctx.model ?? BRANCH_DEFAULT_MODEL;
 
     let lastError: Error | undefined;
-    for (let attempt = 0; attempt <= 1; attempt++) {
+    for (let attempt = 0; attempt <= 2; attempt++) {
       const { rawText, usage } = await this.llm.generateAgentTranscript(prompt, model);
       try {
         const parsed = this.parseAndValidate(rawText);
@@ -143,7 +146,7 @@ Return ONLY valid JSON, no prose, no markdown fences. Shape:
   "events": [ { "kind": "text" | "tool_call" | "tool_result" | "terminal" | "file_edit", "payload": "..." } ]
 }
 
-Produce between 20 and 35 events forming a plausible transcript of the agent's work: reading relevant files, following the enabled plugins where natural to the task, running the toolchain (installs, a brief FAILING test excerpt followed by a PASSING one after a fix), editing files with realistic paths for this repo, and short first-person "text" reflections. Every "payload" must be a plain string — stringify any structured content. File paths in "events" and "diffSummary.files" must be consistent with each other and with the repo. Escape double-quotes inside JSON strings.`;
+Produce between 14 and 22 events forming a plausible transcript of the agent's work: reading relevant files, following the enabled plugins where natural to the task, running the toolchain (installs, a brief FAILING test excerpt followed by a PASSING one after a fix), editing files with realistic paths for this repo, and short first-person "text" reflections. Keep each payload concise — a few lines at most — so the whole transcript stays well within the output length limit. Every "payload" must be a plain string — stringify any structured content. File paths in "events" and "diffSummary.files" must be consistent with each other and with the repo. Escape double-quotes inside JSON strings.`;
   }
 
   // Mirrors LlmService.parseJson's fence-stripping + brace-extraction, then

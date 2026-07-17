@@ -119,10 +119,10 @@ describe('MockAgentService', () => {
     expect(mockLlm.generateAgentTranscript).toHaveBeenCalledTimes(2);
   });
 
-  it('throws after exhausting the single retry on persistently malformed output', async () => {
+  it('throws after exhausting the retries on persistently malformed output', async () => {
     mockLlm.generateAgentTranscript.mockResolvedValue(sdkResult({ commitMessage: 'x' })); // missing diffSummary/events every time
     await expect(service.generate(baseCtx)).rejects.toThrow();
-    expect(mockLlm.generateAgentTranscript).toHaveBeenCalledTimes(2);
+    expect(mockLlm.generateAgentTranscript).toHaveBeenCalledTimes(3);
   });
 
   it('propagates an LlmService failure (e.g. truncation) immediately without retrying', async () => {
