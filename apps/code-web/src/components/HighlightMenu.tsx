@@ -1,5 +1,5 @@
 'use client';
-import { useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { Sparkles, Lightbulb, Copy, Highlighter } from './Icons';
 
 const HL_BG_COLORS = ['#fef08a', '#bbf7d0', '#bae6fd', '#fbcfe8', '#e5e5e5'];
@@ -34,6 +34,9 @@ const MENU_H = 46;
 
 export function HighlightMenu({ visible, rect, lastColors, onAction, onClose, askOnly }: HighlightMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
+  // The colour palette stays collapsed until the user clicks the expand chevron
+  // (matches the original fork.ai) — showing it on every selection is noisy.
+  const [showColors, setShowColors] = useState(false);
 
   const fg = lastColors.fg ?? null;
   const bg = lastColors.bg ?? '#fef08a';
@@ -45,6 +48,10 @@ export function HighlightMenu({ visible, rect, lastColors, onAction, onClose, as
     const top = rect.top - MENU_H - 10 >= 12 ? rect.top - MENU_H - 10 : rect.bottom + 10;
     return { left, top };
   }, [rect.left, rect.top, rect.width, rect.height, rect.bottom]);
+
+  useEffect(() => {
+    if (!visible) setShowColors(false);
+  }, [visible]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -78,30 +85,40 @@ export function HighlightMenu({ visible, rect, lastColors, onAction, onClose, as
               <Highlighter size={13} />
               <span className="hl-dot" style={{ background: bg }} />
             </button>
-            <div className="hl-color-pop" onMouseDown={e => e.preventDefault()}>
-              <div className="hl-color-row">
-                {HL_BG_COLORS.map(c => (
-                  <button
-                    key={c}
-                    className={`hl-swatch${bg === c ? ' active' : ''}`}
-                    style={{ background: c }}
-                    onClick={() => onAction('highlight', { bg: c, fg })}
-                    title={`Highlight · ${c}`}
-                  />
-                ))}
+            <button
+              className="hl-expand-btn"
+              onClick={() => setShowColors(v => !v)}
+              title="Choose color"
+              aria-label="Choose highlight color"
+            >
+              <span className="hl-chevron" style={{ transform: showColors ? 'rotate(180deg)' : undefined }}>▾</span>
+            </button>
+            {showColors && (
+              <div className="hl-color-pop" onMouseDown={e => e.preventDefault()}>
+                <div className="hl-color-row">
+                  {HL_BG_COLORS.map(c => (
+                    <button
+                      key={c}
+                      className={`hl-swatch${bg === c ? ' active' : ''}`}
+                      style={{ background: c }}
+                      onClick={() => { onAction('highlight', { bg: c, fg }); setShowColors(false); }}
+                      title={`Highlight · ${c}`}
+                    />
+                  ))}
+                </div>
+                <div className="hl-color-row">
+                  {HL_FG_COLORS.map((c, i) => (
+                    <button
+                      key={i}
+                      className={`hl-fg-swatch${(fg ?? null) === c.value ? ' active' : ''}`}
+                      style={{ color: c.value ?? 'var(--ink)' }}
+                      onClick={() => { onAction('highlight', { bg, fg: c.value }); setShowColors(false); }}
+                      title={`Text · ${c.label}`}
+                    >A</button>
+                  ))}
+                </div>
               </div>
-              <div className="hl-color-row">
-                {HL_FG_COLORS.map((c, i) => (
-                  <button
-                    key={i}
-                    className={`hl-fg-swatch${(fg ?? null) === c.value ? ' active' : ''}`}
-                    style={{ color: c.value ?? 'var(--ink)' }}
-                    onClick={() => onAction('highlight', { bg, fg: c.value })}
-                    title={`Text · ${c.label}`}
-                  >A</button>
-                ))}
-              </div>
-            </div>
+            )}
           </div>
 
           <span className="sep" />

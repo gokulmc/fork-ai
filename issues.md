@@ -4,6 +4,11 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 > **Required step:** update this file in the **same commit** as any bug fix. See [CLAUDE.md → "Issue log (issues.md)"](CLAUDE.md). Format: one `###` entry per fix — Symptom / Cause / Fix, plus the commit SHA once committed.
 
+### forkai-code: the highlight menu's colour palette popped open on every text selection
+- **Symptom:** Selecting any passage opened the full highlight colour palette (5 backgrounds + 4 text colours) automatically — noisy versus the original fork.ai, which showed just Ask AI / highlight / Callout until you asked for colours.
+- **Cause:** The fork dropped the original's `showColors` state + expand chevron, so the `.hl-color-pop` was rendered unconditionally instead of behind a toggle.
+- **Fix:** Restored the original behaviour — the palette stays collapsed until the user clicks the expand chevron (`.hl-expand-btn ▾`), and resets closed when the menu hides.
+
 ### forkai-code: deleting a project on the history page did nothing in Safari/WebKit
 - **Symptom:** On the Projects/History page, confirming a project delete did nothing in Safari — no request fired, the card stayed. Worked in Chrome.
 - **Cause:** WebKit doesn't focus a `<button>` on click. The confirm group disarms via `onBlur` (`setConfirmingId(null)`), and the Cancel button is `autoFocus`ed. Clicking "confirm" in Safari blurred Cancel with `relatedTarget=null` (the clicked button never took focus) → the group's onBlur disarmed and unmounted the confirm button **before** its `onClick` ran, so `onDeleteSession` never fired. Chrome focuses the clicked button, keeping `relatedTarget` inside the group.
