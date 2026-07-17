@@ -618,8 +618,9 @@ export function MindMap({
                       </div>
                     ) : (
                       <div className="mm-card">
-                        {cornerLetter(n.kind, isRoot) && (
-                          <span className="mm-corner-badge" title={kicker} aria-label={kicker}>
+                        {(cornerLetter(n.kind, isRoot) || isFailed) && (
+                          <span className="mm-corner-badge" title={isFailed ? 'Run failed' : kicker} aria-label={isFailed ? 'Run failed' : kicker}>
+                            {isFailed && <span className="mm-node-error-dot" />}
                             {cornerLetter(n.kind, isRoot)}
                           </span>
                         )}
@@ -652,14 +653,11 @@ export function MindMap({
                               clip rect (#230). */}
                           <div className="mm-card-text">
                             {/* Kicker word replaced by the top-right corner letter badge
-                                (.mm-corner-badge). This row now only carries the MERGE
-                                PR-status chip / failure dot when present. */}
-                            {((n.kind === 'MERGE' && n.prStatus) || isFailed) && (
+                                (.mm-corner-badge, which also carries the run-failed dot).
+                                This row now only carries the MERGE PR-status chip. */}
+                            {n.kind === 'MERGE' && n.prStatus && (
                               <div className="mm-kicker">
-                                {n.kind === 'MERGE' && n.prStatus && (
-                                  <span className={`mm-pr-status mm-pr-status--${n.prStatus}`}>{n.prStatus}</span>
-                                )}
-                                {isFailed && <span className="mm-node-error-dot" title="Run failed" />}
+                                <span className={`mm-pr-status mm-pr-status--${n.prStatus}`}>{n.prStatus}</span>
                               </div>
                             )}
                             <div className="mm-label" title={n.title || 'Untitled'}>{n.title || 'Untitled'}</div>
