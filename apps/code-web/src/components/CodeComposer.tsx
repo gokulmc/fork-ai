@@ -1,12 +1,22 @@
 'use client';
 import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import type { Tweaks } from '@/lib/types';
+import { describeImage } from '@/lib/api';
 import { MODEL_OPTIONS } from './TweaksPanel';
 import { Paperclip, X as XIcon } from './Icons';
 
 export interface ComposerAttachment {
   name: string;
   content: string;
+}
+
+// Local chip state — `id` is a stable key across the async describe-image
+// round trip (index-based keys break once a chip earlier in the list is
+// removed while another is still describing); `describing` is UI-only and
+// never sent to onBuild/onAsk.
+interface AttachmentChip extends ComposerAttachment {
+  id: string;
+  describing?: boolean;
 }
 
 export interface CodeComposerHandle {
@@ -18,9 +28,10 @@ interface CodeComposerProps {
   // to the active commit). 'research' = a learn node with no sandbox to spawn
   // (Go-deeper primary, Ask ghost) — see fix-composer.html variant (c).
   variant: 'code' | 'research';
+  idToken: string; // needed to call describeImage for image attachments
   onBuild: (instruction: string, attachments: ComposerAttachment[]) => void;
   buildDisabled?: boolean; // true while a run is already in flight for the active lane
-  onAsk: (question: string) => void;
+  onAsk: (question: string, attachments: ComposerAttachment[]) => void;
   askDisabled?: boolean; // 'code' variant: no commitSha yet to ask about
   askLoading?: boolean;
   onDeeper?: () => void; // 'research' variant only — deepens the node's last section
@@ -37,7 +48,8 @@ interface CodeComposerProps {
 
 const MAX_FILES = 3;
 const MAX_FILE_BYTES = 64 * 1024;
-const ACCEPT = '.txt,.md,.json,.ts,.tsx,.js,.py,.yaml,.yml,.css,.html,text/*';
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+const ACCEPT = '.txt,.md,.json,.ts,.tsx,.js,.py,.yaml,.yml,.css,.html,text/*,image/png,image/jpeg,image/webp';
 const MAX_TEXTAREA_ROWS = 8;
 
 // Bottom-docked instruction bar — the single input for both spawning/continuing
@@ -47,17 +59,18 @@ const MAX_TEXTAREA_ROWS = 8;
 // see .code-composer in globals.css), replacing the old anchored popup.
 export const CodeComposer = forwardRef<CodeComposerHandle, CodeComposerProps>(function CodeComposer(
   {
-    variant, onBuild, buildDisabled, onAsk, askDisabled, askLoading,
+    variant, idToken, onBuild, buildDisabled, onAsk, askDisabled, askLoading,
     onDeeper, deeperDisabled, deeperLoading,
     model, onModelChange, webSearch, onWebSearchChange, webSearchDisabled,
   },
   ref,
 ) {
   const [text, setText] = useState('');
-  const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
+  const [attachments, setAttachments] = useState<AttachmentChip[]>([]);
   const [attachError, setAttachError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const chipIdRef = useRef(0);
 
   useImperativeHandle(ref, () => ({
     focus: () => textareaRef.current?.focus(),
@@ -74,8 +87,9 @@ export const CodeComposer = forwardRef<CodeComposerHandle, CodeComposerProps>(fu
   }, [text]);
 
   const trimmed = text.trim();
-  const canBuild = variant === 'code' && trimmed.length > 0 && !buildDisabled;
-  const canAsk = trimmed.length > 0 && !askDisabled && !askLoading;
+  const describing = attachments.some(a => a.describing);
+  const canBuild = variant === 'code' && trimmed.length > 0 && !buildDisabled && !describing;
+  const canAsk = trimmed.length > 0 && !askDisabled && !askLoading && !describing;
   const canDeeper = variant === 'research' && !deeperDisabled && !deeperLoading;
 
   function doBuild() {
@@ -87,7 +101,7 @@ export const CodeComposer = forwardRef<CodeComposerHandle, CodeComposerProps>(fu
   }
   function doAsk() {
     if (!canAsk) return;
-    onAsk(trimmed);
+    onAsk(trimmed, attachments);
     setText('');
     setAttachments([]);
     setAttachError(null);
@@ -99,6 +113,27 @@ export const CodeComposer = forwardRef<CodeComposerHandle, CodeComposerProps>(fu
     // typed text) — leave whatever's typed in place.
   }
 
+  // Images go through Groq describe-image (async) so the chip content is a
+  // textual description the LLM prompt can use — same ComposerAttachment
+  // shape as a text file, just filled in a moment later.
+  async function describeImageFile(file: File) {
+    const id = `img-${chipIdRef.current++}`;
+    setAttachments(prev => (prev.length >= MAX_FILES ? prev : [...prev, { id, name: file.name, content: '', describing: true }]));
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+        reader.onerror = () => reject(new Error('read failed'));
+        reader.readAsDataURL(file);
+      });
+      const { description } = await describeImage(idToken, dataUrl);
+      setAttachments(prev => prev.map(a => (a.id === id ? { ...a, content: `[Image: ${file.name}]\n${description}`, describing: false } : a)));
+    } catch {
+      setAttachments(prev => prev.filter(a => a.id !== id));
+      setAttachError(`Couldn't describe ${file.name}`);
+    }
+  }
+
   function handleFiles(fileList: FileList | null) {
     if (!fileList?.length) return;
     setAttachError(null);
@@ -108,6 +143,14 @@ export const CodeComposer = forwardRef<CodeComposerHandle, CodeComposerProps>(fu
       return;
     }
     for (const file of incoming) {
+      if (file.type.startsWith('image/')) {
+        if (file.size > MAX_IMAGE_BYTES) {
+          setAttachError(`${file.name} is too large (max 4MB)`);
+          continue;
+        }
+        void describeImageFile(file);
+        continue;
+      }
       if (file.size > MAX_FILE_BYTES) {
         setAttachError(`${file.name} is too large (max 64KB)`);
         continue;
@@ -115,7 +158,7 @@ export const CodeComposer = forwardRef<CodeComposerHandle, CodeComposerProps>(fu
       const reader = new FileReader();
       reader.onload = () => {
         const content = typeof reader.result === 'string' ? reader.result : '';
-        setAttachments(prev => (prev.length >= MAX_FILES ? prev : [...prev, { name: file.name, content }]));
+        setAttachments(prev => (prev.length >= MAX_FILES ? prev : [...prev, { id: `f-${chipIdRef.current++}`, name: file.name, content }]));
       };
       reader.onerror = () => setAttachError(`Couldn't read ${file.name}`);
       reader.readAsText(file);
@@ -148,12 +191,18 @@ export const CodeComposer = forwardRef<CodeComposerHandle, CodeComposerProps>(fu
       <div className="code-composer-inner">
         {(attachments.length > 0 || attachError) && (
           <div className="code-composer-chips">
-            {attachments.map((a, i) => (
-              <span key={`${a.name}-${i}`} className="code-composer-chip">
+            {attachments.map(a => (
+              <span key={a.id} className="code-composer-chip">
                 {a.name}
+                {a.describing && (
+                  <>
+                    <span className="spinner" style={{ width: 9, height: 9 }} />
+                    <span>describing…</span>
+                  </>
+                )}
                 <button
                   type="button"
-                  onClick={() => setAttachments(prev => prev.filter((_, j) => j !== i))}
+                  onClick={() => setAttachments(prev => prev.filter(x => x.id !== a.id))}
                   aria-label={`Remove ${a.name}`}
                 >
                   <XIcon size={10} />

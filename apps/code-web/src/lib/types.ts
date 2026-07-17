@@ -115,7 +115,7 @@ export interface Tweaks {
   maxSections: number;
   webSearch: boolean;
   branchModel: 'haiku' | 'sonnet' | 'opus';
-  environment: 'cloud' | 'demo';
+  environment: 'cloud' | 'demo' | 'blaxel';
 }
 
 export interface HlMenuState {

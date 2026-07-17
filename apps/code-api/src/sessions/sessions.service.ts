@@ -763,6 +763,39 @@ export class SessionsService {
     });
   }
 
+  // Commit-activity aggregates for the Projects page (bubbles sized by 30-day
+  // commits + a GitHub-style 366-day contribution calendar). Fans out
+  // queryNodes per session in bounded chunks — session counts are small
+  // enough that this stays cheap without needing a GSI on kind/createdAt.
+  async activity(sub: string): Promise<{ perSession: Record<string, number>; perDay: Record<string, number> }> {
+    const metas = await this.db.listSessionMeta(sub);
+    const now = Date.now();
+    const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+    const YEAR_MS = 366 * 24 * 60 * 60 * 1000;
+    const CONCURRENCY = 6;
+
+    const perSession: Record<string, number> = {};
+    const perDay: Record<string, number> = {};
+
+    for (let i = 0; i < metas.length; i += CONCURRENCY) {
+      const batch = metas.slice(i, i + CONCURRENCY);
+      const nodesBySession = await Promise.all(batch.map((m) => this.db.queryNodes(m.sessionId)));
+      batch.forEach((meta, idx) => {
+        for (const node of nodesBySession[idx]) {
+          if (node.kind !== 'CODE' && node.kind !== 'MERGE') continue;
+          const age = now - new Date(node.createdAt).getTime();
+          if (age <= THIRTY_DAYS_MS) perSession[meta.sessionId] = (perSession[meta.sessionId] ?? 0) + 1;
+          if (age <= YEAR_MS) {
+            const isoDate = node.createdAt.slice(0, 10);
+            perDay[isoDate] = (perDay[isoDate] ?? 0) + 1;
+          }
+        }
+      });
+    }
+
+    return { perSession, perDay };
+  }
+
   async getSession(sub: string, sessionId: string): Promise<FullSession> {
     const meta = await this.db.getSessionMeta(sub, sessionId);
     if (!meta) throw new NotFoundException(`Session ${sessionId} not found`);

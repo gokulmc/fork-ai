@@ -2,10 +2,12 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { ArrayMaxSize, IsArray, IsIn, IsOptional, IsString, MaxLength, MinLength, ValidateNested } from 'class-validator';
 
-// A composer-attached text file — feeds the agent prompt only (see
-// buildPrompt in mock-agent.service.ts). Never persisted on the NodeItem, so
-// the Dynamoose saveUnknown:false stripping (root CLAUDE.md) doesn't apply.
-class AttachmentDto {
+// A composer-attached text file (or a Groq-described image, same shape) —
+// feeds the agent/LLM prompt only (see buildPrompt in mock-agent.service.ts,
+// and attachmentsBlockOf for the DEEPER/ASK path in create-node.dto.ts).
+// Never persisted on the NodeItem, so the Dynamoose saveUnknown:false
+// stripping (root CLAUDE.md) doesn't apply.
+export class AttachmentDto {
   @ApiProperty({ description: 'File name (display only)', minLength: 1, maxLength: 200 })
   @IsString()
   @MinLength(1)
@@ -46,9 +48,10 @@ export class CreateCodeNodeDto {
   attachments?: AttachmentDto[];
 
   // 'local' is deliberately excluded — desktop local runs go through the
-  // (future) ingestion API, never this route.
-  @ApiPropertyOptional({ enum: ['cloud', 'mock'], description: 'Execution environment for this run (default: server-configured AGENT_RUNNER)' })
+  // (future) ingestion API, never this route. 'cloud' = Fly, 'blaxel' = Blaxel
+  // (both real billed sandboxes; see runner-registry isCloud).
+  @ApiPropertyOptional({ enum: ['cloud', 'mock', 'blaxel'], description: 'Execution environment for this run (default: server-configured AGENT_RUNNER)' })
   @IsOptional()
-  @IsIn(['cloud', 'mock'])
-  environment?: 'cloud' | 'mock';
+  @IsIn(['cloud', 'mock', 'blaxel'])
+  environment?: 'cloud' | 'mock' | 'blaxel';
 }

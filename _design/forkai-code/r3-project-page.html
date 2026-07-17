@@ -1,0 +1,589 @@
+<!-- @dsCard group="Screens" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>forkai-code — Projects (redesign)</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  html, body { height: 100%; }
+
+  .theme-toggle {
+    position: fixed; top: 20px; right: 24px; z-index: 100;
+    font-family: var(--sans); font-size: 12px; font-weight: 500;
+    padding: 7px 14px; border-radius: var(--radius);
+    border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink-2);
+    cursor: pointer; box-shadow: var(--shadow-1);
+  }
+  .theme-toggle:hover { background: var(--hover); color: var(--ink); }
+
+  .topbar { display: flex; align-items: center; justify-content: space-between; padding: 16px 32px; border-bottom: 1px solid var(--line); background: var(--bg); }
+  .brand { display: inline-flex; align-items: center; gap: 9px; font-family: var(--sans); font-weight: 600; font-size: 14px; color: var(--ink); letter-spacing: -0.01em; }
+  .brand .mark { width: 18px; height: 18px; border-radius: 5px; background: var(--ink); display: inline-block; }
+  .topbar-actions { display: flex; align-items: center; gap: 10px; }
+  .btn-primary { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 16px; background: var(--ink); color: var(--bg); border: 1px solid var(--ink); border-radius: var(--radius); font-family: var(--sans); font-size: 13px; font-weight: 600; cursor: pointer; }
+  .btn-primary:hover { opacity: .85; }
+  .account-dot { width: 30px; height: 30px; border-radius: 50%; background: var(--panel); border: 1px solid var(--line); display: inline-flex; align-items: center; justify-content: center; font-family: var(--sans); font-size: 12px; font-weight: 600; color: var(--ink-2); }
+
+  .page-body { max-width: 980px; margin: 0 auto; padding: 44px 32px 60px; }
+  .page-title { font-family: var(--serif); font-weight: 400; font-size: 32px; letter-spacing: -0.02em; margin: 0 0 6px; color: var(--ink); }
+  .page-sub { font-family: var(--sans); font-size: 13px; color: var(--ink-3); margin: 0 0 36px; max-width: 60ch; line-height: 1.5; }
+
+  .r3-section { margin-bottom: 44px; }
+  .r3-section-label { font-family: var(--sans); font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 16px; }
+
+  /* ── Project bubble cluster ─────────────────────────────── */
+  .bubble-stage { position: relative; height: 220px; }
+  .bubble {
+    position: absolute; border-radius: 50%;
+    background: var(--paper); border: 1.5px solid var(--line-strong); box-shadow: var(--shadow-1);
+    display: flex; align-items: center; justify-content: center; flex-direction: column;
+    cursor: pointer; transition: border-color .12s, box-shadow .12s, transform .12s;
+  }
+  .bubble:hover { border-color: var(--ink-3); box-shadow: var(--shadow-2); transform: translateY(-1px); }
+  .bubble-emoji { line-height: 1; }
+  .bubble-name {
+    position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+    margin-top: 7px; font-family: var(--sans); font-weight: 600; color: var(--ink-2);
+    white-space: nowrap; font-size: 10.5px;
+  }
+  .bubble-badge {
+    position: absolute; right: -3px; bottom: -3px;
+    background: var(--panel); border: 1px solid var(--line-strong); border-radius: 999px;
+    padding: 1.5px 6px; font-family: var(--sans); font-size: 9px; font-weight: 700; color: var(--ink-2);
+    white-space: nowrap; box-shadow: var(--shadow-1);
+  }
+
+  /* ── Contribution calendar ──────────────────────────────── */
+  .cal-scroll { overflow-x: auto; padding-bottom: 2px; }
+  .cal-inner { display: inline-flex; gap: 10px; }
+  .cal-daylabels {
+    display: grid; grid-template-rows: repeat(7, 11px); gap: 3px;
+    padding-top: 16px; flex-shrink: 0;
+  }
+  .cal-daylabels span { font-family: var(--sans); font-size: 9px; color: var(--ink-3); line-height: 11px; }
+  .cal-main { flex-shrink: 0; }
+  .cal-months { position: relative; height: 14px; margin-bottom: 3px; width: 725px; }
+  .cal-months span { position: absolute; top: 0; font-family: var(--sans); font-size: 9.5px; color: var(--ink-3); }
+  .cal-grid {
+    display: grid; grid-template-rows: repeat(7, 11px); grid-auto-flow: column; grid-auto-columns: 11px;
+    gap: 3px; width: 725px;
+  }
+  .cal-cell { width: 11px; height: 11px; border-radius: 2.5px; background: var(--panel); }
+  .cal-cell.l1 { background: #b7e2c0; }
+  .cal-cell.l2 { background: #7bc98d; }
+  .cal-cell.l3 { background: #3f9d5c; }
+  .cal-cell.l4 { background: #1f6a3a; }
+  [data-theme="dark"] .cal-cell.l1 { background: #103a1f; }
+  [data-theme="dark"] .cal-cell.l2 { background: #1c5c31; }
+  [data-theme="dark"] .cal-cell.l3 { background: #2e8047; }
+  [data-theme="dark"] .cal-cell.l4 { background: #4bab63; }
+
+  .cal-caption { font-family: var(--sans); font-size: 12px; color: var(--ink-2); margin: 12px 0 4px; }
+  .cal-legend { display: flex; align-items: center; gap: 5px; font-family: var(--sans); font-size: 11px; color: var(--ink-3); }
+  .cal-legend .cal-cell { width: 9px; height: 9px; }
+
+  /* ── Project list (reused verbatim from project-page.html) ── */
+  .r3-date-divider { font-family: var(--sans); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; }
+  .project-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  .project-card { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 18px 20px; cursor: pointer; transition: border-color .12s, transform .12s, box-shadow .12s; }
+  .project-card:hover { border-color: var(--line-strong); transform: translateY(-1px); box-shadow: var(--shadow-1); }
+  .project-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .project-card-name { font-family: var(--sans); font-size: 15px; font-weight: 600; color: var(--ink); }
+  .project-card-branches { font-family: var(--sans); font-size: 10.5px; font-weight: 600; color: var(--ink-3); background: var(--panel); border-radius: 999px; padding: 2px 8px; flex-shrink: 0; }
+  .project-card-repo { font-family: var(--mono); font-size: 12px; color: var(--ink-2); margin-top: 7px; }
+  .project-card-meta { font-family: var(--sans); font-size: 11.5px; color: var(--ink-3); margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+</style>
+</head>
+<body>
+  <button class="theme-toggle" onclick="const h=document.documentElement; h.setAttribute('data-theme', (h.getAttribute('data-theme')||'light')==='light'?'dark':'light');">Toggle theme</button>
+
+  <div class="topbar">
+    <div class="brand"><span class="mark"></span>fork ai code</div>
+    <div class="topbar-actions">
+      <button class="btn-primary">+ New project</button>
+      <span class="account-dot">GM</span>
+    </div>
+  </div>
+
+  <div class="page-body">
+    <h1 class="page-title">Projects</h1>
+    <p class="page-sub">Every project tracks one repo. Branch into learn nodes, plan nodes, and code runs from any commit.</p>
+
+    <!-- ── Project bubble cluster — static positions, area ∝ commits in last 30 days ── -->
+    <div class="r3-section">
+      <div class="bubble-stage">
+        <div class="bubble" style="width:132px; height:132px; top:24px; left:260px;" title="forkai-code core — 34 commits in the last 30 days">
+          <span class="bubble-emoji" style="font-size:26px;">🌱</span>
+          <span class="bubble-name">forkai-code core</span>
+          <span class="bubble-badge">34 commits</span>
+        </div>
+        <div class="bubble" style="width:96px; height:96px; top:100px; left:430px;" title="billing-service — 18 commits in the last 30 days">
+          <span class="bubble-emoji" style="font-size:20px;">💳</span>
+          <span class="bubble-name">billing-service</span>
+          <span class="bubble-badge">18 commits</span>
+        </div>
+        <div class="bubble" style="width:68px; height:68px; top:10px; left:480px;" title="marketing-site — 9 commits in the last 30 days">
+          <span class="bubble-emoji" style="font-size:16px;">📣</span>
+          <span class="bubble-name">marketing-site</span>
+          <span class="bubble-badge">9 commits</span>
+        </div>
+        <div class="bubble" style="width:50px; height:50px; top:150px; left:620px;" title="internal-cli — 4 commits in the last 30 days">
+          <span class="bubble-emoji" style="font-size:13px;">🛠️</span>
+          <span class="bubble-name">internal-cli</span>
+          <span class="bubble-badge">4</span>
+        </div>
+        <div class="bubble" style="width:38px; height:38px; top:60px; left:670px;" title="old-prototype — 0 commits in the last 30 days">
+          <span class="bubble-emoji" style="font-size:11px;">🗄️</span>
+          <span class="bubble-name">old-prototype</span>
+          <span class="bubble-badge">0</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Contribution calendar ──────────────────────────────── -->
+    <div class="r3-section">
+      <div class="r3-section-label">Activity</div>
+      <div class="cal-scroll">
+        <div class="cal-inner">
+          <div class="cal-daylabels">
+            <span></span><span>Mon</span><span></span><span>Wed</span><span></span><span>Fri</span><span></span>
+          </div>
+          <div class="cal-main">
+            <div class="cal-months">
+              <span style="left:0px;">Aug</span>
+              <span style="left:61px;">Sep</span>
+              <span style="left:122px;">Oct</span>
+              <span style="left:182px;">Nov</span>
+              <span style="left:243px;">Dec</span>
+              <span style="left:304px;">Jan</span>
+              <span style="left:365px;">Feb</span>
+              <span style="left:426px;">Mar</span>
+              <span style="left:487px;">Apr</span>
+              <span style="left:547px;">May</span>
+              <span style="left:608px;">Jun</span>
+              <span style="left:669px;">Jul</span>
+            </div>
+            <div class="cal-grid">
+<div class="cal-cell l1"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l0"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l3"></div>
+<div class="cal-cell l1"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l2"></div>
+<div class="cal-cell l4"></div>
+<div class="cal-cell l4"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="cal-caption">127 commits in the last year</div>
+      <div class="cal-legend">
+        Less
+        <span class="cal-cell"></span>
+        <span class="cal-cell l1"></span>
+        <span class="cal-cell l2"></span>
+        <span class="cal-cell l3"></span>
+        <span class="cal-cell l4"></span>
+        More
+      </div>
+    </div>
+
+    <!-- ── Project list ───────────────────────────────────────── -->
+    <div class="r3-section">
+      <div class="r3-date-divider">Today</div>
+      <div class="project-grid">
+        <div class="project-card">
+          <div class="project-card-head">
+            <div class="project-card-name">forkai-code core</div>
+            <div class="project-card-branches">3 branches</div>
+          </div>
+          <div class="project-card-repo">forkai/forkai-code</div>
+          <div class="project-card-meta">Last activity 2 hours ago</div>
+        </div>
+        <div class="project-card">
+          <div class="project-card-head">
+            <div class="project-card-name">billing-service</div>
+            <div class="project-card-branches">1 branch</div>
+          </div>
+          <div class="project-card-repo">acme-labs/billing-service</div>
+          <div class="project-card-meta">Last activity yesterday</div>
+        </div>
+        <div class="project-card">
+          <div class="project-card-head">
+            <div class="project-card-name">marketing-site</div>
+            <div class="project-card-branches">2 branches</div>
+          </div>
+          <div class="project-card-repo">acme-labs/marketing-site</div>
+          <div class="project-card-meta">Last activity 3 days ago</div>
+        </div>
+        <div class="project-card">
+          <div class="project-card-head">
+            <div class="project-card-name">internal-cli</div>
+            <div class="project-card-branches">1 branch</div>
+          </div>
+          <div class="project-card-repo">gokulmc/internal-cli</div>
+          <div class="project-card-meta">Last activity 1 week ago</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

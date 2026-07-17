@@ -1,9 +1,10 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Plus, Trash, Check, X } from './Icons';
 import { HistoryBubbles } from './HistoryBubbles';
+import { ActivityCalendar } from './ActivityCalendar';
 import { NewProjectModal } from './NewProjectModal';
-import type { CreateProjectPayload, SessionSummary } from '@/lib/api';
+import { getActivity, type Activity, type CreateProjectPayload, type SessionSummary } from '@/lib/api';
 import { stripCite, relativeTime } from '@/lib/utils';
 import { BRAND_TAGLINE } from '@/lib/brand';
 
@@ -48,6 +49,15 @@ export function HistoryPage({ sessions, loading, onLoadSession, onDeleteSession,
   // Arms a card for delete confirmation; reset on rerender (e.g. list refresh) is fine
   // since it's a transient UI state, not something that needs to survive a re-fetch.
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  // Bubble sizing + calendar data — fetched separately from `sessions` so the
+  // project list never blocks on it; both default to empty until it lands.
+  const [activity, setActivity] = useState<Activity>({ perSession: {}, perDay: {} });
+
+  useEffect(() => {
+    let cancelled = false;
+    getActivity(idToken).then(data => { if (!cancelled) setActivity(data); }).catch(() => { /* bubbles/calendar just stay empty */ });
+    return () => { cancelled = true; };
+  }, [idToken]);
 
   const groups: Array<{ day: string; items: SessionSummary[] }> = [];
   for (const s of sessions) {
@@ -86,7 +96,8 @@ export function HistoryPage({ sessions, loading, onLoadSession, onDeleteSession,
             </div>
           ) : (
             <>
-              <HistoryBubbles sessions={sessions} onLoadSession={onLoadSession} />
+              <HistoryBubbles sessions={sessions} activity={activity.perSession} onLoadSession={onLoadSession} />
+              <ActivityCalendar perDay={activity.perDay} />
               <div className="history-groups">
               {groups.map(group => (
                 <section key={group.day} className="history-group">

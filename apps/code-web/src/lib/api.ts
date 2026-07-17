@@ -369,6 +369,17 @@ export function verifyPayment(
   });
 }
 
+// ── Activity — bubble sizing + contribution calendar (History page) ────────
+
+export interface Activity {
+  perSession: Record<string, number>; // sessionId → commits in the last 30 days
+  perDay: Record<string, number>;     // 'YYYY-MM-DD' (UTC) → commit count, last 366 days, zero days omitted
+}
+
+export function getActivity(idToken: string): Promise<Activity> {
+  return apiFetch<Activity>('/activity', idToken);
+}
+
 // ── Sessions ─────────────────────────────────────────────────────────────────
 
 export function listSessions(idToken: string): Promise<SessionSummary[]> {
@@ -521,6 +532,7 @@ export interface CreateNodePayload {
   verbose?: boolean;
   boost?: boolean;  // retry of a length-limit Cut-Off: double the output budget (authed only)
   model?: 'haiku' | 'sonnet' | 'opus' | 'gemini-pro' | 'gemini-flash' | 'gemini-flash-lite' | 'deepseek-pro' | 'deepseek-flash' | 'glm' | 'glm-air';
+  attachments?: Array<{ name: string; content: string }>;
 }
 
 export function createNode(
@@ -835,6 +847,17 @@ export async function createRootQueryInSessionStream(
   await readSseStream<StreamEvent>(res.body, onEvent);
 }
 
+// ── Attachments ──────────────────────────────────────────────────────────────
+
+// Groq vision describes an uploaded image so it can flow through the same
+// text-attachment pipeline as a file drop (see CodeComposer.tsx's handleFiles).
+export function describeImage(idToken: string, dataUrl: string): Promise<{ description: string }> {
+  return apiFetch<{ description: string }>('/attachments/describe-image', idToken, {
+    method: 'POST',
+    body: JSON.stringify({ dataUrl }),
+  });
+}
+
 // ── CODE nodes — streaming mocked agent run ─────────────────────────────────
 
 // Mirrors apps/code-api/src/agent/agent-run.util.ts's AgentEvent — `ts` is an
@@ -853,7 +876,7 @@ export interface CreateCodeNodePayload {
   instruction: string;
   model?: 'haiku' | 'sonnet' | 'opus' | 'gemini-pro' | 'gemini-flash' | 'gemini-flash-lite' | 'deepseek-pro' | 'deepseek-flash' | 'glm' | 'glm-air';
   attachments?: Array<{ name: string; content: string }>;
-  environment?: 'cloud' | 'mock';
+  environment?: 'cloud' | 'mock' | 'blaxel';
 }
 
 export type CodeStreamEvent =

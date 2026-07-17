@@ -49,6 +49,7 @@ export function NewProjectModal({ idToken, onClose, onCreate }: NewProjectModalP
   const [rootQuery, setRootQuery] = useState('');
   const [selectedRepo, setSelectedRepo] = useState<RepoOption>(MOCK_REPOS[0]);
   const [plugins, setPlugins] = useState<Set<string>>(new Set());
+  const [pluginHint, setPluginHint] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -203,28 +204,31 @@ export function NewProjectModal({ idToken, onClose, onCreate }: NewProjectModalP
           )}
 
           <div>
-            <div className="proj-field-label">Plugins</div>
+            <div className="proj-field-label">
+              Plugins{plugins.size > 0 && <span className="proj-plugin-count"> · {plugins.size} selected</span>}
+            </div>
             {[{ label: 'Skills', items: SKILL_PLUGINS }, { label: 'Harnesses', items: HARNESS_PLUGINS }].map(g => (
               <div key={g.label}>
                 <div className="proj-plugin-group-label">{g.label}</div>
-                {g.items.map(p => (
-                  <div className="proj-plugin-row" key={p.id}>
-                    <div>
-                      <div className="proj-plugin-name">{p.icon} {p.name}</div>
-                      <div className="proj-plugin-desc">{p.desc}</div>
-                    </div>
+                <div className="proj-plugin-chips">
+                  {g.items.map(p => (
                     <button
                       type="button"
-                      className={`proj-switch${plugins.has(p.id) ? ' on' : ''}`}
-                      role="switch"
-                      aria-checked={plugins.has(p.id)}
-                      aria-label={p.name}
+                      key={p.id}
+                      className={`proj-plugin-chip${plugins.has(p.id) ? ' on' : ''}`}
+                      aria-pressed={plugins.has(p.id)}
+                      title={p.desc}
                       onClick={() => togglePlugin(p.id)}
-                    />
-                  </div>
-                ))}
+                      onMouseEnter={() => setPluginHint(`${p.name} — ${p.desc}`)}
+                      onMouseLeave={() => setPluginHint(null)}
+                    >
+                      <span className="proj-plugin-chip-icon">{p.icon}</span> {p.name}
+                    </button>
+                  ))}
+                </div>
               </div>
             ))}
+            <div className="proj-plugin-hint">{pluginHint ?? 'Tap to toggle — hover a plugin for details'}</div>
           </div>
           {error && <div className="proj-field-error">{error}</div>}
         </div>

@@ -15,6 +15,7 @@ import { GithubModule } from '@/github/github.module';
 import { AnnotationsModule } from '@/annotations/annotations.module';
 import { HighlightsModule } from '@/highlights/highlights.module';
 import { BillingModule } from '@/billing/billing.module';
+import { AttachmentsModule } from '@/attachments/attachments.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -37,6 +38,7 @@ import { HealthController } from './health.controller';
     AnnotationsModule,
     HighlightsModule,
     BillingModule,
+    AttachmentsModule,
   ],
   controllers: [HealthController],
   providers: [

@@ -4,7 +4,7 @@ import { ulid } from 'ulid';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
 import type { UserMetaItem, UsageEventItem, CreditEventItem, HoldItem, MachineBillItem } from '@/dynamo/dynamo.interfaces';
 import { CognitoUser } from '@/auth/jwt.strategy';
-import { priceFor, machineSecondsCostUsd } from '@/llm/models';
+import { priceFor, machineSecondsCostUsd, machineSplitCostUsd } from '@/llm/models';
 
 @Injectable()
 export class UsersService {
@@ -303,6 +303,79 @@ export class UsersService {
     // here must never mask/undo the settled charge above either.
     await this.db.updateNode(sessionId, nodeId, { machineCostUsd: costUsd }).catch((err) => {
       this.logger.warn(`billMachineUsage: updateNode failed after settlement sub=${sub} sandboxId=${sandboxId} nodeId=${nodeId}: ${String(err)}`);
+    });
+  }
+
+  // Blaxel split-billing counterpart of billMachineUsage: charges the active
+  // compute window (create → activeUntil) at the Blaxel per-minute rate and the
+  // idle standby window (activeUntil → destroy) at the near-zero per-GB-second
+  // storage rate. activeUntilMs absent (error/no-result path, or an un-tagged
+  // machine) ⇒ the whole lifetime is billed as active, no idle. Reuses the same
+  // MACHINEBILL#<sandboxId> idempotency key + guard-before-charge ordering as
+  // billMachineUsage, so a sweep tick racing the runner's error-path finally
+  // bills exactly once.
+  async billBlaxelMachineUsage(
+    sub: string,
+    sandboxId: string,
+    sessionId: string,
+    nodeId: string,
+    createdAtIso: string,
+    destroyAtMs: number,
+    activeUntilMs?: number,
+  ): Promise<void> {
+    const createdAtMs = Date.parse(createdAtIso);
+    const totalSeconds = Math.max(0, (destroyAtMs - createdAtMs) / 1000);
+    // Clamp activeUntil into [created, destroy] so a stale/garbage tag can never
+    // produce negative or over-total active seconds.
+    const activeEndMs = activeUntilMs ? Math.min(Math.max(activeUntilMs, createdAtMs), destroyAtMs) : destroyAtMs;
+    const activeSeconds = Math.max(0, (activeEndMs - createdAtMs) / 1000);
+    const idleSeconds = Math.max(0, totalSeconds - activeSeconds);
+
+    const activeRate = this.cfg.get<number>('billing.blaxelActiveMinuteRateUsd') ?? 0.0028;
+    const idleRate = this.cfg.get<number>('billing.blaxelStandbyGbSecondRateUsd') ?? 0.0000000772;
+    const memoryGb = this.cfg.get<number>('billing.blaxelMemoryGb') ?? 4;
+    const multiplier = this.cfg.get<number>('billing.creditMultiplier') ?? 1.5;
+    const costUsd = machineSplitCostUsd(activeSeconds, idleSeconds, activeRate, idleRate, memoryGb, multiplier);
+
+    const now = new Date().toISOString();
+    const bill: MachineBillItem = {
+      PK: `USER#${sub}`,
+      SK: `MACHINEBILL#${sandboxId}`,
+      sub,
+      sandboxId,
+      sessionId,
+      nodeId,
+      machineSeconds: totalSeconds,
+      costUsd,
+      createdAt: now,
+    };
+    const won = await this.db.putMachineBill(bill);
+    if (!won) return;
+
+    const usageId = ulid();
+    const event: UsageEventItem = {
+      PK: `USER#${sub}`,
+      SK: `USAGE#${usageId}`,
+      usageId,
+      sub,
+      inputTokens: 0,
+      outputTokens: 0,
+      costUsd,
+      kind: 'MACHINE',
+      model: 'blaxel:machine',
+      sessionId,
+      nodeId,
+      createdAt: now,
+      runId: nodeId,
+      machineSeconds: totalSeconds,
+    };
+
+    await this.db.deductCredit(sub, costUsd);
+    await this.db.putUsageEvent(event).catch((err) => {
+      this.logger.warn(`billBlaxelMachineUsage: putUsageEvent failed after settlement sub=${sub} sandboxId=${sandboxId}: ${String(err)}`);
+    });
+    await this.db.updateNode(sessionId, nodeId, { machineCostUsd: costUsd }).catch((err) => {
+      this.logger.warn(`billBlaxelMachineUsage: updateNode failed after settlement sub=${sub} sandboxId=${sandboxId} nodeId=${nodeId}: ${String(err)}`);
     });
   }
 

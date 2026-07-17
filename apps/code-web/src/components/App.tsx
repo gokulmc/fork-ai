@@ -146,7 +146,7 @@ type RetryInfo =
   | { kind: 'ROOT_IN_SESSION'; sessionId: string; query: string }
   | { kind: 'DEEPER'; parentNodeId: string; section: { id: string; heading: string; body: string }; boost?: boolean }
   | { kind: 'ASK'; question: string; source: FollowUpState; boost?: boolean }
-  | { kind: 'ASK_COMMIT'; parentNodeId: string; question: string };
+  | { kind: 'ASK_COMMIT'; parentNodeId: string; question: string; attachments?: ComposerAttachment[] };
 import { useTweaks } from '@/hooks/useTweaks';
 import { initAnalytics, track, identifyUser } from '@/lib/analytics';
 import { getCachedSession, putCachedSession, deleteCachedSession } from '@/lib/sessionCache';
@@ -1787,7 +1787,12 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
           instruction,
           model: tweaksRef.current.branchModel,
           attachments: attachments.length ? attachments : undefined,
-          environment: tweaksRef.current.environment === 'demo' ? 'mock' : 'cloud',
+          environment:
+            tweaksRef.current.environment === 'demo'
+              ? 'mock'
+              : tweaksRef.current.environment === 'blaxel'
+                ? 'blaxel'
+                : 'cloud',
         },
         (event) => {
           if (event.type === 'branch-init') {
@@ -1881,7 +1886,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   // requires non-empty highlightText. Generic enough to serve both the CODE
   // variant ("ask about this commit") and the research variant ("ask about
   // this node") — see CodeComposer.tsx's onAsk prop.
-  const askAboutCommit = useCallback(async (nodeId: string, question: string, reuseNodeId?: string) => {
+  const askAboutCommit = useCallback(async (nodeId: string, question: string, attachments?: ComposerAttachment[], reuseNodeId?: string) => {
     const sid = sessionIdRef.current;
     if (!sid || !idToken) return;
     const parent = nodes[nodeId];
@@ -1920,6 +1925,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         webSearch: tweaksRef.current.webSearch,
         verbose: tweaksRef.current.answerStyle === 'verbose',
         model: tweaksRef.current.branchModel,
+        attachments: attachments?.length ? attachments : undefined,
       });
       const realNode = toForkNode(apiNode);
       setNodes(prev => {
@@ -1936,7 +1942,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       const { msg, status, code } = nodeErrorDisplay(err);
       track('node_error', { kind: 'ASK', status, message: msg });
       if (status !== 402) {
-        retryInfoRef.current[tempId] = { kind: 'ASK_COMMIT', parentNodeId: nodeId, question };
+        retryInfoRef.current[tempId] = { kind: 'ASK_COMMIT', parentNodeId: nodeId, question, attachments };
       }
       setNodes(prev => ({ ...prev, [tempId]: { ...prev[tempId], loading: false, error: msg, errorStatus: status, errorCode: code } }));
     } finally {
@@ -1955,7 +1961,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     if (info.kind === 'ROOT') void submitRootQuery(info.query);
     else if (info.kind === 'ROOT_IN_SESSION') void submitProjectQuery(info.sessionId, info.query, failedId);
     else if (info.kind === 'DEEPER') void expandSectionAsChild(info.parentNodeId, info.section, failedId, info.boost);
-    else if (info.kind === 'ASK_COMMIT') void askAboutCommit(info.parentNodeId, info.question, failedId);
+    else if (info.kind === 'ASK_COMMIT') void askAboutCommit(info.parentNodeId, info.question, info.attachments, failedId);
     else void askFromHighlight(info.question, info.source, failedId, info.boost);
   }, [submitRootQuery, submitProjectQuery, expandSectionAsChild, askFromHighlight, askAboutCommit]);
 
@@ -3117,33 +3123,43 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
             </>
           )}
           {(showComposer || showComposerResearch) && active && (
-            <CodeComposer
-              ref={composerRef}
-              variant={showComposer ? 'code' : 'research'}
-              onBuild={(instruction, attachments) => void submitCodeNode(instruction, attachments)}
-              buildDisabled={codeSubmitLoading}
-              onAsk={q => askAboutCommit(active.id, q)}
-              askDisabled={showComposer ? !active.commitSha : false}
-              askLoading={askCommitLoading}
-              onDeeper={() => {
-                const last = active.sections[active.sections.length - 1];
-                if (last) void expandSectionAsChild(active.id, last);
-              }}
-              deeperDisabled={sectionLoading !== null}
-              deeperLoading={!!active.sections.length && sectionLoading === active.sections[active.sections.length - 1].id}
-              model={tweaks.branchModel}
-              onModelChange={v => setTweak('branchModel', v)}
-              webSearch={tweaks.webSearch}
-              onWebSearchChange={v => setTweak('webSearch', v)}
-              webSearchDisabled={showComposer}
-            />
+            <div className="code-composer-wrap">
+              {/* Pill lives above the composer while reading; once the map
+                  drawer is open it covers the workspace, so the map-open
+                  variant renders standalone below (fixed, floats over it). */}
+              {isNarrow && Object.keys(nodes).length > 0 && !mapOpen && (
+                <MindMapPill open={mapOpen} onToggle={() => setMapOpen(o => !o)} />
+              )}
+              <CodeComposer
+                ref={composerRef}
+                variant={showComposer ? 'code' : 'research'}
+                idToken={idToken}
+                onBuild={(instruction, attachments) => void submitCodeNode(instruction, attachments)}
+                buildDisabled={codeSubmitLoading}
+                onAsk={(q, attachments) => askAboutCommit(active.id, q, attachments)}
+                askDisabled={showComposer ? !active.commitSha : false}
+                askLoading={askCommitLoading}
+                onDeeper={() => {
+                  const last = active.sections[active.sections.length - 1];
+                  if (last) void expandSectionAsChild(active.id, last);
+                }}
+                deeperDisabled={sectionLoading !== null}
+                deeperLoading={!!active.sections.length && sectionLoading === active.sections[active.sections.length - 1].id}
+                model={tweaks.branchModel}
+                onModelChange={v => setTweak('branchModel', v)}
+                webSearch={tweaks.webSearch}
+                onWebSearchChange={v => setTweak('webSearch', v)}
+                webSearchDisabled={showComposer}
+              />
+            </div>
+          )}
+          {isNarrow && Object.keys(nodes).length > 0
+            && (mapOpen || !(showComposer || showComposerResearch)) && (
+            <MindMapPill open={mapOpen} onToggle={() => setMapOpen(o => !o)} />
           )}
         </div>
       </section>
 
-      {isNarrow && Object.keys(nodes).length > 0 && (
-        <MindMapPill open={mapOpen} onToggle={() => setMapOpen(o => !o)} />
-      )}
       {isNarrow && !mapOpen && Object.keys(nodes).length > 0 && (
         <div
           className="mm-swipe-zone"

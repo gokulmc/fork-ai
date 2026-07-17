@@ -228,6 +228,18 @@ export const MODEL_OPTIONS: { value: Tweaks['branchModel']; label: string; cost:
   { value: 'sonnet', label: 'Claude Sonnet', cost: '5×' },
   { value: 'opus', label: 'Claude Opus', cost: '40×' },
 ];
+
+// Sandbox environments for CODE runs. `cost` mirrors the Model dropdown's ×N
+// format — but for a sandbox it captures the machine-time tradeoff, not a token
+// multiplier: Fly ('cloud') bills the whole lifetime incl. the idle VS Code
+// window; Blaxel bills a higher active rate but ~0 for idle. 'demo' is the free
+// mock runner (no real VM). Blaxel is US/EU-only — the region hint is
+// deliberate so the latency tradeoff is opt-in, not hidden.
+export const ENVIRONMENT_OPTIONS: { value: Tweaks['environment']; label: string; cost: string }[] = [
+  { value: 'cloud', label: 'Cloud (Fly)', cost: 'billed idle · Asia' },
+  { value: 'blaxel', label: 'Cloud (Blaxel)', cost: 'US/EU · ~0 idle · higher active' },
+  { value: 'demo', label: 'Demo', cost: 'free' },
+];
 interface TweaksPanelProps {
   tweaks: Tweaks;
   setTweak: SetTweak;
@@ -385,13 +397,13 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, 
             />
             <p className="twk-note">Web search queries are costlier than normal LLM calls. Keep them off at most times.</p>
             <TweakSection label="Coding agent" />
-            <TweakRadio
+            <TweakSelect
               label="Environment"
               value={tweaks.environment}
-              options={[{ value: 'cloud', label: 'Cloud sandbox' }, { value: 'demo', label: 'Demo' }]}
+              options={ENVIRONMENT_OPTIONS.map(o => ({ value: o.value, label: `${o.label} · ${o.cost}` }))}
               onChange={v => setTweak('environment', v as Tweaks['environment'])}
             />
-            <p className="twk-note">Where CODE runs execute. Cloud runs in an isolated sandbox VM.</p>
+            <p className="twk-note">Where CODE runs execute in an isolated sandbox VM. Blaxel is US/EU-only (faster cold-start, near-zero idle cost); Fly runs in Asia.</p>
             <TweakSection label="Ask AI shortcuts" />
             <div className="twk-shortcuts">
               {([['?', 'what'], ['!?', 'how'], ['/?', 'why'], ['>?', 'explain']] as const).map(([sym, word]) => (

@@ -40,4 +40,15 @@ describe('CreateCodeNodeDto', () => {
     const attachments = [{ name: '', content: 'x' }];
     expect(await errorsFor({ attachments })).toBeGreaterThan(0);
   });
+
+  it('accepts each valid environment (cloud, mock, blaxel)', async () => {
+    expect(await errorsFor({ environment: 'cloud' })).toBe(0);
+    expect(await errorsFor({ environment: 'mock' })).toBe(0);
+    expect(await errorsFor({ environment: 'blaxel' })).toBe(0);
+  });
+
+  it('rejects an unknown environment', async () => {
+    expect(await errorsFor({ environment: 'local' })).toBeGreaterThan(0);
+    expect(await errorsFor({ environment: 'gcp' })).toBeGreaterThan(0);
+  });
 });

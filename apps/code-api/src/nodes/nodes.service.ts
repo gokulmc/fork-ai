@@ -20,7 +20,7 @@ import { CreateCodeNodeDto } from './dto/create-code-node.dto';
 import { CreatePrNodeDto } from './dto/create-pr-node.dto';
 import { UpdateNodeDto } from './dto/update-node.dto';
 import { assertKindAllowed, LEARN_KINDS } from './node-grammar';
-import { findRailChain, planDocOf, codeSummaryOf, codeContextBlockOf } from './context';
+import { findRailChain, planDocOf, codeSummaryOf, codeContextBlockOf, attachmentsBlockOf } from './context';
 
 @Injectable()
 export class NodesService {
@@ -90,6 +90,15 @@ export class NodesService {
         try { recentEvents = (JSON.parse(run.events) as AgentEvent[]).slice(-15); } catch { /* malformed events blob — degrade gracefully */ }
       }
       extraContext = codeContextBlockOf(parentNode, recentEvents);
+    }
+
+    // Composer attachments (text files, or Groq-described images) — same
+    // "--- Attached file ---" block format the CODE path builds into the
+    // agent prompt, so attaching a screenshot reads identically whether the
+    // user Builds or Asks about it.
+    if (dto.attachments?.length) {
+      const block = attachmentsBlockOf(dto.attachments);
+      extraContext = extraContext ? `${extraContext}\n\n${block}` : block;
     }
 
     if (dto.kind === 'DEEPER') {
@@ -679,7 +688,7 @@ export class NodesService {
   private async resolveRunRepo(
     sub: string,
     repoRef: RepoRef | null,
-    environment: 'cloud' | 'mock' | undefined,
+    environment: 'cloud' | 'mock' | 'blaxel' | undefined,
   ): Promise<NonNullable<AgentRunContext['repo']> | undefined> {
     if (!repoRef) {
       return process.env.LOCAL_AGENT_REPO_PATH
@@ -692,9 +701,11 @@ export class NodesService {
       return { init: { defaultBranch: repoRef.defaultBranch } };
     }
     if (repoRef.provider === 'github-mock') {
-      if (environment === 'cloud') {
+      // Any real sandbox (Fly cloud or Blaxel) actually clones the repo, so a
+      // mock repo can't run there — only mock/local (which never read ctx.repo).
+      if (environment === 'cloud' || environment === 'blaxel') {
         throw new BadRequestException(
-          'This project uses a mock repo — attach a real GitHub repo (or run on Demo) to use the Cloud environment.',
+          'This project uses a mock repo — attach a real GitHub repo (or run on Demo) to use a Cloud environment.',
         );
       }
       return undefined;
@@ -863,7 +874,10 @@ export class NodesService {
       // branch; otherwise a bare 'main' (no project at all).
       const chain = findRailChain(nodeById, codeParentId);
       const branchName = chain.branchNode?.branchName ?? chain.planNode?.branchName ?? project?.repoRef.defaultBranch ?? 'main';
-      const baseCommitSha = parentNode.commitSha ?? null;
+      // A from-scratch ('new') project has no real git history — the sandbox
+      // git-inits an empty repo, so the parent's synthesized/placeholder commitSha
+      // is not a real tree to check out. Only pass a baseRef when cloning a real repo.
+      const baseCommitSha = repo?.init ? null : (parentNode.commitSha ?? null);
 
       // Tracks the cloud sandbox's REAL boot progress (provisioning → image
       // pull → starting agent), updated via ctx.onPhase below — the heartbeat

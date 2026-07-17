@@ -1,4 +1,4 @@
-import { resolveBranchModel, priceFor, providerNameFor, supportsWebSearch, machineSecondsCostUsd } from './models';
+import { resolveBranchModel, priceFor, providerNameFor, supportsWebSearch, machineSecondsCostUsd, machineSplitCostUsd } from './models';
 
 describe('models', () => {
   describe('resolveBranchModel', () => {
@@ -116,6 +116,36 @@ describe('models', () => {
       expect(machineSecondsCostUsd(1, 0.0009, 1.5)).toBe(0.000022);
       // 90s = 1.5min * $0.001/min * 1 = 0.0015
       expect(machineSecondsCostUsd(90, 0.001, 1)).toBe(0.0015);
+    });
+  });
+
+  describe('machineSplitCostUsd', () => {
+    // active per-minute rate, idle per-GB-second rate.
+    const ACTIVE = 0.0028;
+    const IDLE = 0.0000000772;
+    const MEM = 4; // GB
+    const MULT = 1.5;
+
+    it('bills active minutes and idle GB-seconds separately', () => {
+      // active = (90/60)*0.0028 = 0.0042 ; idle = 600 * 7.72e-8 * 4 = 0.00018528
+      // total = (0.0042 + 0.00018528) * 1.5 = 0.00657792 → 0.006578 at 6dp
+      expect(machineSplitCostUsd(90, 600, ACTIVE, IDLE, MEM, MULT)).toBeCloseTo(0.006578, 6);
+    });
+
+    it('idle standby is near-zero — a long idle window barely moves the bill', () => {
+      const activeOnly = machineSplitCostUsd(90, 0, ACTIVE, IDLE, MEM, MULT);
+      const withHourIdle = machineSplitCostUsd(90, 3600, ACTIVE, IDLE, MEM, MULT);
+      expect(withHourIdle - activeOnly).toBeLessThan(0.002); // an hour of standby < $0.002
+    });
+
+    it('all-active (no idle) matches active-only cost — the error/no-result path', () => {
+      expect(machineSplitCostUsd(120, 0, ACTIVE, IDLE, MEM, MULT)).toBe(
+        Math.round((2 * ACTIVE) * MULT * 1_000_000) / 1_000_000,
+      );
+    });
+
+    it('clamps negative windows to zero', () => {
+      expect(machineSplitCostUsd(-10, -10, ACTIVE, IDLE, MEM, MULT)).toBe(0);
     });
   });
 });
