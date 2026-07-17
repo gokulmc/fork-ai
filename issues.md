@@ -4,6 +4,11 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 > **Required step:** update this file in the **same commit** as any bug fix. See [CLAUDE.md → "Issue log (issues.md)"](CLAUDE.md). Format: one `###` entry per fix — Symptom / Cause / Fix, plus the commit SHA once committed.
 
+### forkai-code: WebKit/Safari piled every mind-map card's text in the top-left corner
+- **Symptom:** In Safari/WebKit, all node card text (titles, badges, OKR chips) rendered stacked at the SVG origin (top-left of the map) instead of at each node's position. Chrome/Firefox were fine.
+- **Cause:** The corner-letter badge added `position: relative` to `.mm-card`. WebKit paints a positioned descendant of a `<foreignObject>` (inside a transformed `<g>`) relative to the SVG viewport origin, not the foreignObject — so every positioned card collapsed to the top-left (the same class of bug as the animation note in root CLAUDE.md).
+- **Fix:** Drop `position: relative` from `.mm-card` and render the corner letter + run-failed dot as native SVG (`<text>`/`<circle>` siblings of the foreignObject) instead of an absolutely-positioned HTML span. Verified identical in WebKit and Chromium (letter top-right, text in place).
+
 ### forkai-code: map render crashed ("reading 'x'") when a learn node hung off a plan-CODE
 - **Symptom:** A Next.js runtime error — `Cannot read properties of undefined (reading 'x')` in `layoutGitGraph` — after asking a follow-up (Go deeper / Ask) off a CODE node that was itself built from a PLAN. Took down the whole mind-map render.
 - **Cause:** A CODE built from a PLAN is positioned in a post-pass (step 4.5) that runs AFTER the shared learn-hang sweep (step 4). If that CODE already had a learn child, the step-4 sweep called `placeHangingSubtreeV` with the CODE as anchor before its `pos` existed → `anchor.x` on `undefined`.

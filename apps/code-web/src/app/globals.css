@@ -1533,22 +1533,22 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
    above the icon+title row (.mm-card-main) — plain cards have only the latter,
    so justify-content:center keeps them visually identical to before. */
 .mm-card {
-  position: relative;
   display: flex; flex-direction: column; justify-content: center; gap: 3px;
   width: 100%; height: 100%; padding: 6px 14px;
   box-sizing: border-box; font-family: var(--sans); color: var(--ink);
   overflow: hidden;
 }
 /* Single-letter kind marker in the card's top-right corner (R=root, C=commit,
-   B=branch, P=plan, M=merge, Q/D/A/X=learn) — replaces the old kicker word. */
-.mm-corner-badge {
-  position: absolute; top: 5px; right: 7px;
-  display: inline-flex; align-items: center; gap: 3px;
-  font-family: var(--mono); font-size: 9.5px; font-weight: 700; line-height: 1;
-  color: var(--ink-3); letter-spacing: 0.02em; pointer-events: none; user-select: none;
+   B=branch, P=plan, M=merge, Q/D/A/X=learn), rendered as native SVG <text> —
+   NOT an absolutely-positioned HTML span inside the foreignObject, which WebKit
+   paints at the SVG origin (all card text stacked in the top-left). */
+.mm-corner-letter {
+  fill: var(--ink-3); font-family: var(--mono); font-size: 9.5px; font-weight: 700;
+  letter-spacing: 0.02em; pointer-events: none; user-select: none;
 }
-.mm-node.active .mm-corner-badge { color: var(--bg); opacity: 0.6; }
-[data-theme="dark"] .mm-node.active .mm-corner-badge { color: #1c1c1c; opacity: 0.65; }
+.mm-corner-error-dot { fill: var(--diff-del); pointer-events: none; }
+.mm-node.active .mm-corner-letter { fill: var(--bg); opacity: 0.6; }
+[data-theme="dark"] .mm-node.active .mm-corner-letter { fill: #1c1c1c; opacity: 0.65; }
 .mm-card-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .mm-card-top { pointer-events: auto; }
 .mm-commit-pill {

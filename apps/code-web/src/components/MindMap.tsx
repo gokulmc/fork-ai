@@ -620,12 +620,6 @@ export function MindMap({
                       </div>
                     ) : (
                       <div className="mm-card">
-                        {(cornerLetter(n.kind, isRoot) || isFailed) && (
-                          <span className="mm-corner-badge" title={isFailed ? 'Run failed' : kicker} aria-label={isFailed ? 'Run failed' : kicker}>
-                            {isFailed && <span className="mm-node-error-dot" />}
-                            {cornerLetter(n.kind, isRoot)}
-                          </span>
-                        )}
                         {hasPill && n.branchName && (
                           <div className="mm-card-top">
                             <span
@@ -694,6 +688,17 @@ export function MindMap({
                       </div>
                     )}
                   </foreignObject>
+                  {/* Kind letter + run-failed dot as native SVG (not an
+                      absolutely-positioned HTML span inside the foreignObject —
+                      WebKit renders positioned foreignObject descendants at the
+                      SVG origin, which piled every card's text in the top-left). */}
+                  {isFailed && <circle className="mm-corner-error-dot" cx={NODE_W - 20} cy={boxY + 10} r={3} />}
+                  {cornerLetter(n.kind, isRoot) && (
+                    <text className="mm-corner-letter" x={NODE_W - 8} y={boxY + 14} textAnchor="end">
+                      <title>{isFailed ? 'Run failed' : kicker}</title>
+                      {cornerLetter(n.kind, isRoot)}
+                    </text>
+                  )}
                 </g>
               </g>
             );
