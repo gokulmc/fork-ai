@@ -1505,11 +1505,13 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 .mm-legend-row { display: flex; align-items: center; gap: 8px; }
 .mm-legend-sep { height: 1px; background: var(--line); margin: 2px 0; }
 .mm-legend-dot { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
+/* Colour the kind dots to match each node's card colour on the map (learn
+   nodes have no kind colour, so they stay neutral grey). */
 .mm-legend-dot--learn { background: var(--ink-3); }
-.mm-legend-dot--plan { background: var(--node-ink); }
-.mm-legend-dot--code { background: var(--node-ink); }
-.mm-legend-dot--branch { background: var(--node-ink); }
-.mm-legend-dot--merge { background: var(--node-ink); }
+.mm-legend-dot--plan { background: var(--kind-plan); }
+.mm-legend-dot--code { background: var(--kind-code); }
+.mm-legend-dot--branch { background: var(--kind-branch); }
+.mm-legend-dot--merge { background: var(--kind-merge); }
 .mm-legend-dot--segment { background: var(--node-soft); border: 1px dashed var(--node-border); }
 .mm-legend-line { width: 18px; height: 0; border-top: 2px solid; flex-shrink: 0; }
 .mm-legend-line--lane { border-top-style: dashed; border-top-color: var(--lane-line); }
