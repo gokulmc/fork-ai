@@ -994,6 +994,11 @@ export class NodesService {
         }
         if (!final) throw new Error('Agent runner ended without a result');
       } catch (err) {
+        // Log the real cause — the client only gets friendlyLlmError's generic
+        // message and the node keeps just agentStatus:'error', so without this a
+        // run failure (e.g. a mock-transcript validation throw) is invisible in
+        // the server logs.
+        this.logger.error(`Agent run failed for node ${nodeId} (env=${dto.environment ?? 'default'}): ${String(err)}`, (err as Error)?.stack);
         // persist events accumulated so far — a refresh after a mid-run failure must
         // show the log up to the failure, not a stale snapshot
         await Promise.all([
