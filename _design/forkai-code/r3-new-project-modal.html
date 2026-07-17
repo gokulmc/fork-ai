@@ -1,0 +1,151 @@
+<!-- @dsCard group="Components" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>forkai-code — New project modal</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  html, body { height: 100%; }
+  body { overflow: hidden; }
+
+  .theme-toggle {
+    position: fixed; top: 20px; right: 24px; z-index: 100;
+    font-family: var(--sans); font-size: 12px; font-weight: 500;
+    padding: 7px 14px; border-radius: var(--radius);
+    border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink-2);
+    cursor: pointer; box-shadow: var(--shadow-1);
+  }
+  .theme-toggle:hover { background: var(--hover); color: var(--ink); }
+
+  .backdrop {
+    position: fixed; inset: 0;
+    background: rgba(20,18,15,.35); backdrop-filter: blur(2px);
+    display: flex; align-items: center; justify-content: center;
+  }
+  [data-theme="dark"] .backdrop { background: rgba(0,0,0,.55); }
+
+  .proj-modal {
+    width: 460px; max-width: 92vw; max-height: 84vh;
+    background: var(--paper); border-radius: var(--radius-lg); box-shadow: var(--shadow-3);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .proj-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+  .proj-modal-title { font-family: var(--sans); font-size: 14px; font-weight: 600; color: var(--ink); }
+  .proj-modal-close { background: none; border: none; cursor: pointer; color: var(--ink-2); padding: 3px 7px; border-radius: 4px; font-size: 15px; }
+  .proj-modal-close:hover { background: var(--hover); }
+
+  .proj-modal-tabs { display: flex; gap: 4px; padding: 12px 20px 0; border-bottom: 1px solid var(--line); }
+  .proj-tab { font-family: var(--sans); font-size: 12.5px; font-weight: 600; color: var(--ink-3); background: none; border: none; padding: 0 2px 10px; cursor: pointer; border-bottom: 2px solid transparent; margin-right: 14px; }
+  .proj-tab:hover { color: var(--ink-2); }
+  .proj-tab.active { color: var(--ink); border-bottom-color: var(--ink); }
+
+  .proj-modal-body { padding: 18px 20px 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
+  .proj-field-label { font-family: var(--sans); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; }
+  .proj-field-input { width: 100%; height: 36px; padding: 0 11px; box-sizing: border-box; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--panel); color: var(--ink); font-family: var(--sans); font-size: 13.5px; outline: none; }
+  .proj-field-input:focus { border-color: var(--ink-3); background: var(--paper); }
+  .proj-field-textarea { width: 100%; max-height: 168px; padding: 9px 11px; box-sizing: border-box; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--panel); color: var(--ink); font-family: var(--sans); font-size: 13.5px; line-height: 1.45; outline: none; resize: none; overflow-y: auto; }
+  .proj-field-textarea:focus { border-color: var(--ink-3); background: var(--paper); }
+  .proj-field-hint { font-family: var(--mono); font-size: 11px; color: var(--ink-3); margin-top: 6px; }
+  .proj-field-caption { font-family: var(--sans); font-size: 11px; color: var(--ink-3); margin-top: 6px; line-height: 1.4; }
+
+  .proj-modal-foot { padding: 14px 20px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; }
+  .proj-btn-primary {
+    display: inline-flex; align-items: center; gap: 7px;
+    height: 34px; padding: 0 16px;
+    background: var(--ink); color: var(--bg); border: 1px solid var(--ink); border-radius: var(--radius);
+    font-family: var(--sans); font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .proj-btn-primary:hover { opacity: .85; }
+
+  /* ── Plugin chip grid — mirrors apps/code-web globals.css .proj-plugin-* ── */
+  .proj-plugin-group-label { font-family: var(--sans); font-size: 10px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); margin-top: 14px; }
+  .proj-plugin-group-label:first-child { margin-top: 0; }
+  .proj-plugin-count { font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--ink-3); }
+  .proj-plugin-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .proj-plugin-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 5px 11px; border-radius: 999px;
+    border: 1px solid var(--line-strong); background: var(--paper);
+    font-family: var(--sans); font-size: 12px; font-weight: 500; color: var(--ink-2);
+    cursor: pointer;
+  }
+  .proj-plugin-chip:hover { border-color: var(--ink-3); color: var(--ink); }
+  .proj-plugin-chip.on { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+  .proj-plugin-chip-icon { font-size: 12px; line-height: 1; }
+  .proj-plugin-hint { font-family: var(--sans); font-size: 11px; color: var(--ink-3); margin-top: 10px; min-height: 28px; line-height: 1.4; }
+</style>
+</head>
+<body>
+  <button class="theme-toggle" onclick="const h=document.documentElement; h.setAttribute('data-theme', (h.getAttribute('data-theme')||'light')==='light'?'dark':'light');">Toggle theme</button>
+
+  <div class="backdrop">
+    <div class="proj-modal">
+      <div class="proj-modal-head">
+        <div class="proj-modal-title">New project</div>
+        <button class="proj-modal-close">✕</button>
+      </div>
+
+      <div class="proj-modal-tabs">
+        <button class="proj-tab active">New repo</button>
+        <button class="proj-tab">Attach existing</button>
+      </div>
+
+      <div class="proj-modal-body">
+        <div>
+          <div class="proj-field-label">Project &amp; repo name</div>
+          <input class="proj-field-input" type="text" value="billing-service" />
+          <div class="proj-field-hint">you/billing-service</div>
+        </div>
+
+        <div>
+          <div class="proj-field-label">What are you building?</div>
+          <textarea class="proj-field-textarea" rows="2">A billing dashboard with Stripe subscriptions and usage metering…</textarea>
+          <div class="proj-field-caption">The repository is simulated for now — GitHub write access ships later.</div>
+        </div>
+
+        <div>
+          <div class="proj-field-label">Plugins<span class="proj-plugin-count"> · 3 selected</span></div>
+
+          <div class="proj-plugin-group-label">Skills</div>
+          <div class="proj-plugin-chips">
+            <button class="proj-plugin-chip on" title="Ultra-terse output mode — cuts filler, keeps technical substance"><span class="proj-plugin-chip-icon">🗿</span> Caveman</button>
+            <button class="proj-plugin-chip on" title="Structural AST index of the repo — classes, functions, call graph"><span class="proj-plugin-chip-icon">🕸️</span> Graphify</button>
+            <button class="proj-plugin-chip" title="Mines project history into a searchable memory palace"><span class="proj-plugin-chip-icon">🏛️</span> Mem Palace</button>
+            <button class="proj-plugin-chip" title="Guardrails against common LLM coding mistakes"><span class="proj-plugin-chip-icon">📏</span> Karpathy Guidelines</button>
+            <button class="proj-plugin-chip" title="Compacts session state into a handoff document"><span class="proj-plugin-chip-icon">🤝</span> Handoff</button>
+            <button class="proj-plugin-chip" title="Periodic architecture-level reassessment"><span class="proj-plugin-chip-icon">🔭</span> Zoom Out</button>
+            <button class="proj-plugin-chip" title="Running progress ledger any agent can resume from"><span class="proj-plugin-chip-icon">📊</span> Status</button>
+            <button class="proj-plugin-chip" title="Short architecture decision records before implementing"><span class="proj-plugin-chip-icon">📜</span> ADR</button>
+            <button class="proj-plugin-chip" title="Symptom/Cause/Fix log for every bug fix"><span class="proj-plugin-chip-icon">🐛</span> Issue Log</button>
+          </div>
+
+          <div class="proj-plugin-group-label">Harnesses</div>
+          <div class="proj-plugin-chips">
+            <button class="proj-plugin-chip" title="Red-green-refactor loop for every feature and fix"><span class="proj-plugin-chip-icon">🔴</span> TDD</button>
+            <button class="proj-plugin-chip" title="Disciplined debugging loop for hard bugs"><span class="proj-plugin-chip-icon">🩺</span> Diagnose</button>
+            <button class="proj-plugin-chip" title="Adversarial plan interrogation before building"><span class="proj-plugin-chip-icon">🔥</span> Grill Me</button>
+            <button class="proj-plugin-chip" title="Throwaway prototypes to de-risk designs"><span class="proj-plugin-chip-icon">🧪</span> Prototype</button>
+            <button class="proj-plugin-chip on" title="Headless browser checks after frontend changes"><span class="proj-plugin-chip-icon">🎭</span> Playwright Testing</button>
+            <button class="proj-plugin-chip" title="Commit → push → PR → merge in one pass"><span class="proj-plugin-chip-icon">🚀</span> Ship</button>
+            <button class="proj-plugin-chip" title="Multi-source research with adversarial verification"><span class="proj-plugin-chip-icon">📚</span> Deep Research</button>
+            <button class="proj-plugin-chip" title="Self-review pass on every diff"><span class="proj-plugin-chip-icon">🔎</span> Code Review</button>
+            <button class="proj-plugin-chip" title="End-to-end check of the changed flow before calling it done"><span class="proj-plugin-chip-icon">✅</span> Verify</button>
+            <button class="proj-plugin-chip" title="Recovery discipline — revert after two failed fixes"><span class="proj-plugin-chip-icon">♻️</span> Cascade</button>
+            <button class="proj-plugin-chip" title="Security pass on auth, input, and secret changes"><span class="proj-plugin-chip-icon">🛡️</span> Security Review</button>
+            <button class="proj-plugin-chip" title="Reuse and simplification sweep after features land"><span class="proj-plugin-chip-icon">📝</span> Simplify</button>
+            <button class="proj-plugin-chip" title="Measure before/after for performance changes"><span class="proj-plugin-chip-icon">⏱️</span> Benchmark</button>
+          </div>
+
+          <div class="proj-plugin-hint">Tap to toggle — hover a plugin for details</div>
+        </div>
+      </div>
+
+      <div class="proj-modal-foot">
+        <button class="proj-btn-primary">Create</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

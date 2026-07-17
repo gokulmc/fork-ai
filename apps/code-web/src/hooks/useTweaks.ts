@@ -9,6 +9,9 @@ const STORAGE_KEY = 'forkai-code.tweaks';
 // were removed. Clamp it here rather than at every read site, or it shows as
 // a blank model chip and — worse — still gets sent as `model` on branch calls.
 const CLAUDE_MODELS: ReadonlySet<Tweaks['branchModel']> = new Set(['haiku', 'sonnet', 'opus']);
+// Sandbox environments — clamp a stale/removed persisted value back to 'cloud'
+// (same self-heal reasoning as CLAUDE_MODELS above).
+const ENVIRONMENTS: ReadonlySet<Tweaks['environment']> = new Set(['cloud', 'demo', 'blaxel']);
 
 function loadFromStorage(defaults: Tweaks): Tweaks {
   try {
@@ -19,6 +22,7 @@ function loadFromStorage(defaults: Tweaks): Tweaks {
     // 'dark' preference is intentionally ignored here, not migrated away.
     if (merged.theme === 'dark') merged.theme = 'light';
     if (!CLAUDE_MODELS.has(merged.branchModel)) merged.branchModel = 'haiku';
+    if (!ENVIRONMENTS.has(merged.environment)) merged.environment = 'cloud';
     return merged;
   } catch {
     return defaults;

@@ -119,3 +119,53 @@ unaffected — see ADR-0002's amendment).
 | `FLY_REGION` | `sin` | single-region fallback when `FLY_REGIONS` is unset |
 | `FLY_REGIONS` | `sin,bom` | ordered region list — `bom` is only tried if `sin` 422s with `insufficient_capacity` (it has historically had none for `shared-cpu-2x`, see ADR-0001's amendment) |
 | `SANDBOX_TTL_MINUTES` | `10` | minutes a successful run's sandbox survives past `done`, so the user can open the workspace (≈$0.005/run infra — cost is negligible at any reasonable value; 10 balances enough time to react against fewer standing sandboxes / faster sweep convergence) |
+
+## 5. Blaxel — the second, user-selectable cloud provider (`environment: 'blaxel'`)
+
+Blaxel is a parallel billed-cloud runner offered alongside Fly. A user picks it
+in the TweaksPanel (Environment → "Cloud (Blaxel)"); the frontend sends
+`environment: 'blaxel'`. It reuses the whole `CloudAgentRunner` loop via an
+injected `BlaxelProvider` (`apps/code-api/src/agent/cloud/blaxel-provider.ts`,
+built on the `@blaxel/core` SDK) — same `runner.mjs` and same `/__forkai/run` +
+`/__forkai/healthz` contract. It differs from Fly in three ways: US/EU-only
+regions (no Asia); **split billing** — active compute at
+`BLAXEL_ACTIVE_MINUTE_RATE_USD`, idle standby at the near-zero
+`BLAXEL_STANDBY_GB_SECOND_RATE_USD` (see `billBlaxelMachineUsage`); and a
+**different image** — a Blaxel sandbox bundles Blaxel's own `sandbox-api`
+control binary on port 8080 (what the SDK talks to), so `runner.mjs` moves to
+**8081** (`RUNNER_PORT`) and the preview targets 8081. Hence a separate image
+dir, `infra/sandbox-image-blaxel/` (Fly's `runner.mjs` is the single source; the
+Blaxel image copies it in and adds `sandbox-api` + a dual-process entrypoint —
+see that dir's README).
+
+The runner registers **only when `BLAXEL_API_TOKEN` + `BLAXEL_WORKSPACE` +
+`BLAXEL_SANDBOX_IMAGE` are all set** — otherwise `resolve('blaxel')` 400s, the
+same gating as Fly. So this can ship inert and be turned on later.
+
+1. **Build + push the Blaxel sandbox image** (Blaxel builds it remotely — no
+   local Docker needed):
+   ```bash
+   cd infra/sandbox-image-blaxel
+   bl login                       # or BL_API_KEY + BL_WORKSPACE in the env
+   sh build.sh                    # copies runner.mjs in, `bl push`, prints the ref
+   # → set the printed ref (e.g. sandbox/forkai-sbx-base:latest) as BLAXEL_SANDBOX_IMAGE
+   ```
+   ⚠️ **Same invisible failure mode as Fly (step 2):** an un-pushed `runner.mjs`
+   change silently runs the old code. There are now **two** registries holding
+   this image (Fly + Blaxel) — a `runner.mjs` change must be pushed to **both**.
+2. **Store the creds** the same way as `forkai/fly-api-token` (Secrets Manager
+   → buildspec → EB env), adding `BLAXEL_API_TOKEN`, `BLAXEL_WORKSPACE`,
+   `BLAXEL_SANDBOX_IMAGE` (and optionally `BLAXEL_REGION`, default `eu-fra-1`;
+   `BLAXEL_MEMORY_MB`, default 4096). The SDK authenticates purely off
+   `BL_API_KEY`/`BL_WORKSPACE`, which `BlaxelProvider` maps from `BLAXEL_*` at
+   boot — no separate `BL_*` vars needed.
+3. **Rates** (`config/configuration.ts` `billing` block, optional Joi keys with
+   published-2026 defaults): `BLAXEL_ACTIVE_MINUTE_RATE_USD` (default `0.0028`),
+   `BLAXEL_STANDBY_GB_SECOND_RATE_USD` (default `0.0000000772`). Re-derive from
+   Blaxel's live pricing periodically, same as the `MODEL_OPTIONS` `×N` figures.
+
+**No launch-switch change needed** (unlike Fly step 3): Blaxel is never a server
+*default* — it's opt-in per request via the tweak, so it becomes available the
+moment the three env vars land and `code-web` ships the ENVIRONMENT_OPTIONS
+entry. The frontend option is already present; just ensure the backend is
+configured before users can pick it (an unconfigured pick 400s).

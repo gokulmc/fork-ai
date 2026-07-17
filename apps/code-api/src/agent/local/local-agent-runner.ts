@@ -97,6 +97,7 @@ export class LocalAgentRunner implements AgentRunner {
 
       const final: AgentRunFinal = {
         commitMessage,
+        runSummary: resultText.trim() || undefined,
         commitSha: sha ?? baseSha,
         diffSummary,
         inputTokens,

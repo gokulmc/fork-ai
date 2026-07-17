@@ -86,3 +86,11 @@ Files changed: ${files}
 Recent agent activity:
 ${events}`;
 }
+
+// Composer attachments (text files, or Groq-described images) on a DEEPER/ASK
+// node — same "--- Attached file ---" block format the CODE path already uses
+// (mock-agent.service.ts's attachmentsSection) so attaching the same
+// screenshot to "ask about this" and to "build this" reads identically.
+export function attachmentsBlockOf(attachments: Array<{ name: string; content: string }>): string {
+  return attachments.map((a) => `--- Attached file: ${a.name} ---\n\`\`\`\n${a.content}\n\`\`\``).join('\n\n');
+}

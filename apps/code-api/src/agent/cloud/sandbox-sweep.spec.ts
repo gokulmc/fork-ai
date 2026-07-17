@@ -134,8 +134,28 @@ describe('sweepSandboxes', () => {
 
     await sweepSandboxes(provider, mkLog(), biller);
 
-    expect(biller.billMachineUsage).toHaveBeenCalledWith('user-1', 'forkai-sbx-expired:machine1', 'sess-1', 'node-1', createdAt, expect.any(Number));
+    // 7th arg is activeUntilMs — undefined for a Fly (flat-billed, un-tagged) machine.
+    expect(biller.billMachineUsage).toHaveBeenCalledWith('user-1', 'forkai-sbx-expired:machine1', 'sess-1', 'node-1', createdAt, expect.any(Number), undefined);
     expect(callOrder).toEqual(['bill', 'destroy']); // billed BEFORE destroy
+  });
+
+  it('threads a machine activeUntil (Blaxel) through to the split biller as ms', async () => {
+    const createdAt = new Date(Date.now() - 20 * 60_000).toISOString();
+    const activeUntil = new Date(Date.now() - 10 * 60_000).toISOString();
+    const provider = {
+      listSandboxApps: jest.fn().mockResolvedValue(['forkai-sbx-blx']),
+      listMachines: jest.fn().mockResolvedValue([
+        machine({ id: 'm1', createdAt, activeUntil, expiresAt: new Date(Date.now() - 1000).toISOString(), sub: 'user-9', sessionId: 'sess-9', nodeId: 'node-9' }),
+      ]),
+      destroyApp: jest.fn().mockResolvedValue(undefined),
+    };
+    const biller = mkBiller();
+
+    await sweepSandboxes(provider, mkLog(), biller);
+
+    expect(biller.billMachineUsage).toHaveBeenCalledWith(
+      'user-9', 'forkai-sbx-blx:m1', 'sess-9', 'node-9', createdAt, expect.any(Number), Date.parse(activeUntil),
+    );
   });
 
   it('destroys but does not bill a machine with no identity metadata (pre-feature or crashed before tagging)', async () => {

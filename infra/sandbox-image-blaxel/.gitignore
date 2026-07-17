@@ -1,0 +1,3 @@
+# Copied from ../sandbox-image/runner.mjs by build.sh at push time — the single
+# source lives there, this is a transient build artifact.
+/runner.mjs

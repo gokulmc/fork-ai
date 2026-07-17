@@ -6,34 +6,22 @@ interface Props {
   onToggle: () => void;
 }
 
-// Round 2 (WS-C / r2-session-topbar.html): a top-center segmented Map/Read
-// toggle docked directly under the topbar — replaces the old floating
-// bottom-center pill, which could strand mid-canvas or drift over the
-// composer. Only rendered on narrow viewports (see App.tsx's isNarrow gate);
-// CSS scopes `.mrt-dock` to the same <768px breakpoint the old `.mm-pill` used.
+// Floating liquid-glass pill (same as the original forkai app's mm-pill) shown
+// only on narrow viewports. Toggles the full-screen mind-map swap; the same
+// button switches back, so when the map is open it offers to return to reading.
+// Rendered inside .code-composer-wrap (just above the composer) when the
+// composer is visible, or standalone (fixed bottom-center) when it isn't —
+// see App.tsx; the wrap variant is repositioned via CSS.
 export function MindMapPill({ open, onToggle }: Props) {
   return (
-    <div className="mrt-dock">
-      <div className="map-read-toggle" role="tablist" aria-label="Map or Read view">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={open}
-          className={`mrt-seg${open ? ' mrt-seg--active' : ''}`}
-          onClick={() => { if (!open) onToggle(); }}
-        >
-          <GitBranch size={13} /> Map
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={!open}
-          className={`mrt-seg${!open ? ' mrt-seg--active' : ''}`}
-          onClick={() => { if (open) onToggle(); }}
-        >
-          <FileText size={13} /> Read
-        </button>
-      </div>
-    </div>
+    <button
+      className="mm-pill"
+      onClick={onToggle}
+      title={open ? 'Back to reading' : 'Open mind map'}
+      aria-pressed={open}
+    >
+      {open ? <FileText size={16} /> : <GitBranch size={16} />}
+      {open ? 'Read' : 'Mindmap'}
+    </button>
   );
 }

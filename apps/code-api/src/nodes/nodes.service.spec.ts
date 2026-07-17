@@ -1634,6 +1634,42 @@ describe('NodesService', () => {
         expect(ctxArg.repo).toEqual({ cloneUrl: 'https://github.com/acme/widgets.git' });
         expect(mockGithubApp.mintInstallationToken).not.toHaveBeenCalled();
       });
+
+      // Regression: a from-scratch project git-inits an EMPTY sandbox repo, so a
+      // parent's synthesized/placeholder commitSha isn't a real tree — passing it
+      // as baseRef made the sandbox's `git checkout <sha>` exit 128 on every
+      // from-scratch CODE run. baseCommitSha must key off the resolved run target
+      // (ctx.repo.init), not just "does the parent happen to have a commitSha".
+      const codeParentWithCommit = {
+        nodeId: 'code-1', parentId: 'plan-1', kind: 'CODE', title: 'Base commit', query: 'Base commit',
+        sections: [], commitSha: 'basecommitsha1234567890', branchName: 'main',
+      };
+
+      it("provider 'new' — baseCommitSha is null even when the parent node has a commitSha (no real git history to check out)", async () => {
+        mockDb.getProject.mockResolvedValue({
+          projectId: 'proj-1',
+          repoRef: { provider: 'new', owner: 'you', repo: 'widgets', defaultBranch: 'main', url: 'mock://new/widgets' },
+          plugins: [],
+        });
+        mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [planNode, codeParentWithCommit], projectId: 'proj-1' });
+
+        await service.createCodeNodeStreaming(SUB, SESSION_ID, { ...dto, parentNodeId: 'code-1' }, jest.fn());
+
+        const ctxArg = agentRunner.run.mock.calls[0][0];
+        expect(ctxArg.repo).toEqual({ init: { defaultBranch: 'main' } });
+        expect(ctxArg.baseCommitSha).toBeNull();
+      });
+
+      it('cloned real repo (public github) — baseCommitSha still passes the parent commitSha through', async () => {
+        mockDb.getProject.mockResolvedValue(githubProject());
+        mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [planNode, codeParentWithCommit], projectId: 'proj-1' });
+
+        await service.createCodeNodeStreaming(SUB, SESSION_ID, { ...dto, parentNodeId: 'code-1' }, jest.fn());
+
+        const ctxArg = agentRunner.run.mock.calls[0][0];
+        expect(ctxArg.repo).toEqual({ cloneUrl: 'https://github.com/acme/widgets.git' });
+        expect(ctxArg.baseCommitSha).toBe('basecommitsha1234567890');
+      });
     });
 
     describe('auto-branch on a parallel instruction', () => {

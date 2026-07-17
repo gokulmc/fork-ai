@@ -1,9 +1,15 @@
 import { BadRequestException } from '@nestjs/common';
 import type { AgentRunner } from './agent-runner';
 
-export type RunnerEnvironment = 'mock' | 'cloud' | 'local';
+export type RunnerEnvironment = 'mock' | 'cloud' | 'local' | 'blaxel';
 
-const RUNNER_ENVIRONMENTS: RunnerEnvironment[] = ['mock', 'cloud', 'local'];
+const RUNNER_ENVIRONMENTS: RunnerEnvironment[] = ['mock', 'cloud', 'local', 'blaxel'];
+
+// The environments that run a real single-use VM the user is billed for, and so
+// go through the ADR-0004 pre-auth hold/reconcile path (not the bare
+// checkCredit gate). 'cloud' (Fly) and 'blaxel' both qualify; 'mock'/'local' do
+// not. Kept as a set so isCloud() and any future call site agree.
+const BILLED_CLOUD_ENVIRONMENTS: ReadonlySet<RunnerEnvironment> = new Set(['cloud', 'blaxel']);
 
 export interface AgentRunnerRegistry {
   resolve(environment?: string): AgentRunner;
@@ -36,10 +42,11 @@ export class RunnerRegistry implements AgentRunnerRegistry {
   }
 
   // Lets nodes.service.ts branch hold-vs-billUsage (ADR-0004) without
-  // string-sniffing 'cloud' itself — mirrors resolve()'s own
+  // string-sniffing the environment itself — mirrors resolve()'s own
   // explicit-or-default fallback so the two never disagree on which runner a
-  // given request would actually get.
+  // given request would actually get. True for any billed-VM runner (Fly cloud
+  // OR Blaxel), so a Blaxel run gets the same hold/reconcile treatment.
   isCloud(environment?: string): boolean {
-    return (environment ?? this.defaultEnv) === 'cloud';
+    return BILLED_CLOUD_ENVIRONMENTS.has((environment ?? this.defaultEnv) as RunnerEnvironment);
   }
 }

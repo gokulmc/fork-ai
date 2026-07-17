@@ -25,7 +25,18 @@ type SweepLog = Pick<Logger, 'log' | 'warn' | 'error'>;
 // billing wired (shouldn't happen once agent.module.ts wires it, but keeps
 // this module's own tests billing-agnostic) just skips billing/reconciling.
 export interface MachineBiller {
-  billMachineUsage(sub: string, sandboxId: string, sessionId: string, nodeId: string, createdAtIso: string, destroyAtMs: number): Promise<void>;
+  // activeUntilMs is optional and ignored by flat billers (Fly's
+  // UsersService.billMachineUsage omits the param entirely and still satisfies
+  // this) — split billers (Blaxel) use it to divide active vs idle time.
+  billMachineUsage(
+    sub: string,
+    sandboxId: string,
+    sessionId: string,
+    nodeId: string,
+    createdAtIso: string,
+    destroyAtMs: number,
+    activeUntilMs?: number,
+  ): Promise<void>;
   reconcileStaleHolds(cutoffMinutes?: number): Promise<void>;
 }
 
@@ -84,7 +95,15 @@ export async function sweepSandboxes(provider: SweepProvider, log: SweepLog, bil
       for (const m of machines) {
         if (!m.sub || !m.sessionId || !m.nodeId) continue; // pre-feature or crashed-before-tag machine — destroyed, not billed
         try {
-          await biller.billMachineUsage(m.sub, `${appName}:${m.id}`, m.sessionId, m.nodeId, m.createdAt, now);
+          await biller.billMachineUsage(
+            m.sub,
+            `${appName}:${m.id}`,
+            m.sessionId,
+            m.nodeId,
+            m.createdAt,
+            now,
+            m.activeUntil ? Date.parse(m.activeUntil) : undefined,
+          );
         } catch (err) {
           log.error(`sweep: billMachineUsage failed for ${appName}:${m.id}: ${String(err)}`);
         }

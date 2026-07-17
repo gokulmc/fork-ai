@@ -2,7 +2,7 @@ import type { ForkNode } from './types';
 
 // Shared geometry — also used by MindMap.tsx for rendering (foreignObject/rect sizing).
 export const NODE_W = 192;
-export const NODE_H = 58;
+export const NODE_H = 64;
 const DEPTH_GAP = 64;
 const SIBLING_GAP = 18;
 
@@ -155,16 +155,47 @@ function leafRows(childMap: Record<string, string[]>, id: string): number {
   return s;
 }
 
-// Total leaf-row count of a node's hanging subtree — 0 if it has none. Learn
-// hangs now spread siblings across x in NODE_W+SIBLING_GAP steps (see
-// placeHangingSubtreeV), so this is the hang's HORIZONTAL extent — used by the
-// column-stacking pass to widen the NEXT column so it clears this one's hang.
-function hangRows(childMap: Record<string, string[]>, id: string): number {
-  const kids = childMap[id] || [];
-  if (!kids.length) return 0;
+// A rail anchor's hanging learn children split into left/right groups —
+// alternating by creation order (childMap is createdAt-sorted), so consecutive
+// learn branches off one commit fan out to BOTH sides of the column instead of
+// stacking up on one side. The FIRST learn child goes LEFT, then alternates.
+// The column itself (center) stays reserved for rail nodes; learn subtrees flank it.
+function splitHangSides(
+  hangChildMap: Record<string, string[]>,
+  anchorId: string,
+): { right: string[]; left: string[] } {
+  const right: string[] = [], left: string[] = [];
+  (hangChildMap[anchorId] || []).forEach((k, i) => { (i % 2 === 0 ? left : right).push(k); });
+  return { right, left };
+}
+
+// Total leaf-row count of ONE SIDE of a node's hanging subtree — 0 if that side
+// is empty. Learn hangs spread siblings across x in NODE_W+SIBLING_GAP steps
+// (see placeHangingSubtreeV), so this is the hang's HORIZONTAL extent on that
+// side — used by the column-stacking pass: the RIGHT side widens the gap to the
+// NEXT column, the LEFT side pushes a column right so it clears the PREVIOUS
+// column's territory.
+function hangRowsSide(
+  hangChildMap: Record<string, string[]>,
+  id: string,
+  side: 1 | -1,
+): number {
+  const { right, left } = splitHangSides(hangChildMap, id);
+  const group = side === 1 ? right : left;
   let s = 0;
-  kids.forEach(k => { s += leafRows(childMap, k); });
+  group.forEach(k => { s += leafRows(hangChildMap, k); });
   return s;
+}
+
+// Horizontal width (px) one side's hang occupies beyond the anchor's column —
+// 0 if that side has no hang.
+function hangWidthSide(
+  hangChildMap: Record<string, string[]>,
+  id: string,
+  side: 1 | -1,
+): number {
+  const rows = hangRowsSide(hangChildMap, id, side);
+  return rows > 0 ? rows * (NODE_W + SIBLING_GAP) + HANG_GAP_X : 0;
 }
 
 // The vertical step from a rail node to the next node continuing (or forking
@@ -181,27 +212,25 @@ function rowAdvance(hangChildMap: Record<string, string[]>, parentId: string): n
   return Math.max(RAIL_ROW_GAP, depth * (NODE_H + DEPTH_GAP) + NODE_H + RAIL_START_GAP);
 }
 
-// Places every DESCENDANT of `anchorId` (not anchorId itself, which is already
-// positioned) BELOW it, spread horizontally in a side lane offset from the
-// anchor's own x (depth -> y, siblings -> x). The side-lane BASE offset
-// (NODE_W + HANG_GAP_X) keeps the whole hang strictly to the right of the
-// anchor's column, clear of the column's own straight-down growth — that part
-// is NOT layoutTree()'s geometry (which centers a hang under the anchor's own
-// x, spreading both left and right of it) since the anchor's column continues
-// downward and possibly has sibling rail columns to its left.
+// Places ONE SIDE's group of an anchor's hanging learn children (and all their
+// descendants) BELOW the anchor, spread horizontally in a side lane offset from
+// the anchor's own x (depth -> y, siblings -> x). The side-lane BASE offset
+// (NODE_W + HANG_GAP_X from the anchor's near edge) keeps the hang strictly
+// clear of the anchor's column, which continues straight down with commits —
+// that part is NOT layoutTree()'s geometry (which centers a hang under the
+// anchor's own x) since the column itself owns the center.
 //
-// WITHIN that right-side lane, each parent is centered over the horizontal
-// span its own subtree occupies (`leftCol + rows[id] / 2`, the same
-// `topRow + rows/2` idea layoutTree().place() uses) rather than left-justified
-// to `leftCol` — so multiple Learn children under one anchor spread out and
-// center as a group instead of stacking in a single left-justified column
-// (WS-M / #221; see map-git-graph's distributed-layout spec). The subtree's
-// total reserved width (`rows[anchorId] * (NODE_W+SIBLING_GAP)`) is unchanged
-// by this — only where nodes sit WITHIN that reserved span — so the column-
-// stacking pass's `colHang` reserve (`hangRows()`-derived) still clears it.
+// WITHIN a side lane, each parent is centered over the horizontal span its own
+// subtree occupies (`leftCol + rows[id] / 2`, the same `topRow + rows/2` idea
+// layoutTree().place() uses) rather than left-justified to `leftCol` — so
+// multiple Learn children on one side spread out and center as a group instead
+// of stacking in a single left-justified column (WS-M / #221). The left side
+// mirrors the right's math around the anchor: offsets grow leftward instead.
 function placeHangingSubtreeV(
   childMap: Record<string, string[]>,
   anchorId: string,
+  topIds: string[],
+  side: 1 | -1,
   pos: Record<string, { x: number; y: number }>,
 ): void {
   const rows: Record<string, number> = {};
@@ -214,20 +243,44 @@ function placeHangingSubtreeV(
     rows[id] = s;
     return s;
   }
-  leaves(anchorId);
+  topIds.forEach(leaves);
 
   const anchor = pos[anchorId];
+  // The anchor may not be placed yet — a CODE built from a PLAN is positioned
+  // in a post-pass that runs AFTER the shared placeHangs sweep (step 4), so if
+  // it already has a learn child, that sweep reaches this hang before the anchor
+  // has a pos. Skip here; the post-pass re-runs placeHangs once it's placed.
+  if (!anchor) return;
   function place(id: string, depth: number, leftCol: number) {
-    if (depth > 0) {
-      pos[id] = {
-        x: anchor.x + NODE_W + HANG_GAP_X + (leftCol + rows[id] / 2) * (NODE_W + SIBLING_GAP),
-        y: anchor.y + depth * (NODE_H + DEPTH_GAP),
-      };
-    }
+    // Center the NODE (not its left edge) over its subtree's span — the
+    // placement then never overflows the hangWidthSide() reserve, which the
+    // column-stacking pass relies on to keep two FACING hangs (one column's
+    // right, the next column's left) from colliding.
+    const offset = (leftCol + rows[id] / 2) * (NODE_W + SIBLING_GAP) - NODE_W / 2;
+    pos[id] = {
+      x: side === 1
+        ? anchor.x + NODE_W + HANG_GAP_X + offset
+        : anchor.x - HANG_GAP_X - NODE_W - offset,
+      y: anchor.y + depth * (NODE_H + DEPTH_GAP),
+    };
     let col = leftCol;
     (childMap[id] || []).forEach(k => { place(k, depth + 1, col); col += rows[k]; });
   }
-  place(anchorId, 0, 0);
+  let col = 0;
+  topIds.forEach(k => { place(k, 1, col); col += rows[k]; });
+}
+
+// Hang an anchor's full learn subtree: split the direct children into
+// right/left groups (alternating by creation order) and place each group in
+// its own side lane. Rail columns stay center; learn flanks both sides.
+function placeHangs(
+  hangChildMap: Record<string, string[]>,
+  anchorId: string,
+  pos: Record<string, { x: number; y: number }>,
+): void {
+  const { right, left } = splitHangSides(hangChildMap, anchorId);
+  if (right.length) placeHangingSubtreeV(hangChildMap, anchorId, right, 1, pos);
+  if (left.length) placeHangingSubtreeV(hangChildMap, anchorId, left, -1, pos);
 }
 
 // Builds the sub-record of `nodes` reachable from `rootId` without ever crossing
@@ -352,7 +405,7 @@ export function layoutGitGraph(nodes: Record<string, ForkNode>, rootId: string):
     // step 4 pass below — a rail entry point buried under that QUERY (a PLAN
     // synthesized from it) needs a real pos[QUERY] once findRailEntryPoints
     // reaches it next.
-    if (hangChildMap[rootId]?.length) placeHangingSubtreeV(hangChildMap, rootId, pos);
+    if (hangChildMap[rootId]?.length) placeHangs(hangChildMap, rootId, pos);
   } else {
     const learnNodes = buildLearnOnlyNodes(nodes, rootId);
     const learnResult = layoutTree(learnNodes, rootId);
@@ -374,6 +427,9 @@ export function layoutGitGraph(nodes: Record<string, ForkNode>, rootId: string):
       col = allocateColumn();
       y = Math.max(learnMaxY + RAIL_START_GAP, pos[parentId].y + rowAdvance(hangChildMap, parentId));
     } else {
+      // A CODE child of a rail parent — including a PLAN — continues the
+      // parent's own column, directly below it. A plan's implementation
+      // therefore hangs off the PLAN node, not the branch it was planned in.
       col = colOf[parentId];
       y = pos[parentId].y + rowAdvance(hangChildMap, parentId);
     }
@@ -392,15 +448,21 @@ export function layoutGitGraph(nodes: Record<string, ForkNode>, rootId: string):
   findRailEntryPoints(rootId);
 
   // 3) Stack columns left-to-right. Column 0 starts level with root (it sits
-  // beside the pre-rail tree — or IS the root itself, for a rail root).
+  // beside the pre-rail tree — or IS the root itself, for a rail root). With
+  // learn hangs now flanking BOTH sides of a column, the gap between columns
+  // must clear the previous column's RIGHT hang AND this column's own LEFT
+  // hang. Column 0's left hang extends into free space (rails always start
+  // below learnMaxY, so it can't collide with the pre-rail tree above).
   let cursorX = pos[rootId]?.x ?? 0;
-  colNodeIds.forEach(ids => {
+  let prevRightHang = 0;
+  colNodeIds.forEach((ids, idx) => {
+    if (idx > 0) {
+      const colLeftHang = Math.max(0, ...ids.map(id => hangWidthSide(hangChildMap, id, -1)));
+      cursorX += prevRightHang + colLeftHang;
+    }
     ids.forEach(id => { pos[id].x = cursorX; });
-    const colHang = Math.max(0, ...ids.map(id => {
-      const rows = hangRows(hangChildMap, id);
-      return rows > 0 ? rows * (NODE_W + SIBLING_GAP) + HANG_GAP_X : 0;
-    }));
-    cursorX += RAIL_COL_GAP + colHang;
+    prevRightHang = Math.max(0, ...ids.map(id => hangWidthSide(hangChildMap, id, 1)));
+    cursorX += RAIL_COL_GAP;
   });
 
   // 3.5) MERGE y-alignment post-pass — pulls a MERGE node down to clear its
@@ -438,11 +500,56 @@ export function layoutGitGraph(nodes: Record<string, ForkNode>, rootId: string):
   // 4) Hang remaining learn subtrees below their now-final rail anchor (a rail
   // root's own hang was already placed above, in step "0").
   Object.keys(nodes).forEach(id => {
-    if (isRail(id) && id !== rootId && hangChildMap[id]?.length) placeHangingSubtreeV(hangChildMap, id, pos);
+    if (isRail(id) && id !== rootId && hangChildMap[id]?.length) placeHangs(hangChildMap, id, pos);
+  });
+
+  // 4.5) Place a CODE built from a PLAN directly under the column of the BRANCH
+  // it was planned in ("directly under the new branch"), stacked below the
+  // PLAN, with the PLAN -> CODE edge kept as the link. The mixer spawns a PLAN
+  // off a LEARN node (which itself hangs beneath a BRANCH), so the PLAN is laid
+  // out by the learn-hang machinery — it has NO column (colOf[plan] is
+  // undefined) — and its CODE child is reached by neither placeRail nor
+  // placeHangs, landing in placeOrphans' fallback strip. Anchoring to the PLAN's
+  // (nonexistent) column is what left the CODE orphaned; anchor to the nearest
+  // BRANCH ancestor instead — a branch is always placed by placeRail, so its
+  // column + x are final by here. Only the CODE's location moves; its parentId
+  // is untouched, so the edge still routes PLAN -> CODE (a cross-column bézier,
+  // since the columns differ — see MindMap's edge builder).
+  const nearestBranchCol = (startId: string): number | undefined => {
+    let cur: string | undefined = startId;
+    while (cur) {
+      if (nodes[cur]?.kind === 'BRANCH') return colOf[cur];
+      cur = nodes[cur]?.parentId ?? undefined;
+    }
+    return undefined;
+  };
+  Object.keys(nodes).forEach(id => {
+    // Only an orphaned CODE-from-PLAN needs this: one already placed by
+    // placeRail (its PLAN parent was itself on the rail) has a column + position;
+    // re-moving it would double-push it into colNodeIds and re-reserve its y.
+    if (nodes[id].kind !== 'CODE' || colOf[id] !== undefined) return;
+    const planId = nodes[id].parentId;
+    if (!planId || nodes[planId]?.kind !== 'PLAN') return;
+    const branchCol = nearestBranchCol(planId);
+    const planPos = pos[planId];
+    const colIds = branchCol !== undefined ? colNodeIds[branchCol] : undefined;
+    const colX = colIds?.length ? pos[colIds[0]]?.x : undefined;
+    if (colX === undefined || !planPos) return;
+    pos[id] = { x: colX, y: reserveY(branchCol!, planPos.y + RAIL_ROW_GAP) };
+    colOf[id] = branchCol!;
+    colNodeIds[branchCol!].push(id);
+    // Now that this CODE has a pos, place any learn subtree hanging off it — the
+    // shared step-4 sweep ran before this post-pass and skipped it (no anchor).
+    if (hangChildMap[id]?.length) placeHangs(hangChildMap, id, pos);
   });
 
   // 5) Column rail lines — one per non-empty column, spanning its first to last node.
+  // Guard against a column member without a pos: during an optimistic mid-run
+  // re-render a node can be in colNodeIds a tick before its pos is assigned, and
+  // an unguarded pos[id].x here throws "Cannot read properties of undefined
+  // (reading 'x')" and takes down the whole map render.
   const laneRails = colNodeIds
+    .map(ids => ids.filter(id => pos[id]))
     .filter(ids => ids.length > 0)
     .map(ids => ({
       x: pos[ids[0]].x + NODE_W / 2,

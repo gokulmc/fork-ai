@@ -146,7 +146,7 @@ type RetryInfo =
   | { kind: 'ROOT_IN_SESSION'; sessionId: string; query: string }
   | { kind: 'DEEPER'; parentNodeId: string; section: { id: string; heading: string; body: string }; boost?: boolean }
   | { kind: 'ASK'; question: string; source: FollowUpState; boost?: boolean }
-  | { kind: 'ASK_COMMIT'; parentNodeId: string; question: string };
+  | { kind: 'ASK_COMMIT'; parentNodeId: string; question: string; attachments?: ComposerAttachment[] };
 import { useTweaks } from '@/hooks/useTweaks';
 import { initAnalytics, track, identifyUser } from '@/lib/analytics';
 import { getCachedSession, putCachedSession, deleteCachedSession } from '@/lib/sessionCache';
@@ -376,6 +376,10 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   // fresh session always opens with long import chains folded away. See
   // lib/collapseSegments.ts.
   const [expandedSegIds, setExpandedSegIds] = useState<Set<string>>(new Set());
+  // Branch nodes whose learn+plan subtree the user has collapsed away, so the
+  // map jumps straight from the BRANCH to its next CODE node. Per-session view
+  // preference, persisted to localStorage. See the displayNodes memo below.
+  const [collapsedBranchIds, setCollapsedBranchIds] = useState<Set<string>>(new Set());
   // Start in loading state if hash or localStorage session present — prevents landing flash on refresh
   const [loadingRoot, setLoadingRoot] = useState(() => {
     if (typeof window === 'undefined') return false;
@@ -871,6 +875,20 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     if (!sessionId) return;
     try { localStorage.setItem(`fork.ai.collapsed.${sessionId}`, JSON.stringify([...expandedSegIds])); } catch { /* quota */ }
   }, [expandedSegIds, sessionId]);
+
+  // Restore which BRANCH subtrees the user collapsed (reset on session switch).
+  useEffect(() => {
+    if (!sessionId) { setCollapsedBranchIds(new Set()); return; }
+    try {
+      const raw = localStorage.getItem(`fork.ai.collapsed-branches.${sessionId}`);
+      setCollapsedBranchIds(new Set(raw ? (JSON.parse(raw) as string[]) : []));
+    } catch { setCollapsedBranchIds(new Set()); }
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    try { localStorage.setItem(`fork.ai.collapsed-branches.${sessionId}`, JSON.stringify([...collapsedBranchIds])); } catch { /* quota */ }
+  }, [collapsedBranchIds, sessionId]);
 
   // Mark a node "read" once it has stayed the active node for ≥5s (debounced).
   useEffect(() => {
@@ -1787,7 +1805,12 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
           instruction,
           model: tweaksRef.current.branchModel,
           attachments: attachments.length ? attachments : undefined,
-          environment: tweaksRef.current.environment === 'demo' ? 'mock' : 'cloud',
+          environment:
+            tweaksRef.current.environment === 'demo'
+              ? 'mock'
+              : tweaksRef.current.environment === 'blaxel'
+                ? 'blaxel'
+                : 'cloud',
         },
         (event) => {
           if (event.type === 'branch-init') {
@@ -1881,7 +1904,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   // requires non-empty highlightText. Generic enough to serve both the CODE
   // variant ("ask about this commit") and the research variant ("ask about
   // this node") — see CodeComposer.tsx's onAsk prop.
-  const askAboutCommit = useCallback(async (nodeId: string, question: string, reuseNodeId?: string) => {
+  const askAboutCommit = useCallback(async (nodeId: string, question: string, attachments?: ComposerAttachment[], reuseNodeId?: string) => {
     const sid = sessionIdRef.current;
     if (!sid || !idToken) return;
     const parent = nodes[nodeId];
@@ -1920,6 +1943,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         webSearch: tweaksRef.current.webSearch,
         verbose: tweaksRef.current.answerStyle === 'verbose',
         model: tweaksRef.current.branchModel,
+        attachments: attachments?.length ? attachments : undefined,
       });
       const realNode = toForkNode(apiNode);
       setNodes(prev => {
@@ -1936,7 +1960,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       const { msg, status, code } = nodeErrorDisplay(err);
       track('node_error', { kind: 'ASK', status, message: msg });
       if (status !== 402) {
-        retryInfoRef.current[tempId] = { kind: 'ASK_COMMIT', parentNodeId: nodeId, question };
+        retryInfoRef.current[tempId] = { kind: 'ASK_COMMIT', parentNodeId: nodeId, question, attachments };
       }
       setNodes(prev => ({ ...prev, [tempId]: { ...prev[tempId], loading: false, error: msg, errorStatus: status, errorCode: code } }));
     } finally {
@@ -1955,7 +1979,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     if (info.kind === 'ROOT') void submitRootQuery(info.query);
     else if (info.kind === 'ROOT_IN_SESSION') void submitProjectQuery(info.sessionId, info.query, failedId);
     else if (info.kind === 'DEEPER') void expandSectionAsChild(info.parentNodeId, info.section, failedId, info.boost);
-    else if (info.kind === 'ASK_COMMIT') void askAboutCommit(info.parentNodeId, info.question, failedId);
+    else if (info.kind === 'ASK_COMMIT') void askAboutCommit(info.parentNodeId, info.question, info.attachments, failedId);
     else void askFromHighlight(info.question, info.source, failedId, info.boost);
   }, [submitRootQuery, submitProjectQuery, expandSectionAsChild, askFromHighlight, askAboutCommit]);
 
@@ -2449,10 +2473,47 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     () => new Set([activeId, ...mixerSelectedIds].filter((id): id is string => !!id)),
     [activeId, mixerSelectedIds],
   );
-  const { displayNodes, segMeta } = useMemo(
-    () => collapseSegments(nodes, expandedSegIds, segProtectedIds),
-    [nodes, expandedSegIds, segProtectedIds],
-  );
+  const { displayNodes, segMeta, hiddenBranchCounts } = useMemo(() => {
+    const { displayNodes: base, segMeta } = collapseSegments(nodes, expandedSegIds, segProtectedIds);
+    const displayNodes: Record<string, ForkNode> = { ...base };
+    const hiddenBranchCounts: Record<string, number> = {};
+
+    if (collapsedBranchIds.size) {
+      const childMap: Record<string, string[]> = {};
+      Object.values(base).forEach((n) => { if (n.parentId) (childMap[n.parentId] ??= []).push(n.id); });
+
+      collapsedBranchIds.forEach((branchId) => {
+        const branch = base[branchId];
+        if (!branch || branch.kind !== 'BRANCH') return;
+        const toDelete = new Set<string>();
+        const reparent = new Set<string>();
+        // Walk down from the branch: prune the learn+plan chain, and reparent
+        // the first rail node (CODE/BRANCH/MERGE) reached onto the branch so the
+        // rail below stays intact (mirrors collapseSegments.ts tail-reparent).
+        const queue = [...(childMap[branchId] ?? [])];
+        while (queue.length) {
+          const id = queue.shift()!;
+          const node = base[id];
+          if (!node) continue;
+          if (LEARN_KINDS.has(node.kind) || node.kind === 'PLAN') {
+            toDelete.add(id);
+            queue.push(...(childMap[id] ?? []));
+          } else {
+            reparent.add(id); // rail node — keep it, stop descending
+          }
+        }
+        if (!toDelete.size) return;
+        toDelete.forEach((id) => { delete displayNodes[id]; });
+        reparent.forEach((id) => {
+          const n = displayNodes[id];
+          if (n) displayNodes[id] = { ...n, parentId: branchId };
+        });
+        hiddenBranchCounts[branchId] = toDelete.size;
+      });
+    }
+
+    return { displayNodes, segMeta, hiddenBranchCounts };
+  }, [nodes, expandedSegIds, segProtectedIds, collapsedBranchIds]);
   // Re-collapse (#205) — the mirror of onMapSelect's expand-on-click: drops
   // segId back out of expandedSegIds so collapseSegments folds its chain back
   // into the placeholder card on the next render.
@@ -2461,6 +2522,15 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       if (!prev.has(segId)) return prev;
       const next = new Set(prev);
       next.delete(segId);
+      return next;
+    });
+  }, []);
+
+  const toggleBranchCollapse = useCallback((nodeId: string) => {
+    setCollapsedBranchIds(prev => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) next.delete(nodeId);
+      else next.add(nodeId);
       return next;
     });
   }, []);
@@ -2749,6 +2819,9 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
             nodes={displayNodes}
             segMeta={segMeta}
             onCollapseSegment={onCollapseSegment}
+            collapsedBranchIds={collapsedBranchIds}
+            hiddenBranchCounts={hiddenBranchCounts}
+            onToggleBranchCollapse={toggleBranchCollapse}
             rootId={rootId}
             activeId={activeId}
             onSelect={onMapSelect}
@@ -3117,33 +3190,46 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
             </>
           )}
           {(showComposer || showComposerResearch) && active && (
-            <CodeComposer
-              ref={composerRef}
-              variant={showComposer ? 'code' : 'research'}
-              onBuild={(instruction, attachments) => void submitCodeNode(instruction, attachments)}
-              buildDisabled={codeSubmitLoading}
-              onAsk={q => askAboutCommit(active.id, q)}
-              askDisabled={showComposer ? !active.commitSha : false}
-              askLoading={askCommitLoading}
-              onDeeper={() => {
-                const last = active.sections[active.sections.length - 1];
-                if (last) void expandSectionAsChild(active.id, last);
-              }}
-              deeperDisabled={sectionLoading !== null}
-              deeperLoading={!!active.sections.length && sectionLoading === active.sections[active.sections.length - 1].id}
-              model={tweaks.branchModel}
-              onModelChange={v => setTweak('branchModel', v)}
-              webSearch={tweaks.webSearch}
-              onWebSearchChange={v => setTweak('webSearch', v)}
-              webSearchDisabled={showComposer}
-            />
+            <div className="code-composer-wrap">
+              {/* Pill lives above the composer while reading; once the map
+                  drawer is open it covers the workspace, so the map-open
+                  variant renders standalone below (fixed, floats over it). */}
+              {isNarrow && Object.keys(nodes).length > 0 && !mapOpen && (
+                <MindMapPill open={mapOpen} onToggle={() => setMapOpen(o => !o)} />
+              )}
+              <CodeComposer
+                ref={composerRef}
+                variant={showComposer ? 'code' : 'research'}
+                idToken={idToken}
+                onBuild={(instruction, attachments) => void submitCodeNode(instruction, attachments)}
+                // Don't let a build fire while the active node is still streaming — a
+                // PLAN that hasn't finished has no sections yet, so planDocOf() would
+                // hand the agent an empty plan ("implement the plan" with no plan).
+                buildDisabled={codeSubmitLoading || active.loading}
+                onAsk={(q, attachments) => askAboutCommit(active.id, q, attachments)}
+                askDisabled={showComposer ? !active.commitSha : false}
+                askLoading={askCommitLoading}
+                onDeeper={() => {
+                  const last = active.sections[active.sections.length - 1];
+                  if (last) void expandSectionAsChild(active.id, last);
+                }}
+                deeperDisabled={sectionLoading !== null}
+                deeperLoading={!!active.sections.length && sectionLoading === active.sections[active.sections.length - 1].id}
+                model={tweaks.branchModel}
+                onModelChange={v => setTweak('branchModel', v)}
+                webSearch={tweaks.webSearch}
+                onWebSearchChange={v => setTweak('webSearch', v)}
+                webSearchDisabled={showComposer}
+              />
+            </div>
+          )}
+          {isNarrow && Object.keys(nodes).length > 0
+            && (mapOpen || !(showComposer || showComposerResearch)) && (
+            <MindMapPill open={mapOpen} onToggle={() => setMapOpen(o => !o)} />
           )}
         </div>
       </section>
 
-      {isNarrow && Object.keys(nodes).length > 0 && (
-        <MindMapPill open={mapOpen} onToggle={() => setMapOpen(o => !o)} />
-      )}
       {isNarrow && !mapOpen && Object.keys(nodes).length > 0 && (
         <div
           className="mm-swipe-zone"

@@ -26,6 +26,9 @@ const CFG: Record<string, number> = {
   'billing.maxRunCostUsd': 1.0,
   'billing.creditMultiplier': 1.5,
   'billing.flyMinuteRateUsd': 0.0009,
+  'billing.blaxelActiveMinuteRateUsd': 0.0028,
+  'billing.blaxelStandbyGbSecondRateUsd': 0.0000000772,
+  'billing.blaxelMemoryGb': 4,
 };
 
 const mockCfg = { get: jest.fn((key: string) => CFG[key]) };
@@ -261,6 +264,39 @@ describe('UsersService — cloud-run billing (ADR-0004)', () => {
       mockDb.putMachineBill.mockResolvedValue(true);
       await service.billMachineUsage(SUB, 'sbx-2', SESSION_ID, NODE_ID, createdAtIso, Date.parse(createdAtIso) - 5000);
       expect(mockDb.deductCredit).toHaveBeenCalledWith(SUB, 0);
+    });
+  });
+
+  describe('billBlaxelMachineUsage (split active/idle)', () => {
+    const createdAtIso = '2026-07-13T10:00:00.000Z';
+    const activeUntilMs = Date.parse('2026-07-13T10:01:30.000Z'); // +90s active
+    const destroyAtMs = Date.parse('2026-07-13T10:11:30.000Z'); // +600s idle after that
+
+    it('bills active minutes and idle GB-seconds separately, guard before charge', async () => {
+      mockDb.putMachineBill.mockResolvedValue(true);
+      await service.billBlaxelMachineUsage(SUB, 'blx-1', SESSION_ID, NODE_ID, createdAtIso, destroyAtMs, activeUntilMs);
+
+      // active 90s = 0.0042 ; idle 600s * 7.72e-8 * 4GB = 0.00018528 ; ×1.5 = 0.006578
+      expect(mockDb.deductCredit).toHaveBeenCalledWith(SUB, 0.006578);
+      expect(mockDb.putUsageEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'MACHINE', model: 'blaxel:machine', costUsd: 0.006578 }),
+      );
+      const putOrder = mockDb.putMachineBill.mock.invocationCallOrder[0];
+      const deductOrder = mockDb.deductCredit.mock.invocationCallOrder[0];
+      expect(putOrder).toBeLessThan(deductOrder);
+    });
+
+    it('with no activeUntil (error path) bills the whole lifetime as active, no idle', async () => {
+      mockDb.putMachineBill.mockResolvedValue(true);
+      // 690s total, all active → (690/60)*0.0028*1.5 = 0.04830
+      await service.billBlaxelMachineUsage(SUB, 'blx-2', SESSION_ID, NODE_ID, createdAtIso, destroyAtMs);
+      expect(mockDb.deductCredit).toHaveBeenCalledWith(SUB, 0.0483);
+    });
+
+    it('is an idempotent no-op when already billed (shared MACHINEBILL# key)', async () => {
+      mockDb.putMachineBill.mockResolvedValue(false);
+      await service.billBlaxelMachineUsage(SUB, 'blx-3', SESSION_ID, NODE_ID, createdAtIso, destroyAtMs, activeUntilMs);
+      expect(mockDb.deductCredit).not.toHaveBeenCalled();
     });
   });
 

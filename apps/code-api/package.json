@@ -19,6 +19,7 @@
     "@aws-sdk/client-dynamodb": "^3.1048.0",
     "@aws-sdk/client-ses": "^3.1056.0",
     "@aws-sdk/lib-dynamodb": "^3.1048.0",
+    "@blaxel/core": "^0.3.3",
     "@google/genai": "^2.7.0",
     "@nestjs/common": "^11.1.21",
     "@nestjs/config": "^4.0.4",

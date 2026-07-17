@@ -46,3 +46,6 @@ npm-debug.log*
 .claude/projects/
 playwright-report/
 .test-creds
+
+# Session scratch dir — E2E test scripts, demo videos, screenshots (not source)
+scratchpad/

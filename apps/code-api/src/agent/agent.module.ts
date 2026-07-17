@@ -77,6 +77,47 @@ import { AGENT_RUNNER_REGISTRY, RunnerRegistry, RunnerEnvironment } from './runn
           startSandboxSweep(new FlyProvider({ apiToken, orgSlug }), new Logger('CloudSandboxSweep'), users);
         }
 
+        // Blaxel — a second billed-cloud runner, user-selectable as
+        // environment: 'blaxel'. Reuses CloudAgentRunner via an injected
+        // BlaxelProvider (same method shapes as FlyProvider), so only the
+        // provider + billing differ. Gated on its own creds so a server without
+        // them simply doesn't offer 'blaxel' (resolve() 400s, same as Fly).
+        const blaxelToken = process.env.BLAXEL_API_TOKEN;
+        const blaxelWorkspace = process.env.BLAXEL_WORKSPACE;
+        const blaxelImage = process.env.BLAXEL_SANDBOX_IMAGE;
+        if (blaxelToken && blaxelWorkspace && blaxelImage) {
+          const { CloudAgentRunner } = await import('./cloud/cloud-agent-runner');
+          const { BlaxelProvider } = await import('./cloud/blaxel-provider');
+          const { startSandboxSweep } = await import('./cloud/sandbox-sweep');
+          const region = process.env.BLAXEL_REGION || undefined;
+          const memoryMb = Number(process.env.BLAXEL_MEMORY_MB ?? 4096);
+          const providerOpts = { apiToken: blaxelToken, workspace: blaxelWorkspace, region, memoryMb };
+          // Split-billing adapter (MachineBiller): active window at the Blaxel
+          // per-minute rate, idle standby at the near-zero GB-second rate — see
+          // UsersService.billBlaxelMachineUsage. reconcileStaleHolds is shared.
+          const blaxelBiller = {
+            billMachineUsage: (sub: string, sandboxId: string, sessionId: string, nodeId: string, createdAtIso: string, destroyAtMs: number, activeUntilMs?: number) =>
+              users.billBlaxelMachineUsage(sub, sandboxId, sessionId, nodeId, createdAtIso, destroyAtMs, activeUntilMs),
+            reconcileStaleHolds: (cutoff?: number) => users.reconcileStaleHolds(cutoff),
+          };
+          runners.blaxel = new CloudAgentRunner(
+            {
+              apiToken: blaxelToken, // unused (provider injected) but required by the config type
+              orgSlug: blaxelWorkspace,
+              image: blaxelImage,
+              regions: [region ?? 'auto'],
+              anthropicApiKey: config.get<string>('anthropic.apiKey')!,
+              ttlMinutes: Number(process.env.SANDBOX_TTL_MINUTES ?? 20),
+              trackActiveWindow: true, // tag active_until on success → split billing
+              // Error/no-result path: run never reached its active boundary, so
+              // activeUntil === destroy (all active, no idle).
+              onMachineDestroyBill: (a) => users.billBlaxelMachineUsage(a.sub, a.sandboxId, a.sessionId, a.nodeId, a.createdAt, a.destroyAtMs, a.destroyAtMs),
+            },
+            new BlaxelProvider(providerOpts),
+          );
+          startSandboxSweep(new BlaxelProvider(providerOpts), new Logger('BlaxelSandboxSweep'), blaxelBiller);
+        }
+
         // Fail fast at bootstrap if the server's own default names a runner it
         // didn't just build (misconfig) — same spirit as the old per-mode guards.
         const defaultEnv = (process.env.AGENT_RUNNER as RunnerEnvironment | undefined) ?? 'mock';

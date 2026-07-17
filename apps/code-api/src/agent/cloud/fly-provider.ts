@@ -29,6 +29,12 @@ const BASE_IMAGE_APP = 'forkai-sbx-base';
 // sandbox-sweep.ts reconciles against this (via listMachines' config.metadata)
 // instead of name-prefix+age alone. Exported so both sides use the same key.
 export const SANDBOX_EXPIRES_AT_METADATA_KEY = 'forkai_expires_at';
+// The instant a successful run's agent finished — i.e. the boundary between
+// billable "active" compute (create → this) and near-free "idle" standby (this
+// → destroy). Only CloudAgentRunner instances configured with trackActiveWindow
+// (Blaxel today; Fly leaves it off and bills a flat full-lifetime rate) tag it,
+// so it's absent on Fly machines. Read back by the sweep to split-bill Blaxel.
+export const SANDBOX_ACTIVE_UNTIL_METADATA_KEY = 'forkai_active_until';
 // Identity metadata keys — set atomically WITH machine create (see
 // createMachineWithRegionFallback), not via a post-create setMetadata call
 // like the expiry key above. Billing must be able to find "who owns this
@@ -96,6 +102,10 @@ export interface SandboxMachineInfo {
   // Present only once CloudAgentRunner has tagged a successful run's machine —
   // absent for a crashed run or a machine created before this feature shipped.
   expiresAt?: string;
+  // Active/idle billing boundary — set only by trackActiveWindow runners
+  // (Blaxel), absent on Fly. When present the sweep bills create→activeUntil as
+  // active and activeUntil→destroy as idle standby; absent ⇒ flat billing.
+  activeUntil?: string;
   // Billing identity (ADR-0004) — present for any machine created after this
   // feature shipped (set at birth, see SANDBOX_*_METADATA_KEY); absent for a
   // pre-existing machine, which the sweep destroys but does not bill.

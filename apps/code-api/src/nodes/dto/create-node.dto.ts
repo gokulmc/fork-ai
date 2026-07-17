@@ -1,6 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsIn, IsOptional, IsInt, IsBoolean, Min, Max, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ArrayMaxSize, IsArray, IsString, IsIn, IsOptional, IsInt, IsBoolean, Min, Max, MinLength, ValidateNested } from 'class-validator';
 import { NodeKind } from '@/llm/llm.types';
+import { AttachmentDto } from './create-code-node.dto';
 
 export class CreateNodeDto {
   @ApiProperty({ enum: ['DEEPER', 'ASK'], description: 'DEEPER = expand a section; ASK = follow-up from highlight' })
@@ -59,4 +61,12 @@ export class CreateNodeDto {
   @IsOptional()
   @IsIn(['haiku', 'sonnet', 'opus', 'gemini-pro', 'gemini-flash', 'gemini-flash-lite', 'deepseek-pro', 'deepseek-flash', 'glm', 'glm-air'])
   model?: 'haiku' | 'sonnet' | 'opus' | 'gemini-pro' | 'gemini-flash' | 'gemini-flash-lite' | 'deepseek-pro' | 'deepseek-flash' | 'glm' | 'glm-air';
+
+  @ApiPropertyOptional({ description: 'Composer attachments (text files, or Groq-described images), appended into the LLM prompt', type: [AttachmentDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(3)
+  @ValidateNested({ each: true })
+  @Type(() => AttachmentDto)
+  attachments?: AttachmentDto[];
 }

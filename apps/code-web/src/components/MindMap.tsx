@@ -49,6 +49,11 @@ interface MindMapProps {
   // card already in `nodes`.
   segMeta?: Record<string, SegMeta>;
   onCollapseSegment?: (segId: string) => void;
+  // Per-session collapse of a BRANCH's learn+plan subtree (App.tsx owns the
+  // pruning in displayNodes — this just drives the toggle dot on the card).
+  collapsedBranchIds?: Set<string>;
+  hiddenBranchCounts?: Record<string, number>;
+  onToggleBranchCollapse?: (id: string) => void;
   rootId: string;
   activeId: string | null;
   onSelect: (id: string) => void;
@@ -84,6 +89,9 @@ export function MindMap({
   nodes,
   segMeta,
   onCollapseSegment,
+  collapsedBranchIds,
+  hiddenBranchCounts,
+  onToggleBranchCollapse,
   rootId,
   activeId,
   onSelect,
@@ -335,7 +343,16 @@ export function MindMap({
       if (!a || !b) return;
       const cKind = nodes[cid]?.kind, pKind = nodes[pid]?.kind;
       const isFork = cKind === 'BRANCH';
-      const isLane = !isFork && cKind === 'CODE' && (pKind === 'PLAN' || pKind === 'CODE' || pKind === 'BRANCH' || pKind === 'MERGE');
+      // A "lane" is a straight vertical drop within one column, so it's only
+      // valid when parent and child actually share an x. A CODE continuing its
+      // rail parent (CODE/BRANCH/MERGE) does. A PLAN->CODE does NOT once the
+      // CODE is re-homed to its branch column (layoutGitGraph step 4.5) — and
+      // colOf[plan] can even be undefined for a hang-placed PLAN — so it falls
+      // through to the cross-column bézier below (same geometry as a learn edge),
+      // keeping the visible link PLAN -> CODE.
+      const sameX = Math.abs(a.x - b.x) < 1;
+      const isLane = !isFork && cKind === 'CODE' && sameX
+        && (pKind === 'CODE' || pKind === 'BRANCH' || pKind === 'MERGE' || pKind === 'PLAN');
       if (isLane) {
         const x = a.x + NODE_W / 2;
         edges.push({ pid, cid, kind: 'lane', d: `M ${x} ${a.y + NODE_H} L ${x} ${b.y}` });
@@ -388,6 +405,23 @@ export function MindMap({
     if (kind === 'BRANCH') return GitBranch;
     if (kind === 'MERGE') return GitMerge;
     return GitBranch;
+  }
+
+  // Single-letter kind marker shown in the card's top-right corner (replaces the
+  // verbose "Commit"/"Root"/… kicker word). Root wins over kind.
+  function cornerLetter(kind: ForkNode['kind'], isRoot: boolean): string {
+    if (isRoot) return 'R';
+    switch (kind) {
+      case 'CODE': return 'C';
+      case 'BRANCH': return 'B';
+      case 'PLAN': return 'P';
+      case 'MERGE': return 'M';
+      case 'QUERY': return 'Q';
+      case 'DEEPER': return 'D';
+      case 'ASK': return 'A';
+      case 'MIX': return 'X';
+      default: return '';
+    }
   }
 
   const nodeCount = Object.keys(nodes).length;
@@ -614,17 +648,33 @@ export function MindMap({
                               own row height and push 2-line titles past the foreignObject
                               clip rect (#230). */}
                           <div className="mm-card-text">
-                            <div className="mm-kicker" title={kicker} aria-label={kicker}>
-                              {kicker}
-                              {n.kind === 'MERGE' && n.prStatus && (
+                            {/* Kicker word replaced by the top-right corner letter badge
+                                (.mm-corner-badge, which also carries the run-failed dot).
+                                This row now only carries the MERGE PR-status chip. */}
+                            {n.kind === 'MERGE' && n.prStatus && (
+                              <div className="mm-kicker">
                                 <span className={`mm-pr-status mm-pr-status--${n.prStatus}`}>{n.prStatus}</span>
-                              )}
-                              {isFailed && <span className="mm-node-error-dot" title="Run failed" />}
-                            </div>
+                              </div>
+                            )}
                             <div className="mm-label" title={n.title || 'Untitled'}>{n.title || 'Untitled'}</div>
                           </div>
                           {n.sources?.length ? <span className="mm-search-badge">🔍</span> : null}
                           {n.kind === 'MIX' ? <span className="mm-mix-badge"><Filter size={11} /></span> : null}
+                          {n.kind === 'BRANCH' && onToggleBranchCollapse && (() => {
+                            const branchCollapsed = collapsedBranchIds?.has(n.id) ?? false;
+                            const hidden = hiddenBranchCounts?.[n.id] ?? 0;
+                            return (
+                              <button
+                                type="button"
+                                className={`mm-collapse-dot${branchCollapsed ? ' mm-collapse-dot--active' : ''}`}
+                                title={branchCollapsed ? `Show ${hidden} hidden node${hidden === 1 ? '' : 's'}` : 'Collapse learn + plan'}
+                                aria-label={branchCollapsed ? 'Expand branch subtree' : 'Collapse branch subtree'}
+                                onClick={e => { e.stopPropagation(); onToggleBranchCollapse(n.id); }}
+                              >
+                                {branchCollapsed && hidden > 0 ? hidden : ''}
+                              </button>
+                            );
+                          })()}
                         </div>
                         {/* Surface the OKR on the map card itself (#220) — objective as
                             a subtitle, KR count as a small 🎯 chip — so it's visible
@@ -638,6 +688,17 @@ export function MindMap({
                       </div>
                     )}
                   </foreignObject>
+                  {/* Kind letter + run-failed dot as native SVG (not an
+                      absolutely-positioned HTML span inside the foreignObject —
+                      WebKit renders positioned foreignObject descendants at the
+                      SVG origin, which piled every card's text in the top-left). */}
+                  {isFailed && <circle className="mm-corner-error-dot" cx={NODE_W - 20} cy={boxY + 10} r={3} />}
+                  {cornerLetter(n.kind, isRoot) && (
+                    <text className="mm-corner-letter" x={NODE_W - 8} y={boxY + 14} textAnchor="end">
+                      <title>{isFailed ? 'Run failed' : kicker}</title>
+                      {cornerLetter(n.kind, isRoot)}
+                    </text>
+                  )}
                 </g>
               </g>
             );
@@ -685,8 +746,20 @@ export function MindMap({
 // of the zoom controls and the mixer/PR overlay's bottom-center strip) per
 // map-git-graph.html's spec — a reference, not a dominant chrome element.
 function MapLegend() {
+  const [open, setOpen] = useState(false);
+  if (!open) {
+    return (
+      <button type="button" className="mm-legend-toggle" onClick={() => setOpen(true)} title="Show legend" aria-label="Show map legend">
+        <Map size={13} /> Legend
+      </button>
+    );
+  }
   return (
     <div className="mm-legend">
+      <div className="mm-legend-head">
+        <span className="mm-legend-title">Legend</span>
+        <button type="button" className="mm-legend-close" onClick={() => setOpen(false)} title="Hide legend" aria-label="Hide legend"><X size={12} /></button>
+      </div>
       <div className="mm-legend-row"><span className="mm-legend-dot mm-legend-dot--learn" />Learn — go deeper / ask AI</div>
       <div className="mm-legend-row"><span className="mm-legend-dot mm-legend-dot--plan" />Plan — synthesized implementation plan</div>
       <div className="mm-legend-row"><span className="mm-legend-dot mm-legend-dot--code" />Code — one agent run = one commit</div>

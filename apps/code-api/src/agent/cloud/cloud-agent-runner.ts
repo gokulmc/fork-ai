@@ -4,7 +4,12 @@ import type { DiffSummary } from '@/dynamo/dynamo.interfaces';
 import type { AgentRunner, AgentRunFinal, RunnerYield } from '../agent-runner';
 import type { AgentRunContext } from '../mock-agent.service';
 import { translateAgentMessage, extractResult } from '../local/claude-events';
-import { FlyProvider, SANDBOX_EXPIRES_AT_METADATA_KEY, type SandboxHandle } from './fly-provider';
+import {
+  FlyProvider,
+  SANDBOX_EXPIRES_AT_METADATA_KEY,
+  SANDBOX_ACTIVE_UNTIL_METADATA_KEY,
+  type SandboxHandle,
+} from './fly-provider';
 
 // NOTE: nothing here may import from ../local/local-agent-runner — its
 // top-level `@anthropic-ai/claude-agent-sdk` import is a devDependency absent
@@ -24,6 +29,11 @@ export interface CloudAgentRunnerConfig {
   // Minutes a successful run's sandbox survives past done, so the user can
   // open the workspace afterward — see SANDBOX_TTL_MINUTES / sandbox-sweep.ts.
   ttlMinutes: number;
+  // When set, a successful run additionally tags the sandbox with the instant
+  // the agent finished (SANDBOX_ACTIVE_UNTIL_METADATA_KEY), so the sweep can
+  // split-bill active vs idle. Blaxel sets this; Fly omits it (flat billing) —
+  // leaving it undefined keeps the Fly path byte-for-byte unchanged.
+  trackActiveWindow?: boolean;
   // ADR-0004 machine billing — invoked only on the error/no-result path,
   // where THIS runner is the one actually destroying the sandbox (the
   // success path leaves it alive; sandbox-sweep.ts bills it later at true
@@ -230,6 +240,7 @@ export class CloudAgentRunner implements AgentRunner {
         workspaceExpiresAt = new Date(Date.now() + this.cfg.ttlMinutes * 60_000).toISOString();
         const final: AgentRunFinal = {
           commitMessage: firstLine(resultText) || ctx.instruction.slice(0, 72),
+          runSummary: resultText.trim() || undefined,
           commitSha: runnerResult.sha,
           diffSummary: runnerResult.diffSummary,
           inputTokens,
@@ -259,6 +270,14 @@ export class CloudAgentRunner implements AgentRunner {
           // machines is the fallback (see sandbox-sweep.ts).
           try {
             await this.provider.setMetadata(sandbox.sandboxId, SANDBOX_EXPIRES_AT_METADATA_KEY, workspaceExpiresAt!);
+            // Blaxel-only (trackActiveWindow): mark where active compute ended so
+            // the sweep bills create→now as active and now→destroy as idle. now
+            // ≈ agent-finish (the 'result' yield fired just before this finally).
+            // Best-effort like the expiry tag: a miss just means the split biller
+            // treats the whole lifetime as active (see billBlaxelMachineUsage).
+            if (this.cfg.trackActiveWindow) {
+              await this.provider.setMetadata(sandbox.sandboxId, SANDBOX_ACTIVE_UNTIL_METADATA_KEY, new Date().toISOString());
+            }
           } catch (err) {
             this.logger.warn(
               `failed to tag expiry on sandbox ${sandbox.sandboxId} — sweep will fall back to its age-based hard cap: ${String(err)}`,

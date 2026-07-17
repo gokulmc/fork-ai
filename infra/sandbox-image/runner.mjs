@@ -27,6 +27,10 @@ const WORKDIR = '/workspace/repo';
 const CLAUDE_TIMEOUT_MS = 10 * 60 * 1000;
 const PUSH_TIMEOUT_MS = 30 * 1000;
 const VSCODE_PORT = 3000;
+// The one public port this server binds. Defaults to 8080 (Fly — unchanged).
+// On Blaxel, Blaxel's own sandbox-api owns 8080, so the Blaxel image sets
+// RUNNER_PORT=8081 and the preview is created against that port instead.
+const RUNNER_PORT = Number(process.env.RUNNER_PORT) || 8080;
 
 let vscodeStarted = false;
 
@@ -493,6 +497,6 @@ server.on('upgrade', (req, socket, head) => {
   socket.on('error', () => proxySocket.destroy());
 });
 
-server.listen(8080, () => {
-  console.log('runner listening on :8080');
+server.listen(RUNNER_PORT, () => {
+  console.log(`runner listening on :${RUNNER_PORT}`);
 });

@@ -144,6 +144,10 @@ export interface NodeItem {
   commitSha?: string;
   branchName?: string;
   commitMessage?: string;
+  // The agent run's full final result message — a multi-sentence prose summary
+  // of the work carried out, rendered at the top of the CODE node's pane.
+  // commitMessage is only its first line. Set at run done alongside it.
+  runSummary?: string;
   diffSummary?: DiffSummary;
   agentStatus?: 'running' | 'done' | 'error';
   imported?: boolean;

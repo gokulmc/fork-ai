@@ -274,11 +274,24 @@ export class DynamoRepository {
   async updateNode(
     sessionId: string,
     nodeId: string,
-    updates: Partial<Pick<NodeItem, 'title' | 'lede' | 'emoji' | 'starred' | 'commitSha' | 'branchName' | 'commitMessage' | 'diffSummary' | 'agentStatus' | 'imported' | 'prStatus' | 'workspace' | 'workspaceExpiresAt' | 'pushed' | 'pushError' | 'budgetExceeded' | 'runCostUsd' | 'machineCostUsd' | 'prNumber' | 'prUrl' | 'prError' | 'okr'>>,
+    updates: Partial<Pick<NodeItem, 'title' | 'lede' | 'emoji' | 'starred' | 'commitSha' | 'branchName' | 'commitMessage' | 'runSummary' | 'diffSummary' | 'agentStatus' | 'imported' | 'prStatus' | 'workspace' | 'workspaceExpiresAt' | 'pushed' | 'pushError' | 'budgetExceeded' | 'runCostUsd' | 'machineCostUsd' | 'prNumber' | 'prUrl' | 'prError' | 'okr'>>,
   ): Promise<void> {
+    // `okr` is a nested Object-typed attribute. `NodesService.updateNode`
+    // passes `dto.okr` straight from the class-validator DTO, where
+    // class-transformer's `@Type(() => OkrDto)` has turned it into an
+    // `OkrDto` *class instance*, not a plain object. Dynamoose's Object-type
+    // checker does a strict constructor check and rejects it —
+    // `TypeMismatch: Expected okr to be of type object, instead found type
+    // OkrDto` — even though the shape is correct. A JSON round-trip strips
+    // the prototype so Dynamoose sees a plain object. Wrapped in an explicit
+    // whole-object $SET (mirrors updateSessionMeta's $SET/$REMOVE pattern,
+    // uppercase — Dynamoose v4 silently drops lowercase operators, see root
+    // CLAUDE.md) so the nested map is replaced atomically rather than
+    // partially merged.
+    const set: Record<string, unknown> = JSON.parse(JSON.stringify(updates));
     await this.nodeModel.update(
       { PK: this.sessionPk(sessionId), SK: this.nodeSk(nodeId) },
-      updates,
+      { $SET: set },
     );
   }
 

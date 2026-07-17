@@ -155,3 +155,20 @@ export function machineSecondsCostUsd(seconds: number, ratePerMinuteUsd: number,
   const raw = (Math.max(0, seconds) / 60) * ratePerMinuteUsd;
   return Math.round(raw * multiplier * 1_000_000) / 1_000_000;
 }
+
+// Split active/idle machine cost for standby-billed providers (Blaxel): active
+// compute per minute, idle standby per GB-second. Same 6-dp rounding as above.
+// A run that never reached its active boundary passes activeSeconds === total
+// (all active, no idle) — see billBlaxelMachineUsage's error path.
+export function machineSplitCostUsd(
+  activeSeconds: number,
+  idleSeconds: number,
+  activeRatePerMinuteUsd: number,
+  idleRatePerGbSecondUsd: number,
+  memoryGb: number,
+  multiplier: number,
+): number {
+  const active = (Math.max(0, activeSeconds) / 60) * activeRatePerMinuteUsd;
+  const idle = Math.max(0, idleSeconds) * idleRatePerGbSecondUsd * memoryGb;
+  return Math.round((active + idle) * multiplier * 1_000_000) / 1_000_000;
+}

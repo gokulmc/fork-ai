@@ -20,7 +20,7 @@ import { CreateCodeNodeDto } from './dto/create-code-node.dto';
 import { CreatePrNodeDto } from './dto/create-pr-node.dto';
 import { UpdateNodeDto } from './dto/update-node.dto';
 import { assertKindAllowed, LEARN_KINDS } from './node-grammar';
-import { findRailChain, planDocOf, codeSummaryOf, codeContextBlockOf } from './context';
+import { findRailChain, planDocOf, codeSummaryOf, codeContextBlockOf, attachmentsBlockOf } from './context';
 
 @Injectable()
 export class NodesService {
@@ -90,6 +90,15 @@ export class NodesService {
         try { recentEvents = (JSON.parse(run.events) as AgentEvent[]).slice(-15); } catch { /* malformed events blob — degrade gracefully */ }
       }
       extraContext = codeContextBlockOf(parentNode, recentEvents);
+    }
+
+    // Composer attachments (text files, or Groq-described images) — same
+    // "--- Attached file ---" block format the CODE path builds into the
+    // agent prompt, so attaching a screenshot reads identically whether the
+    // user Builds or Asks about it.
+    if (dto.attachments?.length) {
+      const block = attachmentsBlockOf(dto.attachments);
+      extraContext = extraContext ? `${extraContext}\n\n${block}` : block;
     }
 
     if (dto.kind === 'DEEPER') {
@@ -679,7 +688,7 @@ export class NodesService {
   private async resolveRunRepo(
     sub: string,
     repoRef: RepoRef | null,
-    environment: 'cloud' | 'mock' | undefined,
+    environment: 'cloud' | 'mock' | 'blaxel' | undefined,
   ): Promise<NonNullable<AgentRunContext['repo']> | undefined> {
     if (!repoRef) {
       return process.env.LOCAL_AGENT_REPO_PATH
@@ -692,9 +701,11 @@ export class NodesService {
       return { init: { defaultBranch: repoRef.defaultBranch } };
     }
     if (repoRef.provider === 'github-mock') {
-      if (environment === 'cloud') {
+      // Any real sandbox (Fly cloud or Blaxel) actually clones the repo, so a
+      // mock repo can't run there — only mock/local (which never read ctx.repo).
+      if (environment === 'cloud' || environment === 'blaxel') {
         throw new BadRequestException(
-          'This project uses a mock repo — attach a real GitHub repo (or run on Demo) to use the Cloud environment.',
+          'This project uses a mock repo — attach a real GitHub repo (or run on Demo) to use a Cloud environment.',
         );
       }
       return undefined;
@@ -775,6 +786,15 @@ export class NodesService {
       throw new NotFoundException(`Parent node ${dto.parentNodeId} not found`);
     }
     assertKindAllowed(parentNode.kind as NodeKind, 'CODE');
+
+    // A CODE built from a PLAN reads the plan's content (planDocOf → its
+    // sections). If the PLAN hasn't finished streaming it has no sections yet,
+    // so building now would hand the agent an empty plan ("implement the plan"
+    // with no plan) — reject rather than run an empty query. The frontend also
+    // disables Build until the PLAN settles; this is the backstop.
+    if (parentNode.kind === 'PLAN' && !parentNode.sections?.length) {
+      throw new BadRequestException('The plan is still being generated — wait for it to finish before building.');
+    }
 
     // Resolve BEFORE any write below (auto-branch or the CODE node itself) —
     // an invalid/unavailable environment must 400 cleanly, never leave an
@@ -863,7 +883,10 @@ export class NodesService {
       // branch; otherwise a bare 'main' (no project at all).
       const chain = findRailChain(nodeById, codeParentId);
       const branchName = chain.branchNode?.branchName ?? chain.planNode?.branchName ?? project?.repoRef.defaultBranch ?? 'main';
-      const baseCommitSha = parentNode.commitSha ?? null;
+      // A from-scratch ('new') project has no real git history — the sandbox
+      // git-inits an empty repo, so the parent's synthesized/placeholder commitSha
+      // is not a real tree to check out. Only pass a baseRef when cloning a real repo.
+      const baseCommitSha = repo?.init ? null : (parentNode.commitSha ?? null);
 
       // Tracks the cloud sandbox's REAL boot progress (provisioning → image
       // pull → starting agent), updated via ctx.onPhase below — the heartbeat
@@ -980,6 +1003,11 @@ export class NodesService {
         }
         if (!final) throw new Error('Agent runner ended without a result');
       } catch (err) {
+        // Log the real cause — the client only gets friendlyLlmError's generic
+        // message and the node keeps just agentStatus:'error', so without this a
+        // run failure (e.g. a mock-transcript validation throw) is invisible in
+        // the server logs.
+        this.logger.error(`Agent run failed for node ${nodeId} (env=${dto.environment ?? 'default'}): ${String(err)}`, (err as Error)?.stack);
         // persist events accumulated so far — a refresh after a mid-run failure must
         // show the log up to the failure, not a stale snapshot
         await Promise.all([
@@ -1035,6 +1063,7 @@ export class NodesService {
           diffSummary: final.diffSummary,
           agentStatus: 'done',
           runCostUsd: runCost,
+          ...(final.runSummary ? { runSummary: final.runSummary } : {}),
           ...(emoji ? { emoji } : {}),
           ...(final.workspace
             ? { workspace: final.workspace, ...(final.workspaceExpiresAt ? { workspaceExpiresAt: final.workspaceExpiresAt } : {}) }
@@ -1079,6 +1108,7 @@ export class NodesService {
           agentStatus: 'done',
           commitSha,
           runCostUsd: runCost,
+          ...(final.runSummary ? { runSummary: final.runSummary } : {}),
           ...(emoji ? { emoji } : {}),
           ...(final.workspace
             ? { workspace: final.workspace, ...(final.workspaceExpiresAt ? { workspaceExpiresAt: final.workspaceExpiresAt } : {}) }
@@ -1095,6 +1125,7 @@ export class NodesService {
       // writes, the done-block's own writes) must still release the reserve
       // for cloud — reconcileStaleHolds is only a 30-minute crash-net backstop,
       // not the primary release path for an in-process failure.
+      this.logger.error(`CODE stream setup failed for node ${nodeId} (env=${dto.environment ?? 'default'}): ${String(err)}`, (err as Error)?.stack);
       if (isCloud) await this.releaseHoldOnFailure(sub, sessionId, nodeId, model);
       throw err;
     }

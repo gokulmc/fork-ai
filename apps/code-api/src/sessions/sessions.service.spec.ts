@@ -779,6 +779,49 @@ describe('SessionsService', () => {
     });
   });
 
+  describe('activity', () => {
+    const SESSION_A = 'sess-a';
+    const SESSION_B = 'sess-b';
+    const daysAgo = (n: number) => new Date(Date.now() - n * 24 * 60 * 60 * 1000).toISOString();
+
+    it('counts commit nodes (CODE/MERGE) into perSession (30-day window) and perDay (366-day window), excluding non-commit kinds', async () => {
+      mockDb.listSessionMeta.mockResolvedValue([
+        { ...sessionMeta, sessionId: SESSION_A },
+        { ...sessionMeta, sessionId: SESSION_B },
+      ]);
+
+      const codeNode5d = { nodeId: 'n1', kind: 'CODE', createdAt: daysAgo(5) };
+      const mergeNode40d = { nodeId: 'n2', kind: 'MERGE', createdAt: daysAgo(40) };
+      const queryNode2d = { nodeId: 'n3', kind: 'QUERY', createdAt: daysAgo(2) };
+      const codeNode100d = { nodeId: 'n4', kind: 'CODE', createdAt: daysAgo(100) };
+
+      mockDb.queryNodes.mockImplementation((sessionId: string) =>
+        Promise.resolve(sessionId === SESSION_A ? [codeNode5d, mergeNode40d] : [queryNode2d, codeNode100d]),
+      );
+
+      const result = await service.activity(SUB);
+
+      // Only the 5-day-old CODE node is within 30 days — the 40-day MERGE and
+      // the QUERY node (wrong kind) don't contribute to perSession.
+      expect(result.perSession).toEqual({ [SESSION_A]: 1 });
+
+      // perDay covers the full 366-day window: the 5-day, 40-day, and 100-day
+      // commit nodes all land, but the QUERY node's date never appears.
+      expect(result.perDay).toEqual({
+        [codeNode5d.createdAt.slice(0, 10)]: 1,
+        [mergeNode40d.createdAt.slice(0, 10)]: 1,
+        [codeNode100d.createdAt.slice(0, 10)]: 1,
+      });
+      expect(result.perDay[queryNode2d.createdAt.slice(0, 10)]).toBeUndefined();
+    });
+
+    it('returns empty aggregates when the user has no sessions', async () => {
+      mockDb.listSessionMeta.mockResolvedValue([]);
+      const result = await service.activity(SUB);
+      expect(result).toEqual({ perSession: {}, perDay: {} });
+    });
+  });
+
   describe('getSession', () => {
     it('throws NotFoundException when session not found', async () => {
       mockDb.getSessionMeta.mockResolvedValue(null);

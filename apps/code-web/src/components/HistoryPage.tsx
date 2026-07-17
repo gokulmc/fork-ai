@@ -1,9 +1,10 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Plus, Trash, Check, X } from './Icons';
 import { HistoryBubbles } from './HistoryBubbles';
+import { ActivityCalendar } from './ActivityCalendar';
 import { NewProjectModal } from './NewProjectModal';
-import type { CreateProjectPayload, SessionSummary } from '@/lib/api';
+import { getActivity, type Activity, type CreateProjectPayload, type SessionSummary } from '@/lib/api';
 import { stripCite, relativeTime } from '@/lib/utils';
 import { BRAND_TAGLINE } from '@/lib/brand';
 
@@ -48,6 +49,15 @@ export function HistoryPage({ sessions, loading, onLoadSession, onDeleteSession,
   // Arms a card for delete confirmation; reset on rerender (e.g. list refresh) is fine
   // since it's a transient UI state, not something that needs to survive a re-fetch.
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  // Bubble sizing + calendar data — fetched separately from `sessions` so the
+  // project list never blocks on it; both default to empty until it lands.
+  const [activity, setActivity] = useState<Activity>({ perSession: {}, perDay: {} });
+
+  useEffect(() => {
+    let cancelled = false;
+    getActivity(idToken).then(data => { if (!cancelled) setActivity(data); }).catch(() => { /* bubbles/calendar just stay empty */ });
+    return () => { cancelled = true; };
+  }, [idToken]);
 
   const groups: Array<{ day: string; items: SessionSummary[] }> = [];
   for (const s of sessions) {
@@ -86,7 +96,8 @@ export function HistoryPage({ sessions, loading, onLoadSession, onDeleteSession,
             </div>
           ) : (
             <>
-              <HistoryBubbles sessions={sessions} onLoadSession={onLoadSession} />
+              <HistoryBubbles sessions={sessions} activity={activity.perSession} onLoadSession={onLoadSession} />
+              <ActivityCalendar perDay={activity.perDay} />
               <div className="history-groups">
               {groups.map(group => (
                 <section key={group.day} className="history-group">
@@ -126,6 +137,12 @@ export function HistoryPage({ sessions, loading, onLoadSession, onDeleteSession,
                                 className="project-card-confirm-btn project-card-confirm-yes"
                                 aria-label="Confirm delete"
                                 title="Confirm delete"
+                                // preventDefault the mousedown so the click doesn't move focus:
+                                // Safari/WebKit doesn't focus a <button> on click, so clicking
+                                // this blurred the autofocused Cancel with relatedTarget=null,
+                                // firing the group's onBlur → setConfirmingId(null) → this button
+                                // unmounted before its onClick ran, so delete never fired.
+                                onMouseDown={e => e.preventDefault()}
                                 onClick={e => {
                                   e.stopPropagation();
                                   setConfirmingId(null);
@@ -143,6 +160,7 @@ export function HistoryPage({ sessions, loading, onLoadSession, onDeleteSession,
                                 // onBlur-outside-click handler above can fire, and means a stray
                                 // Enter keypress cancels rather than deletes.
                                 autoFocus
+                                onMouseDown={e => e.preventDefault()}
                                 onClick={e => { e.stopPropagation(); setConfirmingId(null); }}
                               >
                                 <X size={13} />

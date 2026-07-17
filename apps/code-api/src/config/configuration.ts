@@ -9,13 +9,14 @@ export const validationSchema = Joi.object({
   GEMINI_API_KEY: Joi.string().allow('').optional(),
   DEEPSEEK_API_KEY: Joi.string().allow('').optional(),
   GLM_API_KEY: Joi.string().allow('').optional(),
+  GROQ_API_KEY: Joi.string().allow('').optional(),
   GITHUB_CLIENT_ID: Joi.string().allow('').optional(),
   GITHUB_CLIENT_SECRET: Joi.string().allow('').optional(),
   GITHUB_REDIRECT_URI: Joi.string().allow('').optional(),
   GITHUB_APP_ID: Joi.string().allow('').optional(),
   GITHUB_APP_PRIVATE_KEY_B64: Joi.string().allow('').optional(),
   GITHUB_APP_SLUG: Joi.string().allow('').optional(),
-  AGENT_RUNNER: Joi.string().valid('mock', 'local', 'cloud').default('mock'),
+  AGENT_RUNNER: Joi.string().valid('mock', 'local', 'cloud', 'blaxel').default('mock'),
   LOCAL_AGENT_REPO_PATH: Joi.string().allow('').optional(),
   LOCAL_AGENT_REPO_URL: Joi.string().allow('').optional(),
   LOCAL_AGENT_OPEN_VSCODE: Joi.string().allow('').optional(),
@@ -26,11 +27,22 @@ export const validationSchema = Joi.object({
   FLY_REGION: Joi.string().allow('').optional(),
   FLY_REGIONS: Joi.string().allow('').optional(),
   SANDBOX_TTL_MINUTES: Joi.number().optional(),
+  BLAXEL_API_TOKEN: Joi.string().allow('').optional(),
+  BLAXEL_WORKSPACE: Joi.string().allow('').optional(),
+  BLAXEL_SANDBOX_IMAGE: Joi.string().allow('').optional(),
+  BLAXEL_REGION: Joi.string().allow('').optional(),
+  BLAXEL_MEMORY_MB: Joi.number().optional(),
   PORT: Joi.number().default(3000),
   FRONTEND_URL: Joi.string().optional().default('http://localhost:3001'),
   SIGNUP_CREDIT_USD: Joi.number().default(5.00),
   CREDIT_MULTIPLIER: Joi.number().default(1.5),
   FLY_MINUTE_RATE_USD: Joi.number().default(0.0009),
+  // Blaxel bills active compute per GB-second at a higher rate than Fly but
+  // near-zero for standby storage — see billBlaxelMachineUsage. Rates are
+  // per-minute (active) and per-GB-second (idle standby) to mirror Blaxel's own
+  // pricing shape; defaults are the published 2026 figures × our margin.
+  BLAXEL_ACTIVE_MINUTE_RATE_USD: Joi.number().default(0.0028),
+  BLAXEL_STANDBY_GB_SECOND_RATE_USD: Joi.number().default(0.0000000772),
   MAX_RUN_COST_USD: Joi.number().default(1.00),
   SANDBOX_HOLD_USD: Joi.number().default(1.00),
   RAZORPAY_KEY_ID: Joi.string().allow('').optional(),
@@ -65,6 +77,9 @@ export const configuration = () => ({
   glm: {
     apiKey: process.env.GLM_API_KEY ?? '',
   },
+  groq: {
+    apiKey: process.env.GROQ_API_KEY ?? '',
+  },
   github: {
     clientId: process.env.GITHUB_CLIENT_ID ?? '',
     clientSecret: process.env.GITHUB_CLIENT_SECRET ?? '',
@@ -81,6 +96,9 @@ export const configuration = () => ({
     signupCreditUsd: parseFloat(process.env.SIGNUP_CREDIT_USD ?? '5.00'),
     creditMultiplier: parseFloat(process.env.CREDIT_MULTIPLIER ?? '1.5'),
     flyMinuteRateUsd: parseFloat(process.env.FLY_MINUTE_RATE_USD ?? '0.0009'),
+    blaxelActiveMinuteRateUsd: parseFloat(process.env.BLAXEL_ACTIVE_MINUTE_RATE_USD ?? '0.0028'),
+    blaxelStandbyGbSecondRateUsd: parseFloat(process.env.BLAXEL_STANDBY_GB_SECOND_RATE_USD ?? '0.0000000772'),
+    blaxelMemoryGb: (Number(process.env.BLAXEL_MEMORY_MB ?? 4096)) / 1024,
     maxRunCostUsd: parseFloat(process.env.MAX_RUN_COST_USD ?? '1.00'),
     sandboxHoldUsd: parseFloat(process.env.SANDBOX_HOLD_USD ?? '1.00'),
   },

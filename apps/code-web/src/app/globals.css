@@ -822,50 +822,107 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 .project-card-confirm-no:hover { background: var(--hover); color: var(--ink); }
 
 /* ============================================================
-   History — "Continue where you left off" rail (HistoryBubbles.tsx)
-   Uniform equal-size cards (replaces the old variable-size momentum-bubble
-   cluster) — same footprint regardless of title length, so the row reads as
-   one scannable status board. See fix-continue-rail.html.
+   History — project bubble cluster (HistoryBubbles.tsx)
+   Force-directed cluster, one bubble per project session, sized by commits
+   in the last 30 days. Ported from the original app's keyword-cluster
+   engine — see HistoryBubbles.tsx for the physics. Visual treatment (circle
+   + name below + count badge) matches _design/forkai-code/r3-project-page.html.
    ============================================================ */
-.topic-bubbles-wrap {
+.bubble-stage {
   position: relative;
-  margin-bottom: 32px;
+  width: 100%;
+  height: clamp(180px, 22vh, 240px);
+  margin-bottom: 40px;
+  overflow: hidden;
+  touch-action: none;
 }
-.topic-bubbles-head {
+.bubble {
+  position: absolute;
+  top: 0;
+  left: 0;
+  will-change: transform;
+  border-radius: 50%;
+  background: var(--paper);
+  border: 1.5px solid var(--line-strong);
+  box-shadow: var(--shadow-1);
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
+  justify-content: center;
+  flex-direction: column;
+  cursor: pointer;
+  padding: 0;
+  transition: border-color .12s, box-shadow .12s;
 }
-.continue-rail { display: flex; gap: 14px; flex-wrap: wrap; }
-@keyframes railPulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
-.continue-card {
-  width: 216px; height: 116px; box-sizing: border-box;
-  background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-lg);
-  padding: 15px 16px 13px;
-  box-shadow: var(--shadow-1);
-  display: flex; flex-direction: column; gap: 9px;
-  cursor: pointer; text-align: left;
+.bubble:hover { border-color: var(--ink-3); box-shadow: var(--shadow-2); z-index: 2; }
+.bubble-emoji {
+  line-height: 1;
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", system-ui, sans-serif;
+  font-variant-emoji: emoji;
+}
+.bubble-name {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 7px;
   font-family: var(--sans);
-  transition: border-color .12s, transform .12s, box-shadow .12s;
+  font-weight: 600;
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+  font-size: 10.5px;
 }
-.continue-card:hover { border-color: var(--line-strong); transform: translateY(-1px); box-shadow: var(--shadow-2); }
-.continue-card-head { display: flex; align-items: center; gap: 9px; min-width: 0; }
-.continue-card-emoji { font-size: 18px; line-height: 1; flex-shrink: 0; font-family: "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui,sans-serif; font-variant-emoji: emoji; }
-.continue-card-name { font-family: var(--sans); font-size: 13.5px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.continue-card-repo { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 27px; }
-.continue-card-status-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 9px; border-top: 1px solid var(--line); margin-top: auto; }
-.continue-card-status { display: inline-flex; align-items: center; gap: 6px; font-family: var(--sans); font-size: 11px; font-weight: 600; color: var(--ink-2); text-transform: capitalize; }
-.continue-card-status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-.continue-card-status-dot--running { background: var(--node-fill); animation: railPulse 1.1s ease-in-out infinite; }
-.continue-card-status-dot--done { background: var(--diff-add); }
-.continue-card-status-dot--failed { background: var(--diff-del); }
-.continue-card-action { font-family: var(--sans); font-size: 11px; font-weight: 700; color: var(--ink); flex-shrink: 0; }
-.continue-card-action--retry { color: var(--diff-del); }
+.bubble-badge {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  padding: 1.5px 6px;
+  font-family: var(--sans);
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--ink-2);
+  white-space: nowrap;
+  box-shadow: var(--shadow-1);
+}
 
-.continue-card--more { align-items: center; justify-content: center; text-align: center; cursor: default; }
-.continue-card--more:hover { border-color: var(--line); transform: none; box-shadow: var(--shadow-1); }
-.continue-card--more-label { font-family: var(--sans); font-size: 13px; font-weight: 600; color: var(--ink-3); }
+/* ============================================================
+   History — contribution calendar (ActivityCalendar.tsx)
+   GitHub-style heatmap; green ramp defined in tokens.css/globals :root
+   below (light) and [data-theme="dark"] (dark).
+   ============================================================ */
+.cal-scroll { overflow-x: auto; padding-bottom: 2px; margin-bottom: 40px; }
+.cal-inner { display: inline-flex; gap: 10px; }
+.cal-daylabels {
+  display: grid; grid-template-rows: repeat(7, 11px); gap: 3px;
+  padding-top: 16px; flex-shrink: 0;
+}
+.cal-daylabels span { font-family: var(--sans); font-size: 9px; color: var(--ink-3); line-height: 11px; }
+.cal-main { flex-shrink: 0; }
+.cal-months { position: relative; height: 14px; margin-bottom: 3px; }
+.cal-months span { position: absolute; top: 0; font-family: var(--sans); font-size: 9.5px; color: var(--ink-3); }
+.cal-grid {
+  display: grid; grid-template-rows: repeat(7, 11px); grid-auto-flow: column; grid-auto-columns: 11px;
+  gap: 3px;
+}
+.cal-cell { width: 11px; height: 11px; border-radius: 2.5px; background: var(--panel); }
+.cal-cell--future { background: transparent; }
+.cal-cell.l1 { background: #b7e2c0; }
+.cal-cell.l2 { background: #7bc98d; }
+.cal-cell.l3 { background: #3f9d5c; }
+.cal-cell.l4 { background: #1f6a3a; }
+[data-theme="dark"] .cal-cell.l1 { background: #103a1f; }
+[data-theme="dark"] .cal-cell.l2 { background: #1c5c31; }
+[data-theme="dark"] .cal-cell.l3 { background: #2e8047; }
+[data-theme="dark"] .cal-cell.l4 { background: #4bab63; }
+
+.cal-caption { font-family: var(--sans); font-size: 12px; color: var(--ink-2); margin: 12px 0 4px; }
+.cal-legend { display: flex; align-items: center; gap: 5px; font-family: var(--sans); font-size: 11px; color: var(--ink-3); }
+.cal-legend .cal-cell { width: 9px; height: 9px; }
 
 .landing-foot {
   padding: 22px;
@@ -1381,6 +1438,21 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 .mm-node[data-kind="BRANCH"] .pill,
 .mm-node[data-kind="MERGE"] .pill { stroke: var(--node-border); }
 
+/* Kind-coloured border, drawn INSIDE the component on the HTML .mm-card rather
+   than as a stroke on the outer SVG rect (the outer stroke read as neutral grey
+   and the kind colour was effectively missing). border-box + a radius matching
+   the pill's RX=8 keeps it flush inside the foreignObject. */
+.mm-node[data-kind="CODE"]   .mm-card { border: 1.5px solid var(--kind-code);   border-radius: 8px; }
+.mm-node[data-kind="PLAN"]   .mm-card { border: 1.5px solid var(--kind-plan);   border-radius: 8px; }
+.mm-node[data-kind="BRANCH"] .mm-card { border: 1.5px solid var(--kind-branch); border-radius: 8px; }
+.mm-node[data-kind="MERGE"]  .mm-card { border: 1.5px solid var(--kind-merge);  border-radius: 8px; }
+/* Active node inverts the pill to a dark fill — keep the kind border but brighten
+   it so it stays legible against the dark surface. */
+.mm-node.active[data-kind="CODE"]   .mm-card,
+.mm-node.active[data-kind="PLAN"]   .mm-card,
+.mm-node.active[data-kind="BRANCH"] .mm-card,
+.mm-node.active[data-kind="MERGE"]  .mm-card { border-width: 1.5px; }
+
 /* PR flow (Phase F) — target-column highlight, step 2 of the two-step select.
    Grey ink ring (same language as .mm-node.active), not a kind colour swap. */
 .mm-node--pr-target .pill { stroke: var(--ink) !important; stroke-width: 2; stroke-dasharray: none; }
@@ -1428,16 +1500,38 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
   background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius);
   box-shadow: var(--shadow-2); padding: 12px 14px;
   font-family: var(--sans); font-size: 11px; color: var(--ink-2);
-  pointer-events: none;
+  pointer-events: auto;
 }
+/* Collapsed state — a small pill that expands the legend popup. */
+.mm-legend-toggle {
+  position: absolute; left: 16px; bottom: 16px; z-index: 5;
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--paper); border: 1px solid var(--line); border-radius: 999px;
+  box-shadow: var(--shadow-2); padding: 6px 11px;
+  font-family: var(--sans); font-size: 11px; font-weight: 500; color: var(--ink-2);
+  cursor: pointer; pointer-events: auto;
+}
+.mm-legend-toggle:hover { background: var(--hover); color: var(--ink); }
+.mm-legend-toggle svg { stroke: currentColor; }
+.mm-legend-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 2px; }
+.mm-legend-title { font-weight: 600; color: var(--ink); font-size: 11.5px; }
+.mm-legend-close {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 5px;
+  background: none; border: none; color: var(--ink-3); cursor: pointer; pointer-events: auto;
+}
+.mm-legend-close:hover { background: var(--hover); color: var(--ink); }
+.mm-legend-close svg { stroke: currentColor; }
 .mm-legend-row { display: flex; align-items: center; gap: 8px; }
 .mm-legend-sep { height: 1px; background: var(--line); margin: 2px 0; }
 .mm-legend-dot { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
+/* Colour the kind dots to match each node's card colour on the map (learn
+   nodes have no kind colour, so they stay neutral grey). */
 .mm-legend-dot--learn { background: var(--ink-3); }
-.mm-legend-dot--plan { background: var(--node-ink); }
-.mm-legend-dot--code { background: var(--node-ink); }
-.mm-legend-dot--branch { background: var(--node-ink); }
-.mm-legend-dot--merge { background: var(--node-ink); }
+.mm-legend-dot--plan { background: var(--kind-plan); }
+.mm-legend-dot--code { background: var(--kind-code); }
+.mm-legend-dot--branch { background: var(--kind-branch); }
+.mm-legend-dot--merge { background: var(--kind-merge); }
 .mm-legend-dot--segment { background: var(--node-soft); border: 1px dashed var(--node-border); }
 .mm-legend-line { width: 18px; height: 0; border-top: 2px solid; flex-shrink: 0; }
 .mm-legend-line--lane { border-top-style: dashed; border-top-color: var(--lane-line); }
@@ -1447,23 +1541,31 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 /* Narrow mindmap pane — same container-query breakpoint the toolbar buttons
    collapse at (see .mm-mixer-btn etc.); the legend is reference chrome, not
    core functionality, so it's the first thing to go on a cramped pane. */
-@container mindmap (max-width: 560px) {
-  .mm-legend { display: none; }
-}
-@media (max-width: 640px) {
-  .mm-legend { display: none; }
-}
+/* The legend is now a collapsed-by-default popup (a small "Legend" pill), so it
+   no longer needs to be hidden on cramped panes — it already takes almost no
+   space until the user expands it. */
 
 .mm-fo { pointer-events: none; overflow: hidden; }
 /* Column layout so CODE/BRANCH cards can stack a commit-pill row (.mm-card-top)
    above the icon+title row (.mm-card-main) — plain cards have only the latter,
    so justify-content:center keeps them visually identical to before. */
 .mm-card {
-  display: flex; flex-direction: column; justify-content: center; gap: 4px;
-  width: 100%; height: 100%; padding: 8px 14px;
+  display: flex; flex-direction: column; justify-content: center; gap: 3px;
+  width: 100%; height: 100%; padding: 6px 14px;
   box-sizing: border-box; font-family: var(--sans); color: var(--ink);
   overflow: hidden;
 }
+/* Single-letter kind marker in the card's top-right corner (R=root, C=commit,
+   B=branch, P=plan, M=merge, Q/D/A/X=learn), rendered as native SVG <text> —
+   NOT an absolutely-positioned HTML span inside the foreignObject, which WebKit
+   paints at the SVG origin (all card text stacked in the top-left). */
+.mm-corner-letter {
+  fill: var(--ink-3); font-family: var(--mono); font-size: 9.5px; font-weight: 700;
+  letter-spacing: 0.02em; pointer-events: none; user-select: none;
+}
+.mm-corner-error-dot { fill: var(--diff-del); pointer-events: none; }
+.mm-node.active .mm-corner-letter { fill: var(--bg); opacity: 0.6; }
+[data-theme="dark"] .mm-node.active .mm-corner-letter { fill: #1c1c1c; opacity: 0.65; }
 .mm-card-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .mm-card-top { pointer-events: auto; }
 .mm-commit-pill {
@@ -1523,7 +1625,11 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
    (below) keeps it pinned to the viewport bottom once content scrolls — the
    two work together (sticky alone only pins an item that would otherwise
    scroll past the edge; a short pane never reaches that point). */
-.workspace-inner { max-width: 760px; margin: 0 auto; padding: var(--content-pad-y) var(--content-pad-x); min-height: 100%; display: flex; flex-direction: column; }
+/* padding-bottom is 0 (not --content-pad-y) so the composer's own sticky
+   bottom:0 and margin-top:auto regimes both resolve to the same pane-bottom
+   line — see .code-composer-wrap below (issues.md: composer floats mid-pane
+   on short content otherwise). */
+.workspace-inner { max-width: 760px; margin: 0 auto; padding: var(--content-pad-y) var(--content-pad-x) 0; min-height: 100%; display: flex; flex-direction: column; }
 
 /* Select-all (Cmd/Ctrl+A) grabs body prose only — the chrome (title, pills, lede,
    "branched from", section headings, buttons) is excluded from text selection,
@@ -1535,22 +1641,41 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 /* ============================================================
    Code composer — bottom-docked instruction bar (workspace pane)
    ============================================================
-   The LAST in-flow child of .workspace-inner (see above) — sticky + a trailing
-   auto top-margin, not position:absolute, so the column reflows around it
-   naturally instead of needing a hand-tuned padding-bottom reservation. The
-   fade lets the last line of text ease out from under it instead of a hard
-   clip. */
-.code-composer {
+   .code-composer-wrap holds the mind-map/read dock + the composer
+   as a single sticky group at the bottom, so the dock sits right
+   above the text box instead of lost mid-scroll (#225). The fade
+   lets the last line of text ease out from under it. */
+.code-composer-wrap {
   position: sticky;
   bottom: 0;
   margin-top: auto;
   z-index: 2;
-  /* Round 2 (WS-K): no horizontal padding here — .workspace-inner already
-     insets by --content-pad-x, so a second helping made the composer a
-     narrower inset card instead of matching the 760px content column. */
   padding: 20px 0;
   padding-bottom: max(20px, env(safe-area-inset-bottom));
   background: linear-gradient(to bottom, transparent, var(--bg) 45%);
+}
+.code-composer-wrap .code-composer {
+  position: static;
+  bottom: auto;
+  margin-top: 0;
+  padding: 0;
+  background: none;
+}
+/* Mobile: the floating Mindmap/Read pill sits centered just above the
+   composer card (#225 — matches the original forkai app's mm-pill, but
+   anchored to the composer group instead of floating over content). */
+@media (max-width: 768px) {
+  .code-composer-wrap {
+    padding-top: 10px;
+  }
+  .code-composer-wrap .mm-pill {
+    position: static;
+    transform: none;
+    display: flex;
+    width: fit-content;
+    margin: 0 auto 10px;
+  }
+  .code-composer-wrap .mm-pill:active { transform: scale(0.97); }
 }
 .code-composer-inner {
   max-width: 760px; margin: 0 auto;
@@ -1558,7 +1683,7 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
   /* Round 2 (WS-K): flatter card — was --line-strong / --shadow-2. */
   background: var(--paper); border: 1px solid var(--line);
   border-radius: var(--radius-lg); box-shadow: var(--shadow-1);
-  padding: 10px 10px;
+  padding: 10px 12px;
 }
 .code-composer-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 2px; }
 .code-composer-chip {
@@ -1613,13 +1738,17 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 .code-composer-pill:disabled { cursor: not-allowed; opacity: .5; }
 .code-composer-pill--on { background: var(--accent-soft); color: var(--ink); border-color: var(--line-strong); }
 .code-composer-pill-caret { font-size: 9px; color: var(--ink-3); }
-/* The model pill wraps a native <select> (same pattern as TweaksPanel's
-   TweakSelect) so keyboard/a11y support comes for free instead of a hand-rolled
-   dropdown — the select itself is transparent and sized to its own content. */
+/* The model pill wraps a native <select> for free keyboard/a11y support. The
+   select is a transparent overlay filling the whole pill so a click ANYWHERE on
+   it opens the dropdown (not just the tiny middle strip); the visible face sits
+   on top with pointer-events:none so those clicks fall through to the select. */
+.code-composer-pill--select { position: relative; }
 .code-composer-pill--select select {
-  appearance: none; border: none; background: transparent; color: inherit;
-  font: inherit; cursor: pointer; padding: 0; margin: 0;
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  appearance: none; border: none; background: transparent; color: transparent;
+  font: inherit; cursor: pointer; padding: 0; margin: 0; opacity: 0;
 }
+.code-composer-pill-face { display: inline-flex; align-items: center; gap: 5px; pointer-events: none; }
 /* The dropdown's OPTION list renders via the OS/browser popup, not this
    page's CSS cascade — an explicit dark override is needed or the options
    default to a white popup with unreadable dark-on-dark text (same gotcha as
@@ -1833,7 +1962,7 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 
 /* Highlight button with embedded color popover */
 .hl-btn-wrap { position: relative; display: inline-flex; align-items: center; }
-.hl-main-btn { height: 30px; padding: 0 8px 0 10px; background: transparent; border: 0; color: var(--ink-2); font-size: 13px; font-weight: 500; cursor: pointer; border-radius: 4px 0 0 4px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; transition: background .12s, color .12s; }
+.hl-main-btn { height: 30px; padding: 0 10px; background: transparent; border: 0; color: var(--ink-2); font-size: 13px; font-weight: 500; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; transition: background .12s, color .12s; }
 .hl-main-btn:hover { background: var(--hover); color: var(--ink); }
 .hl-dot { width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.15); flex-shrink: 0; }
 [data-theme="dark"] .hl-dot { border-color: rgba(255,255,255,0.2); }
@@ -2194,7 +2323,7 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
 /* ============================================================
    Mobile / narrow viewports (phone + Capacitor app)
    Desktop layout is untouched above this breakpoint. The mind-map pane is
-   hidden behind the docked .mrt-dock Map/Read toggle, which swaps it
+   hidden behind the floating .mm-pill Mindmap/Read toggle, which swaps it
    full-screen; topbar actions collapse to icons. See App.tsx (useIsNarrow,
    mapOpen, MindMapPill).
    ============================================================ */
@@ -2224,15 +2353,13 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
        min-content, so wide content (tables, long tokens) floored the column and
        bled past a narrow viewport. minmax(0,…) lets it shrink to the viewport. */
     grid-template-columns: minmax(0, 1fr);
-    /* Taller nav bar on mobile; 46px middle row is the Map/Read toggle dock
-       (.mrt-dock — MindMapPill.tsx is only mounted once a session has nodes,
-       which is always true by the time this workspace grid renders). */
-    grid-template-rows: calc(60px + env(safe-area-inset-top)) 46px 1fr;
+    /* Taller nav bar on mobile; the Mindmap/Read toggle is the floating
+       .mm-pill (MindMapPill.tsx), not a grid row. */
+    grid-template-rows: calc(60px + env(safe-area-inset-top)) 1fr;
     height: 100dvh;
   }
-  .mrt-dock { grid-row: 2; grid-column: 1; }
   .mindmap-pane,
-  .workspace { grid-row: 3; grid-column: 1; min-width: 0; }
+  .workspace { grid-row: 2; grid-column: 1; min-width: 0; }
   /* overflow-y:auto silently promotes overflow-x to auto — clamp it so a slightly
      wide element can't create a horizontal scrollbar inside the content pane.
      touch-action: pan-y leaves only vertical scroll native and blocks pinch-zoom
@@ -2240,24 +2367,31 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
   .workspace { overflow-x: hidden; touch-action: pan-y; }
   .pane-divider { display: none; }
 
-  /* Top-center Map/Read segmented toggle (WS-C / r2-session-topbar.html) —
-     docked directly under the topbar as its own grid row, never a floating
-     pill that can strand mid-canvas or drift over the composer. */
-  .mrt-dock {
-    display: flex; align-items: center; justify-content: center;
-    border-bottom: 1px solid var(--line);
-    /* Glossy glass-morphism (WS-D / #225) — preserves the old mm-pill's
-       translucent sheen on the docked Map/Read toggle bar. */
-    background: color-mix(in srgb, var(--bg) 82%, transparent);
-    -webkit-backdrop-filter: blur(6px) saturate(170%);
-    backdrop-filter: blur(6px) saturate(170%);
-    box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 50%, transparent);
-    z-index: 4;
+  /* Floating liquid-glass "Mindmap" pill — same treatment as the original
+     forkai app's mm-pill (translucent, backdrop blur + saturation, top sheen).
+     Default is the standalone fixed bottom-center variant (used when the
+     composer is hidden); inside .code-composer-wrap it's repositioned to sit
+     centered just above the composer card (see that block above). */
+  .mm-pill {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: calc(env(safe-area-inset-bottom) + 16px);
+    z-index: 60;
+    display: inline-flex; align-items: center; gap: 8px;
+    height: 44px; padding: 0 22px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+    background: transparent;
+    -webkit-backdrop-filter: blur(2px) saturate(180%);
+    backdrop-filter: blur(2px) saturate(180%);
+    color: var(--ink); font-family: var(--sans); font-size: 14px; font-weight: 500;
+    box-shadow: var(--shadow-2), inset 0 1px 0 color-mix(in srgb, #fff 45%, transparent);
+    cursor: pointer;
   }
-  .map-read-toggle { display: inline-flex; padding: 3px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); gap: 2px; }
-  .mrt-seg { display: inline-flex; align-items: center; gap: 5px; border: none; background: transparent; color: var(--ink-3); font-family: var(--sans); font-size: 12px; font-weight: 600; padding: 6px 16px; border-radius: 999px; cursor: pointer; }
-  .mrt-seg:hover { color: var(--ink-2); }
-  .mrt-seg--active { background: var(--paper); color: var(--ink); box-shadow: var(--shadow-1); }
+  .mm-pill:active { transform: translateX(-50%) scale(0.97); }
+
+  /* Mixer on phones: the overlay owns the bottom strip — hide the pill so
+     they don't collide. */
+  body:has(.mixer-overlay) .mm-pill { display: none; }
 
   /* Mind map is a drawer that slides in over the content from the left. The
      transform is driven inline by JS (finger-tracking during the swipe; settles
@@ -2266,8 +2400,8 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
      it when fully open. */
   .mindmap-pane {
     position: fixed; left: 0; right: 0;
-    /* Clears both the topbar and the 46px .mrt-dock row above. */
-    top: calc(60px + env(safe-area-inset-top) + 46px); bottom: 0;
+    /* Clears the topbar row above. */
+    top: calc(60px + env(safe-area-inset-top)); bottom: 0;
     z-index: 5;
     transform: translateX(-100%);
     transition: transform .32s cubic-bezier(.4, 0, .2, 1);
@@ -2297,7 +2431,7 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
 
   /* Text uses the full phone width — desktop --content-pad-x (80px) left a ~230px
      column. Tighten padding; extra bottom space clears the floating pill + home bar. */
-  .workspace-inner { padding: 24px 18px calc(96px + env(safe-area-inset-bottom)); }
+  .workspace-inner { padding: 24px 18px 0; }
   /* Align body text under the h2 (num min-width 22px + gap 12px = 34px). Top-align
      the section number with the heading instead of baseline-aligning (baseline makes
      the small 12px num drop to the middle of the larger h2 line on mobile). */
@@ -2336,7 +2470,7 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
      own the drag. Sits below the nav bar. */
   .mm-swipe-zone {
     position: fixed; left: 0; width: 24px;
-    top: calc(60px + env(safe-area-inset-top) + 46px); bottom: 0;
+    top: calc(60px + env(safe-area-inset-top)); bottom: 0;
     z-index: 6; touch-action: none;
   }
 
@@ -2396,10 +2530,12 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
   /* Keep landing content below the repositioned brand/nav (72px = desktop base). */
   .landing-inner { padding-top: calc(72px + env(safe-area-inset-top)); }
 
-  /* §4 — projects grid collapses to 1 col; momentum bubbles are hidden outright
-     (their hover-driven recency reveal + click targets aren't a touch pattern). */
+  /* §4 — projects grid collapses to 1 col; the bubble cluster is hidden outright
+     (cursor-repulsion physics + hover reveal aren't a touch pattern, and the same
+     projects are one scroll away in the list below). The calendar stays — its own
+     .cal-scroll already handles horizontal overflow without widening the page. */
   .project-grid { grid-template-columns: minmax(0, 1fr); }
-  .topic-bubbles-wrap { display: none; }
+  .bubble-stage { display: none; }
 }
 
 /* Small phones only (≤400px: SE 320, mini 360, X/11/12 375–390). The desktop hero
@@ -2541,6 +2677,26 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
   display: inline-flex; align-items: center;
   color: var(--ink-3);
   pointer-events: none;
+}
+
+/* Collapse dot — folds a BRANCH's learn+plan subtree so the map jumps straight
+   to its next CODE node. Sits at the card's right edge; must keep pointer-events
+   so its click reaches the button before the node-select handler on the <g>. */
+.mm-collapse-dot {
+  margin-left: auto; flex-shrink: 0;
+  width: 14px; height: 14px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 999px; cursor: pointer;
+  background: transparent; color: var(--ink-3);
+  border: 1.5px solid var(--commit-pill-border);
+  font-family: var(--mono); font-size: 8px; font-weight: 600; line-height: 1;
+  pointer-events: auto;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.mm-collapse-dot:hover { background: var(--hover-strong); border-color: var(--ink-3); }
+.mm-collapse-dot--active {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+  min-width: 14px; width: auto; padding: 0 3px;
 }
 
 /* Mixer overlay — floats at bottom of mind map */
@@ -2787,16 +2943,24 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
 .proj-repo-name { font-family: var(--mono); font-size: 12.5px; color: var(--ink); flex: 1; }
 .mock-tag { font-family: var(--sans); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); border: 1px solid var(--line-strong); border-radius: 999px; padding: 2px 7px; flex-shrink: 0; }
 
-.proj-plugin-group-label { font-family: var(--sans); font-size: 10px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); margin-top: 12px; }
-.proj-plugin-group-label:first-child { margin-top: 0; }
-.proj-plugin-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--line); }
-.proj-plugin-row:last-child { border-bottom: 0; padding-bottom: 0; }
-.proj-plugin-name { font-family: var(--sans); font-size: 13px; font-weight: 600; color: var(--ink); }
-.proj-plugin-desc { font-family: var(--sans); font-size: 11.5px; color: var(--ink-3); margin-top: 3px; max-width: 320px; line-height: 1.4; }
-.proj-switch { position: relative; width: 34px; height: 19px; border-radius: 999px; background: var(--line-strong); flex-shrink: 0; cursor: pointer; margin-top: 2px; border: 0; padding: 0; }
-.proj-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: var(--paper); box-shadow: var(--shadow-1); transition: transform .15s; }
-.proj-switch.on { background: var(--ink); }
-.proj-switch.on::after { transform: translateX(15px); background: var(--bg); }
+.proj-plugin-group-label { font-family: var(--sans); font-size: 10px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); margin-top: 14px; }
+.proj-plugin-count { font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--ink-3); }
+/* Compact multi-select chip grid — 22 plugins as full-width toggle rows made
+   the modal scroll forever; chips keep the whole picker to a few lines. The
+   description lives in the chip's title tooltip and the shared hover-hint
+   line below (fixed min-height so the modal doesn't jiggle on hover). */
+.proj-plugin-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.proj-plugin-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 11px; border-radius: 999px;
+  border: 1px solid var(--line-strong); background: var(--paper);
+  font-family: var(--sans); font-size: 12px; font-weight: 500; color: var(--ink-2);
+  cursor: pointer; transition: background .12s, color .12s, border-color .12s;
+}
+.proj-plugin-chip:hover { border-color: var(--ink-3); color: var(--ink); }
+.proj-plugin-chip.on { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+.proj-plugin-chip-icon { font-size: 12px; line-height: 1; }
+.proj-plugin-hint { font-family: var(--sans); font-size: 11px; color: var(--ink-3); margin-top: 10px; min-height: 28px; line-height: 1.4; }
 
 /* ============================================================
    forkai-code Phase 4 — workspace Implement/Continue CTA pill
@@ -2866,6 +3030,16 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
 
 .ws-block-label { font-family: var(--sans); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 12px; }
 
+/* Post-run work summary — a subtle card sitting above the diff/transcript, so a
+   finished run leads with "what got done" in prose. Theme tokens throughout so
+   it reads in both light and dark. */
+.run-summary {
+  font-family: var(--serif); font-size: clamp(15px, 1.5vw, 16px); line-height: 1.65;
+  color: var(--ink); margin: 0 0 24px; padding: 14px 17px;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); white-space: pre-wrap;
+}
+
 .term-panel { background: var(--term-bg); border: 1px solid var(--term-line); border-radius: var(--radius); padding: 16px 18px; display: flex; flex-direction: column; gap: 9px; max-height: 480px; overflow-y: auto; margin-bottom: 36px; }
 .log-line { font-family: var(--mono); font-size: 12.5px; line-height: 1.55; color: var(--term-ink); }
 .log-line--text { font-family: var(--sans); font-size: 13px; }
@@ -2909,6 +3083,71 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
 .timeline-disclosure:hover { background: var(--hover-strong); }
 .timeline-disclosure-caret { font-size: 9px; color: var(--ink-3); }
 .timeline-disclosure-count { color: var(--ink-3); font-weight: 500; }
+
+/* Claude-Code-style chat transcript — threads the flat AgentEvent list into a
+   conversation: the user's instruction (styled via .cc-msg--user, layered on
+   .ws-instruction-card above), assistant prose bubbles, "● Tool(arg)" call
+   bullets, and indented "⎿" results collapsed by default (buildTranscript in
+   AgentLogPane.tsx). Modelled on the Claude Code VS Code extension's LIGHT
+   panel — a clean near-white surface with dark ink and green tool bullets (NOT
+   a black terminal). Override --term-* to the paper/ink scale locally so
+   .term-panel plus all the cc- and log-line children (same DOM element)
+   inherit the light surface rather than the warm-gray --term-bg from
+   [data-theme]. */
+.cc-transcript {
+  --term-bg: var(--panel);          /* mild grey surface — tool blocks sit on it as white cards */
+  --term-ink: var(--ink);
+  --term-ink-dim: var(--ink-3);
+  --term-line: var(--line);
+  background: var(--term-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  gap: 8px;
+  padding: 14px;
+}
+
+.cc-msg { margin: 0; }
+.cc-msg--assistant { padding: 1px 3px; }
+.cc-msg-body { font-family: var(--sans); font-size: 13.5px; line-height: 1.5; color: var(--term-ink); white-space: pre-wrap; }
+
+/* Layered onto .ws-instruction-card (not a replacement) so the BRANCH pane's
+   own use of that class is untouched — only the CODE pane adds this modifier. */
+.cc-msg--user { border-left-color: var(--accent); background: color-mix(in oklab, var(--accent) 6%, var(--panel)); }
+
+/* Each tool action (Bash, Read, Edit, …) is a white card on the grey surface —
+   the "occasional white" blocks. When its result has more than a one-line
+   summary, the whole header row toggles the output/diff open (chevron at the
+   right), mirroring the Claude Code VS Code extension. A run of unpaired
+   results (e.g. a burst of file writes) is coalesced into ONE .cc-result-group
+   card so it reads as a single block, not a stack of boxes — each line inside
+   still toggles independently. */
+.cc-tool,
+.cc-result-group { background: var(--paper); border: 1px solid var(--line); border-radius: 7px; padding: 8px 11px; }
+.cc-tool { display: flex; flex-direction: column; gap: 5px; }
+.cc-result-group { display: flex; flex-direction: column; gap: 5px; }
+.cc-tool-call { display: flex; align-items: baseline; gap: 7px; font-family: var(--mono); font-size: 12.5px; }
+.cc-tool-call--clickable { cursor: pointer; user-select: none; }
+.cc-tool-call--clickable:hover .cc-tool-caret { color: var(--term-ink); }
+.cc-tool-bullet { color: #3f9d5c; font-size: 11px; flex-shrink: 0; }
+.cc-tool-name { font-weight: 700; color: var(--term-ink); }
+.cc-tool-args { color: var(--term-ink-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-tool-caret { margin-left: auto; padding-left: 10px; font-size: 9px; flex-shrink: 0; color: var(--ink-3); }
+
+.cc-tool-result { display: flex; align-items: flex-start; gap: 7px; font-family: var(--mono); font-size: 11.5px; }
+.cc-tool-result--indent { margin-left: 3px; }
+.cc-tool-result-branch { color: var(--term-ink-dim); flex-shrink: 0; }
+.cc-tool-result-body { min-width: 0; flex: 1; }
+.cc-tool-result-summary { display: inline-flex; align-items: baseline; gap: 5px; max-width: 100%; padding: 0; border: none; background: none; font-family: var(--mono); font-size: 11.5px; color: var(--term-ink-dim); cursor: pointer; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-tool-result-summary--static { cursor: default; }
+.cc-tool-result-summary:hover:not(.cc-tool-result-summary--static) { color: var(--term-ink); }
+.cc-tool-result-caret { font-size: 9px; flex-shrink: 0; color: var(--ink-3); }
+/* Expanded output/diff — a subtle inset one shade off the white card. */
+.cc-tool-result-full { margin: 4px 0 0; padding: 8px 10px; background: var(--panel); border: 1px solid var(--term-line); border-radius: 4px; font-size: 11px; color: var(--term-ink); white-space: pre-wrap; word-break: break-word; }
+[data-theme="dark"] .cc-tool-result-full { background: var(--bg); }
+.cc-tool-result--terminal .cc-tool-result-summary,
+.cc-tool-result--terminal .cc-tool-result-full { color: var(--term-ink); }
+
+.cc-transcript-footer { margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--term-line); font-family: var(--mono); font-size: 11px; color: var(--term-ink-dim); }
 
 .diff-summary { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--paper); margin-bottom: 32px; }
 .diff-summary--hero { box-shadow: var(--shadow-2); }
