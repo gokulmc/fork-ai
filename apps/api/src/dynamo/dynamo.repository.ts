@@ -16,6 +16,7 @@ import {
   BLOG_VIEW_MODEL,
   TRIAL_SPEND_MODEL,
   PAGE_VIEW_MODEL,
+  DEVICE_MODEL,
   DYNAMO_TABLE,
 } from './dynamo.constants';
 import type {
@@ -34,6 +35,7 @@ import type {
   BlogViewItem,
   TrialSpendItem,
   PageViewItem,
+  DeviceItem,
 } from './dynamo.interfaces';
 
 @Injectable()
@@ -55,6 +57,7 @@ export class DynamoRepository {
     @Inject(BLOG_VIEW_MODEL) private readonly blogViewModel: any,
     @Inject(TRIAL_SPEND_MODEL) private readonly trialSpendModel: any,
     @Inject(PAGE_VIEW_MODEL) private readonly pageViewModel: any,
+    @Inject(DEVICE_MODEL) private readonly deviceModel: any,
   ) {}
 
   // ── Key helpers ─────────────────────────────────────────────────────────────
@@ -65,6 +68,7 @@ export class DynamoRepository {
   private nodeSk(nodeId: string) { return `NODE#${nodeId}`; }
   private annSk(annId: string) { return `ANN#${annId}`; }
   private hlSk(hlId: string) { return `HL#${hlId}`; }
+  private deviceSk(token: string) { return `DEVICE#${token}`; }
 
   private toPlain<T>(item: any): T {
     return (item?.toJSON ? item.toJSON() : item) as T;
@@ -569,6 +573,33 @@ export class DynamoRepository {
   async getPageViews(): Promise<number> {
     const item = await this.pageViewModel.get({ PK: 'PAGEVIEW', SK: 'TOTAL' });
     return item ? (this.toPlain<PageViewItem>(item).views ?? 0) : 0;
+  }
+
+  // ── Devices (APNs push tokens) ───────────────────────────────────────────────
+
+  async putDevice(sub: string, token: string, platform: string): Promise<void> {
+    const item: DeviceItem = {
+      PK: this.userPk(sub),
+      SK: this.deviceSk(token),
+      token,
+      platform: platform as DeviceItem['platform'],
+      createdAt: new Date().toISOString(),
+    };
+    await this.deviceModel.create(this.clean(item), { overwrite: true });
+  }
+
+  async listDevices(sub: string): Promise<DeviceItem[]> {
+    const items = await this.deviceModel
+      .query('PK')
+      .eq(this.userPk(sub))
+      .where('SK')
+      .beginsWith('DEVICE#')
+      .exec();
+    return this.toPlainArray<DeviceItem>(items);
+  }
+
+  async deleteDevice(sub: string, token: string): Promise<void> {
+    await this.deviceModel.delete({ PK: this.userPk(sub), SK: this.deviceSk(token) });
   }
 
   // ── Admin: cross-user reads ────────────────────────────────────────────────

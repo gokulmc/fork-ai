@@ -5,6 +5,7 @@ import { SessionsService } from './sessions.service';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
 import { LlmService } from '@/llm/llm.service';
 import { UsersService } from '@/users/users.service';
+import { ApnsService } from '@/devices/apns.service';
 
 const mockDb = {
   putNode: jest.fn(),
@@ -46,6 +47,8 @@ const mockUsers = {
 };
 
 const mockCfg = { get: jest.fn() };
+
+const mockApns = { sendToUser: jest.fn().mockResolvedValue(undefined) };
 
 const SUB = 'user-sub-123';
 const SESSION_ID = '01HZEXAMPLE';
@@ -89,6 +92,7 @@ describe('SessionsService', () => {
         { provide: LlmService, useValue: mockLlm },
         { provide: UsersService, useValue: mockUsers },
         { provide: ConfigService, useValue: mockCfg },
+        { provide: ApnsService, useValue: mockApns },
       ],
     }).compile();
     service = module.get<SessionsService>(SessionsService);

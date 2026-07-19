@@ -27,6 +27,22 @@ export interface CapacitorSharePlugin {
   share(options: { title?: string; files?: string[] }): Promise<unknown>;
 }
 
+export interface CapacitorHapticsPlugin {
+  impact(options?: { style?: 'HEAVY' | 'MEDIUM' | 'LIGHT' }): Promise<void>;
+  notification(options?: { type?: 'SUCCESS' | 'WARNING' | 'ERROR' }): Promise<void>;
+  selectionChanged(): Promise<void>;
+}
+
+export interface CapacitorPushPlugin {
+  requestPermissions(): Promise<{ receive: 'granted' | 'denied' | 'prompt' }>;
+  register(): Promise<void>;
+  // Same sync-handle caveat as CapacitorAppPlugin.addListener above.
+  addListener(
+    eventName: 'registration',
+    cb: (token: { value: string }) => void,
+  ): PluginListenerHandle | Promise<PluginListenerHandle>;
+}
+
 declare global {
   interface Window {
     Capacitor?: {
@@ -34,6 +50,8 @@ declare global {
         App?: CapacitorAppPlugin;
         Filesystem?: CapacitorFilesystemPlugin;
         Share?: CapacitorSharePlugin;
+        Haptics?: CapacitorHapticsPlugin;
+        PushNotifications?: CapacitorPushPlugin;
       };
     };
   }
@@ -72,4 +90,16 @@ export async function nativeDownload(blob: Blob, filename: string): Promise<bool
     // failure: the file is already written to the cache directory.
   }
   return true;
+}
+
+// Optional chaining makes these automatic no-ops in the browser or an app
+// build older than the Haptics plugin — callers never need to feature-check.
+export function hapticImpact(style: 'HEAVY' | 'MEDIUM' | 'LIGHT' = 'MEDIUM'): void {
+  window.Capacitor?.Plugins?.Haptics?.impact({ style }).catch(() => {});
+}
+export function hapticSuccess(): void {
+  window.Capacitor?.Plugins?.Haptics?.notification({ type: 'SUCCESS' }).catch(() => {});
+}
+export function hapticTick(): void {
+  window.Capacitor?.Plugins?.Haptics?.selectionChanged().catch(() => {});
 }

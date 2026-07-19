@@ -226,3 +226,13 @@ export const PageViewSchema = new dynamoose.Schema({
   SK: { type: String, rangeKey: true },
   views: { type: Number, required: false },
 });
+
+// APNs push-token registration. PK/SK follow the USER#{sub} partition pattern
+// (same as SessionMeta) so all of a user's devices are co-located.
+export const DeviceSchema = new dynamoose.Schema({
+  PK: { type: String, hashKey: true },
+  SK: { type: String, rangeKey: true },
+  token: String,
+  platform: String,
+  createdAt: String,
+});

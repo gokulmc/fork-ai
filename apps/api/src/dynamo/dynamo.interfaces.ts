@@ -39,6 +39,15 @@ export interface PageViewItem {
   views: number;
 }
 
+// APNs push-token registration.
+export interface DeviceItem {
+  PK: string; // USER#{sub}
+  SK: string; // DEVICE#{token}
+  token: string;
+  platform: 'ios';
+  createdAt: string;
+}
+
 export interface UserMetaItem {
   PK: string;
   SK: string;

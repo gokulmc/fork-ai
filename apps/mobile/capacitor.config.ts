@@ -12,6 +12,9 @@ const config: CapacitorConfig = {
   server: {
     url: 'https://forkai.in',
     cleartext: false,
+    // Shown (from the bundled www/ dir, no network needed) when the remote
+    // URL fails to load — e.g. App Review testing in Airplane Mode.
+    errorPath: 'offline.html',
   },
   ios: {
     backgroundColor: '#ffffff',

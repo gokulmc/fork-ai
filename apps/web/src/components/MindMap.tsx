@@ -2,6 +2,7 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import type { ForkNode } from '@/lib/types';
 import { clamp } from '@/lib/utils';
+import { hapticTick } from '@/lib/native';
 import { Hash, Sparkles, CornerDownRight, GitBranch, Map, Minus, Plus, Maximize, Copy, Filter, Blend, X } from './Icons';
 
 const NODE_W = 192;
@@ -467,6 +468,7 @@ export function MindMap({
               if (mixerMode && isMixerSelectable && onMixerSelect) {
                 onMixerSelect(n.id);
               } else if (!mixerMode) {
+                hapticTick();
                 onSelect(n.id);
               }
             };

@@ -70,6 +70,7 @@ type RetryInfo =
   | { kind: 'DEEPER'; parentNodeId: string; section: { id: string; heading: string; body: string }; boost?: boolean }
   | { kind: 'ASK'; question: string; source: FollowUpState; boost?: boolean };
 import { useTweaks } from '@/hooks/useTweaks';
+import { usePushRegistration } from '@/hooks/usePushRegistration';
 import { initAnalytics, track, identifyUser } from '@/lib/analytics';
 import { getCachedSession, putCachedSession, deleteCachedSession } from '@/lib/sessionCache';
 import { buildNotionClipboard } from '@/lib/notion-clipboard';
@@ -128,6 +129,7 @@ import {
   Blend, Filter, X as XIcon,
 } from './Icons';
 import { exportNodePdf } from '@/lib/sessionPdf';
+import { hapticImpact, hapticSuccess, hapticTick } from '@/lib/native';
 
 // Code-split the session-only heavyweights out of the initial bundle: Section
 // drags in marked + katex + highlight.js (~300KB) and MindMap the SVG engine —
@@ -628,6 +630,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     }
   }, [idToken]);
 
+  usePushRegistration(idToken || undefined);
 
   // When a guest logs in while a guestToken is active, claim the session then reload it under their auth
   const hasClaimedRef = useRef(false);
@@ -1027,6 +1030,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
           setRootId(realNodeId);
           setActiveId(realNodeId);
           refreshCredit();
+          hapticSuccess();
           // Patch any open UI state that was anchored to the optimistic temp ID
           setHlMenu(prev => prev?.nodeId === tempId ? { ...prev, nodeId: realNodeId } : prev);
           setFollowUp(prev => prev?.nodeId === tempId ? { ...prev, nodeId: realNodeId } : prev);
@@ -1281,6 +1285,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       });
       setActiveId(realNode.id);
       refreshCredit();
+      hapticImpact('MEDIUM');
       track('branch_created', { kind: 'DEEPER', model: tweaksRef.current.branchModel, guest: !!gt && !idToken });
     } catch (err) {
       const isGuestReq = !!gt && !idToken;
@@ -1361,6 +1366,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       // Branch source gets the reserved glow style, not the last picked highlighter colour.
       persistHighlight(source.nodeId, source.sectionId, source.text, BRANCH_HL, null, source.start, source.end);
       refreshCredit();
+      hapticImpact('MEDIUM');
       track('branch_created', { kind: 'ASK', model: tweaksRef.current.branchModel, guest: !!gt && !idToken });
     } catch (err) {
       const isGuestReq = !!gt && !idToken;
@@ -1667,6 +1673,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   const onMapContext = (id: string, x: number, y: number) => setContextMenu({ x, y, nodeId: id });
 
   const onMixerSelect = useCallback((id: string) => {
+    hapticTick();
     setMixerSelectedIds(prev => {
       if (prev.includes(id)) return prev.filter(x => x !== id);
       if (prev.length >= 5) return prev;
@@ -1682,6 +1689,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     if (expanded !== trimmed) setMixerQuestion(expanded);
 
     // Phase 1 (0–0.5s): collapse the input panel into the button
+    hapticImpact('MEDIUM');
     setMixerCollapsing(true);
 
     // Measure positions for ghost animation
@@ -1777,6 +1785,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         next[realNode.id] = realNode;
         return next;
       });
+      hapticSuccess();
 
       // Pop-in animation on the new node (target the inner .mm-node-anim group, not the
       // foreignObject's .mm-card div — see the Safari note on .mm-node-anim in MindMap.tsx)

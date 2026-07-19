@@ -287,6 +287,13 @@ export function getCreditEvents(idToken: string): Promise<CreditEvent[]> {
   return apiFetch<CreditEvent[]>('/users/me/credit-events', idToken);
 }
 
+export function registerDevice(idToken: string, token: string): Promise<void> {
+  return apiFetch<void>('/devices', idToken, {
+    method: 'POST',
+    body: JSON.stringify({ token, platform: 'ios' }),
+  });
+}
+
 export function getReferralLink(idToken: string): Promise<{ slug: string; url: string }> {
   return apiFetch<{ slug: string; url: string }>('/users/me/referral-link', idToken, { method: 'POST' });
 }

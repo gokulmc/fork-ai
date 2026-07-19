@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <title>fork ai — offline</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        background: #ffffff;
+      }
+
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100%;
+        padding: calc(24px + env(safe-area-inset-top)) calc(24px + env(safe-area-inset-right))
+          calc(24px + env(safe-area-inset-bottom)) calc(24px + env(safe-area-inset-left));
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #2d2d2d;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        max-width: 320px;
+      }
+
+      .mark {
+        width: 64px;
+        height: 64px;
+        margin-bottom: 24px;
+        opacity: 0.9;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 19px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        color: #2d2d2d;
+      }
+
+      p {
+        margin: 0 0 28px;
+        font-size: 14px;
+        line-height: 1.5;
+        color: #999999;
+      }
+
+      button {
+        appearance: none;
+        border: none;
+        border-radius: 8px;
+        background: #2d2d2d;
+        color: #ffffff;
+        font-size: 14px;
+        font-weight: 500;
+        font-family: inherit;
+        padding: 11px 28px;
+        cursor: pointer;
+      }
+
+      button:active {
+        opacity: 0.85;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <img class="mark" src="mark.png" alt="fork ai" />
+      <h1>You're offline</h1>
+      <p>fork ai needs an internet connection. Reconnect and try again.</p>
+      <button type="button" onclick="window.location.href = 'https://forkai.in'">Retry</button>
+    </div>
+  </body>
+</html>

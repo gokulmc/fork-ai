@@ -7,6 +7,7 @@ import type { NodeItem, AnnotationItem, HighlightItem, SessionMetaItem } from '@
 import { LlmService } from '@/llm/llm.service';
 import { ROOT_MODEL, resolveBranchModel } from '@/llm/models';
 import { UsersService, isPrivateIp } from '@/users/users.service';
+import { ApnsService } from '@/devices/apns.service';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { CreateDocumentDto } from './dto/create-document.dto';
 import { UpdateSessionDto } from './dto/update-session.dto';
@@ -40,6 +41,7 @@ export class SessionsService {
     private readonly llm: LlmService,
     private readonly users: UsersService,
     private readonly cfg: ConfigService,
+    private readonly apns: ApnsService,
   ) {}
 
   private readonly logger = new Logger(SessionsService.name);
@@ -151,6 +153,10 @@ export class SessionsService {
           this.db.putNode({ ...rootNode, title, emoji, lede, sections, ...sourcesPatch }),
           this.db.updateSessionMeta(sub, sessionId, { title, emoji, lede }),
         ]);
+        // Fire-and-forget: a push notification failure must never affect the
+        // stream or its response. Guest/trial sessions never reach this path
+        // (see createTrialSessionStreaming), so there's no device to notify anyway.
+        this.apns.sendToUser(sub, 'Research ready', `${title || rootNode.title} — your answer is ready`).catch(() => {});
         await this.users.billUsage(sub, event.usage.inputTokens, event.usage.outputTokens, 'QUERY', sessionId, nodeId, ROOT_MODEL);
         emit({ type: 'done', sessionId, nodeId, model: ROOT_MODEL, sections, sources: event.sources });
       }

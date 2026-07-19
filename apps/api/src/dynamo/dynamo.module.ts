@@ -18,6 +18,7 @@ import {
   BLOG_VIEW_MODEL,
   TRIAL_SPEND_MODEL,
   PAGE_VIEW_MODEL,
+  DEVICE_MODEL,
   DYNAMO_TABLE,
 } from './dynamo.constants';
 import {
@@ -36,6 +37,7 @@ import {
   BlogViewSchema,
   TrialSpendSchema,
   PageViewSchema,
+  DeviceSchema,
 } from './dynamo.schemas';
 import { DynamoRepository } from './dynamo.repository';
 
@@ -127,6 +129,11 @@ const DYNAMO_CONFIGURED = 'DYNAMO_CONFIGURED';
       useFactory: () => dynamoose.model('PageView', PageViewSchema),
     },
     {
+      provide: DEVICE_MODEL,
+      inject: [DYNAMO_CONFIGURED],
+      useFactory: () => dynamoose.model('Device', DeviceSchema),
+    },
+    {
       // Binds all models to the physical DynamoDB table.
       // DynamoRepository injects this to guarantee the Table is set up first.
       provide: DYNAMO_TABLE,
@@ -147,6 +154,7 @@ const DYNAMO_CONFIGURED = 'DYNAMO_CONFIGURED';
         BLOG_VIEW_MODEL,
         TRIAL_SPEND_MODEL,
         PAGE_VIEW_MODEL,
+        DEVICE_MODEL,
         ConfigService,
       ],
       useFactory: (
@@ -166,11 +174,12 @@ const DYNAMO_CONFIGURED = 'DYNAMO_CONFIGURED';
         blogView: any,
         trialSpend: any,
         pageView: any,
+        device: any,
         cfg: ConfigService,
       ) =>
         new dynamoose.Table(
           cfg.get<string>('dynamo.tableName')!,
-          [userMeta, sessionMeta, node, annotation, highlight, shareToken, usageEvent, payment, adminAudit, referral, creditEvent, blogSubmission, blogView, trialSpend, pageView],
+          [userMeta, sessionMeta, node, annotation, highlight, shareToken, usageEvent, payment, adminAudit, referral, creditEvent, blogSubmission, blogView, trialSpend, pageView, device],
           { create: false, waitForActive: false },
         ),
     },

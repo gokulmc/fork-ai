@@ -21,6 +21,7 @@ import { TopicsModule } from '@/topics/topics.module';
 import { BlogSubmissionsModule } from '@/blog-submissions/blog-submissions.module';
 import { BlogViewsModule } from '@/blog-views/blog-views.module';
 import { AnalyticsModule } from '@/analytics/analytics.module';
+import { DevicesModule } from '@/devices/devices.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -50,6 +51,7 @@ import { HealthController } from './health.controller';
     BlogSubmissionsModule,
     BlogViewsModule,
     AnalyticsModule,
+    DevicesModule,
   ],
   controllers: [HealthController],
   providers: [

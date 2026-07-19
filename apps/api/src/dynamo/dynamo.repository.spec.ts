@@ -17,6 +17,7 @@ import {
   BLOG_VIEW_MODEL,
   TRIAL_SPEND_MODEL,
   PAGE_VIEW_MODEL,
+  DEVICE_MODEL,
 } from './dynamo.constants';
 
 // Factory for a Dynamoose-model-shaped mock with chainable query builder
@@ -64,6 +65,7 @@ describe('DynamoRepository', () => {
   let blogView: ReturnType<typeof makeModelMock>;
   let trialSpend: ReturnType<typeof makeModelMock>;
   let pageView: ReturnType<typeof makeModelMock>;
+  let device: ReturnType<typeof makeModelMock>;
 
   beforeEach(async () => {
     userMeta = makeModelMock();
@@ -81,6 +83,7 @@ describe('DynamoRepository', () => {
     blogView = makeModelMock();
     trialSpend = makeModelMock();
     pageView = makeModelMock();
+    device = makeModelMock();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -101,6 +104,7 @@ describe('DynamoRepository', () => {
         { provide: BLOG_VIEW_MODEL, useValue: blogView.mock },
         { provide: TRIAL_SPEND_MODEL, useValue: trialSpend.mock },
         { provide: PAGE_VIEW_MODEL, useValue: pageView.mock },
+        { provide: DEVICE_MODEL, useValue: device.mock },
       ],
     }).compile();
     repo = module.get<DynamoRepository>(DynamoRepository);

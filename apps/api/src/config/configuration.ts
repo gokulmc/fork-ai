@@ -9,6 +9,11 @@ export const validationSchema = Joi.object({
   GEMINI_API_KEY: Joi.string().allow('').optional(),
   DEEPSEEK_API_KEY: Joi.string().allow('').optional(),
   GLM_API_KEY: Joi.string().allow('').optional(),
+  APNS_KEY: Joi.string().allow('').optional(),
+  APNS_KEY_ID: Joi.string().allow('').optional(),
+  APNS_TEAM_ID: Joi.string().allow('').optional(),
+  APNS_BUNDLE_ID: Joi.string().allow('').optional().default('in.forkai.app'),
+  APNS_ENV: Joi.string().allow('').optional(),
   PORT: Joi.number().default(3000),
   NOTION_CLIENT_ID: Joi.string().optional(),
   NOTION_CLIENT_SECRET: Joi.string().optional(),
@@ -50,6 +55,13 @@ export const configuration = () => ({
   },
   glm: {
     apiKey: process.env.GLM_API_KEY ?? '',
+  },
+  apns: {
+    key: process.env.APNS_KEY ?? '',
+    keyId: process.env.APNS_KEY_ID ?? '',
+    teamId: process.env.APNS_TEAM_ID ?? '',
+    bundleId: process.env.APNS_BUNDLE_ID || 'in.forkai.app',
+    env: process.env.APNS_ENV ?? '',
   },
   port: parseInt(process.env.PORT ?? '3000', 10),
   notion: {
