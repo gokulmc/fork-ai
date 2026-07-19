@@ -97,7 +97,7 @@ export default function BlogLayout({ children }: { children: React.ReactNode }) 
         }
 
         @media (max-width: 768px) {
-          .blog-overlay { padding: 28px 20px 80px; }
+          .blog-overlay { padding: calc(28px + env(safe-area-inset-top)) 20px 80px; }
           .blog-h, .post h1 { font-size: 32px; }
         }
       `}</style>

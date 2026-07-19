@@ -6,6 +6,16 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
+### PWA "Add to Home Screen" prompt showed inside the native app shell
+- **Symptom:** The iOS/Android Capacitor app showed the "Add fork ai to your Home Screen" install sheet on Landing and on blog pages — meaningless inside an installed app, and an App Review "this is a website" signal (Guideline 4.2 risk). Found during iOS simulator smoke tests.
+- **Cause:** `InstallPrompt.tsx` gated the prompt on standalone-display/dismissed-state only; nothing checked whether the page was running inside the native shell, where the injected `window.Capacitor` bridge is the reliable tell.
+- **Fix:** Early `return` in the mount effect when `window.Capacitor` exists (service-worker registration still runs). Regression tell: any install-prompt UI visible in a Capacitor build. (commit: 28eb761)
+
+### Blog pages rendered their header under the status bar in the mobile apps (third safe-area recurrence)
+- **Symptom:** In the iOS app, `/blog` and blog post pages drew "← FORK AI / WRITE A POST" and "← BACK" beneath the clock/Dynamic Island. Same class of bug as the Landing/History status-bar overlap that shipped twice before (see below).
+- **Cause:** `.blog-overlay` (`position: fixed; inset: 0` in `apps/web/src/app/blog/layout.tsx` inline CSS) sets its own top padding and was never given the `env(safe-area-inset-top)` offset required by the mobile safe-area rule — blog styles live outside `globals.css`, so the earlier sweep missed them.
+- **Fix:** Mobile media block now uses `padding: calc(28px + env(safe-area-inset-top)) 20px 80px` on `.blog-overlay`, covering both blog index and post headers (shared layout). Regression tell: any fixed-top element styled outside `globals.css` lacking the env() offset. (commit: 28eb761)
+
 ### Razorpay top-up could hang forever with no error if the checkout script failed to load
 - **Symptom:** If `https://checkout.razorpay.com/v1/checkout.js` failed to load (network blip, ad blocker, CSP, Razorpay outage), clicking "Add credit" left the button stuck in a loading spinner indefinitely — no error message, no way to retry.
 - **Cause:** `loadRazorpayScript()` in `apps/web/src/components/AccountButton.tsx` only wired `s.onload`; the `Promise` executor had no `reject` path, so a failed script load never resolved or rejected the promise `startRecharge` awaits.

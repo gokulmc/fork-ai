@@ -41,6 +41,12 @@ export function InstallPrompt() {
       navigator.serviceWorker.register('/sw.js').catch(() => {});
     }
 
+    // Inside the Capacitor app shell the user is already "installed" — the
+    // prompt is nonsense there and reads as "this is a website" to App Review
+    // (Guideline 4.2 risk). window.Capacitor is injected at document-start
+    // in the native shells (see lib/native.ts).
+    if (window.Capacitor) return;
+
     // sessionStorage (not local): dismissing hides it for this visit but it
     // returns on the next fresh launch — and never once actually installed.
     if (isStandalone() || sessionStorage.getItem(DISMISS_KEY)) return;
