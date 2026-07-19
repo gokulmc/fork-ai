@@ -2,6 +2,9 @@ export interface SectionItem {
   id: string;
   heading: string;
   body: string;
+  // Set only on an inline-mode section (Ask answered in place on the parent
+  // node instead of creating a child node) — marks it as a conversational turn.
+  askedQuery?: string;
 }
 
 export interface UserMetaItem {
@@ -270,6 +273,18 @@ export interface ProjectItem {
   // (import: seeded branch count; 'new'/'github-mock': 1 for the default
   // branch) and bumped by $ADD whenever a BRANCH node is forked.
   branchCount?: number;
+}
+
+// A registered APNs device token for push notifications (run-complete/failed
+// alerts). PK USER#{sub} / SK DEVICE#{token} — one row per device, upserted
+// on every POST /devices so a re-registered token just refreshes createdAt.
+export interface DeviceItem {
+  PK: string;
+  SK: string;
+  sub: string;
+  token: string;
+  platform: 'ios';
+  createdAt: string;
 }
 
 // A GitHub App installation (Contents:Read v1) the user has granted forkai

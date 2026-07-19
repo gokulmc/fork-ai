@@ -48,6 +48,11 @@ export const validationSchema = Joi.object({
   RAZORPAY_KEY_ID: Joi.string().allow('').optional(),
   RAZORPAY_KEY_SECRET: Joi.string().allow('').optional(),
   RAZORPAY_WEBHOOK_SECRET: Joi.string().allow('').optional(),
+  APNS_KEY: Joi.string().allow('').optional(),
+  APNS_KEY_ID: Joi.string().allow('').optional(),
+  APNS_TEAM_ID: Joi.string().allow('').optional(),
+  APNS_BUNDLE_ID: Joi.string().allow('').optional(),
+  APNS_ENV: Joi.string().allow('').optional(),
 });
 
 export const configuration = () => ({
@@ -106,5 +111,14 @@ export const configuration = () => ({
     keyId: process.env.RAZORPAY_KEY_ID ?? '',
     keySecret: process.env.RAZORPAY_KEY_SECRET ?? '',
     webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET ?? '',
+  },
+  apns: {
+    // The p8 key is stored with literal `\n` in env vars (Secrets Manager /
+    // EB option settings can't hold real newlines) — undo that here.
+    key: (process.env.APNS_KEY ?? '').replace(/\\n/g, '\n'),
+    keyId: process.env.APNS_KEY_ID ?? '',
+    teamId: process.env.APNS_TEAM_ID ?? '',
+    bundleId: process.env.APNS_BUNDLE_ID || 'in.forkai.code',
+    env: process.env.APNS_ENV ?? '',
   },
 });

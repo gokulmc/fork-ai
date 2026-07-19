@@ -5,11 +5,12 @@ import { SessionsModule } from '@/sessions/sessions.module';
 import { UsersModule } from '@/users/users.module';
 import { AgentModule } from '@/agent/agent.module';
 import { GithubModule } from '@/github/github.module';
+import { DevicesModule } from '@/devices/devices.module';
 import { NodesController } from './nodes.controller';
 import { NodesService } from './nodes.service';
 
 @Module({
-  imports: [DynamoModule, LlmModule, SessionsModule, UsersModule, AgentModule, GithubModule],
+  imports: [DynamoModule, LlmModule, SessionsModule, UsersModule, AgentModule, GithubModule, DevicesModule],
   controllers: [NodesController],
   providers: [NodesService],
   exports: [NodesService],

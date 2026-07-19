@@ -16,6 +16,7 @@ import {
   GITHUB_INSTALLATION_MODEL,
   HOLD_MODEL,
   MACHINE_BILL_MODEL,
+  DEVICE_MODEL,
   DYNAMO_TABLE,
 } from './dynamo.constants';
 import {
@@ -32,6 +33,7 @@ import {
   GithubInstallationSchema,
   HoldSchema,
   MachineBillSchema,
+  DeviceSchema,
 } from './dynamo.schemas';
 import { DynamoRepository } from './dynamo.repository';
 
@@ -113,6 +115,11 @@ const DYNAMO_CONFIGURED = 'DYNAMO_CONFIGURED';
       useFactory: () => dynamoose.model('MachineBill', MachineBillSchema),
     },
     {
+      provide: DEVICE_MODEL,
+      inject: [DYNAMO_CONFIGURED],
+      useFactory: () => dynamoose.model('Device', DeviceSchema),
+    },
+    {
       // Binds all models to the physical DynamoDB table.
       // DynamoRepository injects this to guarantee the Table is set up first.
       provide: DYNAMO_TABLE,
@@ -131,6 +138,7 @@ const DYNAMO_CONFIGURED = 'DYNAMO_CONFIGURED';
         GITHUB_INSTALLATION_MODEL,
         HOLD_MODEL,
         MACHINE_BILL_MODEL,
+        DEVICE_MODEL,
         ConfigService,
       ],
       useFactory: (
@@ -148,11 +156,12 @@ const DYNAMO_CONFIGURED = 'DYNAMO_CONFIGURED';
         githubInstallation: any,
         hold: any,
         machineBill: any,
+        device: any,
         cfg: ConfigService,
       ) =>
         new dynamoose.Table(
           cfg.get<string>('dynamo.tableName')!,
-          [userMeta, sessionMeta, node, annotation, highlight, usageEvent, payment, creditEvent, project, agentRun, githubInstallation, hold, machineBill],
+          [userMeta, sessionMeta, node, annotation, highlight, usageEvent, payment, creditEvent, project, agentRun, githubInstallation, hold, machineBill, device],
           { create: false, waitForActive: false },
         ),
     },
