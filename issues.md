@@ -6,6 +6,11 @@ A running log of bugs found and fixed in fork.ai, newest first. Each entry recor
 
 ---
 
+### Razorpay top-up could hang forever with no error if the checkout script failed to load
+- **Symptom:** If `https://checkout.razorpay.com/v1/checkout.js` failed to load (network blip, ad blocker, CSP, Razorpay outage), clicking "Add credit" left the button stuck in a loading spinner indefinitely — no error message, no way to retry.
+- **Cause:** `loadRazorpayScript()` in `apps/web/src/components/AccountButton.tsx` only wired `s.onload`; the `Promise` executor had no `reject` path, so a failed script load never resolved or rejected the promise `startRecharge` awaits.
+- **Fix:** Added `s.onerror` to reject with a clear message, which flows into the existing `catch` in `startRecharge` and surfaces via `setRechargeError`. (commit: pending)
+
 ### PostHog error tracking polluted by localhost dev sessions
 - **Symptom:** The PostHog weekly error digest reported dev-only exceptions (`ReferenceError: useEffect is not defined` from a mid-edit Fast Refresh state, `Event captured as exception` from dev HMR) originating from `http://localhost:4001/`, and localhost dev sessions inflated session counts / crash-free-session stats in the production project.
 - **Cause:** `initAnalytics()` in `apps/web/src/lib/analytics.ts` gated `posthog.init` only on the presence of `NEXT_PUBLIC_POSTHOG_KEY` — but `.env.local` (main repo and the forkai-code worktree's `apps/code-web/.env.local`) carries the real production key, so every `next dev` session initialized PostHog with `capture_exceptions: true` against the prod project.

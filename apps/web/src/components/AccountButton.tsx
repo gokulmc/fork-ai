@@ -38,12 +38,13 @@ function detectPaymentCurrency(): 'INR' | 'USD' {
 }
 
 function loadRazorpayScript(): Promise<void> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     if (document.getElementById('rzp-checkout-js')) { resolve(); return; }
     const s = document.createElement('script');
     s.id = 'rzp-checkout-js';
     s.src = 'https://checkout.razorpay.com/v1/checkout.js';
     s.onload = () => resolve();
+    s.onerror = () => reject(new Error('Failed to load payment script — check your connection and try again.'));
     document.head.appendChild(s);
   });
 }
