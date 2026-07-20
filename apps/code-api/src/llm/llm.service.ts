@@ -2,7 +2,7 @@ import { HttpException, Injectable, InternalServerErrorException, Logger, Unproc
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
 import type { DiffSummary } from '@/dynamo/dynamo.interfaces';
-import { LlmResponse, LlmSection, LlmUsage, CitationSource, OutlineNode, DocumentOutline } from './llm.types';
+import { LlmResponse, LlmSection, LlmUsage, LlmConciseResponse, CitationSource, OutlineNode, DocumentOutline } from './llm.types';
 import { ROOT_MODEL, BRANCH_DEFAULT_MODEL, SHARE_HOOK_MODEL, providerNameFor, ProviderName, supportsWebSearch, outputBudget, NON_STREAMING_MAX_TOKENS } from './models';
 import { LlmProvider } from './providers/provider.types';
 import { AnthropicProvider } from './providers/anthropic.provider';
@@ -154,6 +154,14 @@ const VERBOSE_SCHEMA = `Return ONLY valid JSON, no prose, no markdown fences. Sh
   ]
 }
 Return EXACTLY ONE item in the "sections" array, with an empty "heading". Put the WHOLE answer in that single "body", formatted as rich GitHub-flavored markdown exactly like a chat assistant replies: use markdown headings (## / ###), **bold**, *italic*, bullet and numbered lists, tables, > blockquotes, and fenced code blocks wherever they aid clarity. Do NOT add more than one entry to the "sections" array — the markdown structure lives entirely inside the one body. The double-quotes and newlines inside the body must be valid JSON-escaped (\\" and \\n).`;
+
+// Inline mode (Ask, appended to the parent node instead of spawning a child) —
+// deliberately its own minimal shape, not a one-item SECTIONS_SCHEMA/VERBOSE_SCHEMA
+// array: no title/emoji/lede is needed since no node is created, and asking the
+// model to still produce them would waste output budget on a call whose whole
+// point is a short, fast answer.
+const CONCISE_SCHEMA = `Return ONLY valid JSON, no prose, no markdown fences. Shape:
+{ "answer": "the answer as plain GitHub-flavored markdown" }`;
 
 @Injectable()
 export class LlmService {
@@ -435,6 +443,43 @@ You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase 
     // Detect on the user's typed question only — never the highlighted passage,
     // which is document text, not user intent.
     return this.callJson(prompt + avoidEmojiNote(usedEmojis), webSearch, model, { authed, verbose, boost, forceSearch: explicitlyRequestsWebSearch(question) });
+  }
+
+  // Inline mode: same "continuing a branching research session" framing as
+  // followUpFromHighlight/expandSection, but answered in place on the parent
+  // node instead of spawning a child — so the prompt asks for a short answer
+  // and the response has no title/emoji/lede to persist.
+  async answerInline(
+    ancestors: Array<{ title: string; query: string }>,
+    anchorText: string,
+    question: string,
+    model: string = BRANCH_DEFAULT_MODEL,
+    webSearch = false,
+    maxWords = 70,
+    extraContext?: string,
+  ): Promise<LlmConciseResponse> {
+    const trail = ancestors
+      .map((a, i) => `${i === 0 ? 'Root query' : 'Sub-topic'}: "${a.query}" → "${a.title}"`)
+      .join('\n');
+    const intro = `You are continuing a branching research session. Research trail (root → current):
+${trail}
+
+The user highlighted this passage: "${anchorText.slice(0, 800)}"
+They asked: "${question}"`;
+    // Undefined by default, so a non-CODE-parent branch's prompt stays byte-identical.
+    const contextBlock = extraContext ? `\n\n${extraContext}` : '';
+
+    const prompt = `${intro}${contextBlock}
+
+Answer directly in AT MOST ${maxWords} words. No preamble, do not restate the question, no headings, no section structure — inline prose. Use a short list only if the answer is genuinely enumerable.
+
+${CONCISE_SCHEMA}
+
+Escape double-quotes inside JSON strings.`;
+
+    // Detect on the user's typed question only — never the highlighted passage,
+    // which is document text, not user intent (mirrors followUpFromHighlight).
+    return this.callConciseJson(prompt, webSearch, model, { forceSearch: explicitlyRequestsWebSearch(question) });
   }
 
   // ── Document → mind-map ───────────────────────────────────────────────────
@@ -864,6 +909,85 @@ Return ONLY valid JSON, no prose, no markdown fences: {"hook": "..."}`;
     }
 
     throw new InternalServerErrorException(friendlyLlmError(lastError));
+  }
+
+  // Mirrors callJson's retry/budget/provider-dispatch/citation-processing shape
+  // exactly, but parses the CONCISE_SCHEMA { "answer" } shape instead of the
+  // { title, emoji, lede, sections } shape parseJson requires — callJson can't
+  // be reused as-is here since parseJson throws on a response with no
+  // "sections" array. Citation helpers are sections-shaped, so a single answer
+  // is treated as a one-item pseudo-section list just for that step, then
+  // unwrapped back to a plain string.
+  private async callConciseJson(
+    prompt: string,
+    webSearch: boolean,
+    model: string,
+    opts: { forceSearch?: boolean } = {},
+    retries = 1,
+  ): Promise<LlmConciseResponse> {
+    const ws = webSearch && supportsWebSearch(model);
+    const isGlm = providerNameFor(model) === 'glm';
+    const citationNote = isGlm ? GLM_CITATION_NOTE : CITATION_NOTE;
+    const guidance = ws && opts.forceSearch ? FORCED_WEB_SEARCH_GUIDANCE : WEB_SEARCH_GUIDANCE;
+    const fullPrompt = ws ? `${prompt}\n\n${guidance}\n\n${citationNote}` : prompt;
+    const provider = this.providerFor(model);
+    // Inline callers are always authenticated (guest mode removed, ADR-0009) and
+    // never verbose — a fixed, unboosted budget is plenty for a 2-3 line answer.
+    const maxTokens = outputBudget(true, false);
+
+    let lastError: Error | undefined;
+
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const { rawText, usage, applyCitations, truncated } = await provider.complete(fullPrompt, {
+          model,
+          maxTokens,
+          webSearch: ws,
+        });
+        if (truncated) {
+          throw new UnprocessableEntityException({
+            message: 'The answer was cut off — it hit the length limit',
+            code: 'OUTPUT_TRUNCATED',
+          });
+        }
+        const parsed = this.parseConciseJson(rawText);
+        const result: LlmConciseResponse = { answer: parsed.answer, usage };
+        if (ws && applyCitations) {
+          const cited = applyCitations([{ heading: '', body: result.answer }]);
+          result.answer = cited.sections[0]?.body ?? result.answer;
+          if (cited.sources.length) result.sources = cited.sources;
+        } else if (ws && isGlm) {
+          const sources = sanitizeGlmSources(parsed.sources);
+          if (sources.length) {
+            const cited = processGlmCitations([{ heading: '', body: result.answer }], sources);
+            result.answer = cited.sections[0]?.body ?? result.answer;
+            result.sources = cited.sources.length ? cited.sources : sources;
+          }
+        }
+        return result;
+      } catch (err) {
+        // The truncation error is deterministic — propagate it, don't retry.
+        if (err instanceof HttpException) throw err;
+        lastError = err as Error;
+        this.logger.warn(`LLM attempt ${attempt + 1} failed: ${lastError.message}`);
+      }
+    }
+
+    throw new InternalServerErrorException(friendlyLlmError(lastError));
+  }
+
+  private parseConciseJson(raw: string): { answer: string; sources?: unknown } {
+    let text = raw.trim();
+    text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '');
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start >= 0 && end > start) text = text.slice(start, end + 1);
+
+    const parsed = JSON.parse(text) as { answer?: unknown; sources?: unknown };
+    if (typeof parsed.answer !== 'string' || !parsed.answer.trim()) {
+      throw new Error('Invalid LLM response shape — missing answer string');
+    }
+    return parsed as { answer: string; sources?: unknown };
   }
 
   private parseJson(raw: string): LlmResponse {

@@ -11,4 +11,14 @@ export class UpdateHighlightDto {
   @IsOptional()
   @IsString()
   fg?: string | null;
+
+  @ApiPropertyOptional({ description: 'New Explain note text' })
+  @IsOptional()
+  @IsString()
+  note?: string;
+
+  @ApiPropertyOptional({ description: 'New question that produced `note`' })
+  @IsOptional()
+  @IsString()
+  noteQuestion?: string;
 }

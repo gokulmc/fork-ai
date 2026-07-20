@@ -109,6 +109,20 @@ export function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n - 1) + '…' : s;
 }
 
+// #237 Phase 1b — inline note markers (see Section.tsx's SectionBody) are
+// real DOM elements injected into the rendered section body, and highlight
+// offsets are character offsets into that body's plain text as walked by
+// document.createTreeWalker(root, NodeFilter.SHOW_TEXT, …). The marker is
+// built with zero text nodes so it never actually appears in that walk —
+// this filter is belt-and-braces: if a future edit ever puts real text
+// inside a [data-inline-note] marker, it gets excluded here instead of
+// silently shifting every highlight offset after it in the section.
+export function rejectInlineNoteText(node: Node): number {
+  return node.parentElement?.closest('[data-inline-note]')
+    ? NodeFilter.FILTER_REJECT
+    : NodeFilter.FILTER_ACCEPT;
+}
+
 /**
  * Compute start/end character offsets of a Range within the plain text
  * of a root element (as walked by TreeWalker). Returns null if either
@@ -118,7 +132,7 @@ export function getRangeOffsets(
   root: Element,
   range: Range,
 ): { start: number; end: number } | null {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, rejectInlineNoteText);
   let pos = 0;
   let start = -1;
   let end = -1;

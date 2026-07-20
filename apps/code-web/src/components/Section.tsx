@@ -1,12 +1,12 @@
 'use client';
-import { useMemo, useEffect, useRef, memo } from 'react';
+import { useMemo, useEffect, useRef, useCallback, memo } from 'react';
 import { marked } from 'marked';
 import markedKatex from 'marked-katex-extension';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import hljs from 'highlight.js';
-import type { Section as SectionData, ForkNode, Annotation } from '@/lib/types';
-import { cleanHeading } from '@/lib/utils';
+import type { Section as SectionData, ForkNode, Annotation, PersistentHighlight } from '@/lib/types';
+import { cleanHeading, rejectInlineNoteText } from '@/lib/utils';
 import { CornerDownRight, Branch, ChevronRight, Lightbulb, X } from './Icons';
 
 marked.use({ gfm: true, breaks: false });
@@ -361,6 +361,52 @@ function tapSelectHandlers() {
   };
 }
 
+interface Rect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  bottom: number;
+}
+
+// Inverse of getRangeOffsets (lib/utils.ts): finds the Range for a stored
+// [start, end) offset pair so a note marker can be inserted at its end.
+// Duplicated rather than shared — App.tsx keeps its own equivalent
+// (rangeFromOffsets) for painting persisted highlights — but both apply the
+// same rejectInlineNoteText guard so they agree on what counts as "text".
+function rangeFromOffsets(root: Element, start: number, end: number): Range | null {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, rejectInlineNoteText);
+  let pos = 0;
+  let startNode: Text | null = null, startOff = 0;
+  let endNode: Text | null = null, endOff = 0;
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    const t = node as Text;
+    const len = (t.nodeValue ?? '').length;
+    if (!startNode && pos + len > start) { startNode = t; startOff = start - pos; }
+    if (startNode && pos + len >= end) { endNode = t; endOff = end - pos; break; }
+    pos += len;
+  }
+  if (!startNode || !endNode) return null;
+  const r = new Range();
+  r.setStart(startNode, startOff);
+  r.setEnd(endNode, endOff);
+  return r;
+}
+
+// Content-equality (not reference-equality) check for the notes array so
+// SectionBody's memo below doesn't re-render — and re-run its DOM effects —
+// just because a parent render recomputed a same-content `.filter()` result.
+function notesEqual(a: PersistentHighlight[], b: PersistentHighlight[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i], y = b[i];
+    if (x.hlId !== y.hlId || x.start !== y.start || x.end !== y.end || x.note !== y.note) return false;
+  }
+  return true;
+}
+
 // Isolated so its DOM is never touched when sectionChildren or callouts change.
 // Browser text selection inside the body survives concurrent node arrivals.
 const SectionBody = memo(function SectionBody({
@@ -368,11 +414,15 @@ const SectionBody = memo(function SectionBody({
   sectionId,
   sectionHeading,
   isFirst,
+  notes,
+  onNoteClick,
 }: {
   body: string;
   sectionId: string;
   sectionHeading: string;
   isFirst?: boolean;
+  notes: PersistentHighlight[];
+  onNoteClick: (start: number, end: number, rect: Rect) => void;
 }) {
   const bodyRef = useRef<HTMLDivElement>(null);
   const html = useMemo(() => renderMd(body), [body]);
@@ -399,6 +449,51 @@ const SectionBody = memo(function SectionBody({
     return () => { cancelled = true; };
   }, [html]);
 
+  // #237 Phase 1b — inline note markers. Separate effect from the one above:
+  // that effect re-parses hljs/mermaid, which is NOT idempotent (mermaid
+  // replaces `pre` with a wrapper, so re-running it on every `notes` change —
+  // e.g. an answer arriving — would nest duplicate diagram wrappers). This
+  // effect only touches [data-inline-note] markers, so it can safely rerun
+  // whenever `notes` changes without disturbing the rest of the body.
+  //
+  // INVARIANT: a marker must contain ZERO text nodes. Highlight offsets are
+  // character offsets into this body's plain text, walked via
+  // document.createTreeWalker(root, NodeFilter.SHOW_TEXT, …) — an element
+  // whose visible content is real text would shift every highlight offset
+  // after it in this section. The glyph below is a raw inline <svg> (no text
+  // node), and rejectInlineNoteText (lib/utils.ts) additionally excludes
+  // anything inside [data-inline-note] from that walk as a belt-and-braces
+  // guard against a future edit adding text here.
+  useEffect(() => {
+    const root = bodyRef.current;
+    if (!root) return;
+    // Idempotent: clear markers this effect previously inserted before
+    // reinserting from `notes`, so reruns (e.g. a pending note's answer
+    // landing) never accumulate duplicates.
+    root.querySelectorAll('[data-inline-note]').forEach(el => el.remove());
+    for (const note of notes) {
+      if (note.start == null || note.end == null || !note.hlId) continue;
+      const r = rangeFromOffsets(root, note.start, note.end);
+      if (!r) continue;
+      r.collapse(false); // end of the highlighted range
+      const marker = document.createElement('button');
+      marker.type = 'button';
+      marker.setAttribute('data-inline-note', '');
+      marker.setAttribute('data-hl-id', note.hlId);
+      marker.className = 'inline-note-marker';
+      marker.setAttribute('aria-label', 'View inline answer');
+      // Lightbulb glyph (Icons.tsx) — svg/path children only, no text node.
+      marker.innerHTML = '<svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>';
+      const start = note.start, end = note.end;
+      marker.addEventListener('click', e => {
+        e.stopPropagation();
+        const mr = marker.getBoundingClientRect();
+        onNoteClick(start, end, { left: mr.left, top: mr.top, width: mr.width, height: mr.height, bottom: mr.bottom });
+      });
+      r.insertNode(marker);
+    }
+  }, [html, notes, onNoteClick]);
+
   return (
     <div
       className="section-body md"
@@ -412,7 +507,14 @@ const SectionBody = memo(function SectionBody({
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );
-});
+}, (prev, next) =>
+  prev.body === next.body &&
+  prev.sectionId === next.sectionId &&
+  prev.sectionHeading === next.sectionHeading &&
+  prev.isFirst === next.isFirst &&
+  prev.onNoteClick === next.onNoteClick &&
+  notesEqual(prev.notes, next.notes),
+);
 
 interface SectionProps {
   idx: number;
@@ -424,6 +526,8 @@ interface SectionProps {
   onChildClick: (id: string) => void;
   calloutsForSection: Annotation[];
   onRemoveCallout: (id: string) => void;
+  notesForSection: PersistentHighlight[];
+  onNoteClick: (start: number, end: number, rect: Rect) => void;
 }
 
 export function Section({
@@ -436,9 +540,25 @@ export function Section({
   onChildClick,
   calloutsForSection,
   onRemoveCallout,
+  notesForSection,
+  onNoteClick,
 }: SectionProps) {
+  // Stable-by-reference wrapper so SectionBody's memo comparator (which
+  // compares onNoteClick with ===) never treats a fresh render of this
+  // (unmemoized) Section as a prop change on its own — App.tsx passes a new
+  // inline closure every render. The ref always holds the latest real
+  // handler, so nothing is ever stale despite the stable identity.
+  const onNoteClickRef = useRef(onNoteClick);
+  onNoteClickRef.current = onNoteClick;
+  const stableOnNoteClick = useCallback(
+    (start: number, end: number, rect: Rect) => onNoteClickRef.current(start, end, rect),
+    [],
+  );
   const num = String(idx + 1).padStart(2, '0');
   const heading = cleanHeading(section.heading);
+  // A pending inline turn (#237 Phase 1a) is the placeholder appended optimistically
+  // in App.tsx's askAboutCommit — recognisable by askedQuery set but no body yet.
+  const isPendingTurn = !!section.askedQuery && !section.body;
 
   return (
     <section
@@ -447,10 +567,33 @@ export function Section({
       style={{ animationDelay: `${idx * 70}ms` }}
       {...(idx === 0 ? { 'data-tour': 'tour-sections' } : {})}
     >
-      {/* Verbose branch answers (Go Deeper / Ask AI) carry one section with an
-          empty heading — render them as flowing prose: no number, no heading,
-          no per-section Go-deeper button. Branching there is highlight-driven. */}
-      {heading && (
+      {section.askedQuery ? (
+        // Inline turn: same empty heading as a verbose branch answer below, but it
+        // needs its own header — a "you asked" chip plus Go Deeper, the deliberate
+        // escape hatch from a short inline reply to a full child node. Deliberately
+        // NOT .section-head, so the mobile `:not(:has(.section-head))` full-width
+        // prose rule still applies to it.
+        <div className="section-turn-head">
+          <span className="section-turn-chip">You asked</span>
+          <span className="section-turn-q">{section.askedQuery}</span>
+          <button
+            className={`deeper-btn${deeperLoading ? ' loading' : ''}`}
+            onClick={() => onDeeper(section)}
+            disabled={deeperLoading || isPendingTurn}
+            aria-label="Go deeper on this section"
+            title="Go deeper — creates a child node"
+          >
+            {deeperLoading ? (
+              <><span className="spinner" /> Thinking…</>
+            ) : (
+              <><CornerDownRight size={13} /> Go deeper</>
+            )}
+          </button>
+        </div>
+      ) : heading && (
+        /* Verbose branch answers (Go Deeper / Ask AI) carry one section with an
+           empty heading — render them as flowing prose: no number, no heading,
+           no per-section Go-deeper button. Branching there is highlight-driven. */
         <div className="section-head">
           <span className="section-num">{num}</span>
           <h2 data-section-heading>{heading}</h2>
@@ -469,12 +612,18 @@ export function Section({
           </button>
         </div>
       )}
-      <SectionBody
-        body={section.body}
-        sectionId={section.id}
-        sectionHeading={heading}
-        isFirst={idx === 0}
-      />
+      {isPendingTurn ? (
+        <div className="section-body md section-turn-pending"><span className="spinner" /></div>
+      ) : (
+        <SectionBody
+          body={section.body}
+          sectionId={section.id}
+          sectionHeading={heading}
+          isFirst={idx === 0}
+          notes={notesForSection}
+          onNoteClick={stableOnNoteClick}
+        />
+      )}
       {calloutsForSection.length > 0 && (
         <div className="section-callouts">
           {calloutsForSection.map(c => (

@@ -237,6 +237,12 @@ export interface HighlightItem {
   bg?: string | null;
   fg?: string | null;
   createdAt: string;
+  // Short Explain answer attached to this highlight's passage (#237 Phase 1b),
+  // set by NodesService.createInlineNote. Absent on a plain colour highlight.
+  note?: string;
+  // The question that produced `note` — persisted so a page reload can still
+  // show what was asked (#237 Phase 1b gap-fix).
+  noteQuestion?: string;
 }
 
 export interface RepoRef {
@@ -293,6 +299,13 @@ export interface GithubInstallationItem {
   SK: string;
   installationId: string;
   accountLogin: string;
+  // Optional — pre-existing rows predate these two fields (see
+  // GithubAppService.listInstallations' lazy self-heal). accountType is
+  // whether the installer is a personal account or an org.
+  accountType?: 'User' | 'Organization';
+  // 'all' vs 'selected' repos on the installation — drives the frontend's
+  // "allow All repositories" nudge for the create-repo flow (ADR-0007).
+  repositorySelection?: 'all' | 'selected';
   createdAt: string;
 }
 

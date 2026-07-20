@@ -100,13 +100,20 @@ describe('GithubAppService', () => {
   });
 
   describe('verifyAndStoreInstallation', () => {
-    it('persists the installation on a successful lookup', async () => {
-      fetchSpy.mockResolvedValueOnce(jsonResponse({ account: { login: 'acme' } }));
+    it('persists the installation, account type, and repository selection on a successful lookup', async () => {
+      fetchSpy.mockResolvedValueOnce(jsonResponse({ account: { login: 'acme', type: 'Organization' }, repository_selection: 'all' }));
 
       await service.verifyAndStoreInstallation(SUB, '999');
 
       expect(mockDb.putGithubInstallation).toHaveBeenCalledWith(
-        expect.objectContaining({ PK: `USER#${SUB}`, SK: 'GHINST#999', installationId: '999', accountLogin: 'acme' }),
+        expect.objectContaining({
+          PK: `USER#${SUB}`,
+          SK: 'GHINST#999',
+          installationId: '999',
+          accountLogin: 'acme',
+          accountType: 'Organization',
+          repositorySelection: 'all',
+        }),
       );
     });
 
@@ -194,20 +201,54 @@ describe('GithubAppService', () => {
   describe('listInstallations', () => {
     it('returns all-false without a DB call when the App is unconfigured', async () => {
       mockCfg.get.mockImplementation((key: string) => (key === 'githubApp.appId' ? undefined : CFG_VALUES[key]));
-      await expect(service.listInstallations(SUB)).resolves.toEqual({ configured: false, installed: false, accounts: [] });
+      await expect(service.listInstallations(SUB)).resolves.toEqual({ configured: false, installed: false, installations: [] });
       expect(mockDb.listGithubInstallations).not.toHaveBeenCalled();
     });
 
-    it('lists the accounts of every installation when configured', async () => {
+    it('lists every installation with its stored account type and repository selection, without a live fetch', async () => {
       mockDb.listGithubInstallations.mockResolvedValue([
-        { installationId: '1', accountLogin: 'acme' },
-        { installationId: '2', accountLogin: 'other-org' },
+        { installationId: '1', accountLogin: 'acme', accountType: 'Organization', repositorySelection: 'all' },
+        { installationId: '2', accountLogin: 'other-org', accountType: 'User', repositorySelection: 'selected' },
       ]);
       await expect(service.listInstallations(SUB)).resolves.toEqual({
         configured: true,
         installed: true,
-        accounts: ['acme', 'other-org'],
+        installations: [
+          { installationId: '1', accountLogin: 'acme', accountType: 'Organization', repositorySelection: 'all' },
+          { installationId: '2', accountLogin: 'other-org', accountType: 'User', repositorySelection: 'selected' },
+        ],
       });
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('self-heals a legacy row missing repositorySelection with a live lookup, and re-persists it', async () => {
+      mockDb.listGithubInstallations.mockResolvedValue([{ installationId: '1', accountLogin: 'acme' }]);
+      fetchSpy.mockResolvedValueOnce(jsonResponse({ account: { login: 'acme', type: 'Organization' }, repository_selection: 'all' }));
+
+      const result = await service.listInstallations(SUB);
+
+      expect(result).toEqual({
+        configured: true,
+        installed: true,
+        installations: [{ installationId: '1', accountLogin: 'acme', accountType: 'Organization', repositorySelection: 'all' }],
+      });
+      expect(mockDb.putGithubInstallation).toHaveBeenCalledWith(
+        expect.objectContaining({ installationId: '1', accountLogin: 'acme', accountType: 'Organization', repositorySelection: 'all' }),
+      );
+    });
+
+    it('degrades a legacy row to conservative defaults (User/selected) when the live lookup itself fails, without dropping it', async () => {
+      mockDb.listGithubInstallations.mockResolvedValue([{ installationId: '1', accountLogin: 'acme' }]);
+      fetchSpy.mockResolvedValueOnce(jsonResponse({ message: 'not found' }, { status: 404 }));
+
+      const result = await service.listInstallations(SUB);
+
+      expect(result).toEqual({
+        configured: true,
+        installed: true,
+        installations: [{ installationId: '1', accountLogin: 'acme', accountType: 'User', repositorySelection: 'selected' }],
+      });
+      expect(mockDb.putGithubInstallation).not.toHaveBeenCalled();
     });
   });
 

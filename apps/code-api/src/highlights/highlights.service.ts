@@ -31,6 +31,8 @@ export class HighlightsService {
       bg: dto.bg ?? null,
       fg: dto.fg ?? null,
       createdAt: now,
+      ...(dto.note !== undefined ? { note: dto.note } : {}),
+      ...(dto.noteQuestion !== undefined ? { noteQuestion: dto.noteQuestion } : {}),
     };
 
     await this.db.putHighlight(item);
@@ -42,9 +44,11 @@ export class HighlightsService {
     const item = await this.db.getHighlight(sessionId, hlId);
     if (!item) throw new NotFoundException(`Highlight ${hlId} not found`);
 
-    const updates: Partial<Pick<HighlightItem, 'bg' | 'fg'>> = {};
+    const updates: Partial<Pick<HighlightItem, 'bg' | 'fg' | 'note' | 'noteQuestion'>> = {};
     if (dto.bg !== undefined) updates.bg = dto.bg;
     if (dto.fg !== undefined) updates.fg = dto.fg;
+    if (dto.note !== undefined) updates.note = dto.note;
+    if (dto.noteQuestion !== undefined) updates.noteQuestion = dto.noteQuestion;
 
     if (Object.keys(updates).length) {
       await this.db.updateHighlight(sessionId, hlId, updates);

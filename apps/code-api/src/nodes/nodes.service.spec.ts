@@ -8,6 +8,8 @@ import { BRANCH_DEFAULT_MODEL, CLOUD_CODE_MODEL_ID, PLAN_MODEL_ID, resolveBranch
 import { SessionsService } from '@/sessions/sessions.service';
 import { UsersService } from '@/users/users.service';
 import { GithubAppService } from '@/github/github-app.service';
+import { ApnsService } from '@/devices/apns.service';
+import { HighlightsService } from '@/highlights/highlights.service';
 import { AgentRunFinal, AgentRunContext } from '@/agent/agent-runner';
 import { AGENT_RUNNER_REGISTRY } from '@/agent/runner-registry';
 import { AgentEvent } from '@/agent/agent-run.util';
@@ -33,6 +35,7 @@ const mockDb = {
 const mockLlm = {
   expandSection: jest.fn(),
   followUpFromHighlight: jest.fn(),
+  answerInline: jest.fn(),
   mixNodes: jest.fn(),
   generateCodeMeta: jest.fn(),
 };
@@ -56,6 +59,14 @@ const mockGithubApp = {
   createPullRequest: jest.fn(),
   mergePullRequest: jest.fn(),
   createBranchRef: jest.fn(),
+};
+
+const mockApns = {
+  sendToUser: jest.fn().mockResolvedValue(undefined),
+};
+
+const mockHighlights = {
+  create: jest.fn(),
 };
 
 const agentRunner = {
@@ -148,6 +159,8 @@ describe('NodesService', () => {
         { provide: SessionsService, useValue: mockSessions },
         { provide: UsersService, useValue: mockUsers },
         { provide: GithubAppService, useValue: mockGithubApp },
+        { provide: ApnsService, useValue: mockApns },
+        { provide: HighlightsService, useValue: mockHighlights },
         { provide: ConfigService, useValue: mockConfig },
         { provide: AGENT_RUNNER_REGISTRY, useValue: mockRunners },
       ],
@@ -305,6 +318,177 @@ describe('NodesService', () => {
       await expect(
         service.createNode(SUB, SESSION_ID, { ...dto, highlightText: undefined }),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('createNode — inline mode', () => {
+    const inlineDto = {
+      kind: 'ASK' as const,
+      parentNodeId: PARENT_NODE_ID,
+      fromSection: 'sec-1',
+      query: 'Why does this work?',
+      highlightText: 'gradient descent',
+      inline: true,
+    };
+
+    const inlineLlmResult = {
+      answer: 'Because the loss surface is convex here.',
+      usage: { inputTokens: 40, outputTokens: 20 },
+    };
+
+    beforeEach(() => {
+      mockSessions.getSession.mockResolvedValue(fullSession);
+      mockLlm.answerInline.mockResolvedValue(inlineLlmResult);
+      mockDb.putNode.mockResolvedValue(undefined);
+      mockSessions.touchUpdatedAt.mockResolvedValue(undefined);
+    });
+
+    it('appends exactly one section to the parent and does not call incrementNodeCount', async () => {
+      const result = await service.createNode(SUB, SESSION_ID, inlineDto);
+
+      expect(mockLlm.answerInline).toHaveBeenCalledWith(
+        [{ title: 'Root Title', query: 'Root query' }],
+        'gradient descent',
+        'Why does this work?',
+        BRANCH_DEFAULT_MODEL,
+        false,
+        70,
+        undefined, // extraContext (parent is not a CODE node)
+      );
+
+      expect(result.sections).toHaveLength(1);
+      expect(result.sections[0]).toMatchObject({ heading: '', body: inlineLlmResult.answer, askedQuery: inlineDto.query });
+
+      expect(mockDb.putNode).toHaveBeenCalledTimes(1);
+      const putArg = mockDb.putNode.mock.calls[0][0];
+      expect(putArg.nodeId).toBe(PARENT_NODE_ID);
+
+      expect(mockSessions.incrementNodeCount).not.toHaveBeenCalled();
+    });
+
+    it('bills usage against the parent nodeId, not a new node', async () => {
+      await service.createNode(SUB, SESSION_ID, inlineDto);
+      expect(mockUsers.billUsage).toHaveBeenCalledWith(
+        SUB, 40, 20, 'ASK', SESSION_ID, PARENT_NODE_ID, BRANCH_DEFAULT_MODEL,
+      );
+    });
+
+    it('uses sectionBody as the anchor text for DEEPER', async () => {
+      await service.createNode(SUB, SESSION_ID, {
+        ...inlineDto, kind: 'DEEPER', highlightText: undefined, sectionBody: 'The chain rule is...',
+      });
+      expect(mockLlm.answerInline).toHaveBeenCalledWith(
+        expect.anything(), 'The chain rule is...', expect.anything(), expect.anything(), expect.anything(), expect.anything(), undefined,
+      );
+    });
+
+    it('throws BadRequestException when the anchor text is missing', async () => {
+      await expect(
+        service.createNode(SUB, SESSION_ID, { ...inlineDto, highlightText: undefined }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('createInlineNote — "Explain" (#237 Phase 1b)', () => {
+    const dto = {
+      nodeId: PARENT_NODE_ID,
+      sectionId: 'sec-1',
+      text: 'gradient descent',
+      start: 10,
+      end: 27,
+      question: 'Why does this work?',
+    };
+
+    const inlineLlmResult = {
+      answer: 'Because the loss surface is convex here.',
+      usage: { inputTokens: 40, outputTokens: 20 },
+    };
+
+    const savedHighlight = {
+      PK: `SESSION#${SESSION_ID}`,
+      SK: 'HL#hl-1',
+      hlId: 'hl-1',
+      nodeId: PARENT_NODE_ID,
+      sectionId: 'sec-1',
+      text: 'gradient descent',
+      start: 10,
+      end: 27,
+      bg: 'note',
+      fg: null,
+      note: inlineLlmResult.answer,
+      noteQuestion: dto.question,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    };
+
+    beforeEach(() => {
+      mockSessions.getSession.mockResolvedValue(fullSession);
+      mockLlm.answerInline.mockResolvedValue(inlineLlmResult);
+      mockHighlights.create.mockResolvedValue(savedHighlight);
+      mockSessions.touchUpdatedAt.mockResolvedValue(undefined);
+    });
+
+    it('writes a highlight carrying the note, with the "note" sentinel bg', async () => {
+      const result = await service.createInlineNote(SUB, SESSION_ID, dto);
+
+      expect(mockLlm.answerInline).toHaveBeenCalledWith(
+        [{ title: 'Root Title', query: 'Root query' }],
+        'gradient descent',
+        'Why does this work?',
+        BRANCH_DEFAULT_MODEL,
+        false,
+        40,
+        undefined, // extraContext (node is not a CODE node)
+      );
+
+      expect(mockHighlights.create).toHaveBeenCalledWith(SUB, SESSION_ID, {
+        nodeId: PARENT_NODE_ID,
+        sectionId: 'sec-1',
+        text: 'gradient descent',
+        start: 10,
+        end: 27,
+        bg: 'note',
+        fg: null,
+        note: inlineLlmResult.answer,
+        noteQuestion: dto.question,
+      });
+
+      expect(result).toEqual(savedHighlight);
+      expect(result.noteQuestion).toBe('Why does this work?');
+    });
+
+    it('bills usage against the node, touches session updatedAt, and never creates a node', async () => {
+      await service.createInlineNote(SUB, SESSION_ID, dto);
+
+      expect(mockUsers.billUsage).toHaveBeenCalledWith(
+        SUB, 40, 20, 'ASK', SESSION_ID, PARENT_NODE_ID, BRANCH_DEFAULT_MODEL,
+      );
+      expect(mockSessions.touchUpdatedAt).toHaveBeenCalledWith(SUB, SESSION_ID);
+      expect(mockSessions.incrementNodeCount).not.toHaveBeenCalled();
+      expect(mockDb.putNode).not.toHaveBeenCalled();
+    });
+
+    it('threads CODE-parent context into answerInline when the highlight is on a CODE node', async () => {
+      const codeNode = {
+        ...parentNode,
+        kind: 'CODE',
+        commitMessage: 'Add retry logic',
+        diffSummary: { filesChanged: 1, additions: 5, deletions: 1, files: [{ path: 'src/retry.ts', status: 'modified', additions: 5, deletions: 1 }] },
+      };
+      mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [codeNode] });
+      mockDb.getAgentRun.mockResolvedValue(null);
+
+      await service.createInlineNote(SUB, SESSION_ID, dto);
+
+      const extraContext = mockLlm.answerInline.mock.calls[0].at(-1);
+      expect(extraContext).toContain('Add retry logic');
+      expect(extraContext).toContain('src/retry.ts');
+    });
+
+    it('throws NotFoundException when the node does not exist', async () => {
+      mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [] });
+      await expect(service.createInlineNote(SUB, SESSION_ID, dto)).rejects.toBeInstanceOf(NotFoundException);
+      expect(mockLlm.answerInline).not.toHaveBeenCalled();
+      expect(mockHighlights.create).not.toHaveBeenCalled();
     });
   });
 
@@ -574,6 +758,55 @@ describe('NodesService', () => {
       mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [branchBase, sourceNode] });
       await expect(service.createMixNode(SUB, SESSION_ID, { ...mixDto, plan: true }))
         .rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('createMixNode — fromText renders source titles, not raw ULIDs', () => {
+    const baseMixDto = { parentNodeId: PARENT_NODE_ID, query: 'Combine these' };
+    const baseSource = { ...parentNode, sections: [] as Array<{ heading: string; body: string }> };
+
+    beforeEach(() => {
+      mockLlm.mixNodes.mockResolvedValue({ ...llmResult, title: 'Mix Result' });
+      mockDb.putNode.mockResolvedValue(undefined);
+      mockSessions.touchUpdatedAt.mockResolvedValue(undefined);
+      mockSessions.incrementNodeCount.mockResolvedValue(undefined);
+    });
+
+    it('joins source node titles with " · ", not their ULIDs', async () => {
+      const sourceA = { ...baseSource, nodeId: '01HZSOURCEA', title: 'Auth flow research' };
+      const sourceB = { ...baseSource, nodeId: '01HZSOURCEB', title: 'Rate limiting notes' };
+      mockSessions.getSession.mockResolvedValue({
+        ...fullSession,
+        nodes: [parentNode, sourceA, sourceB],
+      });
+      const result = await service.createMixNode(SUB, SESSION_ID, {
+        ...baseMixDto,
+        sourceNodeIds: [sourceA.nodeId, sourceB.nodeId],
+      });
+      expect(result.fromText).toBe('Auth flow research · Rate limiting notes');
+      expect(result.fromText).not.toMatch(/01HZSOURCE/);
+    });
+
+    it('caps at 3 titles and appends a "+N more" suffix for larger mixes', async () => {
+      const sources = ['A', 'B', 'C', 'D', 'E'].map((label) => ({
+        ...baseSource, nodeId: `01HZSOURCE${label}`, title: `Source ${label}`,
+      }));
+      mockSessions.getSession.mockResolvedValue({
+        ...fullSession,
+        nodes: [parentNode, ...sources],
+      });
+      const result = await service.createMixNode(SUB, SESSION_ID, {
+        ...baseMixDto,
+        sourceNodeIds: sources.map((s) => s.nodeId),
+      });
+      expect(result.fromText).toBe('Source A · Source B · Source C +2 more');
+    });
+
+    it('plan:true with zero sources uses the base node\'s own title, not an empty string', async () => {
+      const base = { ...parentNode, title: 'Base Node Title', sections: [{ id: 's1', heading: 'H', body: 'Body' }] };
+      mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [base] });
+      const result = await service.createMixNode(SUB, SESSION_ID, { ...baseMixDto, sourceNodeIds: [], plan: true });
+      expect(result.fromText).toBe('Base Node Title');
     });
   });
 

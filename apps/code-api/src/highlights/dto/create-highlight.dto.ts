@@ -34,4 +34,14 @@ export class CreateHighlightDto {
   @IsOptional()
   @IsString()
   fg?: string | null;
+
+  @ApiPropertyOptional({ description: 'Short Explain answer attached to this highlight\'s passage' })
+  @IsOptional()
+  @IsString()
+  note?: string;
+
+  @ApiPropertyOptional({ description: 'The question that produced `note`' })
+  @IsOptional()
+  @IsString()
+  noteQuestion?: string;
 }

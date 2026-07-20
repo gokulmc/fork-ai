@@ -1,7 +1,8 @@
 'use client';
 import { useRef, useState } from 'react';
-import { Search, ArrowRight, ArrowUpRight, Clock, FileText, Plus } from './Icons';
+import { ArrowUpRight, Clock, Plus } from './Icons';
 import { CookiePreferencesLink } from './CookiePreferencesLink';
+import { QueryBox } from './QueryBox';
 import { extractText } from '@/lib/extractDocument';
 import { SKILL_PLUGINS, HARNESS_PLUGINS } from '@/lib/mockGithub';
 import { BRAND_TAGLINE } from '@/lib/brand';
@@ -138,16 +139,17 @@ export function Landing({ onSubmit, onSubmitDocument, loading, onShowHistory, ou
           Learn the concepts, synthesize a plan, then watch the agent commit one focused step at a
           time — reviewable, branchable, never a single unreviewable mega-diff.
         </p>
-        <div className={`query-box${dragOver ? ' drag-over' : ''}`} data-tour="tour-query">
-          <span className="icon"><Search size={20} /></span>
-          <input
-            type="text"
-            autoFocus
-            value={q}
-            placeholder="Try: add rate limiting to my API"
-            onChange={e => setQ(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && onGo()}
-          />
+        <QueryBox
+          value={q}
+          onChange={setQ}
+          onSubmit={onGo}
+          placeholder="Try: add rate limiting to my API"
+          loading={loading}
+          autoFocus
+          onPickFile={onPickFile}
+          fileBusy={reading}
+          className={dragOver ? ' drag-over' : ''}
+        >
           <input
             ref={fileRef}
             type="file"
@@ -155,24 +157,6 @@ export function Landing({ onSubmit, onSubmitDocument, loading, onShowHistory, ou
             hidden
             onChange={onFileChange}
           />
-          <button
-            type="button"
-            className="qb-file"
-            disabled={loading || reading}
-            onClick={onPickFile}
-            title="Build a mind map from a PDF, image, or text file"
-            aria-label="Upload a PDF, image, or text file"
-          >
-            {reading ? <span className="spinner" style={{ width: 14, height: 14 }} /> : <FileText size={18} />}
-          </button>
-          <button className="submit" disabled={!q.trim() || loading} onClick={onGo}>
-            {loading ? (
-              <><span className="spinner" style={{ width: 11, height: 11 }} /> Thinking…</>
-            ) : (
-              <>Begin <ArrowRight size={13} /></>
-            )}
-          </button>
-
           {loggedIn && q.trim().length > 0 && !leaving && (
             <div className="plugin-drop" role="group" aria-label="Skills and harnesses">
               <div className="plugin-drop-head">
@@ -203,7 +187,7 @@ export function Landing({ onSubmit, onSubmitDocument, loading, onShowHistory, ou
               </div>
             </div>
           )}
-        </div>
+        </QueryBox>
 
         {dragOver && (
           <div className="drop-hint">Drop to build a mind map from this file</div>

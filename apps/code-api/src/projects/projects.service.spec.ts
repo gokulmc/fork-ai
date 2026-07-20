@@ -213,6 +213,27 @@ describe('ProjectsService', () => {
     });
   });
 
+  describe('create — github provider with rootQuery (ADR-0007 create-repo flow)', () => {
+    it('skips full-history import entirely and forwards rootQuery through to createProjectSession, same as provider "new"', async () => {
+      mockGithub.getRepoSeed.mockResolvedValue({ defaultBranch: 'main', first: null, head: null });
+      mockSessions.createProjectSession.mockResolvedValue('sess-1');
+      mockDb.putProject.mockResolvedValue(undefined);
+      mockDb.updateSessionMeta.mockResolvedValue(undefined);
+
+      const dto = { ...githubDto, rootQuery: 'A blog engine with markdown posts.' };
+      await service.create(SUB, dto);
+
+      expect(mockRepoImport.buildImportedNodes).not.toHaveBeenCalled();
+      expect(mockSessions.createImportedProjectSession).not.toHaveBeenCalled();
+      expect(mockSessions.createProjectSession).toHaveBeenCalledWith(SUB, dto.name, {
+        defaultBranch: 'main',
+        first: null,
+        head: null,
+        imported: true,
+      }, dto.rootQuery);
+    });
+  });
+
   describe('create — new (from-scratch) provider', () => {
     const newDto = {
       name: 'Widget Service',
@@ -237,15 +258,15 @@ describe('ProjectsService', () => {
       }, newDto.rootQuery);
     });
 
-    it('does not forward rootQuery for a non-new provider, even if the DTO carried one', async () => {
+    it('forwards rootQuery unconditionally now — buildSession no longer gates the fallback pass-through on provider === "new"', async () => {
       mockSessions.createProjectSession.mockResolvedValue('sess-1');
       mockDb.putProject.mockResolvedValue(undefined);
       mockDb.updateSessionMeta.mockResolvedValue(undefined);
 
-      await service.create(SUB, { ...mockDto, rootQuery: 'should be ignored' });
+      await service.create(SUB, { ...mockDto, rootQuery: 'A mock-provider rootQuery' });
 
       const [, , , rootQueryArg] = mockSessions.createProjectSession.mock.calls[0];
-      expect(rootQueryArg).toBeUndefined();
+      expect(rootQueryArg).toBe('A mock-provider rootQuery');
     });
   });
 
