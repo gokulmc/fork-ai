@@ -17,6 +17,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",
     "@aws-sdk/client-dynamodb": "^3.1048.0",
+    "@aws-sdk/client-secrets-manager": "^3.1048.0",
     "@aws-sdk/client-ses": "^3.1056.0",
     "@aws-sdk/lib-dynamodb": "^3.1048.0",
     "@blaxel/core": "^0.3.3",

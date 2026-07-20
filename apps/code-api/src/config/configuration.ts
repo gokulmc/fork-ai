@@ -59,6 +59,7 @@ export const validationSchema = Joi.object({
   APNS_TEAM_ID: Joi.string().allow('').optional(),
   APNS_BUNDLE_ID: Joi.string().allow('').optional(),
   APNS_ENV: Joi.string().allow('').optional(),
+  APNS_SECRET_NAME: Joi.string().allow('').optional(),
 });
 
 export const configuration = () => ({
@@ -127,5 +128,6 @@ export const configuration = () => ({
     teamId: process.env.APNS_TEAM_ID ?? '',
     bundleId: process.env.APNS_BUNDLE_ID || 'in.forkai.code',
     env: process.env.APNS_ENV ?? '',
+    secretName: process.env.APNS_SECRET_NAME ?? '',
   },
 });
