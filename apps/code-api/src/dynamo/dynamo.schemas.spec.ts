@@ -1,5 +1,5 @@
 import * as dynamoose from 'dynamoose';
-import { NodeSchema, AgentRunSchema, ProjectSchema, SessionMetaSchema, GithubInstallationSchema } from './dynamo.schemas';
+import { NodeSchema, AgentRunSchema, ProjectSchema, SessionMetaSchema, GithubInstallationSchema, HighlightSchema } from './dynamo.schemas';
 
 // Model instantiation + toJSON only — no .save()/.get(), so no AWS calls/creds
 // needed. This exists to catch the exact bug this codebase has hit before:
@@ -61,6 +61,31 @@ describe('Dynamoose schema field coverage', () => {
     expect(json.prUrl).toBe('https://github.com/acme/widgets/pull/42');
     expect(json.prError).toBe('forbidden');
     expect(json.okr).toEqual({ objective: 'Ship the retry logic', keyResults: ['p99 latency < 200ms', 'zero flaky test failures'] });
+  });
+
+  // Regression guard for the inline-mode (#237) footgun: a section's askedQuery
+  // must be declared on NodeSchema's nested sections schema, or saveUnknown:false
+  // silently drops it on write/read — same class of bug as the Usage Event
+  // `model` field (see root CLAUDE.md → "Dynamoose saveUnknown is off").
+  it('Node model retains sections[].askedQuery (inline mode)', () => {
+    const NodeModel = dynamoose.model('NodeSchemaAskedQueryCoverageTest', NodeSchema);
+    const item = new NodeModel({
+      PK: 'SESSION#s1',
+      SK: 'NODE#n1',
+      nodeId: 'n1',
+      parentId: null,
+      kind: 'QUERY',
+      title: 'Root Title',
+      emoji: null,
+      query: 'Root query',
+      lede: '',
+      sections: [{ id: 'sec1', heading: '', body: 'Because the loss surface is convex here.', askedQuery: 'Why does this work?' }],
+      fromSection: null,
+      fromText: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+    const json = item.toJSON() as { sections: Array<Record<string, unknown>> };
+    expect(json.sections[0].askedQuery).toBe('Why does this work?');
   });
 
   it('AgentRun model retains all fields', () => {
@@ -147,17 +172,71 @@ describe('Dynamoose schema field coverage', () => {
     expect(json.lastRunStatus).toBe('running');
   });
 
-  it('GithubInstallation model retains all fields', () => {
+  // Regression guard for the "Explain" inline-note footgun (#237 Phase 1b): the
+  // note field must be declared on HighlightSchema, or saveUnknown:false
+  // silently drops it on write/read — same class of bug as the Usage Event
+  // `model` field (see root CLAUDE.md → "Dynamoose saveUnknown is off").
+  it('Highlight model retains note', () => {
+    const HighlightModel = dynamoose.model('HighlightSchemaCoverageTest', HighlightSchema);
+    const item = new HighlightModel({
+      PK: 'SESSION#s1',
+      SK: 'HL#hl1',
+      hlId: 'hl1',
+      nodeId: 'n1',
+      sectionId: 'sec1',
+      text: 'gradient descent',
+      start: 10,
+      end: 27,
+      bg: 'note',
+      fg: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      note: 'Because the loss surface is convex here.',
+    });
+    const json = item.toJSON() as Record<string, unknown>;
+    expect(json.bg).toBe('note');
+    expect(json.note).toBe('Because the loss surface is convex here.');
+  });
+
+  // Same footgun, same fix, for the question that produced `note` (#237 Phase
+  // 1b gap-fix) — without this declared on the schema, a page reload can't
+  // show what was asked, only the answer.
+  it('Highlight model retains noteQuestion', () => {
+    const HighlightModel = dynamoose.model('HighlightSchemaCoverageTest2', HighlightSchema);
+    const item = new HighlightModel({
+      PK: 'SESSION#s1',
+      SK: 'HL#hl1',
+      hlId: 'hl1',
+      nodeId: 'n1',
+      sectionId: 'sec1',
+      text: 'gradient descent',
+      start: 10,
+      end: 27,
+      bg: 'note',
+      fg: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      note: 'Because the loss surface is convex here.',
+      noteQuestion: 'Why does this work?',
+    });
+    const json = item.toJSON() as Record<string, unknown>;
+    expect(json.note).toBe('Because the loss surface is convex here.');
+    expect(json.noteQuestion).toBe('Why does this work?');
+  });
+
+  it('GithubInstallation model retains all fields, including accountType and repositorySelection (ADR-0007)', () => {
     const GithubInstallationModel = dynamoose.model('GithubInstallationSchemaCoverageTest', GithubInstallationSchema);
     const item = new GithubInstallationModel({
       PK: 'USER#u1',
       SK: 'GHINST#12345',
       installationId: '12345',
       accountLogin: 'acme',
+      accountType: 'Organization',
+      repositorySelection: 'all',
       createdAt: '2026-01-01T00:00:00.000Z',
     });
     const json = item.toJSON() as Record<string, unknown>;
     expect(json.installationId).toBe('12345');
     expect(json.accountLogin).toBe('acme');
+    expect(json.accountType).toBe('Organization');
+    expect(json.repositorySelection).toBe('all');
   });
 });

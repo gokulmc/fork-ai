@@ -133,9 +133,11 @@ export function MindMap({
     return () => { ro.disconnect(); clearTimeout(timer); };
   }, []);
 
-  // Sessions with any PLAN/CODE/BRANCH rail node get the git-graph layout
-  // (vertical columns); pure-research sessions keep the plain vertical mind
-  // map (no regression) — same function, same edges, untouched.
+  // Sessions with any CODE/BRANCH/MERGE rail node get the git-graph layout
+  // (vertical columns); pure-research sessions AND sessions that only hold a
+  // PLAN (no CODE built from it yet) keep the plain vertical mind map — PLAN
+  // is learn-shaped for layout (see layoutGitGraph's RAIL_KINDS), so it never
+  // triggers the rail layout on its own. Same function, same edges, untouched.
   const gitLayout = useMemo(() => hasRailNode(nodes), [nodes]);
   const { pos, bounds, childMap, depthMap, laneRails, colOf = {} } = useMemo(
     () => (gitLayout ? layoutGitGraph(nodes, rootId) : layoutTree(nodes, rootId)),
@@ -330,7 +332,7 @@ export function MindMap({
   };
 
   // Edge routing: a straight lane line for same-column rail continuation
-  // (CODE/BRANCH/MERGE following PLAN/CODE/BRANCH/MERGE), a strict horizontal
+  // (CODE/BRANCH/MERGE following CODE/BRANCH/MERGE), a strict horizontal
   // line with an arrowhead for a fork (BRANCH child — after layoutGitGraph's
   // B1 change a BRANCH shares its parent's y, so parent-right-center to
   // child-left-center is exactly horizontal), and — for learn edges — the
@@ -345,14 +347,14 @@ export function MindMap({
       const isFork = cKind === 'BRANCH';
       // A "lane" is a straight vertical drop within one column, so it's only
       // valid when parent and child actually share an x. A CODE continuing its
-      // rail parent (CODE/BRANCH/MERGE) does. A PLAN->CODE does NOT once the
-      // CODE is re-homed to its branch column (layoutGitGraph step 4.5) — and
-      // colOf[plan] can even be undefined for a hang-placed PLAN — so it falls
-      // through to the cross-column bézier below (same geometry as a learn edge),
-      // keeping the visible link PLAN -> CODE.
+      // rail parent (CODE/BRANCH/MERGE) does. PLAN is never on the rail (see
+      // layoutGitGraph's RAIL_KINDS) — a PLAN->CODE edge therefore always falls
+      // through to the cross-column bézier below (same geometry as a learn
+      // edge), keeping the visible link PLAN -> CODE even when the CODE is
+      // re-homed to a BRANCH column (layoutGitGraph step 4.5).
       const sameX = Math.abs(a.x - b.x) < 1;
       const isLane = !isFork && cKind === 'CODE' && sameX
-        && (pKind === 'CODE' || pKind === 'BRANCH' || pKind === 'MERGE' || pKind === 'PLAN');
+        && (pKind === 'CODE' || pKind === 'BRANCH' || pKind === 'MERGE');
       if (isLane) {
         const x = a.x + NODE_W / 2;
         edges.push({ pid, cid, kind: 'lane', d: `M ${x} ${a.y + NODE_H} L ${x} ${b.y}` });

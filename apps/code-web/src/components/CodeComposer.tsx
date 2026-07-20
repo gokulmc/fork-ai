@@ -44,6 +44,11 @@ interface CodeComposerProps {
   // Web search has no effect on a CODE run (no backend param for it) — greyed
   // the same way the tweaks panel greys it out for DeepSeek's unsupported case.
   webSearchDisabled?: boolean;
+  // #237 Phase 1a — when on, Ask appends a short turn to the current node
+  // instead of spawning a child. A working preference (persisted), not a
+  // per-message choice, so it lives beside the other composer pills.
+  inline: boolean;
+  onInlineChange: (v: boolean) => void;
 }
 
 const MAX_FILES = 3;
@@ -62,6 +67,7 @@ export const CodeComposer = forwardRef<CodeComposerHandle, CodeComposerProps>(fu
     variant, idToken, onBuild, buildDisabled, onAsk, askDisabled, askLoading,
     onDeeper, deeperDisabled, deeperLoading,
     model, onModelChange, webSearch, onWebSearchChange, webSearchDisabled,
+    inline, onInlineChange,
   },
   ref,
 ) {
@@ -261,6 +267,14 @@ export const CodeComposer = forwardRef<CodeComposerHandle, CodeComposerProps>(fu
               onClick={() => onWebSearchChange(!webSearch)}
             >
               🔍 Web
+            </button>
+            <button
+              type="button"
+              className={`code-composer-pill code-composer-pill--inline${inline ? ' code-composer-pill--on' : ''}`}
+              title={inline ? 'Answering in this node — no new node will be created' : 'Answer here instead of creating a new node'}
+              onClick={() => onInlineChange(!inline)}
+            >
+              ↵ inline
             </button>
           </div>
           <div className="code-composer-row-right">

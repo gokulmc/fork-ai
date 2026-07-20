@@ -3,13 +3,15 @@ import { Inject, Injectable, Logger, NotFoundException, BadRequestException } fr
 import { ConfigService } from '@nestjs/config';
 import { ulid } from 'ulid';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
-import type { NodeItem, AgentRunItem, RepoRef, ProjectItem } from '@/dynamo/dynamo.interfaces';
+import type { NodeItem, AgentRunItem, RepoRef, ProjectItem, HighlightItem } from '@/dynamo/dynamo.interfaces';
 import { LlmService, friendlyLlmError } from '@/llm/llm.service';
 import { resolveBranchModel, priceFor, CLOUD_CODE_MODEL_ID, PLAN_MODEL_ID, ALIAS_TO_ID } from '@/llm/models';
 import { NodeKind } from '@/llm/llm.types';
 import { SessionsService } from '@/sessions/sessions.service';
 import { UsersService } from '@/users/users.service';
 import { GithubAppService } from '@/github/github-app.service';
+import { ApnsService } from '@/devices/apns.service';
+import { HighlightsService } from '@/highlights/highlights.service';
 import { AgentRunFinal, AgentRunContext } from '@/agent/agent-runner';
 import { AGENT_RUNNER_REGISTRY, AgentRunnerRegistry } from '@/agent/runner-registry';
 import { AgentEvent, serializeEventsCapped } from '@/agent/agent-run.util';
@@ -18,6 +20,7 @@ import { CreateMixNodeDto } from './dto/create-mix-node.dto';
 import { CreateBranchNodeDto } from './dto/create-branch-node.dto';
 import { CreateCodeNodeDto } from './dto/create-code-node.dto';
 import { CreatePrNodeDto } from './dto/create-pr-node.dto';
+import { CreateInlineNoteDto } from './dto/create-inline-note.dto';
 import { UpdateNodeDto } from './dto/update-node.dto';
 import { assertKindAllowed, LEARN_KINDS } from './node-grammar';
 import { findRailChain, planDocOf, codeSummaryOf, codeContextBlockOf, attachmentsBlockOf } from './context';
@@ -32,6 +35,8 @@ export class NodesService {
     private readonly sessions: SessionsService,
     private readonly users: UsersService,
     private readonly githubApp: GithubAppService,
+    private readonly apns: ApnsService,
+    private readonly highlights: HighlightsService,
     private readonly cfg: ConfigService,
     @Inject(AGENT_RUNNER_REGISTRY) private readonly runners: AgentRunnerRegistry,
   ) {}
@@ -101,6 +106,28 @@ export class NodesService {
       extraContext = extraContext ? `${extraContext}\n\n${block}` : block;
     }
 
+    // Inline mode: append a short answer to the parent node's own sections
+    // instead of creating a child node — no new node, no map growth.
+    if (dto.inline) {
+      const anchorText = dto.kind === 'ASK' ? dto.highlightText : dto.sectionBody;
+      if (!anchorText) throw new BadRequestException(`${dto.kind === 'ASK' ? 'highlightText' : 'sectionBody'} required for ${dto.kind} nodes`);
+
+      const inlineResult = await this.llm.answerInline(ancestors, anchorText, dto.query, model, dto.webSearch ?? false, 70, extraContext);
+      const section = { id: ulid(), heading: '', body: inlineResult.answer, askedQuery: dto.query };
+      const updatedParent: NodeItem = { ...parentNode, sections: [...parentNode.sections, section] };
+
+      // Full-item replace, not updateNode — updateNode's field whitelist doesn't
+      // include sections, so an update would silently no-op (see sessions.service.ts's
+      // incremental section writes for the same pattern).
+      await this.db.putNode(updatedParent);
+      await Promise.all([
+        this.sessions.touchUpdatedAt(sub, sessionId),
+        this.users.billUsage(sub, inlineResult.usage.inputTokens, inlineResult.usage.outputTokens, dto.kind, sessionId, parentNode.nodeId, model),
+      ]);
+
+      return updatedParent;
+    }
+
     if (dto.kind === 'DEEPER') {
       if (!dto.sectionBody) throw new BadRequestException('sectionBody required for DEEPER nodes');
       llmResult = await this.llm.expandSection(ancestors, dto.query, dto.sectionBody, dto.sectionCount ?? 4, dto.webSearch ?? false, model, dto.verbose ?? false, true, boost, avoidEmojis, persona, extraContext);
@@ -141,6 +168,76 @@ export class NodesService {
     ]);
 
     return node;
+  }
+
+  // "Explain" (#237 Phase 1b) — a highlight-anchored alternative to Branch: a
+  // very short answer attached to the highlighted passage itself (as a
+  // HighlightItem.note), not a new node. Mirrors createNode's inline-mode
+  // branch (same answerInline call, same CODE-parent context enrichment, same
+  // ancestor-trail walk) but writes a HighlightItem instead of appending a
+  // section, and never touches nodeCount since no node is created.
+  async createInlineNote(sub: string, sessionId: string, dto: CreateInlineNoteDto): Promise<HighlightItem> {
+    await this.users.checkCredit(sub);
+
+    const model = resolveBranchModel(dto.model);
+
+    const session = await this.sessions.getSession(sub, sessionId);
+    const nodeById = new Map(session.nodes.map((n) => [n.nodeId, n]));
+
+    const node = nodeById.get(dto.nodeId);
+    if (!node) {
+      throw new NotFoundException(`Node ${dto.nodeId} not found`);
+    }
+
+    // Walk up to root to build the ancestor context trail (root first),
+    // inclusive of the highlight's own node — identical to createNode's inline
+    // branch, where the trail is rooted at the node the answer is appended to.
+    const ancestors: Array<{ title: string; query: string }> = [];
+    let cur: string | null = dto.nodeId;
+    while (cur) {
+      const n = nodeById.get(cur);
+      if (!n) break;
+      ancestors.unshift({ title: n.title, query: n.query });
+      cur = n.parentId ?? null;
+    }
+
+    // A note on a CODE node's passage is grounded in what the agent actually
+    // did, not just its title/query — same best-effort AgentRun fetch as
+    // createNode's code→learn enrichment (skipped silently if absent/erroring).
+    let extraContext: string | undefined;
+    if (node.kind === 'CODE') {
+      const run = await this.db.getAgentRun(sessionId, node.nodeId).catch(() => null);
+      let recentEvents: AgentEvent[] = [];
+      if (run) {
+        try { recentEvents = (JSON.parse(run.events) as AgentEvent[]).slice(-15); } catch { /* malformed events blob — degrade gracefully */ }
+      }
+      extraContext = codeContextBlockOf(node, recentEvents);
+    }
+
+    // 40 words, tighter than the composer inline turn's 70 — this has to fit in
+    // a small popover beside the prose, not a conversational reply.
+    const inlineResult = await this.llm.answerInline(ancestors, dto.text, dto.question, model, dto.webSearch ?? false, 40, extraContext);
+
+    // 'note' is a reserved sentinel (like 'branch') the frontend maps to a
+    // dedicated ::highlight(fork-hl-note) style — not a hex colour.
+    const highlight = await this.highlights.create(sub, sessionId, {
+      nodeId: dto.nodeId,
+      sectionId: dto.sectionId,
+      text: dto.text,
+      start: dto.start,
+      end: dto.end,
+      bg: 'note',
+      fg: null,
+      note: inlineResult.answer,
+      noteQuestion: dto.question,
+    });
+
+    await Promise.all([
+      this.sessions.touchUpdatedAt(sub, sessionId),
+      this.users.billUsage(sub, inlineResult.usage.inputTokens, inlineResult.usage.outputTokens, 'ASK', sessionId, dto.nodeId, model),
+    ]);
+
+    return highlight;
   }
 
   async createMixNode(sub: string, sessionId: string, dto: CreateMixNodeDto): Promise<NodeItem> {
@@ -242,6 +339,19 @@ export class NodesService {
     const now = new Date().toISOString();
     const sections = llmResult.sections.map((s) => ({ id: ulid(), ...s }));
 
+    // sourceNodes (built above for the LLM prompt) already resolved every
+    // sourceId to its node — an unresolved id throws NotFoundException earlier
+    // in this method, so it never reaches here — and already falls back to the
+    // base node's own title for the 0-source plan case. Render the callout from
+    // titles, not raw ULIDs; cap the list so a huge mix doesn't become a
+    // run-on string (same "+N more" pattern as AgentLogPane's line-count suffix).
+    const sourceTitles = sourceNodes.map((n) => n.title).filter(Boolean);
+    const MAX_FROM_TEXT_TITLES = 3;
+    const fromText =
+      sourceTitles.length <= MAX_FROM_TEXT_TITLES
+        ? sourceTitles.join(' · ')
+        : `${sourceTitles.slice(0, MAX_FROM_TEXT_TITLES).join(' · ')} +${sourceTitles.length - MAX_FROM_TEXT_TITLES} more`;
+
     // A PLAN forks a new git branch off the tip of its base node's own lane —
     // findLaneBranchName walks up from the base to the nearest ancestor (rail or
     // learn) carrying a branchName, so a plan based off a non-main lane (e.g. a
@@ -282,7 +392,7 @@ export class NodesService {
       lede: llmResult.lede,
       sections,
       fromSection: null,
-      fromText: sourceIds.join(','),
+      fromText,
       createdAt: now,
       model,
       ...planBranchFields,
@@ -1016,6 +1126,9 @@ export class NodesService {
           this.db.updateSessionMeta(sub, sessionId, { lastRunStatus: 'error' }),
         ]);
         if (isCloud) await this.releaseHoldOnFailure(sub, sessionId, nodeId, model);
+        // Fire-and-forget — a push failure must never affect the run pipeline
+        // (agent runs take ~7 minutes, so the notification is the whole point).
+        this.apns.sendToUser(sub, 'Run failed', dto.instruction.slice(0, 60)).catch(() => {});
         emit({ type: 'error', message: friendlyLlmError(err as Error) });
         return;
       } finally {
@@ -1095,6 +1208,9 @@ export class NodesService {
             )
           : this.users.billUsage(sub, final.inputTokens, final.outputTokens, 'CODE', sessionId, nodeId, final.model),
       ]);
+
+      // Fire-and-forget — see the error-path note above.
+      this.apns.sendToUser(sub, 'Run complete', title).catch(() => {});
 
       emit({ type: 'commit', sha: commitSha, branchName, message: final.commitMessage, diffSummary: final.diffSummary });
       emit({

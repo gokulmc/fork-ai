@@ -382,7 +382,7 @@ export class DynamoRepository {
   async updateHighlight(
     sessionId: string,
     hlId: string,
-    updates: Partial<Pick<HighlightItem, 'bg' | 'fg'>>,
+    updates: Partial<Pick<HighlightItem, 'bg' | 'fg' | 'note' | 'noteQuestion'>>,
   ): Promise<void> {
     await this.highlightModel.update(
       { PK: this.sessionPk(sessionId), SK: this.hlSk(hlId) },

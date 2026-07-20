@@ -1,4 +1,4 @@
-import { Search } from './Icons';
+import { QueryBox } from './QueryBox';
 import { BRAND_TAGLINE } from '@/lib/brand';
 
 // Static, server-renderable hero. Shown as the logged-out loading state so the
@@ -17,10 +17,7 @@ export function LandingHero() {
           Learn the concepts, synthesize a plan, then watch the agent commit one focused step at a
           time — reviewable, branchable, never a single unreviewable mega-diff.
         </p>
-        <div className="query-box">
-          <span className="icon"><Search size={20} /></span>
-          <input type="text" placeholder="Try: add rate limiting to my API" readOnly />
-        </div>
+        <QueryBox readOnly value="" onChange={() => {}} onSubmit={() => {}} placeholder="Try: add rate limiting to my API" />
       </div>
       <div className="landing-foot">
         {BRAND_TAGLINE}

@@ -54,6 +54,11 @@ export class CreateNodeDto {
   @IsBoolean()
   boost?: boolean;
 
+  @ApiPropertyOptional({ description: 'Append a short (2-3 line) answer to the parent node instead of creating a child node', example: false })
+  @IsOptional()
+  @IsBoolean()
+  inline?: boolean;
+
   @ApiPropertyOptional({
     enum: ['haiku', 'sonnet', 'opus', 'gemini-pro', 'gemini-flash', 'gemini-flash-lite', 'deepseek-pro', 'deepseek-flash', 'glm', 'glm-air'],
     description: 'Branch model alias (default haiku; top tier clamped to mid for guests: opus→sonnet, gemini-pro→gemini-flash, deepseek-pro→deepseek-flash, glm→glm-air)',

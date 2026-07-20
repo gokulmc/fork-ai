@@ -23,6 +23,7 @@ import { CreateMixNodeDto } from './dto/create-mix-node.dto';
 import { CreateBranchNodeDto } from './dto/create-branch-node.dto';
 import { CreateCodeNodeDto } from './dto/create-code-node.dto';
 import { CreatePrNodeDto } from './dto/create-pr-node.dto';
+import { CreateInlineNoteDto } from './dto/create-inline-note.dto';
 import { UpdateNodeDto } from './dto/update-node.dto';
 
 @ApiTags('nodes')
@@ -39,6 +40,17 @@ export class NodesController {
     @Body() dto: CreateNodeDto,
   ) {
     return this.nodesService.createNode(user.sub, sessionId, dto);
+  }
+
+  @Post('inline-note')
+  @ApiOperation({ summary: '"Explain" — attach a short answer to a highlighted passage as a HighlightItem.note, instead of creating a child node' })
+  @ApiParam({ name: 'sessionId', description: 'ULID session ID' })
+  createInlineNote(
+    @CurrentUser() user: CognitoUser,
+    @Param('sessionId') sessionId: string,
+    @Body() dto: CreateInlineNoteDto,
+  ) {
+    return this.nodesService.createInlineNote(user.sub, sessionId, dto);
   }
 
   @Post('mix')

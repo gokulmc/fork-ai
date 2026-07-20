@@ -321,7 +321,7 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
   border-radius: 999px;
   padding: 6px 6px 6px 22px;
   box-shadow: var(--shadow-2);
-  transition: border-color .15s, box-shadow .15s;
+  transition: border-color .15s, box-shadow .15s, border-radius .15s, padding .15s;
 }
 .query-box:focus-within {
   border-color: rgba(0, 0, 0, 0.2);
@@ -332,18 +332,49 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
   box-shadow: var(--shadow-3), 0 0 0 3px rgba(255, 255, 255, 0.05);
 }
 .query-box .icon { color: var(--ink-3); margin-right: 10px; display: inline-flex; }
-.query-box input {
+.qb-main { flex: 1; display: flex; align-items: center; min-width: 0; }
+.qb-actions { display: flex; align-items: center; gap: 4px; flex: none; }
+.query-box .qb-input {
   flex: 1;
   background: transparent;
   border: 0;
   outline: 0;
   font-family: var(--sans);
   font-size: 17px;
+  line-height: 1.45;
   color: var(--ink);
   padding: 14px 6px;
   font-weight: 400;
+  resize: none;
+  overflow-y: auto;
+  box-sizing: border-box;
+  width: 100%;
 }
-.query-box input::placeholder { color: var(--ink-3); }
+.query-box .qb-input::placeholder { color: var(--ink-3); }
+
+/* Past one line, morph the pill into a card: Begin drops to the bottom-right
+   instead of sitting beside a now-tall textarea. */
+.query-box.query-box--multi {
+  flex-direction: column;
+  align-items: stretch;
+  border-radius: var(--radius-lg);
+  padding: 10px 12px 10px 16px;
+}
+.query-box--multi .qb-main { align-items: flex-start; }
+/* .qb-input's own top padding (14px) is what pushes the first line of text
+   down from the textarea's edge; align-items:center in the pill state hid
+   this because the icon centered against the whole (short) textarea, but
+   flex-start in the card state leaves the icon flush with the edge instead
+   of the text. Match the icon's offset to that padding so it reads level
+   with line one, not floating above it. */
+.query-box--multi .icon { margin-top: 14px; }
+/* In card mode, qb-actions' own margin-top is the intended gap below the
+   text -- qb-input's padding-bottom (needed to balance the pill state) would
+   otherwise stack on top of it, leaving a dead band that grows with every
+   extra line (worst in the internally-scrolled state). Zero it out here so
+   there's exactly one spacer between the last line of text and Begin. */
+.query-box--multi .qb-input { padding-bottom: 0; }
+.query-box--multi .qb-actions { justify-content: flex-end; margin-top: 8px; }
 .query-box .submit {
   background: var(--ink);
   color: var(--bg);
@@ -1638,6 +1669,11 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 .workspace-inner .section-body { -webkit-user-select: text; user-select: text; }
 .workspace-inner .agent-log-selectable { -webkit-user-select: text; user-select: text; }
 
+/* Inline-Ask turns on a CODE/empty-BRANCH node (#237) render below the
+   AgentLogPane transcript — a little top separation marks them as a
+   continuation of the run, not part of the log itself. */
+.agent-inline-turns { margin-top: 20px; padding-top: 4px; border-top: 1px solid var(--line); }
+
 /* ============================================================
    Code composer — bottom-docked instruction bar (workspace pane)
    ============================================================
@@ -1736,8 +1772,15 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 }
 .code-composer-pill:hover { background: var(--hover-strong); color: var(--ink); }
 .code-composer-pill:disabled { cursor: not-allowed; opacity: .5; }
-.code-composer-pill--on { background: var(--accent-soft); color: var(--ink); border-color: var(--line-strong); }
+.code-composer-pill--on { background: var(--accent); color: var(--bg); border-color: var(--accent); }
 .code-composer-pill-caret { font-size: 9px; color: var(--ink-3); }
+/* Inline toggle styled as an inline-code chip (matches .section-body.md :not(pre) > code)
+   so the "Inline" name reads as the `code` visual language it's named after. */
+.code-composer-pill--inline {
+  border-radius: 4px; font-family: var(--mono); font-size: 11px;
+  background: var(--panel); border-color: var(--line); color: var(--ink);
+}
+.code-composer-pill--inline.code-composer-pill--on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 /* The model pill wraps a native <select> for free keyboard/a11y support. The
    select is a transparent overlay filling the whole pill so a click ANYWHERE on
    it opens the dropdown (not just the tiny middle strip); the visible face sits
@@ -1795,6 +1838,13 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 .section-num { font-family: var(--sans); font-size: 12px; color: var(--ink-3); font-weight: 500; margin-top: 4px; min-width: 22px; }
 .section h2 { font-family: var(--sans); font-weight: 600; font-size: clamp(20px, 2.1vw, 24px); line-height: 1.25; letter-spacing: -0.015em; margin: 0; flex: 1; text-wrap: balance; color: var(--ink); }
 
+/* Inline-ask turn header (#237 Phase 1a) — a quiet "you asked" chip, clearly
+   subordinate to a real .section-head heading (no number, small type). */
+.section-turn-head { position: relative; display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; padding: 2px 0; flex-wrap: wrap; }
+.section-turn-chip { font-family: var(--sans); font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-3); flex-shrink: 0; }
+.section-turn-q { font-family: var(--serif); font-size: 14px; font-style: italic; color: var(--ink-2); flex: 1; min-width: 0; }
+.section-turn-pending { display: flex; align-items: center; padding: 4px 0; }
+
 /* Anchored to the RIGHT EDGE OF THE READING COLUMN (not floated out into the margin):
    the column is centred and resizes with the middle divider, so the button moves with
    it and can never spill past the pane to make the workspace horizontally scrollable.
@@ -1812,7 +1862,7 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
   transition: opacity .15s, transform .15s, background .12s, color .12s, border-color .12s;
   white-space: nowrap; box-shadow: var(--shadow-1);
 }
-.section:hover .deeper-btn, .section-head:focus-within .deeper-btn {
+.section:hover .deeper-btn, .section-head:focus-within .deeper-btn, .section-turn-head:focus-within .deeper-btn {
   opacity: 1; transform: translateY(-50%) translateX(0);
 }
 .deeper-btn:hover { background: var(--panel); color: var(--ink); border-color: var(--ink-3); }
@@ -2031,6 +2081,42 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
     0 0 28px color-mix(in srgb, #8b5cf6 70%, transparent); */
 }
 
+/* Text with a short inline answer attached (#237 Phase 1b) — a solid amber
+   wash, visually distinct from the branch glow above (this passage answers
+   itself instead of leading to a new node). Same light/dark-opacity pattern
+   as the fork-hl-fef08a-family rules below: solid pastel in light mode,
+   translucent over the dark background in dark mode (a solid light-mode
+   pastel here would wash out dark-mode's light ink text). */
+::highlight(fork-hl-note) { background-color: #fde68a; }
+[data-theme="dark"] ::highlight(fork-hl-note) { background-color: rgba(253, 230, 138, 0.24); }
+
+/* Marker button inserted right after a noted passage (Section.tsx's
+   SectionBody) — MUST contain zero text nodes (see rejectInlineNoteText in
+   lib/utils.ts), so its glyph is a raw inline <svg>, never text. */
+.inline-note-marker {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 17px; height: 17px; margin: 0 1px; padding: 0; vertical-align: middle;
+  transform: translateY(-2px);
+  border: none; border-radius: 50%; cursor: pointer;
+  background: color-mix(in srgb, #f59e0b 24%, transparent);
+  color: #92400e;
+}
+.inline-note-marker:hover { background: color-mix(in srgb, #f59e0b 38%, transparent); }
+[data-theme="dark"] .inline-note-marker { background: color-mix(in srgb, #f59e0b 28%, transparent); color: #fbbf24; }
+
+/* ============================================================
+   Inline note popover (#237 Phase 1b) — opened from a marker
+   ============================================================ */
+.inline-note-pop { position: fixed; z-index: 70; background: var(--paper); border: 1px solid var(--line-strong); border-radius: 8px; padding: 12px; box-shadow: var(--shadow-3); width: min(360px, 90vw); animation: hlIn .18s cubic-bezier(.2,.7,.2,1) both; }
+.inline-note-pop--closing { animation: popOutLeft .5s cubic-bezier(.4, 0, 1, 1) forwards; pointer-events: none; }
+.inline-note-pop .q { font-family: var(--sans); font-size: 12px; font-weight: 600; color: var(--ink-2); margin-bottom: 6px; }
+.inline-note-pop .a { font-family: var(--sans); font-size: 13.5px; color: var(--ink); line-height: 1.5; }
+.inline-note-pop .actions { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; gap: 8px; }
+.inline-note-pop .btn-branch { display: inline-flex; align-items: center; gap: 6px; background: var(--ink); color: var(--bg); border: 0; border-radius: 5px; height: 28px; padding: 0 10px; font-size: 12px; font-weight: 500; cursor: pointer; }
+.inline-note-pop .btn-branch:hover { opacity: 0.88; }
+.inline-note-pop .btn-close { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 1px solid var(--line-strong); border-radius: 5px; background: transparent; color: var(--ink-2); cursor: pointer; }
+.inline-note-pop .btn-close:hover { background: var(--panel); color: var(--ink); }
+
 /* ============================================================
    Follow-up popup
    ============================================================ */
@@ -2054,6 +2140,10 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 .followup-pop .shortcut-btn:hover:not(:disabled) { background: var(--panel); color: var(--ink); }
 .followup-pop .shortcut-btn:disabled { opacity: .4; cursor: not-allowed; }
 .followup-pop .actions-right { display: flex; align-items: center; gap: 6px; }
+.followup-pop .inline-toggle { display: inline-flex; align-items: center; justify-content: center; height: 30px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 5px; background: transparent; color: var(--ink-2); font-family: var(--sans); font-size: 12px; cursor: pointer; }
+.followup-pop .inline-toggle:hover:not(:disabled) { background: var(--panel); color: var(--ink); }
+.followup-pop .inline-toggle.active { background: color-mix(in srgb, #fbbf24 30%, transparent); border-color: #fbbf24; color: var(--ink); }
+.followup-pop .inline-toggle:disabled { opacity: .4; cursor: not-allowed; }
 .followup-pop .btn-close { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 1px solid var(--line-strong); border-radius: 5px; background: transparent; color: var(--ink-2); cursor: pointer; }
 .followup-pop .btn-close:hover { background: var(--panel); color: var(--ink); }
 .followup-pop .btn-primary { background: var(--ink); color: var(--bg); border: 0; border-radius: 5px; height: 30px; padding: 0 12px; font-size: 13px; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
@@ -2447,7 +2537,7 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
   /* Landing query box: the input defaults to min-width:auto and won't shrink below
      its placeholder, shoving "Begin" off-screen. Let it shrink. */
   .query-box { padding-left: 14px; }
-  .query-box input { min-width: 0; }
+  .query-box .qb-input { min-width: 0; }
   .query-box .submit { padding: 0 16px; }
 
   /* Mixer on phones: the overlay owns the bottom strip — hide the
@@ -2478,7 +2568,7 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
      bar and query box use smaller type on desktop). !important beats the login
      bar's inline font-size. The Ask AI popup textarea autofocuses on open, so it
      needs the same ≥16px floor or the page zooms in the moment it appears. */
-  .auth-input, .query-box input, .followup-pop textarea, .branch-popup-input, .code-composer-textarea, .code-composer-pill--select select { font-size: 16px !important; }
+  .auth-input, .query-box .qb-input, .followup-pop textarea, .branch-popup-input, .code-composer-textarea, .code-composer-pill--select select { font-size: 16px !important; }
 
   /* Tweaks panel: cap to the *visible* viewport (100dvh, minus safe areas + the
      nav bar) — plain 100vh includes the area behind the browser/status bars, so
@@ -2549,7 +2639,10 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
   .landing-sub { font-size: 14px; margin-bottom: 28px; line-height: 1.5; }
 
   /* Slimmer search bar + suggestion chips on small phones. */
-  .query-box input { padding: 5px 3px; font-size: 14px; }
+  .query-box .qb-input { padding: 5px 3px; font-size: 14px; }
+  /* Icon offset must track this narrower padding-top (5px, not the 14px
+     desktop value) or it re-misaligns from the first text line here. */
+  .query-box--multi .icon { margin-top: 5px; }
   .query-box .submit { height: 30px; }
   .examples .chip { padding: 6px 10px; font-size: 11px; }
   .plugin-drop-cols { grid-template-columns: 1fr; }

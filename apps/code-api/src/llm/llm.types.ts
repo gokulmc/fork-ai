@@ -22,6 +22,14 @@ export interface LlmResponse {
   usage: LlmUsage;
 }
 
+// Inline-mode answer (Ask, appended to the parent node instead of spawning a
+// child) — no title/emoji/lede since no new node is created.
+export interface LlmConciseResponse {
+  answer: string;
+  sources?: CitationSource[];
+  usage: LlmUsage;
+}
+
 export type NodeKind = 'QUERY' | 'DEEPER' | 'ASK' | 'MIX' | 'PLAN' | 'CODE' | 'BRANCH' | 'MERGE';
 
 // ── Document upload → mind-map ──────────────────────────────────────────────

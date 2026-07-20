@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { CreateProjectPayload, GithubRepo, GithubAppStatus, RepoRef } from '@/lib/api';
-import { getGithubAppStatus, githubAppInstallUrl, listGithubRepos } from '@/lib/api';
+import type { CreateProjectPayload, GithubRepo, GithubAppStatus, GithubInstallation, RepoRef } from '@/lib/api';
+import { getGithubAppStatus, githubAppInstallUrl, installationSettingsUrl, listGithubRepos } from '@/lib/api';
 import { MOCK_REPOS, SKILL_PLUGINS, HARNESS_PLUGINS } from '@/lib/mockGithub';
 import { X as XIcon, Github } from './Icons';
 
@@ -37,7 +37,20 @@ export function synthesizeNewRepoRef(name: string): RepoRef {
 
 const MAX_ROOT_QUERY_ROWS = 6;
 
+// Real-repo detection polling (New repo tab, GitHub App installed): how often
+// to re-list repos after "Create on GitHub" is clicked, and how long to keep
+// polling automatically before falling back to the manual "check now" button.
+const REPO_POLL_INTERVAL_MS = 3000;
+const REPO_POLL_CAP_MS = 120_000;
+
 type Tab = 'new' | 'attach';
+
+// State machine for the New-repo tab once the GitHub App is installed:
+// idle (name/owner picked, nothing created yet) → waiting (github.com/new
+// opened in a new tab, polling for the repo to appear) → detected (repo
+// found, ready to submit). Changing name/rootQuery never leaves 'detected'
+// automatically — resubmitting "Create on GitHub" would restart the cycle.
+type GhCreatePhase = 'idle' | 'waiting' | 'detected';
 
 // Extracted out of ProjectsPage (D2) and given two tabs: "New repo" seeds a
 // from-scratch project with a rootQuery that fills the map's BRANCH root right
@@ -56,14 +69,32 @@ export function NewProjectModal({ idToken, onClose, onCreate }: NewProjectModalP
   const [ghApp, setGhApp] = useState<GithubAppStatus | null>(null);
   const [ghRepos, setGhRepos] = useState<GithubRepo[]>([]);
 
+  // New-repo-on-GitHub flow (only reachable once ghApp.installed) — see
+  // GhCreatePhase above.
+  const [chosenLogin, setChosenLogin] = useState('');
+  const [ghPhase, setGhPhase] = useState<GhCreatePhase>('idle');
+  const [ghCapExpired, setGhCapExpired] = useState(false);
+  const [detectedRepo, setDetectedRepo] = useState<GithubRepo | null>(null);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollBaselineRef = useRef<Set<string>>(new Set());
+  const baselineReadyRef = useRef(false);
+  const pollStartRef = useRef(0);
+  const pollInFlightRef = useRef(false);
+
   useEffect(() => {
     getGithubAppStatus(idToken)
       .then(st => {
         setGhApp(st);
-        if (st.installed) listGithubRepos(idToken).then(setGhRepos).catch(() => {});
+        if (st.installed) {
+          listGithubRepos(idToken).then(setGhRepos).catch(() => {});
+          if (st.installations.length) setChosenLogin(st.installations[0].accountLogin);
+        }
       })
-      .catch(() => setGhApp({ configured: false, installed: false, accounts: [] }));
+      .catch(() => setGhApp({ configured: false, installed: false, installations: [] }));
   }, [idToken]);
+
+  // Poll cleanup on unmount — the interval must not outlive the modal.
+  useEffect(() => () => { if (pollIntervalRef.current) clearInterval(pollIntervalRef.current); }, []);
 
   const togglePlugin = (id: string) => {
     setPlugins(prev => {
@@ -84,14 +115,94 @@ export function NewProjectModal({ idToken, onClose, onCreate }: NewProjectModalP
   }, [rootQuery]);
 
   const slug = slugify(name);
-  const canSubmit = tab === 'new' ? !!name.trim() && !!rootQuery.trim() : !!name.trim();
+  const chosenInstallation: GithubInstallation | null =
+    ghApp?.installations.find(i => i.accountLogin === chosenLogin) ?? null;
+  const usingRealRepo = tab === 'new' && !!ghApp?.installed;
+  const canSubmit = tab === 'attach'
+    ? !!name.trim()
+    : usingRealRepo
+      ? !!name.trim() && !!rootQuery.trim() && !!detectedRepo
+      : !!name.trim() && !!rootQuery.trim();
+
+  // Re-lists repos and checks for a match; guarded against overlapping calls
+  // since it's invoked both by the 3s interval and the manual "check now" click.
+  const pollGithubRepos = async () => {
+    if (pollInFlightRef.current) return;
+    pollInFlightRef.current = true;
+    try {
+      const repos = await listGithubRepos(idToken);
+      setGhRepos(repos);
+      const match =
+        repos.find(r => r.owner === chosenLogin && r.repo === slug) ??
+        (baselineReadyRef.current ? repos.find(r => !pollBaselineRef.current.has(r.url)) : undefined);
+      if (match) {
+        setDetectedRepo(match);
+        setGhPhase('detected');
+        if (pollIntervalRef.current) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null; }
+      }
+    } catch {
+      // Transient network/API blip — the next tick (or a manual check-now click) retries.
+    } finally {
+      pollInFlightRef.current = false;
+    }
+  };
+
+  const startCreateOnGithub = () => {
+    if (!chosenLogin) return;
+    const url = `https://github.com/new?owner=${encodeURIComponent(chosenLogin)}&name=${encodeURIComponent(slug)}&description=${encodeURIComponent(rootQuery.slice(0, 100))}&visibility=private`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+
+    const startedAt = Date.now();
+    pollStartRef.current = startedAt;
+    setGhCapExpired(false);
+    setDetectedRepo(null);
+    setGhPhase('waiting');
+    if (pollIntervalRef.current) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null; }
+
+    // The not-in-baseline fallback needs a baseline snapshotted at THIS click
+    // — ghRepos state may still be empty (the mount fetch is async and loses
+    // the race to a fast user), and an empty baseline makes the first poll
+    // "detect" an arbitrary pre-existing repo. The popup must open
+    // synchronously above (popup blockers), so the fresh listing happens
+    // after; only a successful fetch arms the fallback — the exact owner/slug
+    // match works either way. startedAt guards a re-click: a superseded
+    // click's async tail must not start a second interval.
+    void (async () => {
+      try {
+        const repos = await listGithubRepos(idToken);
+        setGhRepos(repos);
+        pollBaselineRef.current = new Set(repos.map(r => r.url));
+        baselineReadyRef.current = true;
+      } catch {
+        baselineReadyRef.current = false;
+      }
+      if (pollStartRef.current !== startedAt) return;
+      pollIntervalRef.current = setInterval(() => {
+        if (Date.now() - pollStartRef.current > REPO_POLL_CAP_MS) {
+          if (pollIntervalRef.current) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null; }
+          setGhCapExpired(true);
+          return;
+        }
+        pollGithubRepos();
+      }, REPO_POLL_INTERVAL_MS);
+    })();
+  };
 
   const submit = async () => {
     if (!canSubmit || creating) return;
     setCreating(true);
     setError(null);
     try {
-      if (tab === 'new') {
+      if (usingRealRepo) {
+        if (!detectedRepo) throw new Error('no repo detected'); // canSubmit already guards this
+        const { provider, owner, repo, defaultBranch, url, private: isPrivate } = toRepoOption(detectedRepo);
+        await onCreate({
+          name: name.trim(),
+          repoRef: { provider, owner, repo, defaultBranch, url, private: isPrivate },
+          plugins: [...plugins],
+          rootQuery: rootQuery.trim(),
+        });
+      } else if (tab === 'new') {
         // No real repo exists yet — owner/url are synthesized placeholders
         // consistent with the mock fixtures' shape (RepoRefDto.url just needs
         // to be a non-empty string).
@@ -133,7 +244,9 @@ export function NewProjectModal({ idToken, onClose, onCreate }: NewProjectModalP
               onChange={e => setName(e.target.value)}
               autoFocus
             />
-            {tab === 'new' && name.trim() && <div className="proj-field-hint">you/{slug}</div>}
+            {tab === 'new' && name.trim() && (
+              <div className="proj-field-hint">{usingRealRepo ? chosenLogin || '…' : 'you'}/{slug}</div>
+            )}
           </div>
 
           {tab === 'new' ? (
@@ -147,13 +260,70 @@ export function NewProjectModal({ idToken, onClose, onCreate }: NewProjectModalP
                 placeholder="A billing dashboard with Stripe subscriptions and usage metering…"
                 onChange={e => setRootQuery(e.target.value)}
               />
-              <div className="proj-field-caption">The repository is simulated for now — GitHub write access ships later.</div>
+              {usingRealRepo && ghApp ? (
+                <>
+                  {ghApp.installations.length > 1 && ghPhase === 'idle' && (
+                    <div style={{ marginTop: 10 }}>
+                      <div className="proj-field-label">Owner</div>
+                      <select className="proj-field-input" value={chosenLogin} onChange={e => setChosenLogin(e.target.value)}>
+                        {ghApp.installations.map(inst => (
+                          <option key={inst.installationId} value={inst.accountLogin}>{inst.accountLogin}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  {ghPhase === 'idle' && chosenInstallation?.repositorySelection === 'selected' && (
+                    <div className="proj-field-caption">
+                      forkai code only sees repos you&apos;ve granted it. To auto-detect the repo you&apos;re about to create,{' '}
+                      <a href={installationSettingsUrl(chosenInstallation)} target="_blank" rel="noreferrer">switch the installation to All repositories</a>{' '}
+                      — or add the new repo to it afterwards.
+                    </div>
+                  )}
+                  {name.trim() && (
+                    <div style={{ marginTop: 10 }}>
+                      {ghPhase === 'detected' && detectedRepo ? (
+                        <div className="proj-gh-chip"><Github size={12} /> {detectedRepo.owner}/{detectedRepo.repo} · detected</div>
+                      ) : (
+                        <>
+                          <button type="button" className="proj-gh-connect" onClick={startCreateOnGithub} disabled={!chosenLogin}>
+                            <Github size={13} /> Create on GitHub ↗
+                          </button>
+                          <div className="proj-field-caption">Tick &quot;Add a README&quot; so the repo has a first commit.</div>
+                        </>
+                      )}
+                      {ghPhase === 'waiting' && (
+                        <div className="proj-field-caption" style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 6 }}>
+                          {!ghCapExpired && <span className="spinner" style={{ width: 10, height: 10, flexShrink: 0 }} />}
+                          <span>{ghCapExpired ? 'Not seeing it — check repo access, then try again.' : 'Waiting for the new repo… (create it in the GitHub tab)'}</span>
+                          <button
+                            type="button"
+                            onClick={pollGithubRepos}
+                            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit', color: 'var(--ink-2)', textDecoration: 'underline', flexShrink: 0 }}
+                          >
+                            I&apos;ve created it — check now
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="proj-field-caption">The repository is simulated for now — GitHub write access ships later.</div>
+                  {ghApp?.configured && (
+                    <div className="proj-field-caption">
+                      Installing the GitHub App lets forkai code create a real repo —{' '}
+                      <a href={githubAppInstallUrl()} target="_blank" rel="noreferrer">install it</a>.
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           ) : (
             <div>
               <div className="proj-field-label">Repository</div>
               {ghApp?.installed ? (
-                <div className="proj-gh-chip"><Github size={12} /> {ghApp.accounts.join(', ')}</div>
+                <div className="proj-gh-chip"><Github size={12} /> {ghApp.installations.map(i => i.accountLogin).join(', ')}</div>
               ) : ghApp?.configured ? (
                 <a className="proj-gh-connect" href={githubAppInstallUrl()}>
                   <Github size={13} />

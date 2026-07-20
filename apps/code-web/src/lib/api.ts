@@ -20,7 +20,7 @@ export interface ApiNode {
   emoji: string | null;
   query: string;
   lede: string;
-  sections: Array<{ id: string; heading: string; body: string }>;
+  sections: Array<{ id: string; heading: string; body: string; askedQuery?: string }>;
   fromSection: string | null;
   fromText: string | null;
   createdAt: string;
@@ -70,6 +70,11 @@ export interface ApiHighlight {
   end?: number | null;
   bg: string | null;
   fg: string | null;
+  // Set only for an inline note (#237 Phase 1b, bg: 'note' sentinel) — the
+  // short answer attached to this passage.
+  note?: string | null;
+  // The question that produced `note` (#237 Phase 1b gap-fix).
+  noteQuestion?: string | null;
 }
 
 export interface SessionSummary {
@@ -177,6 +182,8 @@ export function toHlMap(
       end: h.end ?? undefined,
       bg: h.bg ?? null,
       fg: h.fg ?? null,
+      note: h.note ?? undefined,
+      noteQuestion: h.noteQuestion ?? undefined,
     });
   }
   return m;
@@ -535,6 +542,9 @@ export interface CreateNodePayload {
   boost?: boolean;  // retry of a length-limit Cut-Off: double the output budget (authed only)
   model?: 'haiku' | 'sonnet' | 'opus' | 'gemini-pro' | 'gemini-flash' | 'gemini-flash-lite' | 'deepseek-pro' | 'deepseek-flash' | 'glm' | 'glm-air';
   attachments?: Array<{ name: string; content: string }>;
+  // #237 Phase 1a — short answer appended as a section to the parent node
+  // instead of spawning a child. ASK only; server ignores it for DEEPER.
+  inline?: boolean;
 }
 
 export function createNode(
@@ -715,6 +725,31 @@ export function deleteHighlight(
   return apiFetch<void>(`/sessions/${sessionId}/highlights/${hlId}`, idToken, { method: 'DELETE' });
 }
 
+// #237 Phase 1b — a short (~40 word) answer attached directly to the
+// highlighted passage (returned as a HighlightItem with bg: 'note' and the
+// answer in `note`), instead of spawning a child ASK node.
+export interface CreateInlineNotePayload {
+  nodeId: string;
+  sectionId: string;
+  text: string;
+  start: number;
+  end: number;
+  question: string;
+  model?: 'haiku' | 'sonnet' | 'opus' | 'gemini-pro' | 'gemini-flash' | 'gemini-flash-lite' | 'deepseek-pro' | 'deepseek-flash' | 'glm' | 'glm-air';
+  webSearch?: boolean;
+}
+
+export function createInlineNote(
+  idToken: string,
+  sessionId: string,
+  payload: CreateInlineNotePayload,
+): Promise<ApiHighlight> {
+  return apiFetch<ApiHighlight>(`/sessions/${sessionId}/nodes/inline-note`, idToken, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 // ── Projects ──────────────────────────────────────────────────────────────
 
 export interface RepoRef {
@@ -743,9 +778,11 @@ export interface CreateProjectPayload {
   name: string;
   repoRef: RepoRef;
   plugins: string[];
-  // Only meaningful for repoRef.provider 'new' — seeds the project's BRANCH
-  // root; the caller streams the answer into it right after creation (see
-  // App.tsx's submitFillRoot).
+  // Seeds the project's BRANCH root; the caller streams the answer into it
+  // right after creation (see App.tsx's submitFillRoot). Meaningful for
+  // repoRef.provider 'new' (synthesized repo) and 'github' when the repo was
+  // just created via the New-repo-on-GitHub flow (NewProjectModal) — not for
+  // an existing repo attached via 'attach existing'.
   rootQuery?: string;
 }
 
@@ -766,10 +803,17 @@ export function getProject(idToken: string, projectId: string): Promise<Project>
 
 // ── GitHub — App install status + repo listing (per-repo, powers sandbox clone/commit/PR) ──
 
+export interface GithubInstallation {
+  installationId: string;
+  accountLogin: string;
+  accountType: 'User' | 'Organization';
+  repositorySelection: 'all' | 'selected';
+}
+
 export interface GithubAppStatus {
   configured: boolean;
   installed: boolean;
-  accounts: string[];
+  installations: GithubInstallation[];
 }
 
 export interface GithubRepo {
@@ -807,6 +851,16 @@ export function linkGithubInstallation(idToken: string, installationId: string):
 // install flow /github/setup's callback page expects.
 export function githubAppInstallUrl(): string {
   return `${base()}/github/app/install`;
+}
+
+// The exact GitHub page for changing an installation's repository access
+// ("All repositories" vs selected) — org installations live under the org's
+// own settings path. "Redirect on update" on the App bounces the save back
+// through /github/setup, which re-links and refreshes the stored selection.
+export function installationSettingsUrl(inst: GithubInstallation): string {
+  return inst.accountType === 'Organization'
+    ? `https://github.com/organizations/${inst.accountLogin}/settings/installations/${inst.installationId}`
+    : `https://github.com/settings/installations/${inst.installationId}`;
 }
 
 // ── Root query into an existing (empty) project session ────────────────────
