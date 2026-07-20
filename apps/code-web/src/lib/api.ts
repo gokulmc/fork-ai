@@ -941,6 +941,13 @@ export async function getAgentRun(idToken: string, sessionId: string, nodeId: st
   return { ...raw, events };
 }
 
+export function registerDevice(idToken: string, token: string): Promise<void> {
+  return apiFetch<void>('/devices', idToken, {
+    method: 'POST',
+    body: JSON.stringify({ token, platform: 'ios' }),
+  });
+}
+
 export type SupportSubject = 'Bug' | 'Billing' | 'Feature Request' | 'Other';
 
 export async function submitSupportTicket(dto: {

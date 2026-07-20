@@ -265,6 +265,15 @@ export const GithubInstallationSchema = new dynamoose.Schema({
   createdAt: String,
 });
 
+export const DeviceSchema = new dynamoose.Schema({
+  PK: { type: String, hashKey: true },
+  SK: { type: String, rangeKey: true },
+  sub: String,
+  token: String,
+  platform: String,
+  createdAt: String,
+});
+
 export const AgentRunSchema = new dynamoose.Schema({
   PK: { type: String, hashKey: true },
   SK: { type: String, rangeKey: true },

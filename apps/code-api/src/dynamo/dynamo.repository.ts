@@ -14,6 +14,7 @@ import {
   GITHUB_INSTALLATION_MODEL,
   HOLD_MODEL,
   MACHINE_BILL_MODEL,
+  DEVICE_MODEL,
   DYNAMO_TABLE,
 } from './dynamo.constants';
 import type {
@@ -30,6 +31,7 @@ import type {
   GithubInstallationItem,
   HoldItem,
   MachineBillItem,
+  DeviceItem,
 } from './dynamo.interfaces';
 
 @Injectable()
@@ -49,6 +51,7 @@ export class DynamoRepository {
     @Inject(GITHUB_INSTALLATION_MODEL) private readonly githubInstallationModel: any,
     @Inject(HOLD_MODEL) private readonly holdModel: any,
     @Inject(MACHINE_BILL_MODEL) private readonly machineBillModel: any,
+    @Inject(DEVICE_MODEL) private readonly deviceModel: any,
   ) {}
 
   // ── Key helpers ─────────────────────────────────────────────────────────────
@@ -63,6 +66,7 @@ export class DynamoRepository {
   private agentRunSk(nodeId: string) { return `AGENTRUN#${nodeId}`; }
   private holdSk(nodeId: string) { return `HOLD#${nodeId}`; }
   private machineBillSk(sandboxId: string) { return `MACHINEBILL#${sandboxId}`; }
+  private deviceSk(token: string) { return `DEVICE#${token}`; }
 
   private toPlain<T>(item: any): T {
     return (item?.toJSON ? item.toJSON() : item) as T;
@@ -594,6 +598,35 @@ export class DynamoRepository {
       .all()
       .exec();
     return this.toPlainArray<HoldItem>(items);
+  }
+
+  // ── Devices (APNs push tokens) ──────────────────────────────────────────────
+
+  async putDevice(sub: string, token: string, platform: 'ios'): Promise<void> {
+    const item: DeviceItem = {
+      PK: this.userPk(sub),
+      SK: this.deviceSk(token),
+      sub,
+      token,
+      platform,
+      createdAt: new Date().toISOString(),
+    };
+    await this.deviceModel.create(this.clean(item), { overwrite: true });
+  }
+
+  async listDevices(sub: string): Promise<DeviceItem[]> {
+    const items = await this.deviceModel
+      .query('PK')
+      .eq(this.userPk(sub))
+      .where('SK')
+      .beginsWith('DEVICE#')
+      .all()
+      .exec();
+    return this.toPlainArray<DeviceItem>(items);
+  }
+
+  async deleteDevice(sub: string, token: string): Promise<void> {
+    await this.deviceModel.delete({ PK: this.userPk(sub), SK: this.deviceSk(token) });
   }
 }
 

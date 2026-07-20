@@ -16,6 +16,7 @@ import { AnnotationsModule } from '@/annotations/annotations.module';
 import { HighlightsModule } from '@/highlights/highlights.module';
 import { BillingModule } from '@/billing/billing.module';
 import { AttachmentsModule } from '@/attachments/attachments.module';
+import { DevicesModule } from '@/devices/devices.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -39,6 +40,7 @@ import { HealthController } from './health.controller';
     HighlightsModule,
     BillingModule,
     AttachmentsModule,
+    DevicesModule,
   ],
   controllers: [HealthController],
   providers: [

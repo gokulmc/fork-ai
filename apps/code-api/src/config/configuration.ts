@@ -1,5 +1,11 @@
 import * as Joi from 'joi';
 
+function decodeApnsKey(raw: string): string {
+  if (!raw) return '';
+  if (!raw.includes('BEGIN')) return Buffer.from(raw, 'base64').toString('utf8');
+  return raw.replace(/\\n/g, '\n');
+}
+
 export const validationSchema = Joi.object({
   AWS_REGION: Joi.string().default('ap-south-1'),
   COGNITO_USER_POOL_ID: Joi.string().required(),
@@ -48,6 +54,11 @@ export const validationSchema = Joi.object({
   RAZORPAY_KEY_ID: Joi.string().allow('').optional(),
   RAZORPAY_KEY_SECRET: Joi.string().allow('').optional(),
   RAZORPAY_WEBHOOK_SECRET: Joi.string().allow('').optional(),
+  APNS_KEY: Joi.string().allow('').optional(),
+  APNS_KEY_ID: Joi.string().allow('').optional(),
+  APNS_TEAM_ID: Joi.string().allow('').optional(),
+  APNS_BUNDLE_ID: Joi.string().allow('').optional(),
+  APNS_ENV: Joi.string().allow('').optional(),
 });
 
 export const configuration = () => ({
@@ -106,5 +117,15 @@ export const configuration = () => ({
     keyId: process.env.RAZORPAY_KEY_ID ?? '',
     keySecret: process.env.RAZORPAY_KEY_SECRET ?? '',
     webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET ?? '',
+  },
+  apns: {
+    // Prod stores the p8 base64-encoded — a raw multi-line PEM breaks the EB
+    // update-environment option-settings parsing (see buildspec.yml). Local env
+    // files may still carry the PEM with literal `\n` sequences instead.
+    key: decodeApnsKey(process.env.APNS_KEY ?? ''),
+    keyId: process.env.APNS_KEY_ID ?? '',
+    teamId: process.env.APNS_TEAM_ID ?? '',
+    bundleId: process.env.APNS_BUNDLE_ID || 'in.forkai.code',
+    env: process.env.APNS_ENV ?? '',
   },
 });

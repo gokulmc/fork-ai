@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <title>forkai code — offline</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: #ffffff;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+        color: #1a1a1a;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
+        min-height: 100%;
+      }
+      .mark {
+        width: 88px;
+        height: 88px;
+        margin-bottom: 24px;
+        border-radius: 20px;
+      }
+      h1 {
+        font-size: 20px;
+        font-weight: 600;
+        margin: 0 0 8px;
+      }
+      p {
+        font-size: 15px;
+        line-height: 1.5;
+        color: #666666;
+        margin: 0 0 28px;
+        max-width: 320px;
+      }
+      button {
+        appearance: none;
+        border: none;
+        background: #1a1a1a;
+        color: #ffffff;
+        font-size: 15px;
+        font-weight: 600;
+        padding: 12px 28px;
+        border-radius: 10px;
+        cursor: pointer;
+      }
+      button:active {
+        opacity: 0.8;
+      }
+    </style>
+  </head>
+  <body>
+    <img class="mark" src="icon-512.png" alt="forkai code" />
+    <h1>You're offline</h1>
+    <p>forkai code needs an internet connection. Reconnect and try again.</p>
+    <button onclick="window.location.href = 'https://code.forkai.in'">Retry</button>
+  </body>
+</html>

@@ -15,6 +15,7 @@ import {
   GITHUB_INSTALLATION_MODEL,
   HOLD_MODEL,
   MACHINE_BILL_MODEL,
+  DEVICE_MODEL,
 } from './dynamo.constants';
 
 // Factory for a Dynamoose-model-shaped mock with chainable query/scan builder
@@ -66,6 +67,7 @@ describe('DynamoRepository', () => {
   let githubInstallation: ReturnType<typeof makeModelMock>;
   let hold: ReturnType<typeof makeModelMock>;
   let machineBill: ReturnType<typeof makeModelMock>;
+  let device: ReturnType<typeof makeModelMock>;
 
   beforeEach(async () => {
     userMeta = makeModelMock();
@@ -81,6 +83,7 @@ describe('DynamoRepository', () => {
     githubInstallation = makeModelMock();
     hold = makeModelMock();
     machineBill = makeModelMock();
+    device = makeModelMock();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -99,6 +102,7 @@ describe('DynamoRepository', () => {
         { provide: GITHUB_INSTALLATION_MODEL, useValue: githubInstallation.mock },
         { provide: HOLD_MODEL, useValue: hold.mock },
         { provide: MACHINE_BILL_MODEL, useValue: machineBill.mock },
+        { provide: DEVICE_MODEL, useValue: device.mock },
       ],
     }).compile();
     repo = module.get<DynamoRepository>(DynamoRepository);

@@ -6,6 +6,8 @@ import type { ForkNode, Annotation, HlMenuState, FollowUpState, ContextMenuState
 import { uid, short5, stripMarkdown, stripCite, getRangeOffsets, modelDisplayName, cleanHeading } from '@/lib/utils';
 import { rangeToMarkdown } from '@/lib/htmlToMarkdown';
 import { collapseSegments } from '@/lib/collapseSegments';
+import { usePushRegistration } from '@/hooks/usePushRegistration';
+import { hapticImpact, hapticSuccess } from '@/lib/native';
 
 const CSS_HL_SUPPORTED = typeof window !== 'undefined' && typeof CSS !== 'undefined' && 'highlights' in CSS;
 
@@ -300,6 +302,7 @@ function useIsNarrow() {
 export function App({ initialTopics = [], initiallyAuthed = false }: { initialTopics?: string[]; initiallyAuthed?: boolean }) {
   const { data: authSession, status } = useSession();
   const idToken = authSession?.idToken ?? '';
+  usePushRegistration(idToken || undefined);
 
   const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const [view, setView] = useState<'landing' | 'history'>(() => {
@@ -1836,10 +1839,12 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
           } else if (event.type === 'agent-event') {
             setAgentLogs(prev => ({ ...prev, [realNodeId]: [...(prev[realNodeId] ?? []), event.event] }));
           } else if (event.type === 'commit') {
+            hapticSuccess();
             setNodes(prev => prev[realNodeId]
               ? { ...prev, [realNodeId]: { ...prev[realNodeId], commitSha: event.sha, branchName: event.branchName, commitMessage: event.message, diffSummary: event.diffSummary } }
               : prev);
           } else if (event.type === 'done') {
+            hapticImpact('MEDIUM');
             const real = toForkNode(event.node);
             setNodes(prev => ({ ...prev, [realNodeId]: { ...real, loading: false } }));
             refreshCredit();
