@@ -33,9 +33,9 @@ class RepoRefDto {
   url!: string;
 
   // Only meaningful for provider 'github' — read client-side off the GitHub
-  // API's own `private` field (see GithubService.listRepos) at repo-pick time
-  // rather than re-fetched server-side; the frontend already has it in hand
-  // from the same /github/repos call that populated the picker.
+  // API's own `private` field (see GithubAppService.listInstallationRepos) at
+  // repo-pick time rather than re-fetched server-side; the frontend already
+  // has it in hand from the same /github/repos call that populated the picker.
   @ApiPropertyOptional({ description: 'Whether this GitHub repo is private — gates whether a cloud run needs a GitHub App installation token to clone it' })
   @IsOptional()
   @IsBoolean()

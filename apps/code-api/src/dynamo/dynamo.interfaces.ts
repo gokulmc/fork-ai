@@ -22,10 +22,6 @@ export interface UserMetaItem {
   // Free-text user persona prepended to every LLM prompt. Absent until the user
   // first saves one — the feature is inert until then.
   persona?: string;
-  // GitHub OAuth (read-only usage + import — see github.service.ts). Absent
-  // until the user completes the OAuth callback.
-  githubAccessToken?: string;
-  githubLogin?: string;
 }
 
 export interface CreditEventItem {
@@ -288,11 +284,10 @@ export interface DeviceItem {
 }
 
 // A GitHub App installation (Contents:Read v1) the user has granted forkai
-// code access to — distinct from UserMetaItem.githubAccessToken above, which
-// is a classic OAuth token used only for read-only browsing/import
-// (github.service.ts). This is what GithubAppService.mintInstallationToken
-// uses to clone PRIVATE repos into a cloud sandbox run. A user can have more
-// than one (one per GitHub org/account they installed the App on).
+// code access to. This is what GithubAppService.mintInstallationToken uses to
+// read/clone repos (including PRIVATE ones) for both project import and a
+// cloud sandbox run. A user can have more than one (one per GitHub org/account
+// they installed the App on).
 export interface GithubInstallationItem {
   PK: string;
   SK: string;

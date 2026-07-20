@@ -16,9 +16,6 @@ export const validationSchema = Joi.object({
   DEEPSEEK_API_KEY: Joi.string().allow('').optional(),
   GLM_API_KEY: Joi.string().allow('').optional(),
   GROQ_API_KEY: Joi.string().allow('').optional(),
-  GITHUB_CLIENT_ID: Joi.string().allow('').optional(),
-  GITHUB_CLIENT_SECRET: Joi.string().allow('').optional(),
-  GITHUB_REDIRECT_URI: Joi.string().allow('').optional(),
   GITHUB_APP_ID: Joi.string().allow('').optional(),
   GITHUB_APP_PRIVATE_KEY_B64: Joi.string().allow('').optional(),
   GITHUB_APP_SLUG: Joi.string().allow('').optional(),
@@ -91,11 +88,6 @@ export const configuration = () => ({
   },
   groq: {
     apiKey: process.env.GROQ_API_KEY ?? '',
-  },
-  github: {
-    clientId: process.env.GITHUB_CLIENT_ID ?? '',
-    clientSecret: process.env.GITHUB_CLIENT_SECRET ?? '',
-    redirectUri: process.env.GITHUB_REDIRECT_URI ?? 'http://localhost:4000/github/callback',
   },
   githubApp: {
     appId: process.env.GITHUB_APP_ID ?? '',

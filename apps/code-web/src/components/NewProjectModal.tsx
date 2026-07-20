@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { CreateProjectPayload, GithubRepo, GithubStatus, RepoRef } from '@/lib/api';
-import { getGithubStatus, getGithubAuthUrl, listGithubRepos, ApiError } from '@/lib/api';
+import type { CreateProjectPayload, GithubRepo, GithubAppStatus, RepoRef } from '@/lib/api';
+import { getGithubAppStatus, githubAppInstallUrl, listGithubRepos } from '@/lib/api';
 import { MOCK_REPOS, SKILL_PLUGINS, HARNESS_PLUGINS } from '@/lib/mockGithub';
 import { X as XIcon, Github } from './Icons';
 
@@ -53,31 +53,17 @@ export function NewProjectModal({ idToken, onClose, onCreate }: NewProjectModalP
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [ghStatus, setGhStatus] = useState<GithubStatus | null>(null);
+  const [ghApp, setGhApp] = useState<GithubAppStatus | null>(null);
   const [ghRepos, setGhRepos] = useState<GithubRepo[]>([]);
-  const [ghConnecting, setGhConnecting] = useState(false);
-  const [ghHint, setGhHint] = useState<string | null>(null);
 
   useEffect(() => {
-    getGithubStatus(idToken)
-      .then(status => {
-        setGhStatus(status);
-        if (status.connected) listGithubRepos(idToken).then(setGhRepos).catch(() => {});
+    getGithubAppStatus(idToken)
+      .then(st => {
+        setGhApp(st);
+        if (st.installed) listGithubRepos(idToken).then(setGhRepos).catch(() => {});
       })
-      .catch(() => setGhStatus({ connected: false }));
+      .catch(() => setGhApp({ configured: false, installed: false, accounts: [] }));
   }, [idToken]);
-
-  const connectGithub = async () => {
-    setGhConnecting(true);
-    setGhHint(null);
-    try {
-      const { url } = await getGithubAuthUrl(idToken);
-      window.location.href = url;
-    } catch (err) {
-      setGhHint(err instanceof ApiError && err.status === 503 ? 'GitHub OAuth not configured' : 'Could not start GitHub connect — try again.');
-      setGhConnecting(false);
-    }
-  };
 
   const togglePlugin = (id: string) => {
     setPlugins(prev => {
@@ -166,15 +152,16 @@ export function NewProjectModal({ idToken, onClose, onCreate }: NewProjectModalP
           ) : (
             <div>
               <div className="proj-field-label">Repository</div>
-              {ghStatus?.connected ? (
-                <div className="proj-gh-chip"><Github size={12} /> {ghStatus.login}</div>
-              ) : (
-                <button type="button" className="proj-gh-connect" disabled={ghConnecting} onClick={connectGithub}>
-                  {ghConnecting ? <span className="spinner" style={{ width: 11, height: 11 }} /> : <Github size={13} />}
-                  Connect GitHub (read-only — we only ever read, never push)
-                </button>
-              )}
-              {ghHint && <div className="proj-field-error">{ghHint}</div>}
+              {ghApp?.installed ? (
+                <div className="proj-gh-chip"><Github size={12} /> {ghApp.accounts.join(', ')}</div>
+              ) : ghApp?.configured ? (
+                <a className="proj-gh-connect" href={githubAppInstallUrl()}>
+                  <Github size={13} />
+                  Install GitHub App — pick the repos forkai code may access
+                </a>
+              ) : ghApp && !ghApp.configured ? (
+                <div className="proj-field-error">GitHub App not configured on this server.</div>
+              ) : null}
               <div className="proj-repo-list">
                 {ghRepos.map(repo => (
                   <div
