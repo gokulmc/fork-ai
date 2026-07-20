@@ -25,6 +25,11 @@ export class ApnsService {
   private getKey(): string | undefined {
     const raw = this.cfg.get<string>('apns.key');
     if (!raw) return undefined;
+    // Prod stores the PEM base64-encoded — a raw multi-line value can't survive
+    // the EB update-environment option-settings parsing (see buildspec.yml).
+    if (!raw.includes('BEGIN')) {
+      return Buffer.from(raw, 'base64').toString('utf8');
+    }
     // Secrets managers / env files often store the PEM with literal "\n" sequences.
     return raw.replace(/\\n/g, '\n');
   }

@@ -13,7 +13,9 @@ env:
     GEMINI_API_KEY: forkai/gemini-api-key
     DEEPSEEK_API_KEY: forkai/deepseek-api-key
     GLM_API_KEY: forkai/glm-api-key
-    APNS_KEY: forkai/apns:key
+    # base64 variant — the raw PEM's newlines break the single-line
+    # update-environment --option-settings parsing (deploy failed with exit 254)
+    APNS_KEY: forkai/apns:keyB64
     APNS_KEY_ID: forkai/apns:keyId
 
 phases:
