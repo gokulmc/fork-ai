@@ -1,5 +1,11 @@
 import * as Joi from 'joi';
 
+function decodeApnsKey(raw: string): string {
+  if (!raw) return '';
+  if (!raw.includes('BEGIN')) return Buffer.from(raw, 'base64').toString('utf8');
+  return raw.replace(/\\n/g, '\n');
+}
+
 export const validationSchema = Joi.object({
   AWS_REGION: Joi.string().default('ap-south-1'),
   COGNITO_USER_POOL_ID: Joi.string().required(),
@@ -113,9 +119,10 @@ export const configuration = () => ({
     webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET ?? '',
   },
   apns: {
-    // The p8 key is stored with literal `\n` in env vars (Secrets Manager /
-    // EB option settings can't hold real newlines) — undo that here.
-    key: (process.env.APNS_KEY ?? '').replace(/\\n/g, '\n'),
+    // Prod stores the p8 base64-encoded — a raw multi-line PEM breaks the EB
+    // update-environment option-settings parsing (see buildspec.yml). Local env
+    // files may still carry the PEM with literal `\n` sequences instead.
+    key: decodeApnsKey(process.env.APNS_KEY ?? ''),
     keyId: process.env.APNS_KEY_ID ?? '',
     teamId: process.env.APNS_TEAM_ID ?? '',
     bundleId: process.env.APNS_BUNDLE_ID || 'in.forkai.code',

@@ -18,7 +18,9 @@ env:
     GITHUB_CLIENT_SECRET: forkai/github-code-client-secret
     GITHUB_APP_PRIVATE_KEY_B64: forkai/github-app-private-key-b64
     FLY_API_TOKEN: forkai/fly-api-token
-    APNS_KEY: forkai/apns:key
+    # base64 variant — the raw PEM's newlines break the single-line
+    # update-environment --option-settings parsing (deploy failed with exit 254)
+    APNS_KEY: forkai/apns:keyB64
     APNS_KEY_ID: forkai/apns:keyId
 
 phases:
