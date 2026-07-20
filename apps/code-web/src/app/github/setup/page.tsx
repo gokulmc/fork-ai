@@ -22,20 +22,19 @@ function SetupInner() {
       .catch(() => setState('error'));
   }, [status, authSession?.idToken, installationId]);
 
-  let message: string;
   if (!installationId) {
-    message = 'No installation id on this link — open it from the GitHub App install flow, not directly.';
-  } else if (status === 'unauthenticated') {
-    message = 'Sign in to forkai code, then reopen this link to finish linking the installation.';
-  } else if (state === 'error') {
-    message = 'Could not link the installation — go back to forkai code and try Connect GitHub again.';
-  } else if (state === 'linked') {
-    message = 'Installation linked — you can close this tab and go back to forkai code.';
-  } else {
-    message = 'Linking your GitHub App installation…';
+    return <p className="ghsetup-msg">No installation id on this link — open it from the GitHub App install flow, not directly.</p>;
   }
-
-  return <p className="ghsetup-msg">{message}</p>;
+  if (status === 'unauthenticated') {
+    return <p className="ghsetup-msg">Sign in to forkai code, then reopen this link to finish linking the installation.</p>;
+  }
+  if (state === 'error') {
+    return <p className="ghsetup-msg">Could not link the installation — go back to forkai code and try Connect GitHub again.</p>;
+  }
+  if (state === 'linked') {
+    return <p className="ghsetup-msg">Installation linked — <a className="ghsetup-link" href="/?github=connected">back to forkai code</a>.</p>;
+  }
+  return <p className="ghsetup-msg">Linking your GitHub App installation…</p>;
 }
 
 export default function GithubSetupPage() {
@@ -55,6 +54,7 @@ export default function GithubSetupPage() {
           }
           .ghsetup-title { font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.16em; margin: 0 0 14px; }
           .ghsetup-msg { font-size: 12.5px; line-height: 1.6; color: var(--ink-3); margin: 0; }
+          .ghsetup-link { color: var(--ink); text-decoration: underline; }
         `}</style>
         <main className="ghsetup-card">
           <p className="ghsetup-title">forkai code — GitHub App</p>

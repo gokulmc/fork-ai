@@ -764,11 +764,12 @@ export function getProject(idToken: string, projectId: string): Promise<Project>
   return apiFetch<Project>(`/projects/${projectId}`, idToken);
 }
 
-// ── GitHub — read-only OAuth link (usage + import; never pushes) ───────────
+// ── GitHub — App install status + repo listing (per-repo, powers sandbox clone/commit/PR) ──
 
-export interface GithubStatus {
-  connected: boolean;
-  login?: string;
+export interface GithubAppStatus {
+  configured: boolean;
+  installed: boolean;
+  accounts: string[];
 }
 
 export interface GithubRepo {
@@ -781,14 +782,8 @@ export interface GithubRepo {
   description: string;
 }
 
-export function getGithubStatus(idToken: string): Promise<GithubStatus> {
-  return apiFetch<GithubStatus>('/github/status', idToken);
-}
-
-// 503 (GITHUB_CLIENT_ID unset) surfaces as an ApiError — callers show a "not
-// configured" hint rather than attempting the redirect.
-export function getGithubAuthUrl(idToken: string): Promise<{ url: string }> {
-  return apiFetch<{ url: string }>('/github/auth', idToken);
+export function getGithubAppStatus(idToken: string): Promise<GithubAppStatus> {
+  return apiFetch<GithubAppStatus>('/github/app/status', idToken);
 }
 
 export function listGithubRepos(idToken: string): Promise<GithubRepo[]> {
@@ -807,9 +802,9 @@ export function linkGithubInstallation(idToken: string, installationId: string):
 
 // Plain unauthenticated browser navigation (`GET /github/app/install` redirects
 // straight to github.com) — not an apiFetch call, since the backend route needs
-// no bearer token. Used by PrPane's "Connect GitHub App" action (prError
-// app_not_enabled/forbidden) to reach the same install flow /github/setup's
-// callback page expects.
+// no bearer token. Used by TweaksPanel, NewProjectModal, and PrPane's "Connect
+// GitHub App" action (prError app_not_enabled/forbidden) to reach the same
+// install flow /github/setup's callback page expects.
 export function githubAppInstallUrl(): string {
   return `${base()}/github/app/install`;
 }

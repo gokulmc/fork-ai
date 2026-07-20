@@ -1,7 +1,6 @@
-import { Injectable, Logger, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { DynamoRepository } from '@/dynamo/dynamo.repository';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import type { DiffSummary } from '@/dynamo/dynamo.interfaces';
+import { GithubAppService } from './github-app.service';
 
 export interface GithubRepo {
   owner: string;
@@ -57,89 +56,7 @@ const MAX_BRANCHES = 20;
 export class GithubService {
   private readonly logger = new Logger(GithubService.name);
 
-  // Short-lived in-memory map: state → sub+email (survives only the OAuth round-trip, ~60 s)
-  private readonly pendingStates = new Map<string, { sub: string; email: string; expiresAt: number }>();
-
-  constructor(
-    private readonly cfg: ConfigService,
-    private readonly db: DynamoRepository,
-  ) {}
-
-  // ── OAuth ──────────────────────────────────────────────────────────────────
-
-  buildAuthUrl(sub: string, email: string): string {
-    const clientId = this.cfg.get<string>('github.clientId');
-    if (!clientId) {
-      throw new ServiceUnavailableException('GitHub integration not configured');
-    }
-
-    const state = `${sub}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    this.pendingStates.set(state, { sub, email, expiresAt: Date.now() + 5 * 60_000 });
-    const params = new URLSearchParams({
-      client_id: clientId,
-      redirect_uri: this.cfg.get<string>('github.redirectUri')!,
-      // OAuth Apps have no true read-only scope — `repo` is the narrowest scope
-      // that can read a private repo's commits. We only ever GET, never write.
-      scope: 'repo',
-      state,
-    });
-    return `https://github.com/login/oauth/authorize?${params}`;
-  }
-
-  async handleCallback(code: string, state: string): Promise<string> {
-    const entry = this.pendingStates.get(state);
-    if (!entry || Date.now() > entry.expiresAt) {
-      throw new UnauthorizedException('Invalid or expired OAuth state');
-    }
-    this.pendingStates.delete(state);
-
-    const { sub, email } = entry;
-    const token = await this.exchangeCode(code);
-    const login = await this.fetchLogin(token);
-
-    // Upsert UserMeta so the record exists even if the user never called GET /users/me
-    const existing = await this.db.getUserMeta(sub);
-    if (!existing) {
-      const now = new Date().toISOString();
-      await this.db.putUserMeta({ PK: `USER#${sub}`, SK: 'METADATA', sub, email, createdAt: now, updatedAt: now });
-    }
-    await this.db.updateGithubToken(sub, token, login);
-    return sub;
-  }
-
-  private async exchangeCode(code: string): Promise<string> {
-    const clientId = this.cfg.get<string>('github.clientId')!;
-    const clientSecret = this.cfg.get<string>('github.clientSecret')!;
-    const redirectUri = this.cfg.get<string>('github.redirectUri')!;
-
-    const res = await fetch('https://github.com/login/oauth/access_token', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        // Without this GitHub replies with a form-encoded body instead of JSON.
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({ client_id: clientId, client_secret: clientSecret, code, redirect_uri: redirectUri }),
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      throw new UnauthorizedException(`GitHub token exchange failed: ${text}`);
-    }
-    // GitHub returns HTTP 200 even for a bad/expired code — the error rides in
-    // the JSON body (e.g. { error: 'bad_verification_code', ... }).
-    const data = (await res.json()) as { access_token?: string; error?: string; error_description?: string };
-    if (!data.access_token) {
-      throw new UnauthorizedException(`GitHub token exchange failed: ${data.error_description ?? data.error ?? 'unknown error'}`);
-    }
-    return data.access_token;
-  }
-
-  private async fetchLogin(token: string): Promise<string> {
-    const res = await fetch(`${GITHUB_API}/user`, { headers: this.authHeaders(token) });
-    if (!res.ok) throw new UnauthorizedException('Failed to fetch GitHub user profile');
-    const data = (await res.json()) as { login: string };
-    return data.login;
-  }
+  constructor(private readonly githubApp: GithubAppService) {}
 
   private authHeaders(token: string): Record<string, string> {
     return {
@@ -149,44 +66,11 @@ export class GithubService {
     };
   }
 
-  // ── Status ─────────────────────────────────────────────────────────────────
-
-  async getStatus(sub: string): Promise<{ connected: boolean; login?: string }> {
-    const user = await this.db.getUserMeta(sub);
-    if (!user?.githubAccessToken) return { connected: false };
-    return { connected: true, login: user.githubLogin };
-  }
-
-  // ── Repos ──────────────────────────────────────────────────────────────────
-
-  async listRepos(sub: string): Promise<GithubRepo[]> {
-    const token = await this.requireToken(sub);
-    const res = await fetch(`${GITHUB_API}/user/repos?per_page=50&sort=updated`, { headers: this.authHeaders(token) });
-    if (!res.ok) throw new UnauthorizedException('Failed to list GitHub repos');
-    const data = (await res.json()) as Array<{
-      owner: { login: string };
-      name: string;
-      full_name: string;
-      default_branch: string;
-      private: boolean;
-      html_url: string;
-      description: string | null;
-    }>;
-    return data.map((r) => ({
-      owner: r.owner.login,
-      repo: r.name,
-      fullName: r.full_name,
-      defaultBranch: r.default_branch,
-      private: r.private,
-      url: r.html_url,
-      description: r.description,
-    }));
-  }
-
   // ── Repo seed (root-commit history for D1 project seeding) ────────────────
 
   async getRepoSeed(sub: string, owner: string, repo: string, branch: string): Promise<RepoSeed> {
-    const token = await this.requireToken(sub);
+    const token = await this.githubApp.mintInstallationToken(sub, owner, repo);
+    if (!token) throw new UnauthorizedException(`GitHub App not installed on ${owner}/${repo}`);
     const headers = this.authHeaders(token);
 
     const headRes = await fetch(
@@ -215,18 +99,11 @@ export class GithubService {
     return { defaultBranch: branch, head, first };
   }
 
-  private async requireToken(sub: string): Promise<string> {
-    const user = await this.db.getUserMeta(sub);
-    if (!user?.githubAccessToken) {
-      throw new UnauthorizedException('GitHub account not connected');
-    }
-    return user.githubAccessToken;
-  }
-
   // ── Full history import (repo-import.service.ts) ───────────────────────────
 
   async listBranches(sub: string, owner: string, repo: string): Promise<GithubBranch[]> {
-    const token = await this.requireToken(sub);
+    const token = await this.githubApp.mintInstallationToken(sub, owner, repo);
+    if (!token) throw new UnauthorizedException(`GitHub App not installed on ${owner}/${repo}`);
     const headers = this.authHeaders(token);
     const branches: GithubBranch[] = [];
     let url: string | null = `${GITHUB_API}/repos/${owner}/${repo}/branches?per_page=100`;
@@ -244,7 +121,8 @@ export class GithubService {
   }
 
   async listCommits(sub: string, owner: string, repo: string, branch: string, cap: number): Promise<RepoCommit[]> {
-    const token = await this.requireToken(sub);
+    const token = await this.githubApp.mintInstallationToken(sub, owner, repo);
+    if (!token) throw new UnauthorizedException(`GitHub App not installed on ${owner}/${repo}`);
     const headers = this.authHeaders(token);
     const commits: RepoCommit[] = [];
     let url: string | null = `${GITHUB_API}/repos/${owner}/${repo}/commits?sha=${encodeURIComponent(branch)}&per_page=100`;
@@ -268,7 +146,8 @@ export class GithubService {
   }
 
   async compareCommits(sub: string, owner: string, repo: string, base: string, head: string): Promise<RepoCompare> {
-    const token = await this.requireToken(sub);
+    const token = await this.githubApp.mintInstallationToken(sub, owner, repo);
+    if (!token) throw new UnauthorizedException(`GitHub App not installed on ${owner}/${repo}`);
     const headers = this.authHeaders(token);
     const res = await fetch(
       `${GITHUB_API}/repos/${owner}/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`,
@@ -290,7 +169,8 @@ export class GithubService {
   // a partial import (§2c) must not fail because one commit's diff fetch did.
   async getCommitDiff(sub: string, owner: string, repo: string, sha: string): Promise<DiffSummary | null> {
     try {
-      const token = await this.requireToken(sub);
+      const token = await this.githubApp.mintInstallationToken(sub, owner, repo);
+      if (!token) return null;
       const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/commits/${sha}`, { headers: this.authHeaders(token) });
       if (!res.ok) return null;
       const data = (await res.json()) as {

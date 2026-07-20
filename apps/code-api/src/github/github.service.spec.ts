@@ -1,26 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { UnauthorizedException } from '@nestjs/common';
 import { GithubService } from './github.service';
-import { DynamoRepository } from '@/dynamo/dynamo.repository';
+import { GithubAppService } from './github-app.service';
 
-const mockDb = {
-  getUserMeta: jest.fn(),
-  putUserMeta: jest.fn(),
-  updateGithubToken: jest.fn(),
+const mockGithubApp = {
+  mintInstallationToken: jest.fn(),
 };
-
-const CFG_VALUES: Record<string, string> = {
-  'github.clientId': 'client-123',
-  'github.clientSecret': 'secret-456',
-  'github.redirectUri': 'http://localhost:4000/github/callback',
-  frontendUrl: 'http://localhost:4001',
-};
-
-const mockCfg = { get: jest.fn((key: string): string | undefined => CFG_VALUES[key]) };
 
 const SUB = 'user-sub-123';
-const EMAIL = 'dev@example.com';
 
 function jsonResponse(body: unknown, init?: { status?: number; headers?: Record<string, string> }): Response {
   return {
@@ -40,11 +27,7 @@ describe('GithubService', () => {
     jest.clearAllMocks();
     fetchSpy = jest.spyOn(global, 'fetch');
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        GithubService,
-        { provide: ConfigService, useValue: mockCfg },
-        { provide: DynamoRepository, useValue: mockDb },
-      ],
+      providers: [GithubService, { provide: GithubAppService, useValue: mockGithubApp }],
     }).compile();
     service = module.get<GithubService>(GithubService);
   });
@@ -53,140 +36,14 @@ describe('GithubService', () => {
     fetchSpy.mockRestore();
   });
 
-  describe('buildAuthUrl', () => {
-    it('throws 503 when clientId is unconfigured', () => {
-      mockCfg.get.mockImplementationOnce(() => undefined);
-      expect(() => service.buildAuthUrl(SUB, EMAIL)).toThrow(ServiceUnavailableException);
-    });
-
-    it('builds a github.com authorize URL with repo scope', () => {
-      const url = service.buildAuthUrl(SUB, EMAIL);
-      expect(url).toMatch(/^https:\/\/github\.com\/login\/oauth\/authorize\?/);
-      expect(url).toContain('scope=repo');
-      expect(url).toContain('client_id=client-123');
-    });
-  });
-
-  describe('handleCallback — state expiry', () => {
-    it('rejects an unknown state', async () => {
-      await expect(service.handleCallback('code', 'bogus-state')).rejects.toBeInstanceOf(UnauthorizedException);
-    });
-
-    it('rejects a state older than 5 minutes', async () => {
-      const url = service.buildAuthUrl(SUB, EMAIL);
-      const state = new URL(url).searchParams.get('state')!;
-      jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 6 * 60_000);
-      await expect(service.handleCallback('code', state)).rejects.toBeInstanceOf(UnauthorizedException);
-      jest.spyOn(Date, 'now').mockRestore();
-    });
-  });
-
-  describe('handleCallback — token exchange', () => {
-    function issueState(): string {
-      const url = service.buildAuthUrl(SUB, EMAIL);
-      return new URL(url).searchParams.get('state')!;
-    }
-
-    it('exchanges the code, fetches the login, and persists the token', async () => {
-      const state = issueState();
-      fetchSpy
-        .mockResolvedValueOnce(jsonResponse({ access_token: 'gho_abc123' })) // token exchange
-        .mockResolvedValueOnce(jsonResponse({ login: 'octocat' })); // GET /user
-      mockDb.getUserMeta.mockResolvedValue({ sub: SUB, email: EMAIL });
-
-      const sub = await service.handleCallback('good-code', state);
-
-      expect(sub).toBe(SUB);
-      expect(mockDb.updateGithubToken).toHaveBeenCalledWith(SUB, 'gho_abc123', 'octocat');
-      expect(mockDb.putUserMeta).not.toHaveBeenCalled(); // existing user — no upsert needed
-    });
-
-    it('upserts UserMeta when the user record does not exist yet', async () => {
-      const state = issueState();
-      fetchSpy
-        .mockResolvedValueOnce(jsonResponse({ access_token: 'gho_abc123' }))
-        .mockResolvedValueOnce(jsonResponse({ login: 'octocat' }));
-      mockDb.getUserMeta.mockResolvedValue(null);
-
-      await service.handleCallback('good-code', state);
-
-      expect(mockDb.putUserMeta).toHaveBeenCalledWith(expect.objectContaining({ sub: SUB, email: EMAIL }));
-    });
-
-    it('treats a 200-with-error body as a failed exchange (GitHub does not use HTTP error codes for bad codes)', async () => {
-      const state = issueState();
-      fetchSpy.mockResolvedValueOnce(
-        jsonResponse({ error: 'bad_verification_code', error_description: 'The code passed is incorrect or expired.' }),
-      );
-
-      await expect(service.handleCallback('bad-code', state)).rejects.toBeInstanceOf(UnauthorizedException);
-      expect(mockDb.updateGithubToken).not.toHaveBeenCalled();
-    });
-
-    it('rejects when the HTTP exchange call itself fails', async () => {
-      const state = issueState();
-      fetchSpy.mockResolvedValueOnce(jsonResponse({ error: 'server_error' }, { status: 500 }));
-
-      await expect(service.handleCallback('code', state)).rejects.toBeInstanceOf(UnauthorizedException);
-    });
-  });
-
-  describe('getStatus', () => {
-    it('reports disconnected when no token is stored', async () => {
-      mockDb.getUserMeta.mockResolvedValue({ sub: SUB });
-      await expect(service.getStatus(SUB)).resolves.toEqual({ connected: false });
-    });
-
-    it('reports connected with the stored login', async () => {
-      mockDb.getUserMeta.mockResolvedValue({ sub: SUB, githubAccessToken: 'gho_x', githubLogin: 'octocat' });
-      await expect(service.getStatus(SUB)).resolves.toEqual({ connected: true, login: 'octocat' });
-    });
-  });
-
-  describe('listRepos', () => {
-    it('throws when the user has not connected GitHub', async () => {
-      mockDb.getUserMeta.mockResolvedValue({ sub: SUB });
-      await expect(service.listRepos(SUB)).rejects.toBeInstanceOf(UnauthorizedException);
-    });
-
-    it('maps the GitHub repo list shape to GithubRepo', async () => {
-      mockDb.getUserMeta.mockResolvedValue({ sub: SUB, githubAccessToken: 'gho_x' });
-      fetchSpy.mockResolvedValueOnce(
-        jsonResponse([
-          {
-            owner: { login: 'acme' },
-            name: 'widgets',
-            full_name: 'acme/widgets',
-            default_branch: 'main',
-            private: false,
-            html_url: 'https://github.com/acme/widgets',
-            description: 'Widgets, but as a service',
-          },
-        ]),
-      );
-
-      const repos = await service.listRepos(SUB);
-      expect(repos).toEqual([
-        {
-          owner: 'acme',
-          repo: 'widgets',
-          fullName: 'acme/widgets',
-          defaultBranch: 'main',
-          private: false,
-          url: 'https://github.com/acme/widgets',
-          description: 'Widgets, but as a service',
-        },
-      ]);
-      const [url, init] = fetchSpy.mock.calls[0];
-      expect(url).toContain('per_page=50');
-      expect(url).toContain('sort=updated');
-      expect((init.headers as Record<string, string>)['X-GitHub-Api-Version']).toBe('2022-11-28');
-    });
-  });
-
   describe('getRepoSeed', () => {
     beforeEach(() => {
-      mockDb.getUserMeta.mockResolvedValue({ sub: SUB, githubAccessToken: 'gho_x' });
+      mockGithubApp.mintInstallationToken.mockResolvedValue('ghs_x');
+    });
+
+    it('throws when the GitHub App is not installed on the owner (mint returns null)', async () => {
+      mockGithubApp.mintInstallationToken.mockResolvedValue(null);
+      await expect(service.getRepoSeed(SUB, 'acme', 'widgets', 'main')).rejects.toBeInstanceOf(UnauthorizedException);
     });
 
     it('returns nulls for an empty repo (HTTP 409)', async () => {
@@ -234,7 +91,7 @@ describe('GithubService', () => {
 
   describe('getCommitDiff', () => {
     beforeEach(() => {
-      mockDb.getUserMeta.mockResolvedValue({ sub: SUB, githubAccessToken: 'gho_x' });
+      mockGithubApp.mintInstallationToken.mockResolvedValue('ghs_x');
     });
 
     it('maps files[] to a DiffSummary, translating status and recomputing totals', async () => {
@@ -269,8 +126,8 @@ describe('GithubService', () => {
       await expect(service.getCommitDiff(SUB, 'acme', 'widgets', 'missing-sha')).resolves.toBeNull();
     });
 
-    it('returns null (never throws) when no token is stored', async () => {
-      mockDb.getUserMeta.mockResolvedValue({ sub: SUB });
+    it('returns null (never throws) when no installation token is available', async () => {
+      mockGithubApp.mintInstallationToken.mockResolvedValue(null);
       await expect(service.getCommitDiff(SUB, 'acme', 'widgets', 'abc123')).resolves.toBeNull();
     });
   });
