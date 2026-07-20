@@ -2,6 +2,7 @@ import { createSign } from 'crypto';
 import * as http2 from 'http2';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
 
 // APNs JWTs are valid up to 1h server-side; cache for 50 min so a send never
@@ -22,6 +23,10 @@ interface CachedJwt {
 export class ApnsService {
   private readonly logger = new Logger(ApnsService.name);
   private cachedJwt: CachedJwt | null = null;
+  // Resolves once and is reused forever — success or failure — so a Secrets
+  // Manager outage doesn't retry-storm on every push (the key never rotates
+  // without a restart being fine, per the EB env-var-budget fix this replaces).
+  private secretKeyPromise: Promise<string> | null = null;
 
   constructor(
     private readonly cfg: ConfigService,
@@ -32,7 +37,7 @@ export class ApnsService {
   // run pipeline that triggers it (see NodesService.createCodeNodeStreaming).
   async sendToUser(sub: string, title: string, body: string): Promise<void> {
     try {
-      const jwt = this.buildJwt();
+      const jwt = await this.buildJwt();
       if (!jwt) return; // APNs not configured — no-op
       const devices = await this.db.listDevices(sub);
       if (!devices.length) return;
@@ -42,10 +47,11 @@ export class ApnsService {
     }
   }
 
-  private buildJwt(): string | null {
+  private async buildJwt(): Promise<string | null> {
     const keyId = this.cfg.get<string>('apns.keyId');
     const teamId = this.cfg.get<string>('apns.teamId');
-    const key = this.cfg.get<string>('apns.key');
+    let key = this.cfg.get<string>('apns.key');
+    if (!key) key = await this.resolveSecretKey();
     if (!keyId || !teamId || !key) return null;
 
     const now = Date.now();
@@ -63,6 +69,31 @@ export class ApnsService {
     const token = `${signingInput}.${b64url(signature)}`;
     this.cachedJwt = { token, mintedAt: now };
     return token;
+  }
+
+  // Prod stopped passing the p8 key through EB env vars (blew the 4096-char
+  // CloudFormation OptionSettings budget once GitHub App + Fly + APNs were all
+  // present) — it now fetches the key from Secrets Manager on first use and
+  // caches it in-memory forever. Local dev still supplies apns.key directly
+  // via env, so this path never runs there.
+  private resolveSecretKey(): Promise<string> {
+    if (!this.secretKeyPromise) this.secretKeyPromise = this.fetchSecretKey();
+    return this.secretKeyPromise;
+  }
+
+  private async fetchSecretKey(): Promise<string> {
+    const secretName = this.cfg.get<string>('apns.secretName');
+    if (!secretName) return '';
+    try {
+      const client = new SecretsManagerClient({ region: this.cfg.get<string>('aws.region') });
+      const res = await client.send(new GetSecretValueCommand({ SecretId: secretName }));
+      const { keyB64 } = JSON.parse(res.SecretString ?? '{}') as { keyB64?: string };
+      if (!keyB64) throw new Error(`secret ${secretName} missing keyB64`);
+      return Buffer.from(keyB64, 'base64').toString('utf8');
+    } catch (err) {
+      this.logger.warn(`APNs key fetch from Secrets Manager failed: ${String(err)}`);
+      return '';
+    }
   }
 
   private sendToDevice(sub: string, token: string, jwt: string, title: string, body: string): Promise<void> {
