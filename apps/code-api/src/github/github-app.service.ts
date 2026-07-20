@@ -2,6 +2,7 @@ import { createSign } from 'crypto';
 import { Injectable, InternalServerErrorException, Logger, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
+import type { GithubRepo } from './github.service';
 
 const GITHUB_API = 'https://api.github.com';
 // GitHub rejects an App JWT whose iat is ahead of its own clock — backdating
@@ -37,10 +38,11 @@ export interface CreatePullRequestFailure {
 }
 
 // GitHub App slice (Contents:Read v1 — see docs/forkai-code/adr/0002's
-// amendment). Distinct from GithubService's classic OAuth App: that one holds
-// a long-lived per-user token for read-only browsing/import; this one mints
-// short-lived, per-repo installation tokens so a cloud sandbox can clone a
-// PRIVATE repo without ever holding a durable user credential.
+// amendment). Mints short-lived, per-repo (or all-repos) installation tokens
+// so a cloud sandbox can clone a PRIVATE repo, and so repo reads/listing can
+// happen, without ever holding a durable user credential — the classic OAuth
+// App this ADR originally coexisted with has since been removed entirely
+// (see the ADR's 2026-07-20 amendment).
 //
 // No jsonwebtoken/jose dependency — neither is declared in code-api's
 // package.json, so the App JWT is hand-signed with node:crypto (same "no new
@@ -48,8 +50,8 @@ export interface CreatePullRequestFailure {
 @Injectable()
 export class GithubAppService {
   private readonly logger = new Logger(GithubAppService.name);
-  // installationId:repo -> token — in-memory only, survives just this
-  // process's lifetime (same spirit as GithubService's OAuth pendingStates).
+  // installationId:repo (or installationId:* for an all-repos token) -> token
+  // — in-memory only, survives just this process's lifetime.
   private readonly tokenCache = new Map<string, CachedToken>();
 
   constructor(
@@ -95,31 +97,98 @@ export class GithubAppService {
   }
 
   // Finds the caller's installation covering `owner` (GitHub logins are
-  // case-insensitive) and mints a token scoped to just `repo`. Returns null —
-  // never throws — when the App isn't configured or no installation covers
-  // the owner; callers turn that into a user-facing "install the App" prompt.
-  async mintInstallationToken(sub: string, owner: string, repo: string): Promise<string | null> {
+  // case-insensitive) and mints a token scoped to just `repo`. Omitting `repo`
+  // mints a token covering every repo on the installation (no `repositories`
+  // body field) — used by listInstallationRepos, where the whole point is
+  // discovering repos before any single one is known. Returns null — never
+  // throws — when the App isn't configured or no installation covers the
+  // owner; callers turn that into a user-facing "install the App" prompt.
+  async mintInstallationToken(sub: string, owner: string, repo?: string): Promise<string | null> {
     if (!this.isConfigured()) return null;
     const installations = await this.db.listGithubInstallations(sub);
     const installation = installations.find((i) => i.accountLogin.toLowerCase() === owner.toLowerCase());
     if (!installation) return null;
+    return this.mintForInstallation(installation.installationId, owner, repo);
+  }
 
-    const cacheKey = `${installation.installationId}:${repo}`;
+  private async mintForInstallation(installationId: string, owner: string, repo?: string): Promise<string | null> {
+    const cacheKey = `${installationId}:${repo ?? '*'}`;
     const cached = this.tokenCache.get(cacheKey);
     if (cached && cached.expiresAt - TOKEN_REFRESH_MARGIN_MS > Date.now()) return cached.token;
 
-    const res = await fetch(`${GITHUB_API}/app/installations/${installation.installationId}/access_tokens`, {
+    const res = await fetch(`${GITHUB_API}/app/installations/${installationId}/access_tokens`, {
       method: 'POST',
       headers: { ...this.appHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ repositories: [repo] }),
+      body: repo ? JSON.stringify({ repositories: [repo] }) : undefined,
     });
     if (!res.ok) {
-      this.logger.warn(`installation token mint failed for ${owner}/${repo}: ${res.status} ${await res.text().catch(() => '')}`);
+      this.logger.warn(`installation token mint failed for ${owner}/${repo ?? '*'}: ${res.status} ${await res.text().catch(() => '')}`);
       return null;
     }
     const data = (await res.json()) as { token: string; expires_at: string };
     this.tokenCache.set(cacheKey, { token: data.token, expiresAt: new Date(data.expires_at).getTime() });
     return data.token;
+  }
+
+  // Status for the frontend's GitHub-connection UI. `configured` reflects
+  // whether the App itself is set up on this server (env vars); `installed`
+  // is per-user — whether they've completed the App install flow at least
+  // once. Never touches the DB when unconfigured, mirroring
+  // mintInstallationToken's never-throws-just-degrades convention.
+  async listInstallations(sub: string): Promise<{ configured: boolean; installed: boolean; accounts: string[] }> {
+    if (!this.isConfigured()) return { configured: false, installed: false, accounts: [] };
+    const installations = await this.db.listGithubInstallations(sub);
+    return { configured: true, installed: installations.length > 0, accounts: installations.map((i) => i.accountLogin) };
+  }
+
+  // Repo picker for project import/creation — the installation-token
+  // replacement for the old OAuth-backed GithubService.listRepos. Unlike that
+  // endpoint, GitHub's own `GET /installation/repositories` has no
+  // `sort=updated` param, so results come back in install order — fine for a
+  // picker over a small, explicitly-installed set. A failing installation
+  // (mint or fetch) is skipped with a warn log rather than failing the whole call.
+  async listInstallationRepos(sub: string): Promise<GithubRepo[]> {
+    // Guard before touching stored installations: rows can outlive the App's
+    // env config, and mintForInstallation's appJwt() throws (500) when
+    // unconfigured instead of degrading like mintInstallationToken does.
+    if (!this.isConfigured()) return [];
+    const installations = await this.db.listGithubInstallations(sub);
+    const repos: GithubRepo[] = [];
+    for (const installation of installations) {
+      const token = await this.mintForInstallation(installation.installationId, installation.accountLogin);
+      if (!token) {
+        this.logger.warn(`listInstallationRepos: could not mint a token for installation ${installation.installationId} (${installation.accountLogin})`);
+        continue;
+      }
+      const res = await fetch(`${GITHUB_API}/installation/repositories?per_page=100`, { headers: this.installationHeaders(token) });
+      if (!res.ok) {
+        this.logger.warn(`listInstallationRepos: failed to list repos for installation ${installation.installationId} (${installation.accountLogin}): ${res.status}`);
+        continue;
+      }
+      const data = (await res.json()) as {
+        repositories: Array<{
+          owner: { login: string };
+          name: string;
+          full_name: string;
+          default_branch: string;
+          private: boolean;
+          html_url: string;
+          description: string | null;
+        }>;
+      };
+      for (const r of data.repositories) {
+        repos.push({
+          owner: r.owner.login,
+          repo: r.name,
+          fullName: r.full_name,
+          defaultBranch: r.default_branch,
+          private: r.private,
+          url: r.html_url,
+          description: r.description,
+        });
+      }
+    }
+    return repos;
   }
 
   // Opens a real GitHub PR (ADR-0002/0005 extension — behind the App's

@@ -173,6 +173,144 @@ describe('GithubAppService', () => {
 
       await expect(service.mintInstallationToken(SUB, 'acme', 'widgets')).resolves.toBeNull();
     });
+
+    it('mints an all-repos token (no request body) when repo is omitted, cached separately from a repo-scoped token', async () => {
+      mockDb.listGithubInstallations.mockResolvedValue([{ installationId: '42', accountLogin: 'acme' }]);
+      fetchSpy
+        .mockResolvedValueOnce(jsonResponse({ token: 'ghs_all', expires_at: new Date(Date.now() + 3600_000).toISOString() })) // all-repos
+        .mockResolvedValueOnce(jsonResponse({ token: 'ghs_repo', expires_at: new Date(Date.now() + 3600_000).toISOString() })); // repo-scoped
+
+      const allRepos = await service.mintInstallationToken(SUB, 'acme');
+      const repoScoped = await service.mintInstallationToken(SUB, 'acme', 'widgets');
+
+      expect(allRepos).toBe('ghs_all');
+      expect(repoScoped).toBe('ghs_repo');
+      expect(fetchSpy).toHaveBeenCalledTimes(2); // distinct cache keys — both minted, neither reused the other's cache
+      const [, allReposInit] = fetchSpy.mock.calls[0] as [string, { body?: string }];
+      expect(allReposInit.body).toBeUndefined();
+    });
+  });
+
+  describe('listInstallations', () => {
+    it('returns all-false without a DB call when the App is unconfigured', async () => {
+      mockCfg.get.mockImplementation((key: string) => (key === 'githubApp.appId' ? undefined : CFG_VALUES[key]));
+      await expect(service.listInstallations(SUB)).resolves.toEqual({ configured: false, installed: false, accounts: [] });
+      expect(mockDb.listGithubInstallations).not.toHaveBeenCalled();
+    });
+
+    it('lists the accounts of every installation when configured', async () => {
+      mockDb.listGithubInstallations.mockResolvedValue([
+        { installationId: '1', accountLogin: 'acme' },
+        { installationId: '2', accountLogin: 'other-org' },
+      ]);
+      await expect(service.listInstallations(SUB)).resolves.toEqual({
+        configured: true,
+        installed: true,
+        accounts: ['acme', 'other-org'],
+      });
+    });
+  });
+
+  describe('listInstallationRepos', () => {
+    it('mints an all-repos token per installation and maps GitHub repo shape to GithubRepo', async () => {
+      mockDb.listGithubInstallations.mockResolvedValue([{ installationId: '42', accountLogin: 'acme' }]);
+      fetchSpy
+        .mockResolvedValueOnce(jsonResponse({ token: 'ghs_abc', expires_at: new Date(Date.now() + 3600_000).toISOString() }))
+        .mockResolvedValueOnce(
+          jsonResponse({
+            repositories: [
+              {
+                owner: { login: 'acme' },
+                name: 'widgets',
+                full_name: 'acme/widgets',
+                default_branch: 'main',
+                private: true,
+                html_url: 'https://github.com/acme/widgets',
+                description: 'Widgets, but as a service',
+              },
+            ],
+          }),
+        );
+
+      const repos = await service.listInstallationRepos(SUB);
+
+      expect(repos).toEqual([
+        {
+          owner: 'acme',
+          repo: 'widgets',
+          fullName: 'acme/widgets',
+          defaultBranch: 'main',
+          private: true,
+          url: 'https://github.com/acme/widgets',
+          description: 'Widgets, but as a service',
+        },
+      ]);
+      const [url] = fetchSpy.mock.calls[1] as [string];
+      expect(url).toBe('https://api.github.com/installation/repositories?per_page=100');
+    });
+
+    it('flattens repos across two installations', async () => {
+      mockDb.listGithubInstallations.mockResolvedValue([
+        { installationId: '1', accountLogin: 'acme' },
+        { installationId: '2', accountLogin: 'other-org' },
+      ]);
+      const repo = (owner: string, name: string) => ({
+        owner: { login: owner },
+        name,
+        full_name: `${owner}/${name}`,
+        default_branch: 'main',
+        private: false,
+        html_url: `https://github.com/${owner}/${name}`,
+        description: null,
+      });
+      fetchSpy
+        .mockResolvedValueOnce(jsonResponse({ token: 'ghs_1', expires_at: new Date(Date.now() + 3600_000).toISOString() }))
+        .mockResolvedValueOnce(jsonResponse({ repositories: [repo('acme', 'widgets')] }))
+        .mockResolvedValueOnce(jsonResponse({ token: 'ghs_2', expires_at: new Date(Date.now() + 3600_000).toISOString() }))
+        .mockResolvedValueOnce(jsonResponse({ repositories: [repo('other-org', 'gadgets')] }));
+
+      const repos = await service.listInstallationRepos(SUB);
+
+      expect(repos.map((r) => r.fullName)).toEqual(['acme/widgets', 'other-org/gadgets']);
+    });
+
+    it('skips an installation whose token mint fails, without failing the whole call', async () => {
+      mockDb.listGithubInstallations.mockResolvedValue([
+        { installationId: '1', accountLogin: 'acme' },
+        { installationId: '2', accountLogin: 'other-org' },
+      ]);
+      fetchSpy
+        .mockResolvedValueOnce(jsonResponse({ message: 'server error' }, { status: 500 })) // installation 1 mint fails
+        .mockResolvedValueOnce(jsonResponse({ token: 'ghs_2', expires_at: new Date(Date.now() + 3600_000).toISOString() }))
+        .mockResolvedValueOnce(
+          jsonResponse({
+            repositories: [
+              {
+                owner: { login: 'other-org' },
+                name: 'gadgets',
+                full_name: 'other-org/gadgets',
+                default_branch: 'main',
+                private: false,
+                html_url: 'https://github.com/other-org/gadgets',
+                description: null,
+              },
+            ],
+          }),
+        );
+
+      const repos = await service.listInstallationRepos(SUB);
+
+      expect(repos.map((r) => r.fullName)).toEqual(['other-org/gadgets']);
+    });
+
+    it('skips an installation whose repo fetch fails, without failing the whole call', async () => {
+      mockDb.listGithubInstallations.mockResolvedValue([{ installationId: '1', accountLogin: 'acme' }]);
+      fetchSpy
+        .mockResolvedValueOnce(jsonResponse({ token: 'ghs_1', expires_at: new Date(Date.now() + 3600_000).toISOString() }))
+        .mockResolvedValueOnce(jsonResponse({ message: 'server error' }, { status: 500 }));
+
+      await expect(service.listInstallationRepos(SUB)).resolves.toEqual([]);
+    });
   });
 
   describe('createPullRequest', () => {

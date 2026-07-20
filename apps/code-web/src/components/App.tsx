@@ -613,10 +613,11 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   // CLAUDE.md: a hook that closes over another hook declared later in the
   // component throws `ReferenceError: Cannot access '...' before initialization`.
 
-  // GitHub OAuth callback landing: code-api's /github/callback redirects back
-  // here with ?github=connected|error. Strip it immediately (it's a one-shot
-  // signal, not app state worth keeping in the URL) and surface it — connected
-  // auto-opens the New Project modal so the picker shows the linked repos.
+  // GitHub App install landing: /github/setup links back here with
+  // ?github=connected|error once an installation is linked. Strip it
+  // immediately (it's a one-shot signal, not app state worth keeping in the
+  // URL) and surface it — connected auto-opens the New Project modal so the
+  // picker shows the linked repos.
   const [githubJustConnected, setGithubJustConnected] = useState(false);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -2718,7 +2719,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
           />
         )}
         <AccountButton creditBalance={creditBalance} onCreditUpdated={setCreditBalance} />
-        <TweaksPanel tweaks={tweaks} setTweak={setTweak} fontPairOptions={FONT_PAIR_OPTIONS} userEmail={authSession?.user?.email ?? ''} userName={authSession?.user?.name ?? ''} />
+        <TweaksPanel tweaks={tweaks} setTweak={setTweak} fontPairOptions={FONT_PAIR_OPTIONS} userEmail={authSession?.user?.email ?? ''} userName={authSession?.user?.name ?? ''} idToken={idToken || undefined} />
       </>
     );
   }

@@ -116,13 +116,6 @@ export class DynamoRepository {
     );
   }
 
-  async updateGithubToken(sub: string, token: string, login: string): Promise<void> {
-    await this.userMetaModel.update(
-      { PK: this.userPk(sub), SK: 'METADATA' },
-      { githubAccessToken: token, githubLogin: login },
-    );
-  }
-
   async deductCredit(sub: string, amount: number): Promise<void> {
     await this.userMetaModel.update(
       { PK: this.userPk(sub), SK: 'METADATA' },

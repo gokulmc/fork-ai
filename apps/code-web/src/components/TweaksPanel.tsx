@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import type { Tweaks } from '@/lib/types';
 import type { SetTweak } from '@/hooks/useTweaks';
-import { submitSupportTicket, type SupportSubject } from '@/lib/api';
+import { submitSupportTicket, getGithubAppStatus, githubAppInstallUrl, type SupportSubject, type GithubAppStatus } from '@/lib/api';
 
 // ── Sub-components ─────────────────────────────────────────────────────────
 
@@ -247,10 +247,12 @@ interface TweaksPanelProps {
   onRestartTour?: () => void;
   userEmail?: string;
   userName?: string;
+  idToken?: string;
 }
 
-export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, userEmail, userName }: TweaksPanelProps) {
+export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, userEmail, userName, idToken }: TweaksPanelProps) {
   const [open, setOpen] = useState(false);
+  const [ghApp, setGhApp] = useState<GithubAppStatus | null>(null);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [howToOpen, setHowToOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
@@ -285,6 +287,12 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, 
     ro.observe(document.documentElement);
     return () => ro.disconnect();
   }, [open, clampToViewport]);
+
+  useEffect(() => {
+    if (!open || !idToken) return;
+    // Fires per open (not just once) so status is fresh after the user returns from GitHub's install flow.
+    getGithubAppStatus(idToken).then(setGhApp).catch(() => setGhApp(null));
+  }, [open, idToken]);
 
   useEffect(() => {
     if (!open || howToOpen || supportOpen) return;
@@ -404,6 +412,26 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, 
               onChange={v => setTweak('environment', v as Tweaks['environment'])}
             />
             <p className="twk-note">Where CODE runs execute in an isolated sandbox VM. Blaxel is US/EU-only (faster cold-start, near-zero idle cost); Fly runs in Asia.</p>
+            {idToken && (
+              <>
+                <TweakSection label="GitHub" />
+                {ghApp && !ghApp.configured && (
+                  <p className="twk-note">GitHub App not available on this server.</p>
+                )}
+                {ghApp && ghApp.configured && !ghApp.installed && (
+                  <div className="twk-row">
+                    <a className="twk-restart-btn" href={githubAppInstallUrl()}>Install GitHub App</a>
+                    <p className="twk-note">Grants forkai code per-repo access to clone, commit, and open pull requests — only on repos you pick during install.</p>
+                  </div>
+                )}
+                {ghApp && ghApp.installed && (
+                  <div className="twk-row">
+                    <p className="twk-note">Installed on {ghApp.accounts.join(', ')}</p>
+                    <a className="twk-restart-btn" href={githubAppInstallUrl()}>Manage / add repos</a>
+                  </div>
+                )}
+              </>
+            )}
             <TweakSection label="Ask AI shortcuts" />
             <div className="twk-shortcuts">
               {([['?', 'what'], ['!?', 'how'], ['/?', 'why'], ['>?', 'explain']] as const).map(([sym, word]) => (
