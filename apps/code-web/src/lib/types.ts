@@ -2,6 +2,9 @@ export interface Section {
   id: string;
   heading: string;
   body: string;
+  // Set only on an inline-ask turn (#237 Phase 1a) — the question that produced
+  // this section, rendered as a "you asked" header instead of a section heading.
+  askedQuery?: string;
 }
 
 export interface CitationSource {
@@ -99,6 +102,12 @@ export interface PersistentHighlight {
   end?: number;
   bg: string | null;
   fg: string | null;
+  // Set only when bg is the 'note' sentinel (#237 Phase 1b) — the short
+  // inline answer attached to this passage, shown in the marker popover.
+  note?: string;
+  // The question that produced `note` — persisted server-side (#237 Phase 1b
+  // gap-fix) so a page reload can still show what was asked.
+  noteQuestion?: string;
 }
 
 export interface HighlightRecord {
@@ -119,6 +128,7 @@ export interface Tweaks {
   webSearch: boolean;
   branchModel: 'haiku' | 'sonnet' | 'opus';
   environment: 'cloud' | 'demo' | 'blaxel';
+  inlineMode: boolean;
 }
 
 export interface HlMenuState {

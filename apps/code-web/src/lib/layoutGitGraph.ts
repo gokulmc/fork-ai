@@ -36,7 +36,15 @@ export interface LayoutResult {
   colOf?: Record<string, number>;
 }
 
-const RAIL_KINDS = new Set<ForkNode['kind']>(['PLAN', 'CODE', 'BRANCH', 'MERGE']);
+// PLAN is deliberately NOT a rail kind: a PLAN no longer gets its own column —
+// it hangs beneath the node it was combined from, like any learn node (see
+// buildLearnOnlyNodes and the hangChildMap note below). Only a CODE built FROM
+// a plan starts a lane (it's still a rail kind, so it reaches placeRail via
+// findRailEntryPoints with a non-rail — PLAN — parent, same as any other
+// first-rail-node-off-a-learn-node case). A session with a PLAN but no
+// CODE/BRANCH/MERGE therefore has no rail at all and falls back to the plain
+// layoutTree() below (see hasRailNode).
+const RAIL_KINDS = new Set<ForkNode['kind']>(['CODE', 'BRANCH', 'MERGE']);
 
 export function hasRailNode(nodes: Record<string, ForkNode>): boolean {
   return Object.values(nodes).some(n => RAIL_KINDS.has(n.kind));
@@ -270,6 +278,30 @@ function placeHangingSubtreeV(
   topIds.forEach(k => { place(k, 1, col); col += rows[k]; });
 }
 
+// The vertical [top, bottom] span ONE SIDE of an anchor's hanging subtree
+// actually occupies, in absolute y — null if that side is empty. Mirrors
+// placeHangingSubtreeV's own depth math (first hang row's TOP sits one
+// NODE_H+DEPTH_GAP step below the anchor; the deepest row's BOTTOM is
+// maxDepth steps down plus one more NODE_H). Used by the column-stacking pass
+// to only reserve a hang's width over the rows it actually occupies, instead
+// of its whole bounding box's height — see hangWidthSide's width companion.
+function hangYRangeSide(
+  hangChildMap: Record<string, string[]>,
+  anchorY: number,
+  id: string,
+  side: 1 | -1,
+): [number, number] | null {
+  const { right, left } = splitHangSides(hangChildMap, id);
+  const group = side === 1 ? right : left;
+  if (!group.length) return null;
+  const maxDepth = 1 + Math.max(...group.map(k => hangDepth(hangChildMap, k)));
+  return [anchorY + (NODE_H + DEPTH_GAP), anchorY + maxDepth * (NODE_H + DEPTH_GAP) + NODE_H];
+}
+
+function rangesOverlap(a: [number, number], b: [number, number]): boolean {
+  return a[0] < b[1] && b[0] < a[1];
+}
+
 // Hang an anchor's full learn subtree: split the direct children into
 // right/left groups (alternating by creation order) and place each group in
 // its own side lane. Rail columns stay center; learn flanks both sides.
@@ -284,10 +316,13 @@ function placeHangs(
 }
 
 // Builds the sub-record of `nodes` reachable from `rootId` without ever crossing
-// a rail (PLAN/CODE/BRANCH) node — i.e. the "pre-rail learn tree" from CLAUDE.md's
-// task spec. Handed to the plain layoutTree() so the pre-rail tree gets exactly
-// the existing, already-correct vertical placement. Only used for a learn root —
-// a rail root (see layoutGitGraph) skips this pass entirely.
+// a rail (CODE/BRANCH/MERGE) node — i.e. the "pre-rail learn tree" from CLAUDE.md's
+// task spec. PLAN is intentionally NOT a rail kind here, so a PLAN sitting on an
+// otherwise-pure learn chain is walked into and included — it lays out with the
+// rest of the learn tree instead of vanishing or needing its own placement pass.
+// Handed to the plain layoutTree() so the pre-rail tree gets exactly the existing,
+// already-correct vertical placement. Only used for a learn root — a rail root
+// (see layoutGitGraph) skips this pass entirely.
 function buildLearnOnlyNodes(nodes: Record<string, ForkNode>, rootId: string): Record<string, ForkNode> {
   const out: Record<string, ForkNode> = {};
   function walk(id: string) {
@@ -302,11 +337,11 @@ function buildLearnOnlyNodes(nodes: Record<string, ForkNode>, rootId: string): R
   return out;
 }
 
-// Git-graph layout — PLAN/CODE/BRANCH/MERGE ride vertical columns (1 column =
-// 1 git branch, commits flow downward); learn (QUERY/DEEPER/ASK/MIX) subtrees
-// hang BELOW their anchor, in a side lane offset to the right so they never
-// collide with the column's own downward commits. Rules (verified against the
-// _design/forkai-code prototype's map-git-graph.html allocator):
+// Git-graph layout — CODE/BRANCH/MERGE ride vertical columns (1 column =
+// 1 git branch, commits flow downward); PLAN and learn (QUERY/DEEPER/ASK/MIX)
+// subtrees hang BELOW their anchor, in a side lane offset to the right so they
+// never collide with the column's own downward commits. Rules (verified
+// against the _design/forkai-code prototype's map-git-graph.html allocator):
 //   1. A CODE child of a rail parent continues the parent's column (same x,
 //      y = parent.y + row advance).
 //   2. A BRANCH child always opens a new column at the SAME y as its fork
@@ -316,12 +351,13 @@ function buildLearnOnlyNodes(nodes: Record<string, ForkNode>, rootId: string): R
 //      kept for when a column concept ever needs reuse. (Left-side placement —
 //      branching backward in time — is deferred; that space is owned by
 //      earlier columns / the pre-rail tree.)
-//   3. Any rail node whose OWN parent is non-rail (a PLAN spawned off root or
-//      any deeper learn node) is a new column's first node, anchored clear of
-//      the whole pre-rail learn tree's bounding box (not just its immediate
-//      parent — the learn tree can be deeper/wider than any single ancestor
-//      node). A rail ROOT (imported repo, no learn ancestor at all) instead
-//      seeds column 0 directly at (0, 0) — see rootIsRail below.
+//   3. Any rail node whose OWN parent is non-rail (a CODE built from a PLAN,
+//      or a BRANCH forked off root or any deeper learn node) is a new column's
+//      first node, anchored clear of the whole pre-rail learn tree's bounding
+//      box (not just its immediate parent — the learn tree can be
+//      deeper/wider than any single ancestor node). A rail ROOT (imported
+//      repo, no learn ancestor at all) instead seeds column 0 directly at
+//      (0, 0) — see rootIsRail below.
 //   4. Columns stack left-to-right; each column's x clears the previous
 //      column's widest hanging learn subtree (root's own hang doesn't push
 //      column 0 right, since column 0 sits level with the pre-rail tree, not
@@ -329,8 +365,8 @@ function buildLearnOnlyNodes(nodes: Record<string, ForkNode>, rootId: string): R
 //   5. Hanging learn subtrees attach below their rail anchor only once every
 //      rail x is final — EXCEPT a rail root's own hang, which must be placed
 //      immediately (before rail placement) so a rail entry point buried under
-//      it (e.g. a PLAN spawned from a QUERY hanging off an imported root) has
-//      a real y to build on.
+//      it (e.g. a CODE built from a PLAN that hangs off a QUERY hanging off an
+//      imported root) has a real y to build on.
 //   6. Two rail nodes that independently compute the same y within one column
 //      (e.g. two CODE "retry" children of one parent) are pushed apart by
 //      RAIL_ROW_GAP via a per-column occupied-y guard — see reserveY below.
@@ -357,10 +393,16 @@ export function layoutGitGraph(nodes: Record<string, ForkNode>, rootId: string):
 
   // A single map for "children to hang off this node": for rail nodes, only
   // their non-rail children (the rail children are placed separately, below);
-  // for learn nodes, the full childMap entry (always non-rail by construction —
-  // the node grammar never lets a learn kind spawn a rail child, except PLAN via
-  // the mixer's special plan:true route, which the rail-placement DFS below
-  // still finds and repositions correctly regardless of this map's shape).
+  // for non-rail nodes (learn kinds AND PLAN, which is learn-shaped for layout
+  // purposes), the full childMap entry — which can include a rail child (a
+  // PLAN's own CODE build) exactly the way a learn node normally never does.
+  // That's fine: the rail-placement DFS below (findRailEntryPoints/placeRail)
+  // finds and positions that CODE via raw childMap regardless of this map's
+  // shape; hangChildMap only feeds the hang-sizing math (rowAdvance,
+  // hangWidthSide), so an unfiltered PLAN entry just means a PLAN's own hang
+  // sizing transiently accounts for its CODE child too — harmless, since the
+  // CODE gets its own final position from placeRail/the 4.5 post-pass, not
+  // from this map.
   const hangChildMap: Record<string, string[]> = { ...childMap };
   Object.keys(childMap).forEach(id => {
     if (isRail(id)) hangChildMap[id] = childMap[id].filter(k => !isRail(k));
@@ -448,20 +490,49 @@ export function layoutGitGraph(nodes: Record<string, ForkNode>, rootId: string):
   findRailEntryPoints(rootId);
 
   // 3) Stack columns left-to-right. Column 0 starts level with root (it sits
-  // beside the pre-rail tree — or IS the root itself, for a rail root). With
-  // learn hangs now flanking BOTH sides of a column, the gap between columns
-  // must clear the previous column's RIGHT hang AND this column's own LEFT
-  // hang. Column 0's left hang extends into free space (rails always start
-  // below learnMaxY, so it can't collide with the pre-rail tree above).
+  // beside the pre-rail tree — or IS the root itself, for a rail root).
+  // RAIL_COL_GAP alone already clears two adjacent columns' own node boxes
+  // (rule 4's baseline) — the only reason to widen it further is a hang
+  // reaching across into the neighbouring column's territory, and then only
+  // over the ROWS where the two actually overlap: a column's right-hang and
+  // the next column's left-hang are each anchored at a specific y and only
+  // run a bounded number of rows down from there (placeHangingSubtreeV), so
+  // two hangs (or a hang and the neighbour's own rail nodes) at well-separated
+  // y's never contest the same horizontal space. `extraColGap` computes the
+  // narrowest additional gap that clears every ROW-OVERLAPPING pair; every
+  // non-overlapping pair contributes nothing, which is the tightening this
+  // step exists for. Every node's y is already final here (only x is
+  // pending), so all the Y-ranges below are safe to read up front.
+  function extraColGap(prevIds: string[], curIds: string[]): number {
+    const prevRight = prevIds
+      .map(id => ({ range: hangYRangeSide(hangChildMap, pos[id].y, id, 1), width: hangWidthSide(hangChildMap, id, 1) }))
+      .filter((h): h is { range: [number, number]; width: number } => h.range !== null);
+    const curLeft = curIds
+      .map(id => ({ range: hangYRangeSide(hangChildMap, pos[id].y, id, -1), width: hangWidthSide(hangChildMap, id, -1) }))
+      .filter((h): h is { range: [number, number]; width: number } => h.range !== null);
+    const curRailBoxes: Array<[number, number]> = curIds.map(id => [pos[id].y, pos[id].y + NODE_H]);
+    const prevRailBoxes: Array<[number, number]> = prevIds.map(id => [pos[id].y, pos[id].y + NODE_H]);
+    let extra = 0;
+    // A right-hang reaching into the next column's own rail-node rows, or
+    // into a left-hang the next column reaches back with — needs its own
+    // width (plus the other hang's width, if both are present at that row).
+    prevRight.forEach(rh => {
+      curRailBoxes.forEach(rb => { if (rangesOverlap(rh.range, rb)) extra = Math.max(extra, rh.width); });
+      curLeft.forEach(lh => { if (rangesOverlap(rh.range, lh.range)) extra = Math.max(extra, rh.width + lh.width); });
+    });
+    // A left-hang reaching back into the previous column's own rail-node rows
+    // (the hang-vs-hang case is already covered above).
+    curLeft.forEach(lh => {
+      prevRailBoxes.forEach(rb => { if (rangesOverlap(lh.range, rb)) extra = Math.max(extra, lh.width); });
+    });
+    return extra;
+  }
   let cursorX = pos[rootId]?.x ?? 0;
-  let prevRightHang = 0;
   colNodeIds.forEach((ids, idx) => {
     if (idx > 0) {
-      const colLeftHang = Math.max(0, ...ids.map(id => hangWidthSide(hangChildMap, id, -1)));
-      cursorX += prevRightHang + colLeftHang;
+      cursorX += extraColGap(colNodeIds[idx - 1], ids);
     }
     ids.forEach(id => { pos[id].x = cursorX; });
-    prevRightHang = Math.max(0, ...ids.map(id => hangWidthSide(hangChildMap, id, 1)));
     cursorX += RAIL_COL_GAP;
   });
 
@@ -505,16 +576,23 @@ export function layoutGitGraph(nodes: Record<string, ForkNode>, rootId: string):
 
   // 4.5) Place a CODE built from a PLAN directly under the column of the BRANCH
   // it was planned in ("directly under the new branch"), stacked below the
-  // PLAN, with the PLAN -> CODE edge kept as the link. The mixer spawns a PLAN
-  // off a LEARN node (which itself hangs beneath a BRANCH), so the PLAN is laid
-  // out by the learn-hang machinery — it has NO column (colOf[plan] is
-  // undefined) — and its CODE child is reached by neither placeRail nor
-  // placeHangs, landing in placeOrphans' fallback strip. Anchoring to the PLAN's
-  // (nonexistent) column is what left the CODE orphaned; anchor to the nearest
-  // BRANCH ancestor instead — a branch is always placed by placeRail, so its
-  // column + x are final by here. Only the CODE's location moves; its parentId
-  // is untouched, so the edge still routes PLAN -> CODE (a cross-column bézier,
-  // since the columns differ — see MindMap's edge builder).
+  // PLAN, with the PLAN -> CODE edge kept as the link. PLAN is never a rail
+  // kind (see RAIL_KINDS), so it never has its own column — most CODE-from-PLAN
+  // nodes are already found and given a fresh column by the ordinary
+  // findRailEntryPoints/placeRail DFS above (PLAN's parent is non-rail, so the
+  // DFS walks straight through it to reach the CODE). This post-pass exists for
+  // the one case that DFS can't reach: a PLAN spawned off a LEARN node that
+  // itself hangs beneath a BRANCH (the mixer's `plan:true` route allows this).
+  // That LEARN node is buried inside the BRANCH's hang subtree, which
+  // findRailEntryPoints never descends into (it only recurses through
+  // *non-rail* children from the root, and stops the instant it hits a rail
+  // node) — so the PLAN and its CODE child are reached by neither placeRail
+  // nor placeHangs, and the CODE would fall into placeOrphans' fallback strip.
+  // colOf[plan] is undefined either way (PLAN never gets a column), so anchor
+  // to the nearest BRANCH ancestor instead — a branch is always placed by
+  // placeRail, so its column + x are final by here. Only the CODE's location
+  // moves; its parentId is untouched, so the edge still routes PLAN -> CODE (a
+  // cross-column bézier, since the columns differ — see MindMap's edge builder).
   const nearestBranchCol = (startId: string): number | undefined => {
     let cur: string | undefined = startId;
     while (cur) {
@@ -524,9 +602,11 @@ export function layoutGitGraph(nodes: Record<string, ForkNode>, rootId: string):
     return undefined;
   };
   Object.keys(nodes).forEach(id => {
-    // Only an orphaned CODE-from-PLAN needs this: one already placed by
-    // placeRail (its PLAN parent was itself on the rail) has a column + position;
-    // re-moving it would double-push it into colNodeIds and re-reserve its y.
+    // Only an orphaned CODE-from-PLAN needs this: one already placed by the
+    // ordinary DFS above (findRailEntryPoints reached the PLAN — a non-rail
+    // node — and placeRail picked up its CODE child from there) already has a
+    // column + position; re-moving it would double-push it into colNodeIds and
+    // re-reserve its y.
     if (nodes[id].kind !== 'CODE' || colOf[id] !== undefined) return;
     const planId = nodes[id].parentId;
     if (!planId || nodes[planId]?.kind !== 'PLAN') return;

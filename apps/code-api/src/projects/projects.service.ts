@@ -23,8 +23,10 @@ export class ProjectsService {
     // The session is the project's map. provider 'new' has no repo to seed
     // from — instead it seeds a BRANCH root carrying dto.rootQuery, which the
     // frontend immediately fills via the fill-root stream
-    // (createRootNodeStreaming). provider 'github' tries a full-history import
-    // first (RepoImportService); a synthesized 2-node seed (buildSeed) is the
+    // (createRootNodeStreaming). provider 'github' without a rootQuery tries a
+    // full-history import first (RepoImportService); a 'github' project
+    // created with a rootQuery (ADR-0007) skips import and gets the same
+    // BRANCH-root seed as 'new'. A synthesized 2-node seed (buildSeed) is the
     // fallback for every other case, including a failed/empty import.
     const { sessionId, branchCount } = await this.buildSession(sub, dto);
 
@@ -52,13 +54,16 @@ export class ProjectsService {
     return project;
   }
 
-  // provider 'github': try the full-history import first — it never throws
-  // (buildImportedNodes catches internally), returning null for "no real repo
-  // history to import" (fetch failure, or a genuinely empty repo). Every other
-  // case (mock, new, or a null import) falls back to the synthesized 2-node seed,
-  // which has exactly one branch (the default).
+  // rootQuery present → skip import, seed with rootQuery: an attach-existing
+  // import never sends rootQuery (unchanged behaviour), but a repo just
+  // created via github.com/new (ADR-0007) is created together with a
+  // rootQuery, and has no history worth importing — it gets the same
+  // BRANCH-root fill-root seed as provider 'new' (see
+  // SessionsService.createProjectSession's rootQuery branch). Every other
+  // case (mock, new, github without rootQuery, or a null import) falls back
+  // to the synthesized 2-node seed, which has exactly one branch (the default).
   private async buildSession(sub: string, dto: CreateProjectDto): Promise<{ sessionId: string; branchCount: number }> {
-    if (dto.repoRef.provider === 'github') {
+    if (dto.repoRef.provider === 'github' && !dto.rootQuery) {
       const sessionId = ulid();
       const nodes = await this.repoImport.buildImportedNodes(sub, dto.repoRef, sessionId);
       if (nodes) {
@@ -72,7 +77,7 @@ export class ProjectsService {
       }
     }
     const seed = await this.buildSeed(sub, dto);
-    const sessionId = await this.sessions.createProjectSession(sub, dto.name, seed, dto.repoRef.provider === 'new' ? dto.rootQuery : undefined);
+    const sessionId = await this.sessions.createProjectSession(sub, dto.name, seed, dto.rootQuery);
     return { sessionId, branchCount: 1 };
   }
 

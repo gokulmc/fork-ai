@@ -3,7 +3,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } fr
 import dynamic from 'next/dynamic';
 import { useSession, signOut, getSession as getAuthSession } from 'next-auth/react';
 import type { ForkNode, Annotation, HlMenuState, FollowUpState, ContextMenuState, PersistentHighlight, HighlightRecord } from '@/lib/types';
-import { uid, short5, stripMarkdown, stripCite, getRangeOffsets, modelDisplayName, cleanHeading } from '@/lib/utils';
+import { uid, short5, stripMarkdown, stripCite, getRangeOffsets, modelDisplayName, cleanHeading, rejectInlineNoteText } from '@/lib/utils';
 import { rangeToMarkdown } from '@/lib/htmlToMarkdown';
 import { collapseSegments } from '@/lib/collapseSegments';
 import { usePushRegistration } from '@/hooks/usePushRegistration';
@@ -20,6 +20,11 @@ const HL_FG = [null, '#b91c1c', '#1d4ed8', '#047857'];
 // bg so it renders consistently regardless of the last picked colour; never offered in
 // the colour picker.
 const BRANCH_HL = 'branch';
+
+// Reserved style for text with a short inline answer attached (#237 Phase 1b)
+// — a solid amber wash (see ::highlight(fork-hl-note) in globals.css). Same
+// sentinel-in-bg trick as BRANCH_HL: never offered in the colour picker.
+const NOTE_HL = 'note';
 
 // Mirrors backend LEARN_KINDS (apps/code-api/src/nodes/node-grammar.ts) — used
 // to gate the project first-question interstitial: a seeded project session has
@@ -105,10 +110,13 @@ function hlName(bg: string | null, fg: string | null | undefined): string {
   return f ? `fork-hl-${b}-${f}` : `fork-hl-${b}`;
 }
 
-const ALL_HL_NAMES = [...HL_BG.flatMap(bg => HL_FG.map(fg => hlName(bg, fg))), hlName(BRANCH_HL, null)];
+const ALL_HL_NAMES = [...HL_BG.flatMap(bg => HL_FG.map(fg => hlName(bg, fg))), hlName(BRANCH_HL, null), hlName(NOTE_HL, null)];
 
 function rangeFromOffsets(root: Element, start: number, end: number): Range | null {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+  // Same guard as getRangeOffsets (lib/utils.ts) — both walkers must agree on
+  // what counts as "text" or a highlight painted here would drift from the
+  // offsets it was stored with. See rejectInlineNoteText for why.
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, rejectInlineNoteText);
   let pos = 0;
   let startNode: Text | null = null, startOff = 0;
   let endNode: Text | null = null, endOff = 0;
@@ -148,7 +156,7 @@ type RetryInfo =
   | { kind: 'ROOT_IN_SESSION'; sessionId: string; query: string }
   | { kind: 'DEEPER'; parentNodeId: string; section: { id: string; heading: string; body: string }; boost?: boolean }
   | { kind: 'ASK'; question: string; source: FollowUpState; boost?: boolean }
-  | { kind: 'ASK_COMMIT'; parentNodeId: string; question: string; attachments?: ComposerAttachment[] };
+  | { kind: 'ASK_COMMIT'; parentNodeId: string; question: string; attachments?: ComposerAttachment[]; inline?: boolean };
 import { useTweaks } from '@/hooks/useTweaks';
 import { initAnalytics, track, identifyUser } from '@/lib/analytics';
 import { getCachedSession, putCachedSession, deleteCachedSession } from '@/lib/sessionCache';
@@ -173,6 +181,7 @@ import {
   createAnnotation,
   deleteAnnotation as apiDeleteAnnotation,
   createHighlight,
+  createInlineNote,
   toForkNode,
   toAnnotation,
   toHlMap,
@@ -196,6 +205,7 @@ import { kindLabel } from '@/lib/kindLabels';
 import { SkeletonSections } from './SkeletonSections';
 import { HighlightMenu } from './HighlightMenu';
 import { FollowUpPop, SHORTHANDS } from './FollowUpPop';
+import { InlineNotePop } from './InlineNotePop';
 import { NotesDrawer } from './NotesDrawer';
 import { Landing } from './Landing';
 import { LandingHero } from './LandingHero';
@@ -236,6 +246,7 @@ const TWEAK_DEFAULTS = {
   webSearch: false,
   branchModel: 'haiku' as const,
   environment: 'cloud' as const,
+  inlineMode: false,
 };
 
 const FONT_PAIRS: Record<string, { serif: string; sans: string; label: string }> = {
@@ -414,6 +425,20 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   const [persistentHl, setPersistentHl] = useState<Record<string, PersistentHighlight[]>>({});
   const [highlightsList, setHighlightsList] = useState<HighlightRecord[]>([]);
   const [lastHlColors, setLastHlColors] = useState<{ bg: string; fg: string | null }>({ bg: '#fef08a', fg: null });
+
+  // #237 Phase 1b — inline notes. The asked question is persisted server-side
+  // on the highlight (`noteQuestion`, alongside the answer in `note`), so it
+  // survives a page reload — read directly off the PersistentHighlight record
+  // rather than kept in separate client-only state.
+  // Identified by (nodeId, sectionId, start, end) rather than hlId — stays
+  // valid across the temp→real id swap that happens while the popover is open.
+  const [inlineNotePop, setInlineNotePop] = useState<{
+    nodeId: string;
+    sectionId: string;
+    start: number;
+    end: number;
+    rect: { left: number; top: number; width: number; height: number; bottom: number };
+  } | null>(null);
 
   // ── Mixer / Plan select-mode state ──────────────────────────────────────────
   const [selectMode, setSelectMode] = useState<'mixer' | 'plan' | 'pr' | null>(null);
@@ -1332,7 +1357,9 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     const loadedRootId = await openProject(project);
     // No ProjectStart interstitial for a from-scratch project — the opening
     // question was already asked in the modal, so stream straight into the map.
-    if (project.repoRef.provider === 'new' && payload.rootQuery) {
+    // Keyed on rootQuery, not provider: a repo created via github.com/new
+    // (ADR-0007) is provider 'github' but seeds the same way as 'new'.
+    if (payload.rootQuery) {
       void submitFillRoot(project.sessionId, payload.rootQuery, loadedRootId);
     }
   }, [idToken, openProject, submitFillRoot]);
@@ -1657,6 +1684,66 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     }
   }, [nodes, idToken, scrollWsTop, persistHighlight]);
 
+  // ── Ask AI from highlight — inline note (#237 Phase 1b) ────────────────────
+  // A short (~40 word) answer attaches directly to the highlighted passage via
+  // a HighlightItem (bg: NOTE_HL sentinel + a `note` field) instead of
+  // spawning a child node. Deliberately a separate function, not a branch
+  // inside askFromHighlight above — that function's non-inline path stays
+  // byte-for-byte untouched.
+  const askInlineFromHighlight = useCallback(async (question: string, source: FollowUpState) => {
+    const sid = sessionIdRef.current;
+    if (!sid || !idToken) return;
+    const parent = nodes[source.nodeId];
+    // agentlog is AgentLogPane's own pseudo-section (a plain selectable div,
+    // not a `.section-body`) — no persisted-highlight rendering path, same
+    // guard as the branch path's persistHighlight call above.
+    if (!parent || source.sectionId === 'agentlog') { setFollowUp(null); return; }
+
+    const key = `${source.nodeId}::${source.sectionId}`;
+    const tempId = uid();
+    setFollowUp(prev => prev ? { ...prev, loading: true } : null);
+    // Optimistic-then-swap id pattern, mirroring persistHighlight — inserted
+    // with no `note` yet so the marker/popover can show a pending state.
+    // `noteQuestion` is set immediately so the popover shows the question
+    // right away, ahead of the server round-trip that persists it for real.
+    setPersistentHl(prev => ({
+      ...prev,
+      [key]: [...(prev[key] ?? []), { hlId: tempId, text: source.text, start: source.start, end: source.end, bg: NOTE_HL, fg: null, noteQuestion: question }],
+    }));
+
+    try {
+      const apiHl = await createInlineNote(idToken, sid, {
+        nodeId: source.nodeId,
+        sectionId: source.sectionId,
+        text: source.text,
+        start: source.start,
+        end: source.end,
+        question,
+        model: tweaksRef.current.branchModel,
+        webSearch: tweaksRef.current.webSearch,
+      });
+      const realId = ((apiHl as unknown as Record<string, unknown>)['hlId'] as string) ?? apiHl.id;
+      setPersistentHl(prev => ({
+        ...prev,
+        [key]: (prev[key] ?? []).map(h => h.hlId === tempId ? { ...h, hlId: realId, note: apiHl.note ?? undefined, noteQuestion: apiHl.noteQuestion ?? undefined } : h),
+      }));
+      setHighlightsList(prev => [...prev, { hlId: realId, text: source.text, nodeId: source.nodeId, sectionId: source.sectionId, fromTitle: parent.title }]);
+      refreshCredit();
+      track('inline_note_created', { model: tweaksRef.current.branchModel });
+    } catch (err) {
+      console.error('Failed to create inline note', err);
+      // No node/error-banner surface for this — roll back the optimistic
+      // highlight rather than leaving a permanently-pending marker.
+      setPersistentHl(prev => ({ ...prev, [key]: (prev[key] ?? []).filter(h => h.hlId !== tempId) }));
+    } finally {
+      setFollowUp(prev => {
+        if (!prev) return null;
+        if (prev.nodeId === source.nodeId && prev.sectionId === source.sectionId && prev.text === source.text) return null;
+        return prev;
+      });
+    }
+  }, [nodes, idToken, refreshCredit]);
+
   // ── Branch: fork a new lane off a CODE node's commit pill ─────────────────
 
   // `title` is a human description ("Try a sliding-window algorithm"), not a
@@ -1910,12 +1997,70 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   // requires non-empty highlightText. Generic enough to serve both the CODE
   // variant ("ask about this commit") and the research variant ("ask about
   // this node") — see CodeComposer.tsx's onAsk prop.
-  const askAboutCommit = useCallback(async (nodeId: string, question: string, attachments?: ComposerAttachment[], reuseNodeId?: string) => {
+  const askAboutCommit = useCallback(async (nodeId: string, question: string, attachments?: ComposerAttachment[], reuseNodeId?: string, forceInline?: boolean) => {
     const sid = sessionIdRef.current;
     if (!sid || !idToken) return;
     const parent = nodes[nodeId];
     if (!parent) return;
     const anchorText = parent.commitMessage || parent.title;
+    // forceInline (set by retryNode from the failed attempt's own RetryInfo) wins over
+    // the live tweak — a retry must stay inline even if the user toggled the pill off
+    // while the first attempt was in flight or after it failed.
+    const inline = forceInline ?? tweaksRef.current.inlineMode;
+
+    if (inline) {
+      // #237 Phase 1a — append to the CURRENT node instead of spawning a child:
+      // no optimistic node, no setActiveId, no map churn. Just a pending section
+      // on the node itself, keyed so it can be found and removed on error.
+      const tempSectionId = uid();
+      setAskCommitLoading(true);
+      setNodes(prev => {
+        const node = prev[nodeId];
+        if (!node) return prev;
+        return { ...prev, [nodeId]: { ...node, sections: [...node.sections, { id: tempSectionId, heading: '', body: '', askedQuery: question }] } };
+      });
+      try {
+        const apiNode = await createNode(idToken, sid, {
+          kind: 'ASK',
+          parentNodeId: nodeId,
+          fromSection: '',
+          query: question,
+          highlightText: anchorText,
+          sectionCount: tweaksRef.current.maxSections,
+          webSearch: tweaksRef.current.webSearch,
+          verbose: tweaksRef.current.answerStyle === 'verbose',
+          model: tweaksRef.current.branchModel,
+          attachments: attachments?.length ? attachments : undefined,
+          inline: true,
+        });
+        // Merge only sections: the response is the updated PARENT NodeItem, and a
+        // wholesale swap would clobber client-only/concurrently-written fields the
+        // response doesn't carry — loading, or on a CODE node the live
+        // workspace/agentStatus/pushed state a running agent is writing.
+        delete retryInfoRef.current[nodeId];
+        setNodes(prev => {
+          const node = prev[nodeId];
+          if (!node) return prev;
+          return { ...prev, [nodeId]: { ...node, sections: toForkNode(apiNode).sections, error: undefined, errorStatus: undefined, errorCode: undefined } };
+        });
+        refreshCredit();
+        track('branch_created', { kind: 'ASK', model: tweaksRef.current.branchModel, inline: true });
+      } catch (err) {
+        const { msg, status, code } = nodeErrorDisplay(err);
+        track('node_error', { kind: 'ASK', status, message: msg, inline: true });
+        if (status !== 402) {
+          retryInfoRef.current[nodeId] = { kind: 'ASK_COMMIT', parentNodeId: nodeId, question, attachments, inline: true };
+        }
+        setNodes(prev => {
+          const node = prev[nodeId];
+          if (!node) return prev;
+          return { ...prev, [nodeId]: { ...node, sections: node.sections.filter(s => s.id !== tempSectionId), error: msg, errorStatus: status, errorCode: code } };
+        });
+      } finally {
+        setAskCommitLoading(false);
+      }
+      return;
+    }
 
     // Retry reuses the failed node's id so the card flips back to loading in place.
     const tempId = reuseNodeId ?? uid();
@@ -1985,7 +2130,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     if (info.kind === 'ROOT') void submitRootQuery(info.query);
     else if (info.kind === 'ROOT_IN_SESSION') void submitProjectQuery(info.sessionId, info.query, failedId);
     else if (info.kind === 'DEEPER') void expandSectionAsChild(info.parentNodeId, info.section, failedId, info.boost);
-    else if (info.kind === 'ASK_COMMIT') void askAboutCommit(info.parentNodeId, info.question, info.attachments, failedId);
+    else if (info.kind === 'ASK_COMMIT') void askAboutCommit(info.parentNodeId, info.question, info.attachments, failedId, info.inline);
     else void askFromHighlight(info.question, info.source, failedId, info.boost);
   }, [submitRootQuery, submitProjectQuery, expandSectionAsChild, askFromHighlight, askAboutCommit]);
 
@@ -3012,6 +3157,27 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
               onOkrChange={handleOkrChange}
             />
           )}
+          {active && (active.kind === 'CODE' || (active.kind === 'BRANCH' && !branchHasContent)) && sessionId
+            && active.sections.some(s => s.askedQuery) && (
+            <div className="agent-inline-turns">
+              {active.sections.filter(s => s.askedQuery).map((s, i) => (
+                <Section
+                  key={s.id}
+                  idx={i}
+                  section={s}
+                  node={active}
+                  onDeeper={sec => expandSectionAsChild(active.id, sec)}
+                  deeperLoading={sectionLoading === s.id}
+                  sectionChildren={childrenBySection[s.id] ?? []}
+                  onChildClick={cid => { setActiveId(cid); scrollWsTop(); }}
+                  calloutsForSection={annotations.filter(a => a.kind === 'callout' && a.nodeId === active.id && a.sectionId === s.id)}
+                  onRemoveCallout={removeAnnotation}
+                  notesForSection={(persistentHl[`${active.id}::${s.id}`] ?? []).filter(h => h.bg === NOTE_HL)}
+                  onNoteClick={(start, end, rect) => setInlineNotePop({ nodeId: active.id, sectionId: s.id, start, end, rect })}
+                />
+              ))}
+            </div>
+          )}
           {active && active.kind === 'MERGE' && (
             <PrPane
               node={active}
@@ -3129,7 +3295,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
                 )}
               </div>
               {active.lede && <p className="ws-lede">{stripCite(active.lede)}</p>}
-              {active.fromText && active.kind !== 'MIX' && (
+              {active.fromText && (
                 <div
                   className="inline-callout inline-callout--nav"
                   style={{ marginBottom: 24, cursor: 'pointer' }}
@@ -3141,7 +3307,13 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
                 >
                   <Quote size={18} className="ic" />
                   <div className="body">
-                    <div className="kicker">{active.kind === 'ASK' ? 'Branched from' : 'Expanded from'}</div>
+                    <div className="kicker">
+                      {active.kind === 'ASK'
+                        ? 'Branched from'
+                        : active.kind === 'MIX' || active.kind === 'PLAN'
+                          ? 'Combined from'
+                          : 'Expanded from'}
+                    </div>
                     <em>{stripMarkdown(active.fromText)}</em>
                   </div>
                 </div>
@@ -3174,6 +3346,8 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
                     onChildClick={cid => { setActiveId(cid); scrollWsTop(); }}
                     calloutsForSection={annotations.filter(a => a.kind === 'callout' && a.nodeId === active.id && a.sectionId === s.id)}
                     onRemoveCallout={removeAnnotation}
+                    notesForSection={(persistentHl[`${active.id}::${s.id}`] ?? []).filter(h => h.bg === NOTE_HL)}
+                    onNoteClick={(start, end, rect) => setInlineNotePop({ nodeId: active.id, sectionId: s.id, start, end, rect })}
                   />,
                 ];
                 // Discoverability nudge for the highlight-to-Ask flow — shown once,
@@ -3228,6 +3402,8 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
                 webSearch={tweaks.webSearch}
                 onWebSearchChange={v => setTweak('webSearch', v)}
                 webSearchDisabled={showComposer}
+                inline={tweaks.inlineMode}
+                onInlineChange={v => setTweak('inlineMode', v)}
               />
             </div>
           )}
@@ -3262,9 +3438,33 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
           sourceText={followUp.text}
           loading={followUp.loading}
           onClose={() => setFollowUp(null)}
-          onSubmit={q => askFromHighlight(q, followUp)}
+          onSubmit={(q, inline) => { if (inline) void askInlineFromHighlight(q, followUp); else void askFromHighlight(q, followUp); }}
         />
       )}
+      {inlineNotePop && (() => {
+        // Looked up by (nodeId, sectionId, start, end) rather than the popover's
+        // own stored hlId — stays correct across the optimistic temp→real id
+        // swap (see askInlineFromHighlight) that can land while it's open.
+        const note = (persistentHl[`${inlineNotePop.nodeId}::${inlineNotePop.sectionId}`] ?? [])
+          .find(h => h.bg === NOTE_HL && h.start === inlineNotePop.start && h.end === inlineNotePop.end);
+        if (!note) return null; // note was removed/session navigated away — self-heals on next click
+        const question = note.noteQuestion;
+        return (
+          <InlineNotePop
+            rect={inlineNotePop.rect}
+            question={question}
+            answer={note.note}
+            onClose={() => setInlineNotePop(null)}
+            onBranch={() => {
+              const { nodeId, sectionId, start, end, rect } = inlineNotePop;
+              setInlineNotePop(null);
+              // Promotes the note into a real ASK child node via the existing
+              // non-inline path — an inline answer is never a dead end.
+              void askFromHighlight(question ?? note.text, { rect, text: note.text, nodeId, sectionId, start, end, loading: false });
+            }}
+          />
+        );
+      })()}
 
       {contextMenu && (
         <div

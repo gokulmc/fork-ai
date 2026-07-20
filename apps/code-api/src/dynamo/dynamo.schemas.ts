@@ -141,6 +141,10 @@ export const NodeSchema = new dynamoose.Schema({
           id: String,
           heading: String,
           body: String,
+          // Set only on an inline-mode section (Ask answered in place, no
+          // child node created) — marks it as a conversational turn so the
+          // frontend can render it distinctly from a normal section.
+          askedQuery: { type: String, required: false },
         },
       },
     ],
@@ -230,6 +234,14 @@ export const HighlightSchema = new dynamoose.Schema({
   bg: { type: String, required: false },
   fg: { type: String, required: false },
   createdAt: String,
+  // Short Explain answer attached to this highlight's passage (#237 Phase 1b) —
+  // absent on a plain colour highlight. See root CLAUDE.md's saveUnknown gotcha:
+  // omitting this from the schema would silently strip it on write/read.
+  note: { type: String, required: false },
+  // The question that produced `note` (#237 Phase 1b gap-fix) — persisted so a
+  // page reload can still show what was asked, instead of falling back to the
+  // highlighted passage text. Same saveUnknown gotcha as `note` above.
+  noteQuestion: { type: String, required: false },
 });
 
 export const ProjectSchema = new dynamoose.Schema({
@@ -260,6 +272,8 @@ export const GithubInstallationSchema = new dynamoose.Schema({
   SK: { type: String, rangeKey: true },
   installationId: String,
   accountLogin: String,
+  accountType: { type: String, required: false },
+  repositorySelection: { type: String, required: false },
   createdAt: String,
 });
 

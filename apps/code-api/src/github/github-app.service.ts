@@ -2,6 +2,7 @@ import { createSign } from 'crypto';
 import { Injectable, InternalServerErrorException, Logger, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
+import type { GithubInstallationItem } from '@/dynamo/dynamo.interfaces';
 import type { GithubRepo } from './github.service';
 
 const GITHUB_API = 'https://api.github.com';
@@ -82,18 +83,35 @@ export class GithubAppService {
   }
 
   async verifyAndStoreInstallation(sub: string, installationId: string): Promise<void> {
-    const res = await fetch(`${GITHUB_API}/app/installations/${installationId}`, { headers: this.appHeaders() });
-    if (!res.ok) {
+    const details = await this.fetchInstallationDetails(installationId);
+    if (!details) {
       throw new UnauthorizedException(`GitHub installation ${installationId} not found or not accessible by this App`);
     }
-    const data = (await res.json()) as { account: { login: string } };
     await this.db.putGithubInstallation({
       PK: `USER#${sub}`,
       SK: `GHINST#${installationId}`,
       installationId,
-      accountLogin: data.account.login,
+      accountLogin: details.accountLogin,
+      accountType: details.accountType,
+      repositorySelection: details.repositorySelection,
       createdAt: new Date().toISOString(),
     });
+  }
+
+  // Shared with listInstallations' self-heal path below — GET /app/installations/:id
+  // returns the account's login/type plus the install's all-vs-selected repo
+  // scope. Returns null (never throws) on any non-2xx so both callers can
+  // decide their own fallback.
+  private async fetchInstallationDetails(
+    installationId: string,
+  ): Promise<{ accountLogin: string; accountType: 'User' | 'Organization'; repositorySelection: 'all' | 'selected' } | null> {
+    const res = await fetch(`${GITHUB_API}/app/installations/${installationId}`, { headers: this.appHeaders() });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      account: { login: string; type: 'User' | 'Organization' };
+      repository_selection: 'all' | 'selected';
+    };
+    return { accountLogin: data.account.login, accountType: data.account.type, repositorySelection: data.repository_selection };
   }
 
   // Finds the caller's installation covering `owner` (GitHub logins are
@@ -135,10 +153,36 @@ export class GithubAppService {
   // is per-user — whether they've completed the App install flow at least
   // once. Never touches the DB when unconfigured, mirroring
   // mintInstallationToken's never-throws-just-degrades convention.
-  async listInstallations(sub: string): Promise<{ configured: boolean; installed: boolean; accounts: string[] }> {
-    if (!this.isConfigured()) return { configured: false, installed: false, accounts: [] };
-    const installations = await this.db.listGithubInstallations(sub);
-    return { configured: true, installed: installations.length > 0, accounts: installations.map((i) => i.accountLogin) };
+  async listInstallations(sub: string): Promise<{
+    configured: boolean;
+    installed: boolean;
+    installations: Array<{ installationId: string; accountLogin: string; accountType: 'User' | 'Organization'; repositorySelection: 'all' | 'selected' }>;
+  }> {
+    if (!this.isConfigured()) return { configured: false, installed: false, installations: [] };
+    const rows = await this.db.listGithubInstallations(sub);
+    const installations = await Promise.all(rows.map((row) => this.resolveInstallationSummary(row)));
+    return { configured: true, installed: installations.length > 0, installations };
+  }
+
+  // Legacy rows (installed before accountType/repositorySelection were
+  // captured) are self-healed with one live lookup here rather than a
+  // backfill migration — a user holds at most 1-2 installations, so a
+  // per-row fetch on this already-infrequent status call is cheap enough.
+  private async resolveInstallationSummary(
+    row: GithubInstallationItem,
+  ): Promise<{ installationId: string; accountLogin: string; accountType: 'User' | 'Organization'; repositorySelection: 'all' | 'selected' }> {
+    if (row.repositorySelection) {
+      return { installationId: row.installationId, accountLogin: row.accountLogin, accountType: row.accountType ?? 'User', repositorySelection: row.repositorySelection };
+    }
+    const details = await this.fetchInstallationDetails(row.installationId);
+    if (!details) {
+      // 'selected' is the safe assumption when the live lookup itself fails —
+      // it only ever adds an "allow All repositories" nudge, never silently
+      // over-grants, so degrading here beats dropping the installation.
+      return { installationId: row.installationId, accountLogin: row.accountLogin, accountType: 'User', repositorySelection: 'selected' };
+    }
+    await this.db.putGithubInstallation({ ...row, accountLogin: details.accountLogin, accountType: details.accountType, repositorySelection: details.repositorySelection });
+    return { installationId: row.installationId, accountLogin: details.accountLogin, accountType: details.accountType, repositorySelection: details.repositorySelection };
   }
 
   // Repo picker for project import/creation — the installation-token

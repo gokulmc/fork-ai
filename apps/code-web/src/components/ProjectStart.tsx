@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import type { Project } from '@/lib/api';
-import { Search, ArrowRight } from './Icons';
+import { QueryBox } from './QueryBox';
 
 interface ProjectStartProps {
   project: Project;
@@ -42,24 +42,14 @@ export function ProjectStart({ project, loading, onSubmit, onOpenMap }: ProjectS
         <p className="landing-sub">
           Ask a question, sketch a plan, or start coding — every branch lands on this project&apos;s map.
         </p>
-        <div className="query-box">
-          <span className="icon"><Search size={20} /></span>
-          <input
-            type="text"
-            autoFocus
-            value={q}
-            placeholder="What are we building?"
-            onChange={e => setQ(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && onGo()}
-          />
-          <button className="submit" disabled={!q.trim() || loading} onClick={onGo}>
-            {loading ? (
-              <><span className="spinner" style={{ width: 11, height: 11 }} /> Thinking…</>
-            ) : (
-              <>Begin <ArrowRight size={13} /></>
-            )}
-          </button>
-        </div>
+        <QueryBox
+          value={q}
+          onChange={setQ}
+          onSubmit={onGo}
+          placeholder="What are we building?"
+          loading={loading}
+          autoFocus
+        />
       </div>
     </div>
   );

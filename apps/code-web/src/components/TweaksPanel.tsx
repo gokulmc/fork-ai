@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import type { Tweaks } from '@/lib/types';
 import type { SetTweak } from '@/hooks/useTweaks';
-import { submitSupportTicket, getGithubAppStatus, githubAppInstallUrl, type SupportSubject, type GithubAppStatus } from '@/lib/api';
+import { submitSupportTicket, getGithubAppStatus, githubAppInstallUrl, installationSettingsUrl, type SupportSubject, type GithubAppStatus } from '@/lib/api';
 
 // ── Sub-components ─────────────────────────────────────────────────────────
 
@@ -421,12 +421,19 @@ export function TweaksPanel({ tweaks, setTweak, fontPairOptions, onRestartTour, 
                 {ghApp && ghApp.configured && !ghApp.installed && (
                   <div className="twk-row">
                     <a className="twk-restart-btn" href={githubAppInstallUrl()}>Install GitHub App</a>
-                    <p className="twk-note">Grants forkai code per-repo access to clone, commit, and open pull requests — only on repos you pick during install.</p>
+                    <p className="twk-note">Grants forkai code per-repo access to clone, commit, and open pull requests — only on repos you pick during install. Choose &quot;All repositories&quot; during install if you want forkai code to create repos for you.</p>
                   </div>
                 )}
                 {ghApp && ghApp.installed && (
                   <div className="twk-row">
-                    <p className="twk-note">Installed on {ghApp.accounts.join(', ')}</p>
+                    {ghApp.installations.map(inst => (
+                      <p className="twk-note" key={inst.installationId}>
+                        Installed on {inst.accountLogin} · {inst.repositorySelection === 'all' ? 'all repositories' : 'selected repos'}
+                        {inst.repositorySelection === 'selected' && (
+                          <> — <a href={installationSettingsUrl(inst)} target="_blank" rel="noreferrer">Allow all ↗</a></>
+                        )}
+                      </p>
+                    ))}
                     <a className="twk-restart-btn" href={githubAppInstallUrl()}>Manage / add repos</a>
                   </div>
                 )}

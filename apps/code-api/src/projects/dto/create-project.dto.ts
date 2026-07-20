@@ -60,10 +60,13 @@ export class CreateProjectDto {
   @IsIn(ALLOWED_PLUGINS, { each: true })
   plugins!: string[];
 
-  // Only meaningful for provider 'new' — the opening question that seeds the
-  // project's BRANCH root and streams in as its first answer right after
-  // creation (see SessionsService.createProjectSession / createRootNodeStreaming).
-  @ApiProperty({ description: 'Opening question for a from-scratch (provider "new") project — seeds the BRANCH root', required: false })
+  // Meaningful for provider 'new', and for provider 'github' when the repo
+  // was just created via github.com/new (ADR-0007) rather than attached —
+  // both cases skip repo import and seed the project's BRANCH root with this
+  // as the opening question, streamed in as its first answer right after
+  // creation (see ProjectsService.buildSession / SessionsService.createProjectSession
+  // / createRootNodeStreaming).
+  @ApiProperty({ description: 'Opening question that seeds the BRANCH root — for a from-scratch project, or a GitHub repo just created via the create-repo flow', required: false })
   @IsOptional()
   @IsString()
   @MaxLength(2000)

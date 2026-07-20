@@ -15,7 +15,7 @@ interface FollowUpPopProps {
   rect: Rect;
   sourceText: string;
   loading: boolean;
-  onSubmit: (question: string) => void;
+  onSubmit: (question: string, inline: boolean) => void;
   onClose: () => void;
 }
 
@@ -32,6 +32,9 @@ export function FollowUpPop({ rect, sourceText, loading, onSubmit, onClose }: Fo
   const [q, setQ] = useState('');
   const [pos, setPos] = useState({ left: 0, top: 0 });
   const [closing, setClosing] = useState(false);
+  // #237 Phase 1b — Branch (default) spawns a child node; Explain attaches a
+  // short inline answer to the passage itself instead. Read at submit time.
+  const [inline, setInline] = useState(false);
 
   // Play the slide-left exit (popOutLeft), then unmount — same on desktop and
   // mobile. closingRef guards against double-fire.
@@ -90,7 +93,7 @@ export function FollowUpPop({ rect, sourceText, loading, onSubmit, onClose }: Fo
     if (!trimmed) return;
     const expanded = SHORTHANDS[trimmed] ?? trimmed;
     setQ(expanded);
-    onSubmit(expanded);
+    onSubmit(expanded, inline);
     // Close on branch — the loading node already shows on the map. Mobile plays the
     // slide-left exit; desktop closes instantly (both handled inside requestClose).
     requestClose();
@@ -134,6 +137,15 @@ export function FollowUpPop({ rect, sourceText, loading, onSubmit, onClose }: Fo
           ))}
         </div>
         <div className="actions-right">
+          <button
+            type="button"
+            className={`inline-toggle${inline ? ' active' : ''}`}
+            disabled={loading}
+            onClick={() => setInline(v => !v)}
+            title={inline ? 'Explain: a short answer attaches to this passage' : 'Branch: opens a full new node'}
+          >
+            Inline
+          </button>
           <button className="btn-close" onClick={requestClose} title="Close" aria-label="Close">
             <X size={14} />
           </button>
@@ -145,7 +157,7 @@ export function FollowUpPop({ rect, sourceText, loading, onSubmit, onClose }: Fo
             {loading ? (
               <><span className="spinner" style={{ width: 10, height: 10 }} /> Asking…</>
             ) : (
-              <><Sparkles size={13} /> Branch</>
+              <><Sparkles size={13} /> {inline ? 'Explain' : 'Branch'}</>
             )}
           </button>
         </div>
