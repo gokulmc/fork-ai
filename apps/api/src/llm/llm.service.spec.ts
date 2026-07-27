@@ -472,6 +472,37 @@ describe('LlmService', () => {
     });
   });
 
+  describe('mixNodes', () => {
+    const SOURCES = [{ title: 'Branch A', sections: [{ heading: 'H', body: 'B' }] }];
+    const malformed = { content: [{ type: 'text', text: '{"title": "Mix", "sections": [}' }], usage: USAGE };
+
+    it('retries once when the model returns malformed JSON', async () => {
+      mockCreate.mockResolvedValueOnce(malformed).mockResolvedValueOnce(sdkResponse(validResponse));
+      const result = await service.mixNodes([{ title: 'T', query: 'Q' }], SOURCES, 'combine these');
+      expect(result.title).toBe('Test Title');
+      expect(mockCreate).toHaveBeenCalledTimes(2);
+    });
+
+    it('maps a persistent parse failure to the friendly unreadable-answer 500, not a raw SyntaxError', async () => {
+      mockCreate.mockResolvedValue(malformed);
+      expect.assertions(3);
+      try {
+        await service.mixNodes([{ title: 'T', query: 'Q' }], SOURCES, 'combine these');
+      } catch (err) {
+        expect(err).toBeInstanceOf(InternalServerErrorException);
+        expect((err as InternalServerErrorException).message).toBe('The AI returned an unreadable answer');
+      }
+      expect(mockCreate).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not retry a truncation cut-off', async () => {
+      mockCreate.mockResolvedValue({ ...sdkResponse(validResponse), stop_reason: 'max_tokens' });
+      await expect(service.mixNodes([{ title: 'T', query: 'Q' }], SOURCES, 'combine these'))
+        .rejects.toBeInstanceOf(UnprocessableEntityException);
+      expect(mockCreate).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('parseJson (via answerQuery)', () => {
     it('throws on missing sections array', async () => {
       mockCreate.mockResolvedValue({ content: [{ type: 'text', text: '{"title":"t","emoji":"e","lede":"l"}' }], usage: USAGE });
