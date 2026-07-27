@@ -1801,7 +1801,8 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       setActiveId(realNode.id);
       scrollWsTop();
     } catch (err) {
-      const { msg } = nodeErrorDisplay(err, false);
+      const { msg, status } = nodeErrorDisplay(err, false);
+      track('node_error', { kind: 'MIX', status, message: msg });
       setNodes(prev => ({
         ...prev,
         [tempId]: { ...prev[tempId], loading: false, error: msg, errorStatus: err instanceof ApiError ? err.status : undefined },
