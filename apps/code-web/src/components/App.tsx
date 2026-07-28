@@ -215,6 +215,7 @@ import { TweaksPanel } from './TweaksPanel';
 import { AccountButton } from './AccountButton';
 import { MindMapPill } from './MindMapPill';
 import { NewProjectModal, synthesizeNewRepoRef } from './NewProjectModal';
+import { AttachRepoModal } from './AttachRepoModal';
 import { ProjectStart } from './ProjectStart';
 import { AgentLogPane } from './AgentLogPane';
 import { PrPane } from './PrPane';
@@ -223,7 +224,7 @@ import { CodeComposer, type CodeComposerHandle, type ComposerAttachment } from '
 import {
   Search, Bookmark, ChevronRight, Sparkles, CornerDownRight, Hash,
   Quote, AlertCircle, ArrowUpRight, Pencil, Trash, Clock, FileText, Home,
-  Blend, Filter, X as XIcon, ClipboardList, Code, GitBranch, GitMerge,
+  Blend, Filter, X as XIcon, ClipboardList, Code, GitBranch, GitMerge, Github,
 } from './Icons';
 import { exportNodePdf } from '@/lib/sessionPdf';
 
@@ -660,8 +661,35 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
   // round-trip above (which always lands back on Landing, the OAuth redirect
   // target strips any ?view=history) can auto-open it without Landing needing
   // its own idToken plumbing. HistoryPage still hosts its own separate copy.
+  // Suppressed when a forkai-code.pendingAttach id is stored — that round-trip
+  // belongs to the attach modal below, not this one.
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
-  useEffect(() => { if (githubJustConnected) setShowNewProjectModal(true); }, [githubJustConnected]);
+  useEffect(() => {
+    if (githubJustConnected && !localStorage.getItem('forkai-code.pendingAttach')) setShowNewProjectModal(true);
+  }, [githubJustConnected]);
+
+  // AttachRepoModal (connect a real GitHub repo to a 'new'-provider project) —
+  // gates agent runs and renders from the workspace banner. pendingRunRef stashes
+  // a run submitted while the project still had no repo, so it can replay once
+  // attached (or be dropped on Skip); attachSkippedRef remembers, for the
+  // session's lifetime only, which projects the user chose to run without GitHub
+  // — a ref (not state) because it must be readable synchronously inside the
+  // OLD submitCodeNode closure that a replay calls (see the modal render below).
+  const [showAttachModal, setShowAttachModal] = useState(false);
+  const pendingRunRef = useRef<{ instruction: string; attachments: ComposerAttachment[]; reuseNodeId?: string } | null>(null);
+  const attachSkippedRef = useRef<Set<string>>(new Set());
+
+  // GitHub-App-install mid-attach round-trip: AttachRepoModal's install CTA
+  // stashes the project id in localStorage (not React state — the page fully
+  // unloads for the github.com/new-app redirect) before navigating away.
+  // Reopen the attach modal for that same project once we land back here,
+  // instead of the generic New Project modal above.
+  useEffect(() => {
+    if (!githubJustConnected || !activeProject) return;
+    if (localStorage.getItem('forkai-code.pendingAttach') !== activeProject.projectId) return;
+    localStorage.removeItem('forkai-code.pendingAttach');
+    setShowAttachModal(true);
+  }, [githubJustConnected, activeProject]);
 
   // Project first-question gate: a seeded project session loads WITH nodes (a
   // CODE root, maybe a HEAD child) — shown when there's no learn-kind node yet.
@@ -1861,6 +1889,16 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
     const parent = nodes[parentNodeId];
     if (!parent) return;
 
+    // Gate: a 'new'-provider project has no real repo, so every run would
+    // git-init an empty sandbox with no history from prior runs. Intercept
+    // with the attach modal unless this project was already skipped this
+    // session (attachSkippedRef — see its declaration for why a ref, not state).
+    if (activeProject?.repoRef.provider === 'new' && !attachSkippedRef.current.has(activeProject.projectId)) {
+      pendingRunRef.current = { instruction, attachments, reuseNodeId };
+      setShowAttachModal(true);
+      return;
+    }
+
     // Retry reuses the failed node's id so the card flips back to loading in place.
     const tempId = reuseNodeId ?? uid();
     setNodes(prev => ({
@@ -1950,7 +1988,7 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
       setLoadingNodes(prev => { const n = new Set(prev); n.delete(tempId); n.delete(realNodeId); return n; });
       setCodeSubmitLoading(false);
     }
-  }, [nodes, idToken, activeId, scrollWsTop, refreshCredit]);
+  }, [nodes, idToken, activeId, activeProject, scrollWsTop, refreshCredit]);
 
   // AgentLogPane's own Retry (for a failed run) — separate from the generic
   // retryInfoRef/ws-error banner mechanism, since CODE nodes never render into
@@ -3143,6 +3181,13 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
 
       <section className="workspace" ref={wsRef}>
         <div className="workspace-inner" ref={wsInnerRef}>
+          {activeProject?.repoRef.provider === 'new' && (
+            <div className="ws-repo-banner">
+              <Github size={13} className="ic" />
+              <span>Not connected to GitHub — work won&apos;t be saved.</span>
+              <button className="ws-repo-banner-btn" onClick={() => setShowAttachModal(true)}>Connect a repo</button>
+            </div>
+          )}
           {active && (active.kind === 'CODE' || (active.kind === 'BRANCH' && !branchHasContent)) && sessionId && (
             <AgentLogPane
               node={active}
@@ -3494,6 +3539,34 @@ export function App({ initialTopics = [], initiallyAuthed = false }: { initialTo
         onRemoveHighlight={removeHighlight}
         onRemoveCallout={removeAnnotation}
       />
+
+      {showAttachModal && idToken && activeProject && (
+        <AttachRepoModal
+          idToken={idToken}
+          project={activeProject}
+          pendingRun={!!pendingRunRef.current}
+          onClose={() => { pendingRunRef.current = null; setShowAttachModal(false); localStorage.removeItem('forkai-code.pendingAttach'); }}
+          onSkip={() => {
+            attachSkippedRef.current.add(activeProject.projectId);
+            setShowAttachModal(false);
+            const run = pendingRunRef.current; pendingRunRef.current = null;
+            if (run) void submitCodeNode(run.instruction, run.attachments, run.reuseNodeId);
+          }}
+          onAttached={updated => {
+            // A replay below calls the OLD submitCodeNode closure, whose captured
+            // activeProject still says provider 'new' — the skip ref (never stale,
+            // unlike the closure) is what lets the gate pass this one time. Harmless
+            // after: activeProject and every future closure see provider 'github'.
+            attachSkippedRef.current.add(updated.projectId);
+            setActiveProject(updated);
+            setProjects(prev => prev.map(p => (p.projectId === updated.projectId ? updated : p)));
+            localStorage.removeItem('forkai-code.pendingAttach');
+            setShowAttachModal(false);
+            const run = pendingRunRef.current; pendingRunRef.current = null;
+            if (run) void submitCodeNode(run.instruction, run.attachments, run.reuseNodeId);
+          }}
+        />
+      )}
     </div>
     </>
   );

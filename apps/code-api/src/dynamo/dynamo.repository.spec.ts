@@ -344,6 +344,16 @@ describe('DynamoRepository', () => {
         { '$ADD': { branchCount: 1 } },
       );
     });
+
+    it('updateProjectRepo sets repoRef, repoAttachedAt, and updatedAt together', async () => {
+      project.mock.update.mockResolvedValue({});
+      const repoRef = { provider: 'github' as const, owner: 'acme', repo: 'widgets', defaultBranch: 'main', url: 'https://github.com/acme/widgets', private: true };
+      await repo.updateProjectRepo(SUB, PROJECT_ID, repoRef, '2026-01-01T00:00:00.000Z');
+      expect(project.mock.update).toHaveBeenCalledWith(
+        { PK: `USER#${SUB}`, SK: `PROJECT#${PROJECT_ID}` },
+        { repoRef: { ...repoRef }, repoAttachedAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' },
+      );
+    });
   });
 
   describe('putAgentRun / getAgentRun / updateAgentRun', () => {

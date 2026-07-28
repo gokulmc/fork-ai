@@ -820,17 +820,19 @@ export class NodesService {
       }
       return undefined;
     }
-    // provider === 'github'
+    // provider === 'github' — try an installation token regardless of `private`
+    // first: a tokenless clone has no push credentials, so a public repo would
+    // otherwise clone fine but silently fail to push.
+    const token = await this.githubApp.mintInstallationToken(sub, repoRef.owner, repoRef.repo);
+    if (token) {
+      return { cloneUrl: `https://x-access-token:${token}@github.com/${repoRef.owner}/${repoRef.repo}.git` };
+    }
     if (!repoRef.private) {
       return { cloneUrl: `${repoRef.url}.git` };
     }
-    const token = await this.githubApp.mintInstallationToken(sub, repoRef.owner, repoRef.repo);
-    if (!token) {
-      throw new BadRequestException(
-        `${repoRef.owner}/${repoRef.repo} is private — install the forkai code GitHub App (Connect GitHub → Install App) to run the coding agent on it.`,
-      );
-    }
-    return { cloneUrl: `https://x-access-token:${token}@github.com/${repoRef.owner}/${repoRef.repo}.git` };
+    throw new BadRequestException(
+      `${repoRef.owner}/${repoRef.repo} is private — install the forkai code GitHub App (Connect GitHub → Install App) to run the coding agent on it.`,
+    );
   }
 
   // Cloud-only (ADR-0004): releases a still-open hold with zero token usage —
@@ -995,8 +997,12 @@ export class NodesService {
       const branchName = chain.branchNode?.branchName ?? chain.planNode?.branchName ?? project?.repoRef.defaultBranch ?? 'main';
       // A from-scratch ('new') project has no real git history — the sandbox
       // git-inits an empty repo, so the parent's synthesized/placeholder commitSha
-      // is not a real tree to check out. Only pass a baseRef when cloning a real repo.
-      const baseCommitSha = repo?.init ? null : (parentNode.commitSha ?? null);
+      // is not a real tree to check out. Same for a parent that predates a repo
+      // attach (PATCH /projects/:id/repo): its sha was fabricated against the old
+      // fake repo and doesn't exist on the just-attached remote — clone
+      // default-branch HEAD instead of a doomed baseRef checkout.
+      const parentPredatesAttach = !!project?.repoAttachedAt && parentNode.createdAt < project.repoAttachedAt;
+      const baseCommitSha = repo?.init || parentPredatesAttach ? null : (parentNode.commitSha ?? null);
 
       // Tracks the cloud sandbox's REAL boot progress (provisioning → image
       // pull → starting agent), updated via ctx.onPhase below — the heartbeat

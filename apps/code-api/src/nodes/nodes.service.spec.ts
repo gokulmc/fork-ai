@@ -1858,14 +1858,28 @@ describe('NodesService', () => {
         expect(ctxArg.repo).toEqual({ cloneUrl: 'https://x-access-token:ghs_installtoken@github.com/acme/widgets.git' });
       });
 
-      it('public github repo clones the plain repo URL — no installation lookup', async () => {
+      it('public github repo falls back to the tokenless clone URL when no installation token is available', async () => {
         mockDb.getProject.mockResolvedValue(githubProject());
+        mockGithubApp.mintInstallationToken.mockResolvedValue(null);
 
         await service.createCodeNodeStreaming(SUB, SESSION_ID, dto, jest.fn());
 
         const ctxArg = agentRunner.run.mock.calls[0][0];
         expect(ctxArg.repo).toEqual({ cloneUrl: 'https://github.com/acme/widgets.git' });
-        expect(mockGithubApp.mintInstallationToken).not.toHaveBeenCalled();
+        expect(mockGithubApp.mintInstallationToken).toHaveBeenCalledWith(SUB, 'acme', 'widgets');
+      });
+
+      // A tokenless clone has no push credentials — an attached PUBLIC repo would
+      // otherwise clone fine but silently fail to push. Prefer a tokened clone
+      // whenever an installation covers the repo, private or not.
+      it('public github repo prefers a tokened clone URL when an installation token is available', async () => {
+        mockDb.getProject.mockResolvedValue(githubProject());
+        mockGithubApp.mintInstallationToken.mockResolvedValue('ghs_installtoken');
+
+        await service.createCodeNodeStreaming(SUB, SESSION_ID, dto, jest.fn());
+
+        const ctxArg = agentRunner.run.mock.calls[0][0];
+        expect(ctxArg.repo).toEqual({ cloneUrl: 'https://x-access-token:ghs_installtoken@github.com/acme/widgets.git' });
       });
 
       // Regression: a from-scratch project git-inits an EMPTY sandbox repo, so a
@@ -1895,6 +1909,7 @@ describe('NodesService', () => {
 
       it('cloned real repo (public github) — baseCommitSha still passes the parent commitSha through', async () => {
         mockDb.getProject.mockResolvedValue(githubProject());
+        mockGithubApp.mintInstallationToken.mockResolvedValue(null);
         mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [planNode, codeParentWithCommit], projectId: 'proj-1' });
 
         await service.createCodeNodeStreaming(SUB, SESSION_ID, { ...dto, parentNodeId: 'code-1' }, jest.fn());
@@ -1902,6 +1917,52 @@ describe('NodesService', () => {
         const ctxArg = agentRunner.run.mock.calls[0][0];
         expect(ctxArg.repo).toEqual({ cloneUrl: 'https://github.com/acme/widgets.git' });
         expect(ctxArg.baseCommitSha).toBe('basecommitsha1234567890');
+      });
+
+      // A 'new' project attached to a real repo mid-session (PATCH /projects/:id/repo)
+      // leaves old nodes with commitShas fabricated against the since-replaced fake
+      // repo — those don't exist on the just-attached remote either, so the guard
+      // must also key off createdAt vs. repoAttachedAt, not just ctx.repo.init.
+      describe('repoAttachedAt guard (parent predates a mid-session repo attach)', () => {
+        const attachedGithubProject = (repoAttachedAt: string) => ({
+          projectId: 'proj-1',
+          repoRef: { provider: 'github', owner: 'acme', repo: 'widgets', defaultBranch: 'main', url: 'https://github.com/acme/widgets' },
+          plugins: [],
+          repoAttachedAt,
+        });
+
+        it('parent createdAt before repoAttachedAt — baseCommitSha is null (sha fabricated against the old fake repo)', async () => {
+          mockDb.getProject.mockResolvedValue(attachedGithubProject('2026-01-02T00:00:00.000Z'));
+          const staleParent = { ...codeParentWithCommit, createdAt: '2026-01-01T00:00:00.000Z' };
+          mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [planNode, staleParent], projectId: 'proj-1' });
+
+          await service.createCodeNodeStreaming(SUB, SESSION_ID, { ...dto, parentNodeId: 'code-1' }, jest.fn());
+
+          const ctxArg = agentRunner.run.mock.calls[0][0];
+          expect(ctxArg.baseCommitSha).toBeNull();
+        });
+
+        it('parent createdAt at/after repoAttachedAt — baseCommitSha is passed through', async () => {
+          mockDb.getProject.mockResolvedValue(attachedGithubProject('2026-01-01T00:00:00.000Z'));
+          const freshParent = { ...codeParentWithCommit, createdAt: '2026-01-02T00:00:00.000Z' };
+          mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [planNode, freshParent], projectId: 'proj-1' });
+
+          await service.createCodeNodeStreaming(SUB, SESSION_ID, { ...dto, parentNodeId: 'code-1' }, jest.fn());
+
+          const ctxArg = agentRunner.run.mock.calls[0][0];
+          expect(ctxArg.baseCommitSha).toBe('basecommitsha1234567890');
+        });
+
+        it('no repoAttachedAt on the project — unchanged, baseCommitSha passes through regardless of parent createdAt', async () => {
+          mockDb.getProject.mockResolvedValue(githubProject());
+          const staleParent = { ...codeParentWithCommit, createdAt: '2020-01-01T00:00:00.000Z' };
+          mockSessions.getSession.mockResolvedValue({ ...fullSession, nodes: [planNode, staleParent], projectId: 'proj-1' });
+
+          await service.createCodeNodeStreaming(SUB, SESSION_ID, { ...dto, parentNodeId: 'code-1' }, jest.fn());
+
+          const ctxArg = agentRunner.run.mock.calls[0][0];
+          expect(ctxArg.baseCommitSha).toBe('basecommitsha1234567890');
+        });
       });
     });
 

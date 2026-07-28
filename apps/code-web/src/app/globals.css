@@ -2230,6 +2230,14 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 .ws-error-btn:hover { background: rgba(224,62,62,0.12); }
 [data-theme="dark"] .ws-error-btn:hover { background: rgba(224,62,62,0.2); }
 
+/* Same flex/spacing shape as .ws-error above, but a quiet muted strip (theme
+   tokens, not an alarm color) — a 'new'-provider project isn't broken, it just
+   hasn't been connected to GitHub yet. */
+.ws-repo-banner { background: var(--panel); border: 1px solid var(--line); color: var(--ink-2); border-radius: 5px; padding: 10px 14px; font-size: 13px; font-family: var(--sans); margin: 0 0 16px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.ws-repo-banner .ic { width: 13px; height: 13px; flex-shrink: 0; color: var(--ink-3); }
+.ws-repo-banner-btn { margin-left: auto; flex-shrink: 0; border: 1px solid var(--line-strong); background: transparent; color: inherit; font: inherit; font-size: 12.5px; font-weight: 600; border-radius: 4px; padding: 3px 12px; cursor: pointer; }
+.ws-repo-banner-btn:hover { background: var(--hover); }
+
 /* ============================================================
    Scrollbars
    ============================================================ */
@@ -2972,6 +2980,16 @@ select.twk-field { padding-right: 22px; background-image: url("data:image/svg+xm
   box-shadow: none;
   cursor: not-allowed;
 }
+
+/* Secondary modal-footer action (e.g. AttachRepoModal's "Skip") — same shape
+   as .proj-btn-primary, neutral fill instead of the ink/accent treatment. */
+.proj-btn-secondary {
+  display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0;
+  height: 34px; padding: 0 16px;
+  background: transparent; color: var(--ink-2); border: 1px solid var(--line-strong); border-radius: var(--radius);
+  font-family: var(--sans); font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.proj-btn-secondary:hover { background: var(--hover); color: var(--ink); }
 
 .proj-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
 .proj-card {

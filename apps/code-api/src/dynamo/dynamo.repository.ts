@@ -32,6 +32,7 @@ import type {
   HoldItem,
   MachineBillItem,
   DeviceItem,
+  RepoRef,
 } from './dynamo.interfaces';
 
 @Injectable()
@@ -473,6 +474,16 @@ export class DynamoRepository {
     await this.projectModel.update(
       { PK: this.userPk(sub), SK: this.projectSk(projectId) },
       updates,
+    );
+  }
+
+  // Deliberately separate from updateProject: repoRef is write-once for every
+  // path except the one-shot 'new' → 'github' attach, which this method owns
+  // together with the repoAttachedAt marker NodesService's baseRef guard reads.
+  async updateProjectRepo(sub: string, projectId: string, repoRef: RepoRef, attachedAt: string): Promise<void> {
+    await this.projectModel.update(
+      { PK: this.userPk(sub), SK: this.projectSk(projectId) },
+      { repoRef: { ...repoRef }, repoAttachedAt: attachedAt, updatedAt: attachedAt },
     );
   }
 
