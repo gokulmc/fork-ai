@@ -265,6 +265,7 @@ export const ProjectSchema = new dynamoose.Schema({
   createdAt: String,
   updatedAt: String,
   branchCount: { type: Number, required: false },
+  repoAttachedAt: { type: String, required: false },
 });
 
 export const GithubInstallationSchema = new dynamoose.Schema({

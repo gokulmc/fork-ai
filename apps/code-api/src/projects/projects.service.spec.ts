@@ -1,9 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
 import { SessionsService } from '@/sessions/sessions.service';
 import { GithubService } from '@/github/github.service';
+import { GithubAppService } from '@/github/github-app.service';
 import { RepoImportService } from './repo-import.service';
 
 const mockDb = {
@@ -11,6 +12,9 @@ const mockDb = {
   getProject: jest.fn(),
   listProjects: jest.fn(),
   updateSessionMeta: jest.fn(),
+  updateProjectRepo: jest.fn(),
+  queryNodes: jest.fn(),
+  updateNode: jest.fn(),
 };
 
 const mockSessions = {
@@ -20,6 +24,10 @@ const mockSessions = {
 
 const mockGithub = {
   getRepoSeed: jest.fn(),
+};
+
+const mockGithubApp = {
+  listInstallationRepos: jest.fn(),
 };
 
 // Defaults to null (no import) so every existing test below — which only
@@ -60,6 +68,7 @@ describe('ProjectsService', () => {
         { provide: DynamoRepository, useValue: mockDb },
         { provide: SessionsService, useValue: mockSessions },
         { provide: GithubService, useValue: mockGithub },
+        { provide: GithubAppService, useValue: mockGithubApp },
         { provide: RepoImportService, useValue: mockRepoImport },
       ],
     }).compile();
@@ -288,6 +297,108 @@ describe('ProjectsService', () => {
     it('throws NotFoundException when missing', async () => {
       mockDb.getProject.mockResolvedValue(null);
       await expect(service.getOne(SUB, 'missing')).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('attachRepo', () => {
+    const newProject = {
+      projectId: 'p1',
+      name: 'Widget Service',
+      repoRef: { provider: 'new' as const, owner: 'you', repo: 'widget-service', defaultBranch: 'main', url: 'mock://new/widget-service' },
+      plugins: [] as string[],
+      sessionId: 'sess-1',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+
+    const installationRepos = [
+      { owner: 'acme', repo: 'widgets', fullName: 'acme/widgets', defaultBranch: 'main', private: true, url: 'https://github.com/acme/widgets', description: null },
+    ];
+
+    it('attaches a real repo derived from the installation listing and sets repoAttachedAt', async () => {
+      mockDb.getProject.mockResolvedValue(newProject);
+      mockGithubApp.listInstallationRepos.mockResolvedValue(installationRepos);
+      mockDb.updateProjectRepo.mockResolvedValue(undefined);
+      mockDb.queryNodes.mockResolvedValue([]);
+
+      const result = await service.attachRepo(SUB, 'p1', { owner: 'acme', repo: 'widgets' });
+
+      const expectedRepoRef = { provider: 'github', owner: 'acme', repo: 'widgets', defaultBranch: 'main', url: 'https://github.com/acme/widgets', private: true };
+      expect(mockDb.updateProjectRepo).toHaveBeenCalledWith(SUB, 'p1', expectedRepoRef, expect.any(String));
+      expect(result.repoRef).toEqual(expectedRepoRef);
+      expect(result.repoAttachedAt).toEqual(expect.any(String));
+    });
+
+    it('matches owner/repo case-insensitively', async () => {
+      mockDb.getProject.mockResolvedValue(newProject);
+      mockGithubApp.listInstallationRepos.mockResolvedValue(installationRepos);
+      mockDb.updateProjectRepo.mockResolvedValue(undefined);
+      mockDb.queryNodes.mockResolvedValue([]);
+
+      const result = await service.attachRepo(SUB, 'p1', { owner: 'ACME', repo: 'Widgets' });
+
+      expect(result.repoRef.owner).toBe('acme');
+      expect(result.repoRef.repo).toBe('widgets');
+    });
+
+    it('rejects a project whose repoRef.provider is already "github"', async () => {
+      mockDb.getProject.mockResolvedValue({ ...newProject, repoRef: { ...newProject.repoRef, provider: 'github' } });
+
+      await expect(service.attachRepo(SUB, 'p1', { owner: 'acme', repo: 'widgets' })).rejects.toBeInstanceOf(BadRequestException);
+      expect(mockGithubApp.listInstallationRepos).not.toHaveBeenCalled();
+    });
+
+    it('rejects a "github-mock" demo project', async () => {
+      mockDb.getProject.mockResolvedValue({ ...newProject, repoRef: { ...newProject.repoRef, provider: 'github-mock' } });
+
+      await expect(service.attachRepo(SUB, 'p1', { owner: 'acme', repo: 'widgets' })).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('400s when the requested repo is not in any installation listing', async () => {
+      mockDb.getProject.mockResolvedValue(newProject);
+      mockGithubApp.listInstallationRepos.mockResolvedValue(installationRepos);
+
+      await expect(service.attachRepo(SUB, 'p1', { owner: 'someone-else', repo: 'private-repo' })).rejects.toBeInstanceOf(BadRequestException);
+      expect(mockDb.updateProjectRepo).not.toHaveBeenCalled();
+    });
+
+    it('heals the root BRANCH node branchName only when the real default branch differs', async () => {
+      mockDb.getProject.mockResolvedValue(newProject); // synthesized defaultBranch: 'main'
+      mockGithubApp.listInstallationRepos.mockResolvedValue([
+        { ...installationRepos[0], defaultBranch: 'master' },
+      ]);
+      mockDb.updateProjectRepo.mockResolvedValue(undefined);
+      const rootNode = { nodeId: 'n1', parentId: null, kind: 'BRANCH' };
+      mockDb.queryNodes.mockResolvedValue([rootNode, { nodeId: 'n2', parentId: 'n1', kind: 'CODE' }]);
+      mockDb.updateNode.mockResolvedValue(undefined);
+
+      await service.attachRepo(SUB, 'p1', { owner: 'acme', repo: 'widgets' });
+
+      expect(mockDb.updateNode).toHaveBeenCalledWith('sess-1', 'n1', { branchName: 'master' });
+    });
+
+    it('does not heal when the real default branch matches the synthesized one', async () => {
+      mockDb.getProject.mockResolvedValue(newProject); // synthesized defaultBranch: 'main'
+      mockGithubApp.listInstallationRepos.mockResolvedValue(installationRepos); // defaultBranch: 'main'
+      mockDb.updateProjectRepo.mockResolvedValue(undefined);
+
+      await service.attachRepo(SUB, 'p1', { owner: 'acme', repo: 'widgets' });
+
+      expect(mockDb.queryNodes).not.toHaveBeenCalled();
+      expect(mockDb.updateNode).not.toHaveBeenCalled();
+    });
+
+    it('a heal failure does not fail the attach', async () => {
+      mockDb.getProject.mockResolvedValue(newProject);
+      mockGithubApp.listInstallationRepos.mockResolvedValue([
+        { ...installationRepos[0], defaultBranch: 'master' },
+      ]);
+      mockDb.updateProjectRepo.mockResolvedValue(undefined);
+      mockDb.queryNodes.mockRejectedValue(new Error('scan failed'));
+
+      const result = await service.attachRepo(SUB, 'p1', { owner: 'acme', repo: 'widgets' });
+
+      expect(result.repoRef.provider).toBe('github');
     });
   });
 });

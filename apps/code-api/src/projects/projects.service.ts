@@ -1,12 +1,14 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { ulid } from 'ulid';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
-import type { ProjectItem } from '@/dynamo/dynamo.interfaces';
+import type { ProjectItem, RepoRef } from '@/dynamo/dynamo.interfaces';
 import { SessionsService } from '@/sessions/sessions.service';
 import type { ProjectSeed } from '@/sessions/sessions.service';
 import { GithubService } from '@/github/github.service';
+import { GithubAppService } from '@/github/github-app.service';
 import { RepoImportService } from './repo-import.service';
 import { CreateProjectDto } from './dto/create-project.dto';
+import { AttachRepoDto } from './dto/attach-repo.dto';
 
 @Injectable()
 export class ProjectsService {
@@ -16,6 +18,7 @@ export class ProjectsService {
     private readonly db: DynamoRepository,
     private readonly sessions: SessionsService,
     private readonly github: GithubService,
+    private readonly githubApp: GithubAppService,
     private readonly repoImport: RepoImportService,
   ) {}
 
@@ -106,5 +109,57 @@ export class ProjectsService {
     const project = await this.db.getProject(sub, projectId);
     if (!project) throw new NotFoundException(`Project ${projectId} not found`);
     return project;
+  }
+
+  // One-shot 'new' → 'github' flip (D2: 'github-mock' is the deliberate demo
+  // fixture and stays rejected too). Only ever offers installation repos —
+  // matches the existing create-project picker, which never lets a user type
+  // an arbitrary owner/repo the App can't see.
+  async attachRepo(sub: string, projectId: string, dto: AttachRepoDto): Promise<ProjectItem> {
+    const project = await this.getOne(sub, projectId);
+    if (project.repoRef.provider !== 'new') {
+      throw new BadRequestException('Only a from-scratch project can attach a GitHub repo.');
+    }
+
+    const repos = await this.githubApp.listInstallationRepos(sub);
+    const match = repos.find(
+      (r) => r.owner.toLowerCase() === dto.owner.toLowerCase() && r.repo.toLowerCase() === dto.repo.toLowerCase(),
+    );
+    if (!match) {
+      throw new BadRequestException(
+        `${dto.owner}/${dto.repo} is not accessible — install the forkai code GitHub App on that account (or grant it this repo) and try again.`,
+      );
+    }
+
+    const now = new Date().toISOString();
+    const repoRef: RepoRef = {
+      provider: 'github',
+      owner: match.owner,
+      repo: match.repo,
+      defaultBranch: match.defaultBranch,
+      url: match.url,
+      private: match.private,
+    };
+    await this.db.updateProjectRepo(sub, projectId, repoRef, now);
+    await this.healRootBranchName(project, match.defaultBranch);
+
+    return { ...project, repoRef, repoAttachedAt: now, updatedAt: now };
+  }
+
+  // The synthesized 'new'-project default is always 'main' (synthesizeNewRepoRef,
+  // frontend) — if the just-attached repo's real default is something else (e.g.
+  // 'master'), the root BRANCH node's stale branchName would otherwise make the
+  // next default-lane run push a stray 'main' branch alongside the repo's actual
+  // trunk. Best-effort: a heal failure must never fail the attach itself.
+  private async healRootBranchName(project: ProjectItem, realDefaultBranch: string): Promise<void> {
+    if (realDefaultBranch === project.repoRef.defaultBranch) return;
+    try {
+      const nodes = await this.db.queryNodes(project.sessionId);
+      const root = nodes.find((n) => n.kind === 'BRANCH' && (n.parentId ?? null) === null);
+      if (!root) return;
+      await this.db.updateNode(project.sessionId, root.nodeId, { branchName: realDefaultBranch });
+    } catch (err) {
+      this.logger.warn(`healRootBranchName failed for project ${project.projectId}: ${(err as Error).message}`);
+    }
   }
 }

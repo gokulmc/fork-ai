@@ -801,6 +801,13 @@ export function getProject(idToken: string, projectId: string): Promise<Project>
   return apiFetch<Project>(`/projects/${projectId}`, idToken);
 }
 
+// Attaches a real GitHub repo to a 'new'-provider (from-scratch) project — the
+// server re-derives defaultBranch/url/private from the caller's installations
+// and returns the updated Project (repoRef.provider now 'github').
+export function attachProjectRepo(idToken: string, projectId: string, payload: { owner: string; repo: string }): Promise<Project> {
+  return apiFetch<Project>(`/projects/${projectId}/repo`, idToken, { method: 'PATCH', body: JSON.stringify(payload) });
+}
+
 // ── GitHub — App install status + repo listing (per-repo, powers sandbox clone/commit/PR) ──
 
 export interface GithubInstallation {

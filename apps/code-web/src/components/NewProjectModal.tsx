@@ -2,6 +2,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CreateProjectPayload, GithubRepo, GithubAppStatus, GithubInstallation, RepoRef } from '@/lib/api';
 import { getGithubAppStatus, githubAppInstallUrl, installationSettingsUrl, listGithubRepos } from '@/lib/api';
+import { useGithubRepoDetect } from '@/hooks/useGithubRepoDetect';
 import { MOCK_REPOS, SKILL_PLUGINS, HARNESS_PLUGINS } from '@/lib/mockGithub';
 import { X as XIcon, Github } from './Icons';
 
@@ -37,20 +38,7 @@ export function synthesizeNewRepoRef(name: string): RepoRef {
 
 const MAX_ROOT_QUERY_ROWS = 6;
 
-// Real-repo detection polling (New repo tab, GitHub App installed): how often
-// to re-list repos after "Create on GitHub" is clicked, and how long to keep
-// polling automatically before falling back to the manual "check now" button.
-const REPO_POLL_INTERVAL_MS = 3000;
-const REPO_POLL_CAP_MS = 120_000;
-
 type Tab = 'new' | 'attach';
-
-// State machine for the New-repo tab once the GitHub App is installed:
-// idle (name/owner picked, nothing created yet) → waiting (github.com/new
-// opened in a new tab, polling for the repo to appear) → detected (repo
-// found, ready to submit). Changing name/rootQuery never leaves 'detected'
-// automatically — resubmitting "Create on GitHub" would restart the cycle.
-type GhCreatePhase = 'idle' | 'waiting' | 'detected';
 
 // Extracted out of ProjectsPage (D2) and given two tabs: "New repo" seeds a
 // from-scratch project with a rootQuery that fills the map's BRANCH root right
@@ -69,17 +57,8 @@ export function NewProjectModal({ idToken, onClose, onCreate }: NewProjectModalP
   const [ghApp, setGhApp] = useState<GithubAppStatus | null>(null);
   const [ghRepos, setGhRepos] = useState<GithubRepo[]>([]);
 
-  // New-repo-on-GitHub flow (only reachable once ghApp.installed) — see
-  // GhCreatePhase above.
+  // New-repo-on-GitHub flow (only reachable once ghApp.installed).
   const [chosenLogin, setChosenLogin] = useState('');
-  const [ghPhase, setGhPhase] = useState<GhCreatePhase>('idle');
-  const [ghCapExpired, setGhCapExpired] = useState(false);
-  const [detectedRepo, setDetectedRepo] = useState<GithubRepo | null>(null);
-  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pollBaselineRef = useRef<Set<string>>(new Set());
-  const baselineReadyRef = useRef(false);
-  const pollStartRef = useRef(0);
-  const pollInFlightRef = useRef(false);
 
   useEffect(() => {
     getGithubAppStatus(idToken)
@@ -92,9 +71,6 @@ export function NewProjectModal({ idToken, onClose, onCreate }: NewProjectModalP
       })
       .catch(() => setGhApp({ configured: false, installed: false, installations: [] }));
   }, [idToken]);
-
-  // Poll cleanup on unmount — the interval must not outlive the modal.
-  useEffect(() => () => { if (pollIntervalRef.current) clearInterval(pollIntervalRef.current); }, []);
 
   const togglePlugin = (id: string) => {
     setPlugins(prev => {
@@ -118,75 +94,20 @@ export function NewProjectModal({ idToken, onClose, onCreate }: NewProjectModalP
   const chosenInstallation: GithubInstallation | null =
     ghApp?.installations.find(i => i.accountLogin === chosenLogin) ?? null;
   const usingRealRepo = tab === 'new' && !!ghApp?.installed;
+
+  const {
+    phase: ghPhase,
+    capExpired: ghCapExpired,
+    detectedRepo,
+    start: startCreateOnGithub,
+    checkNow: pollGithubRepos,
+  } = useGithubRepoDetect(idToken, { login: chosenLogin, slug, description: rootQuery, onRepos: setGhRepos });
+
   const canSubmit = tab === 'attach'
     ? !!name.trim()
     : usingRealRepo
       ? !!name.trim() && !!rootQuery.trim() && !!detectedRepo
       : !!name.trim() && !!rootQuery.trim();
-
-  // Re-lists repos and checks for a match; guarded against overlapping calls
-  // since it's invoked both by the 3s interval and the manual "check now" click.
-  const pollGithubRepos = async () => {
-    if (pollInFlightRef.current) return;
-    pollInFlightRef.current = true;
-    try {
-      const repos = await listGithubRepos(idToken);
-      setGhRepos(repos);
-      const match =
-        repos.find(r => r.owner === chosenLogin && r.repo === slug) ??
-        (baselineReadyRef.current ? repos.find(r => !pollBaselineRef.current.has(r.url)) : undefined);
-      if (match) {
-        setDetectedRepo(match);
-        setGhPhase('detected');
-        if (pollIntervalRef.current) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null; }
-      }
-    } catch {
-      // Transient network/API blip — the next tick (or a manual check-now click) retries.
-    } finally {
-      pollInFlightRef.current = false;
-    }
-  };
-
-  const startCreateOnGithub = () => {
-    if (!chosenLogin) return;
-    const url = `https://github.com/new?owner=${encodeURIComponent(chosenLogin)}&name=${encodeURIComponent(slug)}&description=${encodeURIComponent(rootQuery.slice(0, 100))}&visibility=private`;
-    window.open(url, '_blank', 'noopener,noreferrer');
-
-    const startedAt = Date.now();
-    pollStartRef.current = startedAt;
-    setGhCapExpired(false);
-    setDetectedRepo(null);
-    setGhPhase('waiting');
-    if (pollIntervalRef.current) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null; }
-
-    // The not-in-baseline fallback needs a baseline snapshotted at THIS click
-    // — ghRepos state may still be empty (the mount fetch is async and loses
-    // the race to a fast user), and an empty baseline makes the first poll
-    // "detect" an arbitrary pre-existing repo. The popup must open
-    // synchronously above (popup blockers), so the fresh listing happens
-    // after; only a successful fetch arms the fallback — the exact owner/slug
-    // match works either way. startedAt guards a re-click: a superseded
-    // click's async tail must not start a second interval.
-    void (async () => {
-      try {
-        const repos = await listGithubRepos(idToken);
-        setGhRepos(repos);
-        pollBaselineRef.current = new Set(repos.map(r => r.url));
-        baselineReadyRef.current = true;
-      } catch {
-        baselineReadyRef.current = false;
-      }
-      if (pollStartRef.current !== startedAt) return;
-      pollIntervalRef.current = setInterval(() => {
-        if (Date.now() - pollStartRef.current > REPO_POLL_CAP_MS) {
-          if (pollIntervalRef.current) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null; }
-          setGhCapExpired(true);
-          return;
-        }
-        pollGithubRepos();
-      }, REPO_POLL_INTERVAL_MS);
-    })();
-  };
 
   const submit = async () => {
     if (!canSubmit || creating) return;

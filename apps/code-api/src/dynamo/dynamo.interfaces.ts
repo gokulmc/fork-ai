@@ -275,6 +275,11 @@ export interface ProjectItem {
   // (import: seeded branch count; 'new'/'github-mock': 1 for the default
   // branch) and bumped by $ADD whenever a BRANCH node is forked.
   branchCount?: number;
+  // Set the moment a from-scratch ('new') project attached a real GitHub repo.
+  // Nodes created before this carry fabricated commitShas that don't exist on
+  // the remote — NodesService gates baseCommitSha on it. Absent for projects
+  // created directly against a repo (or never attached).
+  repoAttachedAt?: string;
 }
 
 // A registered APNs device token for push notifications (run-complete/failed
