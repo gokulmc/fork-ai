@@ -1,9 +1,10 @@
-import { Controller, Get, Post, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiParam } from '@nestjs/swagger';
 import { CurrentUser } from '@/auth/current-user.decorator';
 import { CognitoUser } from '@/auth/jwt.strategy';
 import { ProjectsService } from './projects.service';
 import { CreateProjectDto } from './dto/create-project.dto';
+import { AttachRepoDto } from './dto/attach-repo.dto';
 
 @ApiTags('projects')
 @Controller('projects')
@@ -27,5 +28,12 @@ export class ProjectsController {
   @ApiParam({ name: 'projectId', description: 'ULID project ID' })
   getOne(@CurrentUser() user: CognitoUser, @Param('projectId') projectId: string) {
     return this.projectsService.getOne(user.sub, projectId);
+  }
+
+  @Patch(':projectId/repo')
+  @ApiOperation({ summary: "Attach a real GitHub repo to a from-scratch ('new') project — one-shot 'new' → 'github' flip" })
+  @ApiParam({ name: 'projectId', description: 'ULID project ID' })
+  attachRepo(@CurrentUser() user: CognitoUser, @Param('projectId') projectId: string, @Body() dto: AttachRepoDto) {
+    return this.projectsService.attachRepo(user.sub, projectId, dto);
   }
 }

@@ -649,22 +649,37 @@ You MAY use GitHub-flavored markdown. The "title" should be a 5-word-max phrase 
 
     // MIX/PLAN calls always run at the non-streaming ceiling — they consume more
     // input tokens (up to 6 nodes of content) and need room for a rich synthesis.
+    // Same retry + friendly-error contract as callJson: a malformed-JSON answer
+    // must surface as "unreadable answer", never a raw SyntaxError 500.
     const provider = this.providerFor(model);
-    const { rawText, usage, truncated } = await provider.complete(
-      prompt + avoidEmojiNote(usedEmojis),
-      { model, maxTokens: NON_STREAMING_MAX_TOKENS, webSearch: false },
-    );
+    const fullPrompt = prompt + avoidEmojiNote(usedEmojis);
+    let lastError: Error | undefined;
 
-    if (truncated) {
-      throw new UnprocessableEntityException({
-        message: 'The synthesis answer was cut off — it hit the length limit',
-        code: 'OUTPUT_TRUNCATED',
-      });
+    for (let attempt = 0; attempt <= 1; attempt++) {
+      try {
+        const { rawText, usage, truncated } = await provider.complete(fullPrompt, {
+          model, maxTokens: NON_STREAMING_MAX_TOKENS, webSearch: false,
+        });
+
+        if (truncated) {
+          throw new UnprocessableEntityException({
+            message: 'The synthesis answer was cut off — it hit the length limit',
+            code: 'OUTPUT_TRUNCATED',
+          });
+        }
+
+        const result = this.parseJson(rawText);
+        result.usage = usage;
+        return result;
+      } catch (err) {
+        // The truncation error is deterministic — propagate it, don't retry.
+        if (err instanceof HttpException) throw err;
+        lastError = err as Error;
+        this.logger.warn(`Mix LLM attempt ${attempt + 1} failed: ${lastError.message}`);
+      }
     }
 
-    const result = this.parseJson(rawText);
-    result.usage = usage;
-    return result;
+    throw new InternalServerErrorException(friendlyLlmError(lastError));
   }
 
   // Used by MockAgentService — a bare completion call reusing the same provider
