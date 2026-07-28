@@ -2,7 +2,7 @@ import { HttpException, Injectable, InternalServerErrorException, Logger, Unproc
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
 import { LlmResponse, LlmSection, LlmUsage, CitationSource, OutlineNode, DocumentOutline } from './llm.types';
-import { ROOT_MODEL, BRANCH_DEFAULT_MODEL, SHARE_HOOK_MODEL, providerNameFor, ProviderName, supportsWebSearch, outputBudget, NON_STREAMING_MAX_TOKENS } from './models';
+import { ROOT_MODEL, BRANCH_DEFAULT_MODEL, SHARE_HOOK_MODEL, providerNameFor, ProviderName, supportsWebSearch, outputBudget, NON_STREAMING_MAX_TOKENS, isClaude5 } from './models';
 import { LlmProvider } from './providers/provider.types';
 import { AnthropicProvider } from './providers/anthropic.provider';
 import { GeminiProvider } from './providers/gemini.provider';
@@ -266,6 +266,10 @@ Each section "body" should be 80-180 words. You MAY use GitHub-flavored markdown
         max_tokens: 2048,
         messages: [{ role: 'user', content: prompt }],
       };
+      if (isClaude5(ROOT_MODEL)) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (streamParams as any).thinking = { type: 'disabled' };
+      }
       if (webSearch) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (streamParams as any).tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }];
@@ -626,8 +630,11 @@ Rules:
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const params: any = {
-      model: 'claude-sonnet-4-6',
+      model: 'claude-sonnet-5',
       max_tokens: 512,
+      // Claude 5 family thinks by default when `thinking` is omitted — see
+      // anthropic.provider.ts for the shared rationale.
+      thinking: { type: 'disabled' },
       messages: [{ role: 'user', content: prompt }],
       tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }],
     };
