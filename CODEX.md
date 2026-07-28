@@ -51,7 +51,7 @@ Important backend files:
 - `apps/api/src/sessions/sessions.controller.ts`: includes `POST /sessions/stream`, an SSE endpoint not mentioned in older docs.
 - `apps/api/src/sessions/sessions.service.ts`: creates root node, persists session metadata, lists/loads sessions.
 - `apps/api/src/nodes/nodes.service.ts`: loads full session, builds ancestor trail, calls LLM for `DEEPER`/`ASK`.
-- `apps/api/src/llm/llm.service.ts`: uses model `claude-sonnet-4-6`; prompts for JSON-only structured sections.
+- `apps/api/src/llm/llm.service.ts`: uses model `claude-sonnet-5`; prompts for JSON-only structured sections.
 
 Data model in DynamoDB:
 

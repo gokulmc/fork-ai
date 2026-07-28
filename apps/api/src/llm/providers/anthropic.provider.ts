@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { LlmProvider, CompleteOptions, CompleteResult } from './provider.types';
 import { extractAnthropicSources, processCitations } from '../citations';
+import { isClaude5 } from '../models';
 
 // Wraps the Anthropic SDK behind the provider interface. This is a lift of the
 // former inline body of LlmService.callJson — behaviour is unchanged.
@@ -32,6 +33,8 @@ export class AnthropicProvider implements LlmProvider {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const params: any = { model, max_tokens: maxTokens, messages };
       if (tools) params.tools = tools;
+      // Same reasoning-off policy as the DeepSeek/GLM providers — see isClaude5.
+      if (isClaude5(model)) params.thinking = { type: 'disabled' };
 
       const message = await this.client.messages.create(params);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
