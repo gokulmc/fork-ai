@@ -683,7 +683,7 @@ describe('NodesService', () => {
       });
       const result = await service.createMixNode(SUB, SESSION_ID, { ...mixDto, plan: true, model: 'haiku' });
       expect(result.model).toBe(PLAN_MODEL_ID);
-      expect(result.model).toBe('claude-opus-4-8');
+      expect(result.model).toBe('claude-opus-5');
     });
 
     it('plan:false (MIX) resolves the model from dto.model via resolveBranchModel', async () => {

@@ -196,14 +196,14 @@ describe('CloudAgentRunner', () => {
   it('passes billing identity (sub/sessionId/nodeId) to provider.create and model/maxBudgetUsd in the /run body', async () => {
     fetchMock.mockResolvedValue(new Response(sse([RESULT_FRAME]), { status: 200 }));
 
-    await drain(runner.run(mkCtx({ sub: 'user-1', sessionId: 'sess-1', runId: 'node-1', model: 'claude-sonnet-4-6', maxBudgetUsd: 0.5 })));
+    await drain(runner.run(mkCtx({ sub: 'user-1', sessionId: 'sess-1', runId: 'node-1', model: 'claude-sonnet-5', maxBudgetUsd: 0.5 })));
 
     expect(provider.create).toHaveBeenCalledWith(
       expect.objectContaining({ sub: 'user-1', sessionId: 'sess-1', nodeId: 'node-1' }),
     );
     const [, init] = fetchMock.mock.calls[0] as [string, { body: string }];
     const body = JSON.parse(init.body) as Record<string, unknown>;
-    expect(body.model).toBe('claude-sonnet-4-6');
+    expect(body.model).toBe('claude-sonnet-5');
     expect(body.maxBudgetUsd).toBe(0.5);
   });
 
@@ -299,7 +299,7 @@ describe('CloudAgentRunner', () => {
     fetchMock.mockResolvedValue(
       new Response(
         sse([
-          { type: 'claude', line: { type: 'system', subtype: 'init', model: 'claude-sonnet-4-6' } },
+          { type: 'claude', line: { type: 'system', subtype: 'init', model: 'claude-sonnet-5' } },
           // No 'result'-type claude line with real usage — a budget stop's
           // result line reports zeroed usage, so extractResult contributes 0.
           { ...RESULT_FRAME, budgetExceeded: true, claudeCostUsd: 0.0258 },
@@ -321,7 +321,7 @@ describe('CloudAgentRunner', () => {
     fetchMock.mockResolvedValue(
       new Response(
         sse([
-          { type: 'claude', line: { type: 'system', subtype: 'init', model: 'claude-sonnet-4-6' } },
+          { type: 'claude', line: { type: 'system', subtype: 'init', model: 'claude-sonnet-5' } },
           { type: 'claude', line: { type: 'result', result: 'Done', usage: { input_tokens: 100, output_tokens: 50 } } },
           { ...RESULT_FRAME, claudeCostUsd: 0.0645 },
         ]),

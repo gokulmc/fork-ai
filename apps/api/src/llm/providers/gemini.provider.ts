@@ -29,9 +29,13 @@ export class GeminiProvider implements LlmProvider {
       // Generous headroom: Gemini 2.5 may spend output tokens on "thinking", and
       // we only pay for tokens actually produced, so an unused ceiling is free.
       maxOutputTokens: Math.max(maxTokens, 4096),
-      // We don't want reasoning for structured JSON extraction. Flash/Flash-Lite
-      // accept thinkingBudget 0 (off); 2.5 Pro cannot fully disable it (min 128).
-      thinkingConfig: { thinkingBudget: model.includes('2.5-pro') ? 128 : 0 },
+      // We don't want reasoning for structured JSON extraction. Gemini 3.x
+      // replaces thinkingBudget with thinkingLevel and rejects a budget — LOW is
+      // the floor there (cannot fully disable). On 2.5, Flash/Flash-Lite accept
+      // thinkingBudget 0 (off); 2.5 Pro cannot fully disable it (min 128).
+      thinkingConfig: model.startsWith('gemini-3')
+        ? { thinkingLevel: 'LOW' }
+        : { thinkingBudget: model.includes('2.5-pro') ? 128 : 0 },
     };
     if (webSearch) {
       // Grounding and JSON-output mode are mutually exclusive on Gemini 2.5 — do

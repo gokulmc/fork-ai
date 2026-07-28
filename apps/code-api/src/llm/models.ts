@@ -17,9 +17,9 @@ export type ProviderName = 'anthropic' | 'gemini' | 'deepseek' | 'glm';
 // instead of going through resolveBranchModel's alias-or-default logic.
 export const ALIAS_TO_ID: Record<ModelAlias, string> = {
   haiku: 'claude-haiku-4-5-20251001',
-  sonnet: 'claude-sonnet-4-6',
-  opus: 'claude-opus-4-8',
-  'gemini-pro': 'gemini-2.5-pro',
+  sonnet: 'claude-sonnet-5',
+  opus: 'claude-opus-5',
+  'gemini-pro': 'gemini-3.1-pro-preview',
   'gemini-flash': 'gemini-2.5-flash',
   'gemini-flash-lite': 'gemini-2.5-flash-lite',
   'deepseek-pro': 'deepseek-v4-pro',
@@ -38,13 +38,21 @@ export const ROOT_MODEL = ALIAS_TO_ID.sonnet;
 // Default branch model when the client sends nothing / something invalid (cheapest Claude tier).
 export const BRANCH_DEFAULT_MODEL = ALIAS_TO_ID.haiku;
 
+// The Claude 5 family runs adaptive thinking by default when the `thinking`
+// param is omitted — thinking tokens count against max_tokens, which would eat
+// this app's tight JSON output budgets. Callers use this to send an explicit
+// `thinking: { type: 'disabled' }` (pre-5 Claude models keep omitting the param).
+export function isClaude5(modelId: string): boolean {
+  return modelId === 'claude-sonnet-5' || modelId === 'claude-opus-5';
+}
+
 // Cloud CODE runs always use Sonnet (product decision: opus plans, sonnet
 // implements) — resolved once here so the sandbox's `claude --model` flag
 // and the hold/usage-event bookkeeping always agree. Previously the API
 // billed against dto.model while the sandbox ran whatever claude defaulted
 // to, so the two silently disagreed (see nodes.service.ts). Passed to the
 // CLI both as ctx.model and verified directly against `claude --model
-// claude-sonnet-4-6` — the full id resolves the same as the 'sonnet' alias.
+// claude-sonnet-5` — the full id resolves the same as the 'sonnet' alias.
 export const CLOUD_CODE_MODEL_ID = ALIAS_TO_ID.sonnet;
 
 // PLAN nodes always synthesize with Opus — the reasoning-heavy half of the
@@ -72,13 +80,13 @@ export function outputBudget(authed: boolean, verbose: boolean): number {
 }
 
 // List prices, USD per 1M tokens. Gemini rates are the ≤200k-prompt tier; branch
-// prompts are <5k tokens so always the low tier. (Gemini 2.5 Pro has a >200k tier
-// of 2.50/15.00 that is intentionally omitted because it is unreachable here.)
+// prompts are <5k tokens so always the low tier. (Gemini 3.1 Pro has a >200k tier
+// of 4/18 that is intentionally omitted because it is unreachable here.)
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   'claude-haiku-4-5-20251001': { input: 1, output: 5 },
-  'claude-sonnet-4-6': { input: 3, output: 15 },
-  'claude-opus-4-8': { input: 15, output: 75 },
-  'gemini-2.5-pro': { input: 1.25, output: 10 },
+  'claude-sonnet-5': { input: 3, output: 15 },
+  'claude-opus-5': { input: 15, output: 75 },
+  'gemini-3.1-pro-preview': { input: 2, output: 12 },
   'gemini-2.5-flash': { input: 0.30, output: 2.50 },
   'gemini-2.5-flash-lite': { input: 0.10, output: 0.40 },
   // DeepSeek V4, standard cache-miss rates (conservative; re-verify after the v4-pro promo window).
