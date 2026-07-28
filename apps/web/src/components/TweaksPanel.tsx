@@ -229,7 +229,7 @@ const MODEL_OPTIONS: { value: Tweaks['branchModel']; label: string; cost: string
   { value: 'opus', label: 'Claude Opus', cost: '40×' },
   { value: 'gemini-flash-lite', label: 'Gemini 2.5 Flash-Lite', cost: '0.04×' },
   { value: 'gemini-flash', label: 'Gemini 2.5 Flash', cost: '0.2×' },
-  { value: 'gemini-pro', label: 'Gemini 2.5 Pro', cost: '1×' },
+  { value: 'gemini-pro', label: 'Gemini 3.1 Pro', cost: '1.5×' },
   { value: 'deepseek-flash', label: 'DeepSeek V4 Flash', cost: '0.03×', note: '2x peak' },
   { value: 'deepseek-pro', label: 'DeepSeek V4 Pro', cost: '0.3×', note: '2x peak' },
   { value: 'glm-air', label: 'GLM 4.5 Air', cost: '0.07×' },

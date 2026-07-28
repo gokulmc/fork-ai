@@ -24,7 +24,7 @@ A branching research workspace. Ask a question, get a structured AI-generated an
 | Backend | NestJS, Passport JWT |
 | Database | DynamoDB (single-table) |
 | Auth | AWS Cognito (OIDC / RS256 JWT) |
-| AI | Anthropic Claude (`claude-sonnet-4-6`) |
+| AI | Anthropic Claude (`claude-sonnet-5`) |
 | Monorepo | Nx + npm workspaces |
 
 ---

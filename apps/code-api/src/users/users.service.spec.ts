@@ -36,7 +36,7 @@ const mockCfg = { get: jest.fn((key: string) => CFG[key]) };
 const SUB = 'user-sub-123';
 const SESSION_ID = '01HZSESS';
 const NODE_ID = '01HZNODE';
-const MODEL = 'claude-sonnet-4-6';
+const MODEL = 'claude-sonnet-5';
 
 describe('UsersService — cloud-run billing (ADR-0004)', () => {
   let service: UsersService;

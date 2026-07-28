@@ -4,12 +4,12 @@ describe('models', () => {
   describe('resolveBranchModel', () => {
     it('maps Claude aliases to concrete ids', () => {
       expect(resolveBranchModel('haiku')).toBe('claude-haiku-4-5-20251001');
-      expect(resolveBranchModel('sonnet')).toBe('claude-sonnet-4-6');
-      expect(resolveBranchModel('opus')).toBe('claude-opus-4-8');
+      expect(resolveBranchModel('sonnet')).toBe('claude-sonnet-5');
+      expect(resolveBranchModel('opus')).toBe('claude-opus-5');
     });
 
     it('maps Gemini aliases to concrete ids', () => {
-      expect(resolveBranchModel('gemini-pro')).toBe('gemini-2.5-pro');
+      expect(resolveBranchModel('gemini-pro')).toBe('gemini-3.1-pro-preview');
       expect(resolveBranchModel('gemini-flash')).toBe('gemini-2.5-flash');
       expect(resolveBranchModel('gemini-flash-lite')).toBe('gemini-2.5-flash-lite');
     });
@@ -30,7 +30,7 @@ describe('models', () => {
     });
 
     it('clamps the top tier to mid tier per provider for guests', () => {
-      expect(resolveBranchModel('opus', true)).toBe('claude-sonnet-4-6');
+      expect(resolveBranchModel('opus', true)).toBe('claude-sonnet-5');
       expect(resolveBranchModel('gemini-pro', true)).toBe('gemini-2.5-flash');
       expect(resolveBranchModel('deepseek-pro', true)).toBe('deepseek-v4-flash');
       expect(resolveBranchModel('glm', true)).toBe('glm-4.5-air');
@@ -44,11 +44,11 @@ describe('models', () => {
 
   describe('providerNameFor', () => {
     it('dispatches by model id prefix', () => {
-      expect(providerNameFor('gemini-2.5-pro')).toBe('gemini');
+      expect(providerNameFor('gemini-3.1-pro-preview')).toBe('gemini');
       expect(providerNameFor('deepseek-v4-flash')).toBe('deepseek');
       expect(providerNameFor('glm-5.2')).toBe('glm');
       expect(providerNameFor('glm-4.5-air')).toBe('glm');
-      expect(providerNameFor('claude-opus-4-8')).toBe('anthropic');
+      expect(providerNameFor('claude-opus-5')).toBe('anthropic');
     });
   });
 
@@ -56,7 +56,7 @@ describe('models', () => {
     const offPeak = new Date('2026-07-15T12:00:00Z'); // noon UTC — outside both DeepSeek peak windows
 
     it('returns per-model rates across providers', () => {
-      expect(priceFor('claude-opus-4-8', offPeak)).toEqual({ input: 15, output: 75 });
+      expect(priceFor('claude-opus-5', offPeak)).toEqual({ input: 15, output: 75 });
       expect(priceFor('gemini-2.5-flash-lite', offPeak)).toEqual({ input: 0.10, output: 0.40 });
       expect(priceFor('deepseek-v4-flash', offPeak)).toEqual({ input: 0.14, output: 0.28 });
       expect(priceFor('glm-5.2', offPeak)).toEqual({ input: 1.4, output: 4.4 });
@@ -83,14 +83,14 @@ describe('models', () => {
 
     it('does not apply the DeepSeek peak multiplier to other providers', () => {
       expect(priceFor('glm-5.2', new Date('2026-07-15T08:00:00Z'))).toEqual({ input: 1.4, output: 4.4 });
-      expect(priceFor('claude-opus-4-8', new Date('2026-07-15T02:00:00Z'))).toEqual({ input: 15, output: 75 });
+      expect(priceFor('claude-opus-5', new Date('2026-07-15T02:00:00Z'))).toEqual({ input: 15, output: 75 });
     });
   });
 
   describe('supportsWebSearch', () => {
     it('is false for DeepSeek, true for Claude/Gemini/GLM', () => {
       expect(supportsWebSearch('deepseek-v4-pro')).toBe(false);
-      expect(supportsWebSearch('claude-sonnet-4-6')).toBe(true);
+      expect(supportsWebSearch('claude-sonnet-5')).toBe(true);
       expect(supportsWebSearch('gemini-2.5-flash')).toBe(true);
       expect(supportsWebSearch('glm-5.2')).toBe(true);
     });

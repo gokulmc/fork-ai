@@ -6,9 +6,9 @@ export function uid(): string {
 // Friendly label for a concrete model id stored on a node.
 const MODEL_NAMES: Record<string, string> = {
   'claude-haiku-4-5-20251001': 'Claude Haiku',
-  'claude-sonnet-4-6': 'Claude Sonnet',
-  'claude-opus-4-8': 'Claude Opus',
-  'gemini-2.5-pro': 'Gemini 2.5 Pro',
+  'claude-sonnet-5': 'Claude Sonnet',
+  'claude-opus-5': 'Claude Opus',
+  'gemini-3.1-pro-preview': 'Gemini 3.1 Pro',
   'gemini-2.5-flash': 'Gemini 2.5 Flash',
   'gemini-2.5-flash-lite': 'Gemini 2.5 Flash-Lite',
   'deepseek-v4-pro': 'DeepSeek V4 Pro',

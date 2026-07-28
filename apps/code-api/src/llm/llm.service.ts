@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
 import type { DiffSummary } from '@/dynamo/dynamo.interfaces';
 import { LlmResponse, LlmSection, LlmUsage, LlmConciseResponse, CitationSource, OutlineNode, DocumentOutline } from './llm.types';
-import { ROOT_MODEL, BRANCH_DEFAULT_MODEL, SHARE_HOOK_MODEL, providerNameFor, ProviderName, supportsWebSearch, outputBudget, NON_STREAMING_MAX_TOKENS } from './models';
+import { ROOT_MODEL, BRANCH_DEFAULT_MODEL, SHARE_HOOK_MODEL, providerNameFor, ProviderName, supportsWebSearch, outputBudget, NON_STREAMING_MAX_TOKENS, isClaude5 } from './models';
 import { LlmProvider } from './providers/provider.types';
 import { AnthropicProvider } from './providers/anthropic.provider';
 import { GeminiProvider } from './providers/gemini.provider';
@@ -272,9 +272,15 @@ Each section "body" should be 80-180 words. You MAY use GitHub-flavored markdown
       // --- Anthropic streaming path (default when ROOT_MODEL is a Claude id) ---
       const streamParams: Parameters<typeof this.client.messages.stream>[0] = {
         model: ROOT_MODEL,
-        max_tokens: 2048,
+        // Sonnet 5's tokenizer is ~30% denser than 4.6's — 3072 keeps the same
+        // effective root-answer headroom the old 2048 gave.
+        max_tokens: 3072,
         messages: [{ role: 'user', content: prompt }],
       };
+      if (isClaude5(ROOT_MODEL)) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (streamParams as any).thinking = { type: 'disabled' };
+      }
       if (webSearch) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (streamParams as any).tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }];
@@ -761,8 +767,9 @@ Rules:
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const params: any = {
-      model: 'claude-sonnet-4-6',
+      model: 'claude-sonnet-5',
       max_tokens: 512,
+      thinking: { type: 'disabled' },
       messages: [{ role: 'user', content: prompt }],
       tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }],
     };

@@ -20,9 +20,9 @@ export const ROOT_MODEL = 'gemini-2.5-flash';
 
 const ALIAS_TO_ID: Record<ModelAlias, string> = {
   haiku: 'claude-haiku-4-5-20251001',
-  sonnet: 'claude-sonnet-4-6',
-  opus: 'claude-opus-4-8',
-  'gemini-pro': 'gemini-2.5-pro',
+  sonnet: 'claude-sonnet-5',
+  opus: 'claude-opus-5',
+  'gemini-pro': 'gemini-3.1-pro-preview',
   'gemini-flash': 'gemini-2.5-flash',
   'gemini-flash-lite': 'gemini-2.5-flash-lite',
   'deepseek-pro': 'deepseek-v4-pro',
@@ -33,6 +33,14 @@ const ALIAS_TO_ID: Record<ModelAlias, string> = {
 
 // Default branch model when the client sends nothing / something invalid (cheapest Claude tier).
 export const BRANCH_DEFAULT_MODEL = ALIAS_TO_ID.haiku;
+
+// The Claude 5 family runs adaptive thinking by default when the `thinking`
+// param is omitted — thinking tokens count against max_tokens, which would eat
+// this app's tight JSON output budgets. Callers use this to send an explicit
+// `thinking: { type: 'disabled' }` (pre-5 Claude models keep omitting the param).
+export function isClaude5(modelId: string): boolean {
+  return modelId === 'claude-sonnet-5' || modelId === 'claude-opus-5';
+}
 
 // Cheap, fast model for the share OG hook generation (not user-selectable).
 export const SHARE_HOOK_MODEL = ALIAS_TO_ID['gemini-flash-lite'];
@@ -53,13 +61,13 @@ export function outputBudget(authed: boolean, verbose: boolean): number {
 }
 
 // List prices, USD per 1M tokens. Gemini rates are the ≤200k-prompt tier; branch
-// prompts are <5k tokens so always the low tier. (Gemini 2.5 Pro has a >200k tier
-// of 2.50/15.00 that is intentionally omitted because it is unreachable here.)
+// prompts are <5k tokens so always the low tier. (Gemini 3.1 Pro has a >200k tier
+// of 4/18 that is intentionally omitted because it is unreachable here.)
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   'claude-haiku-4-5-20251001': { input: 1, output: 5 },
-  'claude-sonnet-4-6': { input: 3, output: 15 },
-  'claude-opus-4-8': { input: 15, output: 75 },
-  'gemini-2.5-pro': { input: 1.25, output: 10 },
+  'claude-sonnet-5': { input: 3, output: 15 },
+  'claude-opus-5': { input: 15, output: 75 },
+  'gemini-3.1-pro-preview': { input: 2, output: 12 },
   'gemini-2.5-flash': { input: 0.30, output: 2.50 },
   'gemini-2.5-flash-lite': { input: 0.10, output: 0.40 },
   // DeepSeek V4, standard cache-miss rates (conservative; re-verify after the v4-pro promo window).

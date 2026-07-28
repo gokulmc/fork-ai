@@ -58,3 +58,6 @@ This is deliberately scoped to `kind: CODE` only — `learn`, `plan`, and `branc
 - A forced-tiny-budget run: stopped by `--max-budget-usd` with `budgetExceeded: true` reported, and charged the real partial `total_cost_usd` for the work actually done before the cutoff (not $0) — run on Sonnet, confirming the model-correctness fix held under the same test.
 
 **Not yet built — frontend follow-ups only, backend is complete.** The backend plumbs `budgetExceeded` onto the node and onto both the `MACHINE` and `CODE` usage events, and running/final cost is fully computed and persisted — but nothing in the UI surfaces either yet (no running-cost readout during a stream, no "budget exceeded" indicator on a stopped run). Pure presentation work against data that already exists server-side.
+
+
+> **Amendment (2026-07-28):** `CLOUD_CODE_MODEL_ID` and `PLAN_MODEL_ID` now resolve to `claude-sonnet-5` and `claude-opus-5` (the Claude 5 successors of Sonnet 4.6 / Opus 4.8). The "opus plans, sonnet implements" decision itself is unchanged.
