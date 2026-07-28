@@ -13,7 +13,7 @@
 
 import { test, expect } from '@playwright/test';
 import { mockAuth } from '../fixtures/auth';
-import { primeStorage, baseApi, gotoWorkspace } from '../fixtures/app';
+import { primeStorage, baseApi, gotoWorkspace, hideDevPortal } from '../fixtures/app';
 import { fullSession, SID } from '../fixtures/data';
 import type { CachedSession } from '../../apps/web/src/lib/sessionCache';
 
@@ -141,13 +141,16 @@ test.describe('Landing performance — authenticated user', () => {
   });
 
   test('LOGOUT — time from click to login screen visible', async ({ page }) => {
-    // Boot into workspace first
-    await gotoWorkspace(page, baseApi());
+    // Boot into workspace first (dev portal hidden — it overlays the Account button)
+    await hideDevPortal(page);
+    const auth = await gotoWorkspace(page, baseApi());
 
     const t0 = Date.now();
     // Open account menu and click logout
     await page.locator('.account-btn, [aria-label="Account"], .acct-btn').first().click();
     await page.locator('button', { hasText: /log.?out|sign.?out/i }).first().click();
+    // The click must actually reach signOut() before we wait on the login screen
+    await expect.poll(() => auth.signOutCalls.length).toBeGreaterThanOrEqual(1);
     // Wait for login page to appear
     await page.getByPlaceholder('enter email to login or signup').waitFor({ state: 'visible' });
     const elapsed = Date.now() - t0;

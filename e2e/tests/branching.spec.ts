@@ -22,7 +22,7 @@ test.describe('Branching — Go deeper & Ask AI', () => {
       parentNodeId: ROOT_ID,
       fromSection: 's1',
       query: 'Light reactions',
-      model: 'haiku', // default branch model
+      model: 'gemini-flash-lite', // default branch model (TWEAK_DEFAULTS in App.tsx)
     });
   });
 

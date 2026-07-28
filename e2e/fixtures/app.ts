@@ -26,6 +26,23 @@ export async function primeStorage(
   }, { visited, storage });
 }
 
+/**
+ * Hide the Next.js dev-tools portal (<nextjs-portal>). Its floating indicator
+ * sits bottom-left in `next dev` and intercepts pointer events aimed at
+ * anything under it — notably the Account button. Call BEFORE the first goto.
+ */
+export function hideDevPortal(page: Page) {
+  return page.addInitScript(() => {
+    const apply = () => {
+      const s = document.createElement('style');
+      s.textContent = 'nextjs-portal{display:none!important}';
+      document.head?.appendChild(s);
+    };
+    if (document.head) apply();
+    else document.addEventListener('DOMContentLoaded', apply);
+  });
+}
+
 /** Default mocks every authed test needs (overridable via .on() afterwards — later registrations win). */
 export function baseApi(): MockApi {
   return new MockApi()

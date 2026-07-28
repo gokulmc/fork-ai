@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { baseApi, gotoWorkspace } from '../fixtures/app';
+import { baseApi, gotoWorkspace, hideDevPortal } from '../fixtures/app';
 import { userProfile } from '../fixtures/data';
 
 /**
@@ -57,19 +57,6 @@ function spoofTimezone(page: Page, timeZone: string) {
       return { ...orig.call(this), timeZone: tz };
     };
   }, timeZone);
-}
-
-/** Shared boilerplate: hide Next.js dev portal so the gear button is clickable. */
-function hideDevPortal(page: Page) {
-  return page.addInitScript(() => {
-    const apply = () => {
-      const s = document.createElement('style');
-      s.textContent = 'nextjs-portal{display:none!important}';
-      document.head?.appendChild(s);
-    };
-    if (document.head) apply();
-    else document.addEventListener('DOMContentLoaded', apply);
-  });
 }
 
 const INR_ORDER = {

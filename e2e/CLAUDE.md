@@ -49,6 +49,8 @@ API mock matching is **host-agnostic** (regex on the first path segment: `sessio
 11. **Mobile runs WebKit and needs `npx playwright install webkit`.** The `mobile` project uses `devices['iPhone 13']` (WebKit engine, 390×664, `hasTouch`, `isMobile`). `clipboard-*` permissions are Chromium-only and are set per-project on `chromium` (WebKit throws `Unknown permission`). Use `.tap()` not `.click()` in mobile specs. The two projects split by filename: `mobile.spec.ts` ⇒ mobile project; everything else ⇒ chromium (`testIgnore`/`testMatch` in config).
 12. **`primeStorage` also suppresses the PWA install sheet** (`sessionStorage['fork.ai.installDismissed']`). On iOS/WebKit the "Add to home screen" sheet (`InstallPrompt`) overlays the workspace and intercepts taps. Any test that bypasses `primeStorage` on mobile must set this itself.
 13. **The custom login flow is animation-heavy (~1.5s arrived screen + signIn round-trip).** Tests wait up to 20s for `arrived` → Landing. Under high parallelism on one dev server this occasionally exceeds timeouts, so local `retries` is 1 (CI 2). Don't shorten the arrived-screen waits.
+14. **Appearance tweaks (Theme/Density/Font/Layout) are behind a default-collapsed accordion** that UNMOUNTS its children — click `getByRole('button', { name: 'Appearance' })` after opening the panel, or the radios don't exist in the DOM at all. The Model select and Answer style stay in the always-visible Content section.
+15. **Next's dev-tools portal (`<nextjs-portal>`) floats bottom-left in `next dev` and intercepts clicks under it** — notably the Account button. Any test clicking bottom-left UI must call `hideDevPortal(page)` (fixtures/app.ts) BEFORE the first goto. billing/perf-landing already do.
 
 ## Selector conventions
 

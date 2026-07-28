@@ -18,11 +18,10 @@ for (const { provider, alias, servingId, pillLabel } of PROVIDERS) {
     const api = baseApi().on(`POST /sessions/${SID}/nodes`, deeperNode({ model: servingId }));
     await gotoWorkspace(page, api);
 
-    if (alias !== 'haiku') { // haiku is the default — no tweak needed
-      await page.locator('.twk-trigger').click();
-      await page.locator(`select.twk-field:has(option[value="${alias}"])`).selectOption(alias);
-      await page.locator('.twk-x').click();
-    }
+    // Always select explicitly — the default (gemini-flash-lite) matches none of these.
+    await page.locator('.twk-trigger').click();
+    await page.locator(`select.twk-field:has(option[value="${alias}"])`).selectOption(alias);
+    await page.locator('.twk-x').click();
 
     await page.locator('.deeper-btn').first().click();
     await expect(page.locator('.ws-title')).toHaveText('Thylakoid Electron Transport');

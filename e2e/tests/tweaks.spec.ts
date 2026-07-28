@@ -43,6 +43,8 @@ test.describe('Tweaks panel', () => {
     await gotoWorkspace(page, api);
 
     await page.locator('.twk-trigger').click();
+    // Appearance tweaks live behind a default-collapsed accordion (children unmounted)
+    await page.getByRole('button', { name: 'Appearance' }).click();
     // Theme is a segmented radio — selection is derived from pointer X on the track
     await page.getByRole('radio', { name: 'Dark' }).click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
