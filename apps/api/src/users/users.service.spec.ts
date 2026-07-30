@@ -7,6 +7,8 @@ import { EmailService } from '@/email/email.service';
 
 const mockDb = {
   listSessionMeta: jest.fn(),
+  getUserMeta: jest.fn(),
+  deleteReferral: jest.fn(),
   queryNodes: jest.fn(),
   queryAnnotations: jest.fn(),
   queryHighlights: jest.fn(),
@@ -28,6 +30,7 @@ describe('UsersService.deleteAccount', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     mockDb.listSessionMeta.mockResolvedValue([{ sessionId: 's1' }, { sessionId: 's2' }]);
+    mockDb.getUserMeta.mockResolvedValue({ referralSlug: 'gokul-abc' });
     mockDb.queryNodes.mockImplementation(async (sessionId: string) => [{ nodeId: `${sessionId}-node` }]);
     mockDb.queryAnnotations.mockImplementation(async (sessionId: string) => [{ annId: `${sessionId}-ann` }]);
     mockDb.queryHighlights.mockImplementation(async (sessionId: string) => [{ hlId: `${sessionId}-hl` }]);
@@ -59,6 +62,7 @@ describe('UsersService.deleteAccount', () => {
     expect(mockDb.batchDeleteAnnotations).toHaveBeenCalledWith('s1', ['s1-ann']);
     expect(mockDb.batchDeleteHighlights).toHaveBeenCalledWith('s1', ['s1-hl']);
     expect(mockDb.deleteUserPartition).toHaveBeenCalledWith(SUB);
+    expect(mockDb.deleteReferral).toHaveBeenCalledWith('gokul-abc');
     expect(sendSpy).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ dataDeleted: true, cognitoDeleted: true });
   });

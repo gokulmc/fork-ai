@@ -484,6 +484,10 @@ export class DynamoRepository {
     await this.referralModel.create(this.clean(data), { overwrite: false });
   }
 
+  async deleteReferral(slug: string): Promise<void> {
+    await this.referralModel.delete({ PK: `REFERRAL#${slug}`, SK: 'METADATA' });
+  }
+
   // ── Credit events ────────────────────────────────────────────────────────────
 
   async putCreditEvent(data: CreditEventItem): Promise<void> {

@@ -81,9 +81,13 @@ export class UsersService {
   // must never leave the account's data behind, so it's reported separately
   // rather than aborting the request.
   async deleteAccount(sub: string, username?: string): Promise<{ dataDeleted: boolean; cognitoDeleted: boolean }> {
+    // The referral row lives at REFERRAL#{slug}, outside USER#{sub} — read the
+    // slug off user meta before the partition wipe destroys the pointer to it.
+    const meta = await this.db.getUserMeta(sub);
     const sessions = await this.db.listSessionMeta(sub);
     await Promise.all(sessions.map((s) => this.deleteSessionContent(s.sessionId)));
     await this.db.deleteUserPartition(sub);
+    if (meta?.referralSlug) await this.db.deleteReferral(meta.referralSlug);
 
     let cognitoDeleted = false;
     if (username) {
