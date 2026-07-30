@@ -1,4 +1,4 @@
-import { Controller, Get, Patch, Post, Body, Req } from '@nestjs/common';
+import { Controller, Get, Patch, Post, Delete, Body, Req } from '@nestjs/common';
 import { ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
 import { IsBoolean, IsOptional, IsString } from 'class-validator';
 import { Request } from 'express';
@@ -64,5 +64,11 @@ export class UsersController {
   async recordReferrer(@CurrentUser() user: CognitoUser, @Body() body: ReferrerDto) {
     await this.usersService.recordReferral(user.sub, body.slug);
     return { ok: true };
+  }
+
+  @Delete('me')
+  @ApiOperation({ summary: 'Permanently delete the current account, its sessions, and credit' })
+  async deleteMe(@CurrentUser() user: CognitoUser) {
+    return this.usersService.deleteAccount(user.sub, user['cognito:username']);
   }
 }

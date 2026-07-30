@@ -1,6 +1,7 @@
 import { Injectable, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ulid } from 'ulid';
+import { CognitoIdentityProviderClient, AdminDeleteUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
 import type { UserMetaItem, UsageEventItem, CreditEventItem } from '@/dynamo/dynamo.interfaces';
 import { CognitoUser } from '@/auth/jwt.strategy';
@@ -10,12 +11,15 @@ import { EmailService } from '@/email/email.service';
 @Injectable()
 export class UsersService {
   private readonly logger = new Logger(UsersService.name);
+  private readonly cognito: CognitoIdentityProviderClient;
 
   constructor(
     private readonly db: DynamoRepository,
     private readonly cfg: ConfigService,
     private readonly email: EmailService,
-  ) {}
+  ) {
+    this.cognito = new CognitoIdentityProviderClient({ region: this.cfg.get<string>('aws.region') ?? 'ap-south-1' });
+  }
 
   async upsert(user: CognitoUser, ip?: string): Promise<UserMetaItem> {
     const existing = await this.db.getUserMeta(user.sub);
@@ -69,6 +73,48 @@ export class UsersService {
 
   async patchMe(sub: string, updates: { hasOnboarded?: boolean; persona?: string }): Promise<void> {
     await this.db.updateUserMeta(sub, updates);
+  }
+
+  // Permanently deletes a user: every session's content, the whole USER#{sub}
+  // partition, then the Cognito identity itself. Data deletion runs FIRST and
+  // unconditionally — a missing/failed Cognito call (e.g. no IAM perms locally)
+  // must never leave the account's data behind, so it's reported separately
+  // rather than aborting the request.
+  async deleteAccount(sub: string, username?: string): Promise<{ dataDeleted: boolean; cognitoDeleted: boolean }> {
+    const sessions = await this.db.listSessionMeta(sub);
+    await Promise.all(sessions.map((s) => this.deleteSessionContent(s.sessionId)));
+    await this.db.deleteUserPartition(sub);
+
+    let cognitoDeleted = false;
+    if (username) {
+      const userPoolId = this.cfg.get<string>('cognito.userPoolId');
+      try {
+        await this.cognito.send(new AdminDeleteUserCommand({ UserPoolId: userPoolId, Username: username }));
+        cognitoDeleted = true;
+      } catch (err) {
+        this.logger.error(`Cognito user deletion FAILED for sub=${sub} username=${username}: ${(err as Error).message}`, (err as Error).stack);
+      }
+    } else {
+      this.logger.warn(`deleteAccount: no cognito:username on token for sub=${sub} — Cognito identity NOT deleted`);
+    }
+
+    return { dataDeleted: true, cognitoDeleted };
+  }
+
+  // Deletes a session's node/annotation/highlight rows (the SESSION#{id} partition).
+  // Mirrors SessionsService.delete but omits deleteSessionMeta — the SessionMetaItem
+  // row lives under USER#{sub} and is swept up by deleteUserPartition instead.
+  private async deleteSessionContent(sessionId: string): Promise<void> {
+    const [nodes, annotations, highlights] = await Promise.all([
+      this.db.queryNodes(sessionId),
+      this.db.queryAnnotations(sessionId),
+      this.db.queryHighlights(sessionId),
+    ]);
+    await Promise.all([
+      this.db.batchDeleteNodes(sessionId, nodes.map((n) => n.nodeId)),
+      this.db.batchDeleteAnnotations(sessionId, annotations.map((a) => a.annId)),
+      this.db.batchDeleteHighlights(sessionId, highlights.map((h) => h.hlId)),
+    ]);
   }
 
   // Persona is prepended to every LLM prompt for this user. Returns undefined

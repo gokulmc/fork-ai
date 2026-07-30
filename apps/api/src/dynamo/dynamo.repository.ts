@@ -438,6 +438,41 @@ export class DynamoRepository {
     );
   }
 
+  // Wipes every item under a user's USER#{sub} partition — user meta, session
+  // metas, devices, usage events, credit events, payments (Notion token lives
+  // as a field ON UserMetaItem, so it goes with it). Session CONTENT (nodes,
+  // annotations, highlights) lives under a separate SESSION#{id} partition and
+  // must be deleted per-session first (see UsersService.deleteAccount) — this
+  // only clears the USER# partition. Each entity is queried through the model
+  // that declares it (same reasoning as aggregatePlatformMetrics: saveUnknown:false
+  // strips foreign fields from any other model's view of the same row).
+  async deleteUserPartition(sub: string): Promise<void> {
+    const pk = this.userPk(sub);
+    const [userMeta, sessionMetas, devices, usageEvents, creditEvents, payments] = await Promise.all([
+      this.userMetaModel.query('PK').eq(pk).where('SK').eq('METADATA').exec(),
+      this.sessionMetaModel.query('PK').eq(pk).where('SK').beginsWith('SESSION#').all().exec(),
+      this.deviceModel.query('PK').eq(pk).where('SK').beginsWith('DEVICE#').exec(),
+      this.usageEventModel.query('PK').eq(pk).where('SK').beginsWith('USAGE#').all().exec(),
+      this.creditEventModel.query('PK').eq(pk).where('SK').beginsWith('CREDITEVT#').all().exec(),
+      this.paymentModel.query('PK').eq(pk).where('SK').beginsWith('PAYMENT#').all().exec(),
+    ]);
+
+    await Promise.all([
+      this.batchDeleteRows(this.userMetaModel, userMeta),
+      this.batchDeleteRows(this.sessionMetaModel, sessionMetas),
+      this.batchDeleteRows(this.deviceModel, devices),
+      this.batchDeleteRows(this.usageEventModel, usageEvents),
+      this.batchDeleteRows(this.creditEventModel, creditEvents),
+      this.batchDeleteRows(this.paymentModel, payments),
+    ]);
+  }
+
+  private async batchDeleteRows(model: any, rows: Array<{ PK: string; SK: string }>): Promise<void> {
+    if (!rows.length) return;
+    const chunks = chunk(rows, 25);
+    await Promise.all(chunks.map((c) => model.batchDelete(c.map((r) => ({ PK: r.PK, SK: r.SK })))));
+  }
+
   // ── Referrals ────────────────────────────────────────────────────────────────
 
   async getReferralBySlug(slug: string): Promise<ReferralItem | null> {
