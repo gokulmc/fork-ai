@@ -43,15 +43,43 @@ export interface CapacitorPushPlugin {
   ): PluginListenerHandle | Promise<PluginListenerHandle>;
 }
 
+// Shape of @capgo/native-purchases' StoreKit 2 result types, trimmed to the
+// fields this app actually reads (the plugin's full types carry many more
+// subscription-only fields that don't apply to our one-time credit purchases).
+export interface CapacitorIapProduct {
+  identifier: string;
+  price: number;
+  priceString: string;
+  title: string;
+}
+
+export interface CapacitorIapTransaction {
+  transactionId: string;
+  productIdentifier: string;
+  // The StoreKit 2 signed transaction JWS — present on iOS, sent to the
+  // backend for verification. Absent on Android (not used by this app; the
+  // shell is iOS-only for IAP, per apps/mobile).
+  jwsRepresentation?: string;
+}
+
+export interface CapacitorNativePurchasesPlugin {
+  getProducts(options: { productIdentifiers: string[] }): Promise<{ products: CapacitorIapProduct[] }>;
+  purchaseProduct(options: { productIdentifier: string; quantity?: number }): Promise<CapacitorIapTransaction>;
+}
+
 declare global {
   interface Window {
     Capacitor?: {
+      // Capacitor core API — 'ios' | 'android' | 'web'. Used to gate IAP UI to
+      // the iOS shell only (Android has no IAP wiring in apps/mobile yet).
+      getPlatform?: () => string;
       Plugins?: {
         App?: CapacitorAppPlugin;
         Filesystem?: CapacitorFilesystemPlugin;
         Share?: CapacitorSharePlugin;
         Haptics?: CapacitorHapticsPlugin;
         PushNotifications?: CapacitorPushPlugin;
+        NativePurchases?: CapacitorNativePurchasesPlugin;
       };
     };
   }
@@ -102,4 +130,23 @@ export function hapticSuccess(): void {
 }
 export function hapticTick(): void {
   window.Capacitor?.Plugins?.Haptics?.selectionChanged().catch(() => {});
+}
+
+// Apple requires IAP (not Razorpay) for credit purchases on iOS — gates the
+// recharge UI in AccountButton.tsx to the native purchase flow on this platform.
+export function isIosShell(): boolean {
+  return window.Capacitor?.getPlatform?.() === 'ios';
+}
+
+export async function iapGetProducts(productIds: string[]): Promise<CapacitorIapProduct[]> {
+  const plugin = window.Capacitor?.Plugins?.NativePurchases;
+  if (!plugin) return [];
+  const { products } = await plugin.getProducts({ productIdentifiers: productIds });
+  return products;
+}
+
+export async function iapPurchase(productId: string): Promise<CapacitorIapTransaction | null> {
+  const plugin = window.Capacitor?.Plugins?.NativePurchases;
+  if (!plugin) return null;
+  return plugin.purchaseProduct({ productIdentifier: productId });
 }

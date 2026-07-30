@@ -2,7 +2,8 @@
 
 import { signOut, useSession } from 'next-auth/react';
 import { useState, useEffect, useRef } from 'react';
-import { getMe, getUsageEvents, getCreditEvents, createRechargeOrder, verifyPayment, getReferralLink, updatePersona, type UsageEvent, type CreditEvent } from '@/lib/api';
+import { getMe, getUsageEvents, getCreditEvents, createRechargeOrder, verifyPayment, verifyIapPurchase, getReferralLink, updatePersona, deleteAccount, type UsageEvent, type CreditEvent } from '@/lib/api';
+import { isIosShell, iapGetProducts, iapPurchase, type CapacitorIapProduct } from '@/lib/native';
 
 const PW_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&_\-#])[A-Za-z\d@$!%*?&_\-#]{8,}$/;
 
@@ -54,6 +55,13 @@ const PACKAGES: { label: string; usd: number }[] = [
   { label: '$10', usd: 10 },
 ];
 
+// iOS: Apple requires IAP (not Razorpay) for credit purchases. Product ids must
+// match apps/mobile's App Store Connect config and the backend's IAP_PRODUCT_CREDIT_USD map.
+const IOS_IAP_TIERS: { productId: string; fallbackLabel: string }[] = [
+  { productId: 'credits_5', fallbackLabel: '$5 credit' },
+  { productId: 'credits_10', fallbackLabel: '$10 credit' },
+];
+
 function groupByDay(events: UsageEvent[]): { date: string; isoDate: string; totalCost: number }[] {
   const map = new Map<string, { isoDate: string; totalCost: number }>();
   for (const ev of events) {
@@ -97,6 +105,15 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
   const [rechargeError, setRechargeError] = useState<string | null>(null);
   const [rechargeSuccess, setRechargeSuccess] = useState<number | null>(null);
   const customInputRef = useRef<HTMLInputElement>(null);
+  // iOS IAP product info (price strings) — fetched lazily once the recharge panel opens.
+  // null = not fetched yet, [] = fetch failed or returned nothing (fall back to static labels).
+  const [iapProducts, setIapProducts] = useState<CapacitorIapProduct[] | null>(null);
+
+  // Delete-account state
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Balance shown in billing overlay — starts from prop, updates after recharge
   const [localBalance, setLocalBalance] = useState<number | null | undefined>(creditBalance);
@@ -193,6 +210,11 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
     setRechargeError(null);
     setRechargeSuccess(null);
     setCustomUsd('');
+    if (isIosShell() && iapProducts === null) {
+      iapGetProducts(IOS_IAP_TIERS.map(t => t.productId))
+        .then(setIapProducts)
+        .catch(() => setIapProducts([])); // fall back to static labels below
+    }
   }
 
   function closeRecharge() {
@@ -265,6 +287,38 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Something went wrong';
       if (msg !== 'cancelled') setRechargeError(msg);
+    } finally {
+      setRechargeLoading(false);
+    }
+  }
+
+  // iOS-only path: StoreKit 2 purchase, then backend verification. Mirrors
+  // startRecharge's success path (balance update + billing-history refresh).
+  async function startIapPurchase(productId: string) {
+    if (rechargeLoading) return;
+    setRechargeError(null);
+    setRechargeLoading(true);
+    try {
+      const transaction = await iapPurchase(productId);
+      if (!transaction?.jwsRepresentation) throw new Error('Purchase did not return a signed transaction');
+
+      const result = await verifyIapPurchase(idToken, transaction.jwsRepresentation);
+      const credited = result.credited;
+      setRechargeSuccess(credited);
+      const updated = (localBalance ?? 0) + credited;
+      setLocalBalance(updated);
+      onCreditUpdated?.(updated);
+      setUsageEvents(null);
+      setCreditEvents(null);
+      if (idToken) {
+        Promise.all([
+          getUsageEvents(idToken).catch(() => [] as UsageEvent[]),
+          getCreditEvents(idToken).catch(() => [] as CreditEvent[]),
+        ]).then(([usage, credits]) => { setUsageEvents(usage); setCreditEvents(credits); });
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Purchase failed';
+      if (!msg.includes('User cancelled')) setRechargeError(msg);
     } finally {
       setRechargeLoading(false);
     }
@@ -343,6 +397,25 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
     }
   }
 
+  function resetDeleteAccount() {
+    setDeleteOpen(false);
+    setDeleteConfirmText('');
+    setDeleteError(null);
+  }
+
+  async function handleDeleteAccount() {
+    if (deleteConfirmText !== 'DELETE' || deleteLoading) return;
+    setDeleteLoading(true);
+    setDeleteError(null);
+    try {
+      await deleteAccount(idToken);
+      await signOut();
+    } catch {
+      setDeleteError('Could not delete account — try again.');
+      setDeleteLoading(false);
+    }
+  }
+
   return (
     <>
       {/* Gear button */}
@@ -414,6 +487,9 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
             <button onClick={() => void signOut()} style={{ ...menuBtnStyle, color: '#c0392b' }}>
               Sign out
             </button>
+            <button onClick={() => { setOpen(false); resetDeleteAccount(); setDeleteOpen(true); }} style={{ ...menuBtnStyle, color: '#c0392b' }}>
+              Delete account
+            </button>
           </div>
         </div>
       )}
@@ -474,6 +550,70 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Delete account overlay */}
+      {deleteOpen && (
+        <div
+          onClick={e => { if (e.currentTarget === e.target && !deleteLoading) resetDeleteAccount(); }}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 70,
+            background: 'rgba(255,255,255,0.88)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <div style={{
+            background: '#ffffff', border: '1px solid rgba(10,10,10,0.15)',
+            borderRadius: 8, padding: '28px',
+            width: 'min(380px, 90vw)',
+            fontFamily: "ui-monospace,'JetBrains Mono','SF Mono',Menlo,monospace",
+            boxShadow: '0 8px 32px rgba(10,10,10,0.10)',
+          }}>
+            <div style={{ fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: '#c0392b', marginBottom: 14 }}>
+              Delete account
+            </div>
+            <div style={{ fontSize: 11, color: 'rgba(10,10,10,0.65)', lineHeight: 1.5, marginBottom: 16 }}>
+              Permanently deletes your account, all research sessions, and remaining credit. This cannot be undone.
+            </div>
+            <div style={{ fontSize: 10, color: 'rgba(10,10,10,0.5)', marginBottom: 8, letterSpacing: '0.04em' }}>
+              Type DELETE to confirm
+            </div>
+            <input
+              type="text"
+              value={deleteConfirmText}
+              onChange={e => { setDeleteError(null); setDeleteConfirmText(e.target.value); }}
+              onKeyDown={e => { if (e.key === 'Enter') void handleDeleteAccount(); }}
+              disabled={deleteLoading}
+              autoFocus
+              style={{
+                display: 'block', width: '100%', boxSizing: 'border-box',
+                border: '1px solid rgba(10,10,10,0.15)', borderRadius: 4,
+                padding: '8px 10px', marginBottom: 14,
+                fontFamily: 'inherit', fontSize: 11, color: '#0a0a0a',
+                background: 'transparent', outline: 'none', letterSpacing: '0.06em',
+              }}
+            />
+
+            {deleteError && (
+              <div style={{ fontSize: 10, color: '#c0392b', marginBottom: 12, letterSpacing: '0.04em' }}>{deleteError}</div>
+            )}
+
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
+              <button onClick={resetDeleteAccount} disabled={deleteLoading} style={cancelBtnStyle}>Cancel</button>
+              <button
+                onClick={() => void handleDeleteAccount()}
+                disabled={deleteConfirmText !== 'DELETE' || deleteLoading}
+                style={{
+                  ...submitBtnStyle,
+                  background: '#c0392b',
+                  opacity: deleteConfirmText !== 'DELETE' || deleteLoading ? 0.5 : 1,
+                }}
+              >
+                {deleteLoading ? '…' : 'Delete forever'}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -609,57 +749,85 @@ export function AccountButton({ creditBalance, onCreditUpdated }: AccountButtonP
                   </div>
                 ) : (
                   <>
-                    <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                      {PACKAGES.map(pkg => (
-                        <button
-                          key={pkg.usd}
-                          onClick={() => void startRecharge(pkg.usd)}
-                          disabled={rechargeLoading}
-                          style={{
-                            flex: 1, padding: '8px 0',
-                            background: '#0a0a0a', color: '#fff', border: 0,
-                            borderRadius: 4, cursor: 'pointer',
-                            fontFamily: 'inherit', fontSize: 11, letterSpacing: '0.06em',
-                            opacity: rechargeLoading ? 0.6 : 1,
-                          }}
-                        >
-                          {pkg.label}
-                        </button>
-                      ))}
-                    </div>
+                    {isIosShell() ? (
+                      // Apple requires IAP (not Razorpay) for credit purchases on iOS — no
+                      // custom amount, just the two fixed tiers as native purchase buttons.
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 4 }}>
+                        {IOS_IAP_TIERS.map(tier => {
+                          const product = iapProducts?.find(p => p.identifier === tier.productId);
+                          return (
+                            <button
+                              key={tier.productId}
+                              onClick={() => void startIapPurchase(tier.productId)}
+                              disabled={rechargeLoading}
+                              style={{
+                                padding: '9px 0',
+                                background: '#0a0a0a', color: '#fff', border: 0,
+                                borderRadius: 4, cursor: 'pointer',
+                                fontFamily: 'inherit', fontSize: 11, letterSpacing: '0.06em',
+                                opacity: rechargeLoading ? 0.6 : 1,
+                              }}
+                            >
+                              {product ? `${tier.fallbackLabel} — ${product.priceString}` : tier.fallbackLabel}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <>
+                        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                          {PACKAGES.map(pkg => (
+                            <button
+                              key={pkg.usd}
+                              onClick={() => void startRecharge(pkg.usd)}
+                              disabled={rechargeLoading}
+                              style={{
+                                flex: 1, padding: '8px 0',
+                                background: '#0a0a0a', color: '#fff', border: 0,
+                                borderRadius: 4, cursor: 'pointer',
+                                fontFamily: 'inherit', fontSize: 11, letterSpacing: '0.06em',
+                                opacity: rechargeLoading ? 0.6 : 1,
+                              }}
+                            >
+                              {pkg.label}
+                            </button>
+                          ))}
+                        </div>
 
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                      <span style={{ fontSize: 10, color: 'rgba(10,10,10,0.4)' }}>$</span>
-                      <input
-                        ref={customInputRef}
-                        type="number"
-                        min="1"
-                        step="1"
-                        placeholder="Custom (min $1)"
-                        value={customUsd}
-                        onChange={e => { setRechargeError(null); setCustomUsd(e.target.value); }}
-                        disabled={rechargeLoading}
-                        style={{
-                          flex: 1, border: 0, borderBottom: '1px solid rgba(10,10,10,0.15)',
-                          padding: '6px 0', background: 'transparent', outline: 'none',
-                          fontFamily: 'inherit', fontSize: 11, color: '#0a0a0a',
-                        }}
-                      />
-                      <button
-                        onClick={() => {
-                          const v = parseFloat(customUsd);
-                          if (!customUsd || isNaN(v) || v < 1) {
-                            setRechargeError('Minimum $1');
-                            return;
-                          }
-                          void startRecharge(v);
-                        }}
-                        disabled={rechargeLoading || !customUsd}
-                        style={submitBtnStyle}
-                      >
-                        Pay
-                      </button>
-                    </div>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <span style={{ fontSize: 10, color: 'rgba(10,10,10,0.4)' }}>$</span>
+                          <input
+                            ref={customInputRef}
+                            type="number"
+                            min="1"
+                            step="1"
+                            placeholder="Custom (min $1)"
+                            value={customUsd}
+                            onChange={e => { setRechargeError(null); setCustomUsd(e.target.value); }}
+                            disabled={rechargeLoading}
+                            style={{
+                              flex: 1, border: 0, borderBottom: '1px solid rgba(10,10,10,0.15)',
+                              padding: '6px 0', background: 'transparent', outline: 'none',
+                              fontFamily: 'inherit', fontSize: 11, color: '#0a0a0a',
+                            }}
+                          />
+                          <button
+                            onClick={() => {
+                              const v = parseFloat(customUsd);
+                              if (!customUsd || isNaN(v) || v < 1) {
+                                setRechargeError('Minimum $1');
+                                return;
+                              }
+                              void startRecharge(v);
+                            }}
+                            disabled={rechargeLoading || !customUsd}
+                            style={submitBtnStyle}
+                          >
+                            Pay
+                          </button>
+                        </div>
+                      </>
+                    )}
 
                     {rechargeError && (
                       <div style={{ fontSize: 10, color: '#c0392b', marginTop: 8, letterSpacing: '0.04em' }}>{rechargeError}</div>

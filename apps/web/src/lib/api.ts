@@ -276,6 +276,10 @@ export function getUsageEvents(idToken: string): Promise<UsageEvent[]> {
   return apiFetch<UsageEvent[]>('/users/me/usage', idToken);
 }
 
+export function deleteAccount(idToken: string): Promise<{ dataDeleted: boolean; cognitoDeleted: boolean }> {
+  return apiFetch<{ dataDeleted: boolean; cognitoDeleted: boolean }>('/users/me', idToken, { method: 'DELETE' });
+}
+
 export interface CreditEvent {
   creditEventId: string;
   type: 'REFERRAL' | 'TOPUP';
@@ -331,6 +335,14 @@ export function verifyPayment(
   return apiFetch<{ credited: number }>('/billing/verify', idToken, {
     method: 'POST',
     body: JSON.stringify({ orderId, paymentId, signature }),
+  });
+}
+
+// iOS-shell IAP top-up: verifies the StoreKit 2 signed transaction (JWS) and credits the buyer.
+export function verifyIapPurchase(idToken: string, jws: string): Promise<{ credited: number }> {
+  return apiFetch<{ credited: number }>('/billing/iap/verify', idToken, {
+    method: 'POST',
+    body: JSON.stringify({ jws }),
   });
 }
 
