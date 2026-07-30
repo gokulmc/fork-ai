@@ -502,6 +502,27 @@ describe('DynamoRepository', () => {
     });
   });
 
+  describe('deleteUserPartition', () => {
+    it('does nothing when the partition is empty', async () => {
+      userMeta.queryChain.exec.mockResolvedValue([]);
+      await repo.deleteUserPartition(SUB);
+      expect(userMeta.mock.batchDelete).not.toHaveBeenCalled();
+    });
+
+    it('queries PK only (no SK filter) and batchDeletes every key found, chunked by 25', async () => {
+      const items = Array.from({ length: 30 }, (_, i) => ({ PK: `USER#${SUB}`, SK: `USAGE#u${i}` }));
+      userMeta.queryChain.exec.mockResolvedValue(items);
+      userMeta.mock.batchDelete.mockResolvedValue({});
+
+      await repo.deleteUserPartition(SUB);
+
+      expect(userMeta.mock.query).toHaveBeenCalledWith('PK');
+      expect(userMeta.queryChain.eq).toHaveBeenCalledWith(`USER#${SUB}`);
+      expect(userMeta.queryChain.beginsWith).not.toHaveBeenCalled();
+      expect(userMeta.mock.batchDelete).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe('scanHeldHolds', () => {
     it('scans SK beginsWith HOLD#, filtered by status=held and updatedAt<cutoff', async () => {
       hold.queryChain.exec.mockResolvedValue([{ sub: SUB, nodeId: NODE_ID, status: 'held' }]);

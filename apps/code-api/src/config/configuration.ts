@@ -51,6 +51,7 @@ export const validationSchema = Joi.object({
   RAZORPAY_KEY_ID: Joi.string().allow('').optional(),
   RAZORPAY_KEY_SECRET: Joi.string().allow('').optional(),
   RAZORPAY_WEBHOOK_SECRET: Joi.string().allow('').optional(),
+  APPLE_IAP_BUNDLE_ID: Joi.string().allow('').optional(),
   APNS_KEY: Joi.string().allow('').optional(),
   APNS_KEY_ID: Joi.string().allow('').optional(),
   APNS_TEAM_ID: Joi.string().allow('').optional(),
@@ -110,6 +111,9 @@ export const configuration = () => ({
     keyId: process.env.RAZORPAY_KEY_ID ?? '',
     keySecret: process.env.RAZORPAY_KEY_SECRET ?? '',
     webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET ?? '',
+  },
+  apple: {
+    iapBundleId: process.env.APPLE_IAP_BUNDLE_ID || 'in.forkai.code',
   },
   apns: {
     // Prod stores the p8 base64-encoded — a raw multi-line PEM breaks the EB

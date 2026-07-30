@@ -632,6 +632,29 @@ export class DynamoRepository {
   async deleteDevice(sub: string, token: string): Promise<void> {
     await this.deviceModel.delete({ PK: this.userPk(sub), SK: this.deviceSk(token) });
   }
+
+  // ── Account deletion ─────────────────────────────────────────────────────────
+
+  // Everything else that lives directly under PK USER#{sub}: METADATA, DEVICE#,
+  // GHINST#, USAGE#, CREDITEVT#, PAYMENT#, PROJECT#, HOLD#, MACHINEBILL#. Session
+  // rows (SESSION#) are also under this PK but must be deleted via
+  // SessionsService.delete first — that call also removes each session's own
+  // NODE#/ANN#/HL# rows, which live under the separate SESSION#{id} partition
+  // this query never sees. Querying via userMetaModel only needs PK/SK for the
+  // batchDelete keys below, so the schema each row actually belongs to doesn't
+  // matter — Dynamoose's saveUnknown stripping (see root CLAUDE.md) never comes
+  // into play for a delete-by-key call.
+  async deleteUserPartition(sub: string): Promise<void> {
+    const items = await this.userMetaModel
+      .query('PK')
+      .eq(this.userPk(sub))
+      .all()
+      .exec();
+    const keys = items.map((i: { PK: string; SK: string }) => ({ PK: i.PK, SK: i.SK }));
+    if (!keys.length) return;
+    const chunks = chunk(keys, 25);
+    await Promise.all(chunks.map((c) => this.userMetaModel.batchDelete(c)));
+  }
 }
 
 function chunk<T>(arr: T[], size: number): T[][] {

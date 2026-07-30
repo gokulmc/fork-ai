@@ -16,6 +16,7 @@ import { CognitoUser } from '@/auth/jwt.strategy';
 import { BillingService } from './billing.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { VerifyPaymentDto } from './dto/verify-payment.dto';
+import { VerifyIapDto } from './dto/verify-iap.dto';
 
 @ApiTags('billing')
 @Controller('billing')
@@ -39,6 +40,16 @@ export class BillingController {
     @Body() dto: VerifyPaymentDto,
   ) {
     return this.billing.verifyAndCredit(user.sub, dto.orderId, dto.paymentId, dto.signature);
+  }
+
+  @Post('iap/verify')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verify an Apple StoreKit 2 transaction JWS and credit the user' })
+  verifyIap(
+    @CurrentUser() user: CognitoUser,
+    @Body() dto: VerifyIapDto,
+  ) {
+    return this.billing.verifyIapPurchase(user.sub, dto.jws);
   }
 
   @Public()
