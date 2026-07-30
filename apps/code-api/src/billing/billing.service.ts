@@ -2,14 +2,25 @@ import { Injectable, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import Razorpay from 'razorpay';
+import { SignedDataVerifier, Environment, type JWSTransactionDecodedPayload } from '@apple/app-store-server-library';
 import { DynamoRepository } from '@/dynamo/dynamo.repository';
 import type { PaymentItem, CreditEventItem } from '@/dynamo/dynamo.interfaces';
 import { ulid } from 'ulid';
+import { appleRootCertificates } from './apple-root-cert';
+
+// Apple product identifiers are unique account-wide across all of a developer's
+// apps, so these can't reuse the main fork.ai app's credits_5/credits_10 — hence
+// the code_ prefix.
+const IAP_PRODUCT_CREDIT_USD: Record<string, number> = {
+  code_credits_5: 5.0,
+  code_credits_10: 10.0,
+};
 
 @Injectable()
 export class BillingService {
   private readonly logger = new Logger(BillingService.name);
   private _razorpay: Razorpay | null = null;
+  private readonly appleVerifiers = new Map<Environment, SignedDataVerifier>();
 
   constructor(
     private readonly db: DynamoRepository,
@@ -76,6 +87,48 @@ export class BillingService {
     }
 
     return this.idempotentCredit(sub, paymentId, orderId);
+  }
+
+  // App Review only ever transacts in the sandbox environment, while real
+  // users transact in production — the JWS a client sends can be either, and
+  // a verifier built for the wrong environment rejects it outright. Try
+  // production first (the common case for a live user), fall back to sandbox.
+  async verifyIapPurchase(sub: string, jws: string): Promise<{ credited: number }> {
+    const bundleId = this.cfg.get<string>('apple.iapBundleId') ?? 'in.forkai.code';
+    let payload: JWSTransactionDecodedPayload;
+    try {
+      payload = await this.appleVerifier(Environment.PRODUCTION, bundleId).verifyAndDecodeTransaction(jws);
+    } catch {
+      payload = await this.appleVerifier(Environment.SANDBOX, bundleId).verifyAndDecodeTransaction(jws);
+    }
+
+    if (payload.bundleId !== bundleId) {
+      throw new HttpException('Invalid app bundle', HttpStatus.BAD_REQUEST);
+    }
+
+    const amountUsd = IAP_PRODUCT_CREDIT_USD[payload.productId ?? ''];
+    if (amountUsd == null) {
+      throw new HttpException(`Unknown product ${payload.productId}`, HttpStatus.BAD_REQUEST);
+    }
+
+    const transactionId = payload.transactionId;
+    if (!transactionId) {
+      throw new HttpException('Missing transaction id', HttpStatus.BAD_REQUEST);
+    }
+
+    // Reuses the same idempotent PaymentItem + addCredit path as Razorpay —
+    // keyed on Apple's transactionId instead of a Razorpay paymentId/orderId
+    // pair, since there's no separate "order" concept for an IAP.
+    return this.idempotentCredit(sub, transactionId, `apple:${payload.productId}`, amountUsd);
+  }
+
+  private appleVerifier(environment: Environment, bundleId: string): SignedDataVerifier {
+    let verifier = this.appleVerifiers.get(environment);
+    if (!verifier) {
+      verifier = new SignedDataVerifier(appleRootCertificates, true, environment, bundleId);
+      this.appleVerifiers.set(environment, verifier);
+    }
+    return verifier;
   }
 
   async handleWebhook(rawBody: Buffer, signature: string): Promise<void> {

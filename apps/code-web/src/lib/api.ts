@@ -325,6 +325,15 @@ export function patchMe(idToken: string, updates: { hasOnboarded: boolean }): Pr
   });
 }
 
+// Permanently deletes the account: all sessions/projects/data, then the
+// Cognito identity. cognitoDeleted may be false (data is still gone) if the
+// Cognito call itself failed — see AccountService on the API side.
+export function deleteAccount(idToken: string): Promise<{ dataDeleted: boolean; cognitoDeleted: boolean }> {
+  return apiFetch<{ dataDeleted: boolean; cognitoDeleted: boolean }>('/users/me', idToken, {
+    method: 'DELETE',
+  });
+}
+
 // Saving a non-empty persona is what activates the feature — until then the
 // backend injects nothing into LLM prompts.
 export function updatePersona(idToken: string, persona: string): Promise<void> {
@@ -375,6 +384,15 @@ export function verifyPayment(
   return apiFetch<{ credited: number }>('/billing/verify', idToken, {
     method: 'POST',
     body: JSON.stringify({ orderId, paymentId, signature }),
+  });
+}
+
+// Verifies a StoreKit 2 signed transaction JWS from the iOS shell's IAP
+// purchase and credits the account — the App Store equivalent of verifyPayment.
+export function verifyIapPurchase(idToken: string, jws: string): Promise<{ credited: number }> {
+  return apiFetch<{ credited: number }>('/billing/iap/verify', idToken, {
+    method: 'POST',
+    body: JSON.stringify({ jws }),
   });
 }
 
