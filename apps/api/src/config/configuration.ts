@@ -27,6 +27,10 @@ export const validationSchema = Joi.object({
   RAZORPAY_WEBHOOK_SECRET: Joi.string().allow('').optional(),
   TRIAL_HOUSE_SUB: Joi.string().allow('').optional(),
   TRIAL_DAILY_BUDGET_USD: Joi.number().default(5.00),
+  APPLE_IAP_BUNDLE_ID: Joi.string().allow('').optional().default('in.forkai.app'),
+  // Numeric App Store Connect app id — only required to verify PRODUCTION StoreKit2
+  // transactions. Left unset, IAP verification still works for Sandbox (App Review).
+  APPLE_APP_APPLE_ID: Joi.string().allow('').optional(),
 });
 
 export const configuration = () => ({
@@ -80,5 +84,9 @@ export const configuration = () => ({
     keyId: process.env.RAZORPAY_KEY_ID ?? '',
     keySecret: process.env.RAZORPAY_KEY_SECRET ?? '',
     webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET ?? '',
+  },
+  apple: {
+    iapBundleId: process.env.APPLE_IAP_BUNDLE_ID || 'in.forkai.app',
+    appAppleId: process.env.APPLE_APP_APPLE_ID ?? '',
   },
 });
