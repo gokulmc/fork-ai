@@ -31,6 +31,10 @@ export function QueryBox({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const baseHeightRef = useRef<number | null>(null);
   const prevValueRef = useRef(value);
+  // Width of the textarea while in pill mode, captured on every pill-mode pass.
+  // The `multi` decision below always measures wrap at this width, never at
+  // whichever width happens to be rendered — see the comment inside the effect.
+  const pillWidthRef = useRef<number | null>(null);
   const [multi, setMulti] = useState(false);
 
   // Auto-grow 1→MAX_ROWS: reset to 'auto' first so shrinking (e.g. deleting
@@ -48,6 +52,7 @@ export function QueryBox({
     if (!el) return;
     const valueChanged = prevValueRef.current !== value;
     prevValueRef.current = value;
+    if (!multi) pillWidthRef.current = el.clientWidth;
 
     el.style.height = 'auto';
     const cs = getComputedStyle(el);
@@ -58,11 +63,31 @@ export function QueryBox({
     // units, or "six rows" starts scrolling before six rows of text fit.
     const verticalPadding = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
     if (baseHeightRef.current === null) baseHeightRef.current = el.scrollHeight;
-    el.style.height = `${Math.min(el.scrollHeight, lineHeight * MAX_ROWS + verticalPadding)}px`;
     if (valueChanged) {
-      const isMulti = el.scrollHeight > baseHeightRef.current + 2;
+      // Guarding re-decisions to value-changed passes (above) stops the
+      // mode-change re-measure from flip-flopping, but typing itself changes
+      // `value` on every keystroke, and pill (~463px) vs. card (~612px) width
+      // wrap different lengths — so deciding from scrollHeight at whichever
+      // width is CURRENTLY rendered still oscillates every keystroke at
+      // boundary lengths. Pin the decision to the captured pill width instead:
+      // the outcome can no longer feed back into the width it's measured at.
+      // Restore the real width before the final height measurement below so
+      // the box still renders at its actual current width.
+      //
+      // .qb-input is `flex: 1` (flex-basis: 0%) in CSS, so the flex algorithm
+      // sizes it by growing to fill `.qb-main` regardless of the `width`
+      // property -- setting style.width alone is a no-op while flex-grow is
+      // still active, silently measuring at the real (possibly card) width
+      // and reproducing the exact oscillation this is meant to fix. Zero out
+      // flex-grow too so the explicit width actually takes hold.
+      const pillWidth = pillWidthRef.current;
+      if (pillWidth !== null) { el.style.flex = 'none'; el.style.width = `${pillWidth}px`; }
+      const wrapHeight = el.scrollHeight;
+      if (pillWidth !== null) { el.style.flex = ''; el.style.width = ''; }
+      const isMulti = wrapHeight > baseHeightRef.current + 2;
       setMulti(prev => (prev === isMulti ? prev : isMulti));
     }
+    el.style.height = `${Math.min(el.scrollHeight, lineHeight * MAX_ROWS + verticalPadding)}px`;
   }, [value, multi, readOnly]);
 
   // The page loads Google Fonts via <link> — a font swap after first paint

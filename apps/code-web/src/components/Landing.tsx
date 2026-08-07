@@ -1,11 +1,14 @@
 'use client';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowUpRight, Clock, Plus } from './Icons';
 import { CookiePreferencesLink } from './CookiePreferencesLink';
 import { QueryBox } from './QueryBox';
 import { extractText } from '@/lib/extractDocument';
 import { SKILL_PLUGINS, HARNESS_PLUGINS } from '@/lib/mockGithub';
 import { BRAND_TAGLINE } from '@/lib/brand';
+import { isIosShell } from '@/lib/native';
+
+const APP_STORE_URL = 'https://apps.apple.com/app/id6792602881?utm_source=web&utm_medium=badge';
 
 interface LandingProps {
   onSubmit: (query: string, plugins: string[]) => void;
@@ -31,6 +34,11 @@ export function Landing({ onSubmit, onSubmitDocument, loading, onShowHistory, ou
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const dragCountRef = useRef(0);
+  // Starts false (matches SSR, where `window` doesn't exist) and flips inside
+  // the shell after mount — avoids a hydration mismatch from calling
+  // isIosShell() directly during render.
+  const [inAppShell, setInAppShell] = useState(false);
+  useEffect(() => setInAppShell(isIosShell()), []);
 
   const onGo = () => {
     if (!q.trim() || loading) return;
@@ -222,6 +230,11 @@ export function Landing({ onSubmit, onSubmitDocument, loading, onShowHistory, ou
           <a href="/privacy-policy">Privacy</a>
           <a href="/terms">Terms</a>
           <CookiePreferencesLink />
+          {!inAppShell && (
+            <a href={APP_STORE_URL} target="_blank" rel="noopener noreferrer">
+              iOS app ↗
+            </a>
+          )}
         </span>
       </div>
     </div>
