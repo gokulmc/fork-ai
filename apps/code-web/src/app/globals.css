@@ -983,23 +983,6 @@ svg.lucide { stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; 
 .landing-foot-links a:hover,
 .landing-foot-links button:hover { color: var(--ink); text-decoration: underline; }
 
-.app-store-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 12px;
-  padding: 6px 12px;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  color: var(--ink-3);
-  text-decoration: none;
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  transition: all .15s;
-}
-.app-store-badge:hover { background: var(--panel); border-color: var(--ink-3); color: var(--ink); }
-
 /* ============================================================
    Landing nav button (top-right)
    ============================================================ */
